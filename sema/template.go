@@ -117,11 +117,15 @@ func (f *fnCtx) templateLit(e *ast.TemplateExpr, want types.Type) Expr {
 		values = append(values, p.Expr)
 	}
 	piece()
+	valueList := &ast.ListLit{Elems: values, Pos: e.Lit.Pos}
+	savedValues := f.templateValues
+	f.templateValues = valueList
+	defer func() { f.templateValues = savedValues }()
 	call := &ast.CallExpr{
 		Fun: e.Tag,
 		Args: []ast.Arg{
 			{Value: &ast.ListLit{Elems: pieces, Pos: e.Lit.Pos}},
-			{Value: &ast.ListLit{Elems: values, Pos: e.Lit.Pos}},
+			{Value: valueList},
 		},
 		Pos: e.Pos,
 	}

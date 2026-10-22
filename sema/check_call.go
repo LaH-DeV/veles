@@ -1139,6 +1139,15 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		recv = &Deref{exprBase{p.Elem}, recv}
 		rt = p.Elem
 	}
+	if isResultType(rt) && name == "toString" {
+		f.c.refBuiltin(callee.Name.Pos, rt, name)
+		if len(e.Args) != 0 || len(typeArgs) != 0 {
+			f.errorf(e.Pos, "'toString' on a Result takes no arguments or type arguments (D157)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		return f.toString(recv, e.Pos)
+	}
 	if lt, isList := rt.(*types.List); isList && name == "filterIs" {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return f.listFilterIs(recv, lt, typeArgs, e)

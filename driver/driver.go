@@ -295,7 +295,7 @@ func runtimeFlags(release, sanitize bool) []string {
 }
 
 // runtimeTestFlags are added to the runtime's flags by tests that build a
-// variant of it (the portable poll() reactor on Linux: -DVELES_POLL_FALLBACK).
+// variant of it (the portable poll() reactor: -DVELES_POLL_FALLBACK).
 // The flags are part of the object cache's key.
 var runtimeTestFlags []string
 

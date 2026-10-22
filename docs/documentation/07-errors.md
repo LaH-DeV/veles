@@ -33,6 +33,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 80 -> 80
 x -> failed: ParseError(text: x)
@@ -64,10 +65,19 @@ on `r`) — either match on it or propagate it. This holds whether or not
 the caller is `throws`: only `try` propagates. `val _ = parsePort(t)` is
 the explicit way to say you really do not care.
 
+Interpolation cannot hide a failure either (D157). Write
+`"${try parsePort(t)}"` to propagate its error, or
+`"${parsePort(t) ?? 8080}"` to supply a fallback. A stored `Result` follows
+the same rule. To inspect the wrapper deliberately, write
+`"${result.toString()}"`; after `if (result.ok)`, `"$result"` prints the
+unwrapped value. The rule also applies to template values and format specs.
+A task handle must be awaited before interpolation: `"${await task}"`.
+`veles check --fix` adds `try` when the enclosing function may throw.
+
 ## Propagating with `try`
 
 Inside another `throws` function, `try expr` unwraps a success and
-returns the error to *your* caller otherwise:
+returns the error to _your_ caller otherwise:
 
 ```veles
 use io
@@ -99,6 +109,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 total 6
 bad input two
@@ -149,6 +160,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 name = veles
 no such key 'age'
@@ -213,6 +225,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 name = veles
 age: NotFound(key: age)
@@ -276,6 +289,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 name = veles
 slow: try again later
@@ -308,11 +322,12 @@ fun main() {
   val [first, second, _] = results else panic("three calls, three results")
   io.println("${first.getOrNull()} ${second.getOrDefault(-1)} ${first.errorOrNull()}")
   val explicit: Result<i64, Oops> = Err(Oops(code: -1))
-  io.println("$explicit")
+  io.println("${explicit.toString()}")
 }
 ```
 
 Output:
+
 ```text
 [10, 20] [Oops(code: 0)]
 failed with code 0
@@ -323,7 +338,7 @@ Err(error: Oops(code: -1))
 A single result unwraps with `getOrNull()`, `getOrDefault(d)` and
 `errorOrNull()`; a list of results splits with `oks()` and `errors()`, which
 is how a batch that must not stop at the first failure reports and then
-continues (`examples/dedup`). Note what does *not* work: narrowing does not
+continues (`examples/dedup`). Note what does _not_ work: narrowing does not
 survive a call boundary, so `results.filter(r => r is Ok).map(r => ...)`
 still sees `Result` inside the `map` — use `oks()`, or `mapNotNull(r => r.getOrNull())`.
 
@@ -364,11 +379,12 @@ fun main() {
     }
   }
   val kept: Result<i64, BadRequest> = parseAge("z") ?! BadRequest(detail: "not a number")
-  io.println("$kept")
+  io.println("${kept.toString()}")
 }
 ```
 
 Output:
+
 ```text
 ann is 41
 bob: BadRequest(detail: age at 0)
@@ -455,6 +471,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 7
 first is 3
@@ -525,6 +542,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 sum 5
 cannot add: Invalid(line: x)
@@ -564,7 +582,7 @@ several share one.
 
 - **Nothing to return** but the situation is normal (key absent, list
   empty): return `T?`. The caller needs a fallback, not a diagnosis.
-- **Something went wrong** and the caller might need to know *what*
+- **Something went wrong** and the caller might need to know _what_
   (bad input, I/O failure): `throws`.
 - **The program is broken** (index out of range, arithmetic overflow, a
   case you believed impossible): a panic. Panics are not caught by

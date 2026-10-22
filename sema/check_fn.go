@@ -68,7 +68,8 @@ type fnCtx struct {
 	callWant types.Type
 	// loopIters is the checked type of each `loop (x in iter)` head, for lints
 	// that look at the loop after it was checked (lint_count.go).
-	loopIters map[*ast.LoopStmt]types.Type
+	loopIters      map[*ast.LoopStmt]types.Type
+	templateValues *ast.ListLit
 
 	retType     types.Type // declared return type (never the Result wrapper)
 	throws      bool
@@ -95,20 +96,20 @@ type fnCtx struct {
 	pending     []Stmt            // statements hoisted by adapter lowering
 	boundPlace  map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
 	scopes      []*ScopeBlock
-	taskMarks   []*Var        // per open scope/gather: what its tasks count as, for D141's escape rule (resources.go)
-	held        []*HeldLock   // the `with … = m.lock()` regions around the code being checked (D107)
-	raceCall    *ast.CallExpr // the race arm's source call being checked, which an awaited prelude method lowers (D146)
-	raceTake    Expr          // that lowering's take: the arm's value once its signal is ready
+	taskMarks   []*Var         // per open scope/gather: what its tasks count as, for D141's escape rule (resources.go)
+	held        []*HeldLock    // the `with … = m.lock()` regions around the code being checked (D107)
+	raceCall    *ast.CallExpr  // the race arm's source call being checked, which an awaited prelude method lowers (D146)
+	raceTake    Expr           // that lowering's take: the arm's value once its signal is ready
 	raceAwait   *ast.AwaitExpr // the `await` a handle arm is checked as (D168): its errors speak of the arm
 	races       []*raceCtx     // the `race { }` bodies being checked, innermost last (D169, race.go)
-	lockOK      *ast.CallExpr // the `with` value being checked, where `m.lock()` is allowed
-	lockSeen    bool          // lockOK turned out to be `m.lock()`
+	lockOK      *ast.CallExpr  // the `with` value being checked, where `m.lock()` is allowed
+	lockSeen    bool           // lockOK turned out to be `m.lock()`
 	// D111: the calls that may produce a task-holding value (a `with` value,
 	// a returned value, a field of one), and the `async` field arguments of
 	// task-holding constructors, with how the value is received
-	heldOK      map[*ast.CallExpr]heldBy
-	heldAsync   map[*ast.CallExpr]heldBy
-	stmtWiths   map[*ast.WithExpr]bool // block forms made from the statement form by withRest
+	heldOK    map[*ast.CallExpr]heldBy
+	heldAsync map[*ast.CallExpr]heldBy
+	stmtWiths map[*ast.WithExpr]bool // block forms made from the statement form by withRest
 	// D156: the block forms made from `val h = async f()` by valTaskRest,
 	// the handles of those being checked (innermost last), and the
 	// expression an `await` or `awaitAll` is waiting for
@@ -116,9 +117,9 @@ type fnCtx struct {
 	awaited      []*awaitedHandle
 	awaitOperand ast.Expr
 	awaitNext    bool
-	inRaceArm   bool
-	inferThrows bool
-	inferredRet types.Type
+	inRaceArm    bool
+	inferThrows  bool
+	inferredRet  types.Type
 }
 
 type loopFrame struct {

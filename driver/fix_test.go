@@ -2,6 +2,7 @@ package driver
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,56 @@ import (
 // `veles check --fix` applies the quick fixes the lints attach: a
 // redundant `mut`, an unused binding, a dead `else` on a sealed subject,
 // and a top-level impl that belongs in the struct body.
+func TestCheckFixInterpolation(t *testing.T) {
+	src := `use io
+error ParseError { }
+fun parse(value: i64): i64 throws ParseError => if (value < 0) throw ParseError() else value
+fun main() throws {
+  val result = parse(42)
+  io.println("$result ${parse(7)} ${parse(3):04d}")
+  io.println("${parse(-1).toString()}")
+}
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code != 0 {
+		t.Fatalf("check --fix: exit %d", code)
+	}
+	fixed, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.ReplaceAll(src, `"$result ${parse(7)} ${parse(3):04d}"`, `"${try (result)} ${try (parse(7))} ${try (parse(3)):04d}"`)
+	if string(fixed) != want {
+		t.Fatalf("fixed source:\n%s\nwant:\n%s", fixed, want)
+	}
+	if code := Run(Options{Path: dir, Mode: "check", Fix: true}); code != 0 {
+		t.Fatalf("second check --fix: exit %d", code)
+	}
+	if after, err := os.ReadFile(path); err != nil || string(after) != want {
+		t.Fatalf("second check --fix changed source: %v\n%s", err, after)
+	}
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	for _, release := range []bool{false, true} {
+		exe := filepath.Join(t.TempDir(), "interpolation.exe")
+		if code := Run(Options{Path: dir, Mode: "build", Output: exe, Release: release}); code != 0 {
+			t.Fatalf("build release=%v: exit %d", release, code)
+		}
+		out, err := exec.Command(exe).CombinedOutput()
+		if err != nil {
+			t.Fatalf("run release=%v: %v\n%s", release, err, out)
+		}
+		if got := strings.ReplaceAll(string(out), "\r\n", "\n"); got != "42 7 0003\nErr(error: ParseError)\n" {
+			t.Fatalf("release=%v: unexpected output %q", release, got)
+		}
+	}
+}
+
 func TestCheckFix(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")

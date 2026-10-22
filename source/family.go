@@ -65,6 +65,7 @@ var families = []family{
 	fam("type-mismatch", `^type mismatch`, `incompatible types`, `^expected a function`, `^lambda `,
 		`needs a function that returns`, `cannot bind a value of type '\(\)'`, `is bound to a value of type`,
 		`is declared '%s' but`, `^a throwing function cannot be passed`, `^'%s' needs a set of`),
+	fam("results-and-errors", `\(D157\)`),
 	fam("tasks", `holds a running task`, `\basync\b`, `\bawait\b`, `suspend`, `Sendable`, `task boundary`, `^'scope'`, `'gather'`,
 		`'race'`, `race arm`, `'recv\(\)'`, `^'sleep'`, `'sleep\(\)'`, `ioWait`, `^Channel`, `the channel`,
 		`^Task takes`, `^'cancel'`, `shared by every task`, `cannot cross`, `\(D35\)`, `\(D143\)`, `\(D144\)`, `\(D150\)`, `is state, not a function`,

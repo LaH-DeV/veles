@@ -94,5 +94,5 @@ fun quiet(): i64 {
 }
 
 fun main() throws Boom {
-  io.println("${inline()} ${three()} ${listed()}")
+  io.println("${inline().toString()} ${three().toString()} ${listed().toString()}")
 }

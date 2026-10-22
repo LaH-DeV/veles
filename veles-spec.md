@@ -1,38 +1,38 @@
 # Veles — Language Specification
 
-**Working draft v0.103** — decisions D1–D196. Open design questions: none (`veles-checklist.md` §9); the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.104** — decisions D1–D197. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
-| Entries | Subject |
-|---|---|
-| D100 | `with x = e` as a statement; `with t = async f()` |
-| D101–D106 | heads and `val`, a collection changed while looped, one-task `gather`, `async` on a value, bit operations, `reserve`, empty literals |
-| D107–D111 | `with p = m.lock()`, `race` send arms, `with expr`, concurrency helpers, values that hold a task |
-| D112–D115 | `Secret<T>`, compile-time evaluation and `const fun`, unchecked access, never-closed warning |
-| D116–D119 | suspension follows the argument, `is Trait`, derivation direction, `Default` |
-| D120–D123 | C layout attributes, `Array<T, N>` and const generics, no `.d.vs`, variadic C calls |
-| D124–D130, D133 | compression, config, OpenTelemetry, the HTTP client, `io.Stream` + TLS, template literals + `std/db`, small std additions, health endpoints |
-| D131–D132 | the manifest is `package.vs`; decentralized packages |
-| D134–D135 | (consistency pass) one `try` over a chain; `is T` downcast on a trait object |
-| D136 | `close()` by hand on a `with` value is refused |
-| D137 | a static of a generic type infers its type arguments |
-| D138 | packages revisited: TOML manifest now, registry beside git, safety tiers (amends D131/D132) |
-| D139 | the registry protocol, tiers, yanks and signed reviews (completes D138) |
-| D140 | an expression body is `=> expr` |
-| D141 | a task handle stays in its scope; in a fail-fast block `await` gives the value |
-| D142 | visibility: unmarked is the package, `internal` the module, `public` other packages (amends M5, D89) |
-| D143–D149 | executors and threads, atomics, loops as cancellation points, `RwLock`/`Event`/`Lazy`/`Broadcast`/`Watch`, a suspending `close()`, `incrementAt`, `updateAt` |
-| D150–D154 | declared executors and their state, `withTimeout` in the caller's task, `runBlocking`, a pool's hand-off, `await` after `cancel()` |
-| D155 | a `Result` a `gather` child returns is its value |
-| D156 | awaited `val` handles without `scope`, `awaitAll`, `scope(workers:)`, a lazy `mapConcurrent`, `scope` as a value |
-| D157–D167 | (2026-10-14 review) a `Result`/task cannot be interpolated; bare names reach the receiver's members; `std/bluetooth` LE central; per-target files and `build.target`; `std/sys/<os>` and the platform modules; `veles bindgen`; one-parameter constructors positional; `copy`; the index-of family answers `i64?`; labelled tuples; `std/cli` |
-| D168 | racing computations: `async` arms owned by the construct, no `await` in arms (partly superseded by D169) |
-| D169 | `race { }` a block like `gather`, `select { }` with arms, `async { }` blocks |
-| D170 | tests and suites take an optional identifier label before the sentence |
-| D171 | format specs after `:` in interpolation, checked at compile time; `std/fmt` for the higher level |
-| D172 | `"""…"""` text blocks with a margin; backtick raw strings |
-| D173 | extension functions: `extend T with fun …` / `extend T { }` on a type you do not own, scoped to the importer; no `\|>` for now |
+| Entries         | Subject                                                                                                                                                                                                                                                                                                                                       |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D100            | `with x = e` as a statement; `with t = async f()`                                                                                                                                                                                                                                                                                             |
+| D101–D106       | heads and `val`, a collection changed while looped, one-task `gather`, `async` on a value, bit operations, `reserve`, empty literals                                                                                                                                                                                                          |
+| D107–D111       | `with p = m.lock()`, `race` send arms, `with expr`, concurrency helpers, values that hold a task                                                                                                                                                                                                                                              |
+| D112–D115       | `Secret<T>`, compile-time evaluation and `const fun`, unchecked access, never-closed warning                                                                                                                                                                                                                                                  |
+| D116–D119       | suspension follows the argument, `is Trait`, derivation direction, `Default`                                                                                                                                                                                                                                                                  |
+| D120–D123       | C layout attributes, `Array<T, N>` and const generics, no `.d.vs`, variadic C calls                                                                                                                                                                                                                                                           |
+| D124–D130, D133 | compression, config, OpenTelemetry, the HTTP client, `io.Stream` + TLS, template literals + `std/db`, small std additions, health endpoints                                                                                                                                                                                                   |
+| D131–D132       | the manifest is `package.vs`; decentralized packages                                                                                                                                                                                                                                                                                          |
+| D134–D135       | (consistency pass) one `try` over a chain; `is T` downcast on a trait object                                                                                                                                                                                                                                                                  |
+| D136            | `close()` by hand on a `with` value is refused                                                                                                                                                                                                                                                                                                |
+| D137            | a static of a generic type infers its type arguments                                                                                                                                                                                                                                                                                          |
+| D138            | packages revisited: TOML manifest now, registry beside git, safety tiers (amends D131/D132)                                                                                                                                                                                                                                                   |
+| D139            | the registry protocol, tiers, yanks and signed reviews (completes D138)                                                                                                                                                                                                                                                                       |
+| D140            | an expression body is `=> expr`                                                                                                                                                                                                                                                                                                               |
+| D141            | a task handle stays in its scope; in a fail-fast block `await` gives the value                                                                                                                                                                                                                                                                |
+| D142            | visibility: unmarked is the package, `internal` the module, `public` other packages (amends M5, D89)                                                                                                                                                                                                                                          |
+| D143–D149       | executors and threads, atomics, loops as cancellation points, `RwLock`/`Event`/`Lazy`/`Broadcast`/`Watch`, a suspending `close()`, `incrementAt`, `updateAt`                                                                                                                                                                                  |
+| D150–D154       | declared executors and their state, `withTimeout` in the caller's task, `runBlocking`, a pool's hand-off, `await` after `cancel()`                                                                                                                                                                                                            |
+| D155            | a `Result` a `gather` child returns is its value                                                                                                                                                                                                                                                                                              |
+| D156            | awaited `val` handles without `scope`, `awaitAll`, `scope(workers:)`, a lazy `mapConcurrent`, `scope` as a value                                                                                                                                                                                                                              |
+| D157–D167       | (2026-10-14 review) a `Result`/task cannot be interpolated; bare names reach the receiver's members; `std/bluetooth` LE central; per-target files and `build.target`; `std/sys/<os>` and the platform modules; `veles bindgen`; one-parameter constructors positional; `copy`; the index-of family answers `i64?`; labelled tuples; `std/cli` |
+| D168            | racing computations: `async` arms owned by the construct, no `await` in arms (partly superseded by D169)                                                                                                                                                                                                                                      |
+| D169            | `race { }` a block like `gather`, `select { }` with arms, `async { }` blocks                                                                                                                                                                                                                                                                  |
+| D170            | tests and suites take an optional identifier label before the sentence                                                                                                                                                                                                                                                                        |
+| D171            | format specs after `:` in interpolation, checked at compile time; `std/fmt` for the higher level                                                                                                                                                                                                                                              |
+| D172            | `"""…"""` text blocks with a margin; backtick raw strings                                                                                                                                                                                                                                                                                     |
+| D173            | extension functions: `extend T with fun …` / `extend T { }` on a type you do not own, scoped to the importer; no `\|>` for now                                                                                                                                                                                                                |
 
 Decision IDs are stable. They are never renumbered; superseded decisions are struck through and replaced by a new ID.
 
@@ -40,16 +40,16 @@ Decision IDs are stable. They are never renumbered; superseded decisions are str
 
 ## 1. Identity
 
-| | |
-|---|---|
-| Name | Veles |
-| Source extension | `.vs` (module file), `.vss` (script: a one-file program) |
-| Classification | Compiled, statically typed, garbage collected |
-| Primary target | Native machine code |
-| Secondary target | WebAssembly (deferred — not day-one) |
-| Influences | Kotlin (ergonomics), Rust (abstraction), Go (memory & runtime), TypeScript (modules) |
+|                  |                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| Name             | Veles                                                                                |
+| Source extension | `.vs` (module file), `.vss` (script: a one-file program)                             |
+| Classification   | Compiled, statically typed, garbage collected                                        |
+| Primary target   | Native machine code                                                                  |
+| Secondary target | WebAssembly (deferred — not day-one)                                                 |
+| Influences       | Kotlin (ergonomics), Rust (abstraction), Go (memory & runtime), TypeScript (modules) |
 
-**Vocabulary.** *Package* = a distributable project. *Module* = a directory. *File* = a file. These three words have exactly these meanings throughout.
+**Vocabulary.** _Package_ = a distributable project. _Module_ = a directory. _File_ = a file. These three words have exactly these meanings throughout.
 
 ---
 
@@ -61,15 +61,15 @@ Not ARC, not ownership/borrowing. The language does not expose lifetimes and doe
 
 ### D2 — Concurrency: coloring-free surface, compiler-inferred suspension
 
-Users write task launches, channels, and blocking-looking I/O. **No `async` on a function declaration, ever** — that token is reserved as a prefix on a *call expression* meaning "launch as a task". `await` suspends on anything suspendable: a channel, a task handle, a timer.
+Users write task launches, channels, and blocking-looking I/O. **No `async` on a function declaration, ever** — that token is reserved as a prefix on a _call expression_ meaning "launch as a task". `await` suspends on anything suspendable: a channel, a task handle, a timer.
 
 The compiler performs call-graph analysis to determine which functions can suspend and CPS-transforms only those into state machines. Execution is **stackless coroutines** — no stack switching, no growable-stack scheduler.
 
-*Rationale:* Go's ergonomics with an implementation that ports to WebAssembly later without re-engineering the concurrency layer or the GC's root scanning.
+_Rationale:_ Go's ergonomics with an implementation that ports to WebAssembly later without re-engineering the concurrency layer or the GC's root scanning.
 
-*Amended by D40:* inference covers direct calls only. Trait methods and function types declare their effects explicitly, because dynamic dispatch makes the reachable implement set open.
+_Amended by D40:_ inference covers direct calls only. Trait methods and function types declare their effects explicitly, because dynamic dispatch makes the reachable implement set open.
 
-*Known costs:* Stack traces and profiler output are worse than green threads would give. Least battle-tested of the available approaches.
+_Known costs:_ Stack traces and profiler output are worse than green threads would give. Least battle-tested of the available approaches.
 
 Channel syntax is settled in D16.
 
@@ -87,9 +87,9 @@ Consequence: `throws` and explicit `Result` interconvert freely; libraries canno
 
 **Errors are declared, and every error implements `Error`.** The prelude declares `trait Error { fun message(): string => "$this" }`. An error type is declared with a contextual keyword: `error ParseError { text: string; fun message(): string => ... }` is sugar for `struct ParseError { text: string }` plus `implement Error for ParseError { override fun message() ... }`. Inside an `error` body `message` needs no `override` (there is exactly one trait in play; writing it is allowed), and no other method may carry one — they are inherent. A field `message: string` with no `message()` written is used as the message, so `error Failed { message: string }` is thrown as `Failed(message: "...")`; `Panic` is exactly that. **Only errors can be in error position** (a `throws` clause, a `throw` operand, the `E` of a `Result`): throwing a plain struct is an error naming the fix (`error Dog { ... }`), non-structs are rejected, and a generic `throws X` needs the bound `X: Error`. `implement Error for T {}` on an existing struct is the escape hatch for types one does not own. Because every member of an error union implements `Error`, **the union exposes `Error`'s methods directly**: `e.message()` on a `ParseError | RangeError` compiles to a tag switch, no `when` required. An error escaping `main() throws` is reported through `message()`. This is Go's one-method `error` interface with structured payloads kept as fields, and the declaration form makes "is an error" a property of the type rather than of its uses. `error` is a keyword only at declaration position (`error Name`); elsewhere it is an ordinary identifier, so `is Err(error) => ...` is unaffected. Rejected: treating every struct as an implicit `Error` (it made `throw Dog()` legal); `struct X : Error` (in D12 that syntax means variant membership); and making `message` a mandatory field (it cannot be computed from the other fields, which is the common case).
 
-**`is Ok` / `is Err` smart-cast to the payload.** After `if (r is Ok)` the subject `r` *is* the `T`; in the `else` branch (or after `!is Ok`) it is the `E`. `r.ok` and `r.err` are the same tests spelled as properties (v0.23): `if (r.ok)` narrows exactly like `if (r is Ok)`, and the teaching form. In a `when`, `is Ok` / `is Err` arms narrow the subject the same way, and `when (val r = expr)` names an expression subject for the arms. This is D5's `T?` → `T` rule applied to `Result` (and `Option`'s `Some`): the wrapper variants are handled, never held as values. A general two-variant sealed type gets the complementary narrowing in the failed branch too, but only `Result`/`Option` read through to a payload.
+**`is Ok` / `is Err` smart-cast to the payload.** After `if (r is Ok)` the subject `r` _is_ the `T`; in the `else` branch (or after `!is Ok`) it is the `E`. `r.ok` and `r.err` are the same tests spelled as properties (v0.23): `if (r.ok)` narrows exactly like `if (r is Ok)`, and the teaching form. In a `when`, `is Ok` / `is Err` arms narrow the subject the same way, and `when (val r = expr)` names an expression subject for the arms. This is D5's `T?` → `T` rule applied to `Result` (and `Option`'s `Some`): the wrapper variants are handled, never held as values. A general two-variant sealed type gets the complementary narrowing in the failed branch too, but only `Result`/`Option` read through to a payload.
 
-Error type is **typed but inferrable** for ordinary functions. *Amended by D40:* trait methods must declare it. *Extended by D45:* inference across callees with different error types produces a union.
+Error type is **typed but inferrable** for ordinary functions. _Amended by D40:_ trait methods must declare it. _Extended by D45:_ inference across callees with different error types produces a union.
 
 ### D5 — Nullability: `T?` with flow-sensitive smart casts, nesting
 
@@ -108,7 +108,7 @@ Rationale: Kotlin's collapsing `T?` makes generic lookups ambiguous — `map[key
 
 This follows the conventional rule that postfix binds tighter than prefix, but it hands the terse form to the rarer case — optional references are common, pointers to nullable values are not — and it reads against the representation note above, where the nullable pointer is the free one. Expect `(*T)?` to be frequent.
 
-**What a smart cast is about: a stable place.** A fact (`x != null`, `x is Circle`, `r is Ok`) attaches to a *place*: a local variable, or a chain of direct struct fields starting from one (`config.cause`, `this.address` in a non-`mut` method). Reads of the place are narrowed until something could change it: an assignment to the place or to a prefix of it (`u.address = ...`, `u = ...`), a `mut` method call on the root, or `&root` being taken — after which no new facts form on the root's fields either. Nothing reached through a pointer, `?.` or an index is a place: with `p: *User`, `p.address` may change through another pointer between the test and the use, so it is never narrowed (this is Kotlin's "stable value" rule with aliasing made explicit; Veles has pointers, Kotlin does not). Inside a `mut` method `this` is a pointer, so `this.field` is bound to a `val` first. Facts on the variable itself survive a `mut` call or `&` (they cannot change which variant a value is); only the field-path facts are dropped.
+**What a smart cast is about: a stable place.** A fact (`x != null`, `x is Circle`, `r is Ok`) attaches to a _place_: a local variable, or a chain of direct struct fields starting from one (`config.cause`, `this.address` in a non-`mut` method). Reads of the place are narrowed until something could change it: an assignment to the place or to a prefix of it (`u.address = ...`, `u = ...`), a `mut` method call on the root, or `&root` being taken — after which no new facts form on the root's fields either. Nothing reached through a pointer, `?.` or an index is a place: with `p: *User`, `p.address` may change through another pointer between the test and the use, so it is never narrowed (this is Kotlin's "stable value" rule with aliasing made explicit; Veles has pointers, Kotlin does not). Inside a `mut` method `this` is a pointer, so `this.field` is bound to a `val` first. Facts on the variable itself survive a `mut` call or `&` (they cannot change which variant a value is); only the field-path facts are dropped.
 
 **Smart casts and `?.` reach places, not copies (v0.24, revised v0.27).** A narrowed place is writable: after `if (p != null)` both `p.n = 5` and `p.bump()` act on the payload inside `p`, and after `is Circle` on the variant inside the sealed value — the same storage a read sees. `?.` has the same property, on calls and on assignment: `x?.f = v` and `x?.f op= v` write only when `x` is present and do nothing otherwise (Kotlin's and Swift's rule), and `x?.m()` calls a `mut fun` on the value where it lives. The receiver may be a nullable variable or field, or a nullable pointer — which is how a collection element is reached: `xs.ref(i)?.n += 1`, `m.ref(k)?.bump()` (D25). A write through `?.` into a temporary value (`make()?.n = 1`, and `xs.at(i)?.n = 1`, since `at` returns a copy) is an error rather than a silent no-op, and `val` bindings stay closed to it.
 
@@ -124,7 +124,7 @@ Go's model. `struct` values live inline; pointers are explicit.
 
 One compiled body per GC shape, not per type. All pointer-shaped instantiations share code; distinct value layouts get their own.
 
-*Cost:* trait method calls inside generic code dispatch through a dictionary and **cannot be inlined**. Generic code will frequently be slower than the hand-written equivalent. In direct tension with D6, which creates an expectation of zero-cost abstraction. See §6.2.
+_Cost:_ trait method calls inside generic code dispatch through a dictionary and **cannot be inlined**. Generic code will frequently be slower than the hand-written equivalent. In direct tension with D6, which creates an expectation of zero-cost abstraction. See §6.2.
 
 ### D9 — Trait objects: implicit boxing
 
@@ -138,7 +138,7 @@ Distinct syntax for boxed trait objects was considered and rejected in favour of
 
 `&x` on a local is legal; escape analysis promotes it to the heap when it outlives the frame. Pointers into struct fields are permitted.
 
-*Addendum (2026-10-08) — the address of a temporary is typed by what it points to.* `&e` on a value that is not a place (a call, a construction, a literal) boxes a copy of it, and `e` is checked against the type the pointer is expected to point to: in `leaf: *Leaf = &Leaf(value: 1)` the variant stays a `Leaf` (D12 addendum: a construction where its variant is expected is that variant), in `p: *i32 = &5` the literal is an `i32`, and a `(*T)?` expects a `T` the same way. Before, the operand was checked with no expectation, so both were type errors; no program that compiled changes meaning.
+_Addendum (2026-10-08) — the address of a temporary is typed by what it points to._ `&e` on a value that is not a place (a call, a construction, a literal) boxes a copy of it, and `e` is checked against the type the pointer is expected to point to: in `leaf: *Leaf = &Leaf(value: 1)` the variant stays a `Leaf` (D12 addendum: a construction where its variant is expected is that variant), in `p: *i32 = &5` the literal is an `i32`, and a `(*T)?` expects a `T` the same way. Before, the operand was checked with no expectation, so both were type errors; no program that compiled changes meaning.
 
 ---
 
@@ -146,13 +146,13 @@ Distinct syntax for boxed trait objects was considered and rejected in favour of
 
 ### M1 — Package identity lives in a manifest
 
-*(v0.66, D131: the manifest is `package.vs`, one typed constant evaluated alone; read `veles.toml` below as that file, and "never by parsing Veles source" as "parsing only that constant". No `version` field — versions are tags, D132.)* `veles.toml` at the package root holds name, version, dependencies, license, ~~exports,~~ build config (D89: a package's surface is what its root module re-exports). **No source file declares package identity.** The resolver builds a dependency graph by reading manifests, never by parsing Veles source.
+_(v0.66, D131: the manifest is `package.vs`, one typed constant evaluated alone; read `veles.toml` below as that file, and "never by parsing Veles source" as "parsing only that constant". No `version` field — versions are tags, D132.)_ `veles.toml` at the package root holds name, version, dependencies, license, ~~exports,~~ build config (D89: a package's surface is what its root module re-exports). **No source file declares package identity.** The resolver builds a dependency graph by reading manifests, never by parsing Veles source.
 
 A monorepo contains multiple manifests, one per package.
 
 **The package is the unit that runs.** A package is a program when its root module declares `fun main()`, and a library otherwise; a module is never a program on its own. The tools locate the package from any path inside it (the nearest `veles.toml` above), so `veles run` on a sub-module directory runs the package; a directory with no manifest above it is its own single-module package. `check` accepts modules and libraries.
 
-*Amended (v0.31) — scripts.* A **script** is a file named `*.vss` and is a package by itself: its root module is that one file. It ignores the directory it sits in — sibling `.vs` and `.vss` files are not part of it, and it is not part of any directory module (the directory's module still reads only `.vs` files), so several scripts and a directory package may share a folder without seeing each other's `main`. A script has no manifest and no modules of its own; it imports the standard library, and will import dependencies once there is a way to name them without a manifest (open). It exists for the program that is one file — a tutorial step, a tool, an experiment — where a directory per program is ceremony. The rule stays M3's: the resolver decides membership from the file name, never by reading the source.
+_Amended (v0.31) — scripts._ A **script** is a file named `*.vss` and is a package by itself: its root module is that one file. It ignores the directory it sits in — sibling `.vs` and `.vss` files are not part of it, and it is not part of any directory module (the directory's module still reads only `.vs` files), so several scripts and a directory package may share a folder without seeing each other's `main`. A script has no manifest and no modules of its own; it imports the standard library, and will import dependencies once there is a way to name them without a manifest (open). It exists for the program that is one file — a tutorial step, a tool, an experiment — where a directory per program is ceremony. The rule stays M3's: the resolver decides membership from the file name, never by reading the source.
 
 **Documentation comments.** `/// ...` lines and `/** ... */` blocks directly above a declaration, field or method are that item's documentation, carried by the compiler (markdown, shown on hover). A doc comment at the top of a file, separated from the first declaration by a blank line, documents the module; a module's documentation is its files' top comments in file order. Ordinary `//` and `/* */` comments are discarded.
 
@@ -172,21 +172,21 @@ This is not a style rule. Both of Veles' inferred effects (D2 suspension, D4 err
 
 ### M5 — `public` grants package-wide visibility
 
-~~Default visibility is module-private. `public` makes a declaration visible to the rest of the package.~~ ~~Nothing escapes the package except through the manifest's `exports` field.~~ *(D89, v0.48)* ~~Nothing escapes the package except what its root module re-exports with `public use`; the manifest has no `exports` field.~~ *(D142, v0.74: the default is the package, `internal` is the module, and `public` exports to other packages at the declaration's module path; `public use` remains as a facade. The levels below are read through D142.)*
+~~Default visibility is module-private. `public` makes a declaration visible to the rest of the package.~~ ~~Nothing escapes the package except through the manifest's `exports` field.~~ _(D89, v0.48)_ ~~Nothing escapes the package except what its root module re-exports with `public use`; the manifest has no `exports` field.~~ _(D142, v0.74: the default is the package, `internal` is the module, and `public` exports to other packages at the declaration's module path; `public use` remains as a facade. The levels below are read through D142.)_
 
 Consequence: library authors get a deliberately curated public surface, consumers cannot reach into internals, and Veles never needs Go's magic `internal/` directories.
 
-*Amended (v0.29) — spelling and a third level.* The keyword is `public`, not `pub`: it now sits next to `private`, and the pair every Java, C#, Kotlin, Swift and TypeScript reader knows is `public`/`private`; the three extra characters on each exported declaration were weighed against that and lost. `export` was rejected for it — exporting is what the *package* does, in the manifest, module by module, and a keyword by that name on a struct field would claim a boundary the field does not cross. (Whether the package boundary itself should one day be spelled in source with `export` rather than in the manifest is an open question the user has reserved; nothing here prejudges it.) The levels are therefore: **`private`** — visible only inside the type's own declarations: its methods, its `implement` and `extend` blocks in the same module, and its `static val` initializers (Swift's rule for extensions in the same file); ~~**nothing** — the module, as before, which keeps small programs light; **`public`** — the package.~~ *(D142: **`internal`** — the module; **nothing** — the package; **`public`** — other packages.)* `private` exists for fields and methods only; ~~a module-level declaration is already module-private~~ *(D142: on a module-level declaration it is an error whose fix writes `internal`)*. A private field cannot be read, assigned or bound in a pattern from outside. In a constructor call the rule turns on the default (v0.30): a private field *with* a default is the type's own state and outsiders leave it to the default; one *without* a default is the initial state only the constructor call can supply, so it is given from anywhere the type is visible and is private from then on — Kotlin's `class Parser(private val toks: ...)`, without the syntax. Swift's rule (a private stored property makes the memberwise initializer private) was the v0.29 behaviour and was dropped: it forced a `static fun` on every type that merely wanted to hide what it was given. That is the whole encapsulation story, with no getters and no `friend`. Motivated by a one-file program whose request handlers reached into a store's counter: modules were the only boundary, and a directory per invariant is too heavy.
+_Amended (v0.29) — spelling and a third level._ The keyword is `public`, not `pub`: it now sits next to `private`, and the pair every Java, C#, Kotlin, Swift and TypeScript reader knows is `public`/`private`; the three extra characters on each exported declaration were weighed against that and lost. `export` was rejected for it — exporting is what the _package_ does, in the manifest, module by module, and a keyword by that name on a struct field would claim a boundary the field does not cross. (Whether the package boundary itself should one day be spelled in source with `export` rather than in the manifest is an open question the user has reserved; nothing here prejudges it.) The levels are therefore: **`private`** — visible only inside the type's own declarations: its methods, its `implement` and `extend` blocks in the same module, and its `static val` initializers (Swift's rule for extensions in the same file); ~~**nothing** — the module, as before, which keeps small programs light; **`public`** — the package.~~ _(D142: **`internal`** — the module; **nothing** — the package; **`public`** — other packages.)_ `private` exists for fields and methods only; ~~a module-level declaration is already module-private~~ _(D142: on a module-level declaration it is an error whose fix writes `internal`)_. A private field cannot be read, assigned or bound in a pattern from outside. In a constructor call the rule turns on the default (v0.30): a private field _with_ a default is the type's own state and outsiders leave it to the default; one _without_ a default is the initial state only the constructor call can supply, so it is given from anywhere the type is visible and is private from then on — Kotlin's `class Parser(private val toks: ...)`, without the syntax. Swift's rule (a private stored property makes the memberwise initializer private) was the v0.29 behaviour and was dropped: it forced a `static fun` on every type that merely wanted to hide what it was given. That is the whole encapsulation story, with no getters and no `friend`. Motivated by a one-file program whose request handlers reached into a store's counter: modules were the only boundary, and a directory per invariant is too heavy.
 
-*Addendum (v0.30) — the unwritten level has a name: `internal`.* "Nothing written means the module" was judged not self-explanatory, so the level is called *internal* (Kotlin's and Swift's word for it; `protected` was considered for this level and given instead to write-protection of fields, D22 addendum, where its "the owner only" sense fits) and may be written: `internal fun helper()`, `internal x: i64`, `internal struct Note`, on the same positions as `public`. ~~It changes nothing and is never required; the formatter keeps it where the author wrote it;~~ *(D142: it is now the only way to say "this module", and is required for it.)* `public internal` is a contradiction and an error. The example package's `internal` module was renamed `support`, since the word is a keyword now.
+_Addendum (v0.30) — the unwritten level has a name: `internal`._ "Nothing written means the module" was judged not self-explanatory, so the level is called _internal_ (Kotlin's and Swift's word for it; `protected` was considered for this level and given instead to write-protection of fields, D22 addendum, where its "the owner only" sense fits) and may be written: `internal fun helper()`, `internal x: i64`, `internal struct Note`, on the same positions as `public`. ~~It changes nothing and is never required; the formatter keeps it where the author wrote it;~~ _(D142: it is now the only way to say "this module", and is required for it.)_ `public internal` is a contradiction and an error. The example package's `internal` module was renamed `support`, since the word is a keyword now.
 
 ### M6 — Import paths are logical
 
 Resolved by the package manager against the manifest. No filesystem-relative string paths.
 
-*Addendum (v0.28) — modules only, one statement, many imports.* *(names since D85: `use m { f }` adds bare names; the rest below stands.)* A `use` imports modules and nothing smaller: members are always qualified (`geometry.Point`, `io.println()`), and `use geometry as geo` renames the module when the prefix is long. The braced name-import form (`use geometry.{ Point as P, norm }`) is gone — Go's reasoning: a qualified name says at the use site where a thing comes from, two modules may both declare a `Point` with no renaming, and there is one way to write a call. A parameter or local named like a module shadows it (`fun mkdir(path: string)` cannot call `path.dir`); the answer is an alias at the import, not a name-import escape hatch. Type aliases (`type P = geo.Point`) are the remaining way to shorten a type name and are not in the language yet; add them if the prefix on types proves to hurt. `use` takes a comma-separated list: `use fs, io, os`, `use geometry as geo, shapes`; a comma at the end of a line continues the list. Import order and grouping carry no meaning, so the formatter owns them: consecutive `use` lines become one sorted list per origin — the standard library first, then everything else — one `use` statement each. Go groups its imports the same way (goimports), by convention rather than syntax: a separate spelling for standard-library imports would turn every move of a module between the library and a package into a source edit, and the compiler already knows which is which.
+_Addendum (v0.28) — modules only, one statement, many imports._ _(names since D85: `use m { f }` adds bare names; the rest below stands.)_ A `use` imports modules and nothing smaller: members are always qualified (`geometry.Point`, `io.println()`), and `use geometry as geo` renames the module when the prefix is long. The braced name-import form (`use geometry.{ Point as P, norm }`) is gone — Go's reasoning: a qualified name says at the use site where a thing comes from, two modules may both declare a `Point` with no renaming, and there is one way to write a call. A parameter or local named like a module shadows it (`fun mkdir(path: string)` cannot call `path.dir`); the answer is an alias at the import, not a name-import escape hatch. Type aliases (`type P = geo.Point`) are the remaining way to shorten a type name and are not in the language yet; add them if the prefix on types proves to hurt. `use` takes a comma-separated list: `use fs, io, os`, `use geometry as geo, shapes`; a comma at the end of a line continues the list. Import order and grouping carry no meaning, so the formatter owns them: consecutive `use` lines become one sorted list per origin — the standard library first, then everything else — one `use` statement each. Go groups its imports the same way (goimports), by convention rather than syntax: a separate spelling for standard-library imports would turn every move of a module between the library and a package into a source edit, and the compiler already knows which is which.
 
-*Addendum (2026-10-08) — one import per line by default (user).* The formatter writes a run of plain imports one `use` per module, sorted as before (standard library first, then the rest): `use fs` / `use io` / `use os`. The comma list stays valid Veles and means the same imports; a package that prefers it sets `[format] imports = "merged"` in its manifest, and the formatter then writes one comma-separated `use` per origin as above. A `public use` (D89) is still printed as written. The repository's sources and the documentation's programs were reformatted. Alongside it, the manifest gains a `[lint]` table of lints of the package's own code: `implicit_return` says where a body's last expression may be its value without `return` — `"full"` (the default) anywhere; `"lambda"` in every lambda and in `fun f() => expr`, a function's or method's `{ }` body ending in `return value`; `"expr"` only in a body without braces. A body that breaks the setting is an error with a fix that writes `return`; the blocks of `if`/`when` are never affected (user, 2026-10-08, replacing a same-day on/off `explicit_return`).
+_Addendum (2026-10-08) — one import per line by default (user)._ The formatter writes a run of plain imports one `use` per module, sorted as before (standard library first, then the rest): `use fs` / `use io` / `use os`. The comma list stays valid Veles and means the same imports; a package that prefers it sets `[format] imports = "merged"` in its manifest, and the formatter then writes one comma-separated `use` per origin as above. A `public use` (D89) is still printed as written. The repository's sources and the documentation's programs were reformatted. Alongside it, the manifest gains a `[lint]` table of lints of the package's own code: `implicit_return` says where a body's last expression may be its value without `return` — `"full"` (the default) anywhere; `"lambda"` in every lambda and in `fun f() => expr`, a function's or method's `{ }` body ending in `return value`; `"expr"` only in a body without braces. A body that breaks the setting is an error with a fix that writes `return`; the blocks of `if`/`when` are never affected (user, 2026-10-08, replacing a same-day on/off `explicit_return`).
 
 ---
 
@@ -217,13 +217,13 @@ public fun someFunc() {
 
 ### Resolved syntax points
 
-- **No `: null` return type.** `null` is a *value* — an inhabitant of `T?`. Using it as the name of the unit type conflates absence-of-value with "returns nothing" and collapses under generics (`Result<null, E>` is meaningless). Use a real unit type with exactly one inhabitant; omit it entirely when there is no return.
+- **No `: null` return type.** `null` is a _value_ — an inhabitant of `T?`. Using it as the name of the unit type conflates absence-of-value with "returns nothing" and collapses under generics (`Result<null, E>` is meaningless). Use a real unit type with exactly one inhabitant; omit it entirely when there is no return.
 - **String interpolation, not `printf`.** Given `"$sum"`, format specifiers are redundant.
 - **One import form.** Logical paths only.
 - **Explicit integer widths.** Go's platform-dependent `int` is a portability hazard and would bite hard on wasm32. `int` may exist as an alias at most.
 
 - **`val` / `var`**, not `const`, for runtime-immutable bindings. `const` is reserved for compile-time constants.
-- ~~**`=`**, not `=>`, for expression bodies, keeping the arrow free for lambdas.~~ *(v0.72, D140: an expression body is `=> expr`.)*
+- ~~**`=`**, not `=>`, for expression bodies, keeping the arrow free for lambdas.~~ _(v0.72, D140: an expression body is `=> expr`.)_
 - **`throws` follows the return type**: `fun f(): T throws` and `fun f(): T throws IoError`.
 
 ### Still provisional
@@ -236,7 +236,7 @@ public fun someFunc() {
 
 Kotlin's model. Immutability is **shallow and non-transitive** — a `val p: *Point` still permits mutation through the pointer. Veles cannot express "immutable view of mutable data" in the type system. `const` is reserved for genuine compile-time constants.
 
-*Amended (v0.30) — the binding says nothing about the value.* With mutability declared on fields (D22), `val`/`var` on a binding govern rebinding only, for every type alike: a `val c: Counter` can have its `var` fields assigned and its methods called, as a `val xs: MutableList` could always be pushed to. What cannot change is decided by the type — a bare field is never assigned — and D22 states the guarantee that replaces "a `val` struct is immutable". A global `val` is the one exception: it is a constant, shared by every task (D35), so neither its fields nor a method that changes its receiver may touch it.
+_Amended (v0.30) — the binding says nothing about the value._ With mutability declared on fields (D22), `val`/`var` on a binding govern rebinding only, for every type alike: a `val c: Counter` can have its `var` fields assigned and its methods called, as a `val xs: MutableList` could always be pushed to. What cannot change is decided by the type — a bare field is never assigned — and D22 states the guarantee that replaces "a `val` struct is immutable". A global `val` is the one exception: it is a constant, shared by every task (D35), so neither its fields nor a method that changes its receiver may touch it.
 
 ### D12 — Sum types: sealed traits, no `enum` sugar
 
@@ -251,9 +251,9 @@ struct Rect   : Shape { w: f64, h: f64 }
 - Variant names are **scoped and importable**: `Shape.Circle` by default, bare `Circle` after explicit import. Top-level variants were rejected — `Loading`, `Error`, `Empty`, `Pending` collide across any two sealed traits in one module.
 - **All variant fields must be named.** No positional `Circle(f64)`. This was originally forced by the absence of destructuring; D13 has since added it, but named fields are retained on their own merits and destructuring binds by field name.
 
-*Addendum (v0.32).* "No `enum` sugar" means no second spelling of a sum type. A closed set of plain *values* is a different thing and has its own keyword since D57 (`enum Phase { Red, Amber, Green }`): every member is a number, `when` over it is exhaustive by member, and it carries no data — the moment a member needs a field, it is a sealed trait.
+_Addendum (v0.32)._ "No `enum` sugar" means no second spelling of a sum type. A closed set of plain _values_ is a different thing and has its own keyword since D57 (`enum Phase { Red, Amber, Green }`): every member is a number, `when` over it is exhaustive by member, and it carries no data — the moment a member needs a field, it is a sealed trait.
 
-*Addendum (2026-10-08) — a variant is a type of its own.* A construction `Circle(radius: 1.0)` is the sealed trait, `Shape`, unless the variant itself is the type expected there: `val c: Circle = Circle(radius: 1.0)`, a `Circle` parameter or return, a `Circle?`, a `*Circle` (D10 addendum). Such a value is the `Circle`: its fields are read and assigned without a `when`, and it becomes a `Shape` wherever a `Shape` is expected. `var s = Circle(radius: 1.0)` with no annotation stays a `Shape`, so it may later hold a `Rect`, as before. Found writing the self-hosted parser, where `val c: Circle = Circle(…)` was a type mismatch ("expected 'Circle', found 'Shape'"); no program that compiled changes meaning.
+_Addendum (2026-10-08) — a variant is a type of its own._ A construction `Circle(radius: 1.0)` is the sealed trait, `Shape`, unless the variant itself is the type expected there: `val c: Circle = Circle(radius: 1.0)`, a `Circle` parameter or return, a `Circle?`, a `*Circle` (D10 addendum). Such a value is the `Circle`: its fields are read and assigned without a `when`, and it becomes a `Shape` wherever a `Shape` is expected. `var s = Circle(radius: 1.0)` with no annotation stays a `Shape`, so it may later hold a `Rect`, as before. Found writing the self-hosted parser, where `val c: Circle = Circle(…)` was a type mismatch ("expected 'Circle', found 'Shape'"); no program that compiled changes meaning.
 
 ### D13 — Pattern matching: `when`, as an expression
 
@@ -283,9 +283,9 @@ The bare `is Shape.Circle =>` form remains available; destructuring is additive.
 
 **Pattern guards** are supported: `is Shape.Circle(radius) if radius > 10 =>`. A guarded arm **never counts toward exhaustiveness**, since the compiler cannot prove a guard is ever satisfied — Rust's and Scala's rule. This catches people out regularly and needs a clear diagnostic.
 
-Exhaustiveness is required; `else` opts out. **Lint against `else` when the scrutinee is sealed**, since it silences exactly the error you want when a variant is added later. *Scoped (v0.24):* the lint fires when the `else` stands for exactly one missing variant (an enumeration that a later variant would fall into) or when it is unreachable (every variant has an arm; the fix removes it). One-variant extraction — `is JStr(v) => v  else => null` with several variants left — is the honest spelling and stays silent; two mid-size programs hit it eight times.
+Exhaustiveness is required; `else` opts out. **Lint against `else` when the scrutinee is sealed**, since it silences exactly the error you want when a variant is added later. _Scoped (v0.24):_ the lint fires when the `else` stands for exactly one missing variant (an enumeration that a later variant would fall into) or when it is unreachable (every variant has an arm; the fix removes it). One-variant extraction — `is JStr(v) => v  else => null` with several variants left — is the honest spelling and stays silent; two mid-size programs hit it eight times.
 
-*Addendum (v0.28) — narrowing a list.* A predicate cannot promise a type (`filter(s => s is Circle)` yields `List<Shape>`; nothing a lambda learns crosses a call boundary), and Veles deliberately has no user-written type predicates (TypeScript's `x is T`), which the compiler cannot verify. `xs.filterIs<Circle>()` states the variant as a type argument and yields `List<Circle>`; `filterNotNull()` and `oks()`/`errors()` do the same for `T?` and `Result`.
+_Addendum (v0.28) — narrowing a list._ A predicate cannot promise a type (`filter(s => s is Circle)` yields `List<Shape>`; nothing a lambda learns crosses a call boundary), and Veles deliberately has no user-written type predicates (TypeScript's `x is T`), which the compiler cannot verify. `xs.filterIs<Circle>()` states the variant as a type argument and yields `List<Circle>`; `filterNotNull()` and `oks()`/`errors()` do the same for `T?` and `Result`.
 
 ### D14 — Variance: deferred, generics are invariant
 
@@ -308,7 +308,7 @@ With those in place, specialization is purely an optimization policy. Veles can 
 
 `await ch.recv()` and `ch.send(x)`. Send and receive stay syntactically symmetric.
 
-**Rule required by D2:** `await` is mandatory only on primitives that *always* suspend — channels, timers, task handles. Ordinary function calls that transitively suspend carry no marker. This marks the genuine yield points without reintroducing viral coloring, but it must be a stated rule rather than an accident of the primitive set.
+**Rule required by D2:** `await` is mandatory only on primitives that _always_ suspend — channels, timers, task handles. Ordinary function calls that transitively suspend carry no marker. This marks the genuine yield points without reintroducing viral coloring, but it must be a stated rule rather than an accident of the primitive set.
 
 ### D17 — Trait coherence: global, enforced at link time
 
@@ -323,7 +323,7 @@ Two consequences to design for:
 
 ### D18 — Strings: validated UTF-8, immutable, byte-indexed
 
-*Addendum:* `len()` is the byte length; the scalar view is available on demand as `charCount()` and `chars()` (a `List<string>` of one-code-point strings), so character-level work never goes through byte indices.
+_Addendum:_ `len()` is the byte length; the scalar view is available on demand as `charCount()` and `chars()` (a `List<string>` of one-code-point strings), so character-level work never goes through byte indices.
 
 - Storage is UTF-8 and **validity is guaranteed**, unlike Go. Required at FFI boundaries: bytes entering from C must be validated.
 - A single immutable `string` type plus a builder for construction. No owned/borrowed split — with a GC and no borrow checker it would buy nothing.
@@ -331,9 +331,9 @@ Two consequences to design for:
 - Iteration is explicit: a bytes view and a scalar-value view. **Grapheme segmentation lives in an opt-in stdlib module**, so Unicode segmentation tables don't land in every binary.
 - Rejected: UTF-16 (Java/C#/JS), where anything outside the BMP occupies two slots and indexing can split a surrogate pair.
 
-*Resolved (§4b):* byte access is the explicit `s.byteAt(i)` / `s.bytes()` view; there is no subscript on text (and, since v0.24, no subscript anywhere — D25).
+_Resolved (§4b):_ byte access is the explicit `s.byteAt(i)` / `s.bytes()` view; there is no subscript on text (and, since v0.24, no subscript anywhere — D25).
 
-*Addendum (2026-09-25) — identifiers are UAX #31, and source text is checked for Trojan source.* Until now every byte ≥ 0x80 was an identifier byte: no Unicode tables to scan a name, and `val café = 1` worked — but so did a no-break space, a zero-width space and U+202E RIGHT-TO-LEFT OVERRIDE inside a name, the "Trojan source" family (CVE-2021-42574) where a file reads one way and compiles another. Decided (user, over the smaller "refuse a fixed list" option): an identifier is `_` or an **ID_Start** character followed by **ID_Continue** characters, the Unicode Standard Annex #31 definitions (`L + Nl + Other_ID_Start`, then `+ Mn + Mc + Nd + Pc + Other_ID_Continue`, minus `Pattern_Syntax` and `Pattern_White_Space`). Anything else above ASCII outside a string or comment is an error that *names* the character — "U+00A0, a no-break space; use an ordinary space", "U+202E, a bidirectional control character, which makes text display in a different order from how it compiles" — because the reader cannot see it. Beyond identifiers, as Rust does: a bidirectional control in a **comment** is an error (that is where the attack hides code); in a **string** it is a warning suggesting the `\u{...}` escape (it may be legitimate text, but should be visible). A byte-order mark is skipped at the very start of a file and is an error anywhere else. Identifiers are not NFC-normalized (two spellings of `é` are two names; Go's standard library has no normalizer). Cost: Unicode property tables in the lexer — Go's `unicode` package here, and a generated table in the self-hosted lexer (veles-selfhost-frontend-plan.md §4.2, amended).
+_Addendum (2026-09-25) — identifiers are UAX #31, and source text is checked for Trojan source._ Until now every byte ≥ 0x80 was an identifier byte: no Unicode tables to scan a name, and `val café = 1` worked — but so did a no-break space, a zero-width space and U+202E RIGHT-TO-LEFT OVERRIDE inside a name, the "Trojan source" family (CVE-2021-42574) where a file reads one way and compiles another. Decided (user, over the smaller "refuse a fixed list" option): an identifier is `_` or an **ID_Start** character followed by **ID_Continue** characters, the Unicode Standard Annex #31 definitions (`L + Nl + Other_ID_Start`, then `+ Mn + Mc + Nd + Pc + Other_ID_Continue`, minus `Pattern_Syntax` and `Pattern_White_Space`). Anything else above ASCII outside a string or comment is an error that _names_ the character — "U+00A0, a no-break space; use an ordinary space", "U+202E, a bidirectional control character, which makes text display in a different order from how it compiles" — because the reader cannot see it. Beyond identifiers, as Rust does: a bidirectional control in a **comment** is an error (that is where the attack hides code); in a **string** it is a warning suggesting the `\u{...}` escape (it may be legitimate text, but should be visible). A byte-order mark is skipped at the very start of a file and is an error anywhere else. Identifiers are not NFC-normalized (two spellings of `é` are two names; Go's standard library has no normalizer). Cost: Unicode property tables in the lexer — Go's `unicode` package here, and a generated table in the self-hosted lexer (veles-selfhost-frontend-plan.md §4.2, amended).
 
 ### D19 — A slice that splits a code point returns `string?`
 
@@ -349,22 +349,21 @@ Because the GC means there is no drop glue to run, a cheaper option is available
 
 ### D21 — Integer overflow: checked in debug, wrapping in release, `+%` always wraps
 
-*Amended (v0.23) — bitwise operators.* Integers have `&`, `|`, `^`, `<<`, `>>` and unary `~`, with Go's grouping (`&`, `<<`, `>>` at the level of `*`; `|`, `^` at the level of `+`). A shift count may be any integer type; a count at or beyond the width yields 0 (the sign fill for a signed `>>`), never undefined behaviour. Literals may be hexadecimal (`0xFF`) or binary (`0b1010`).
-
+_Amended (v0.23) — bitwise operators._ Integers have `&`, `|`, `^`, `<<`, `>>` and unary `~`, with Go's grouping (`&`, `<<`, `>>` at the level of `*`; `|`, `^` at the level of `+`). A shift count may be any integer type; a count at or beyond the width yields 0 (the sign fill for a signed `>>`), never undefined behaviour. Literals may be hexadecimal (`0xFF`) or binary (`0b1010`).
 
 Rust's model, plus an explicit operator. `+` is checked in debug builds and wraps in release. `+%` means "I intend wrapping, in every build" — Rust's `wrapping_add`, promoted to an operator.
 
-*Known wart:* overflow behaves differently between builds, so a bug that panics loudly in tests can wrap silently in production.
+_Known wart:_ overflow behaves differently between builds, so a bug that panics loudly in tests can wrap silently in production.
 
-*Resolves the D20 interaction:* release builds have no overflow checks, so no landing pads on arithmetic.
+_Resolves the D20 interaction:_ release builds have no overflow checks, so no landing pads on arithmetic.
 
-*Default integer type:* an integer literal with no expected type is `i64`, and so are lengths, indices and counts. There are no implicit widenings (a `T` is never silently an `i64`), so having one default everywhere is what keeps ordinary code cast-free; the narrower types are for layout, C interop and bit work, and a literal adapts to them wherever one is expected.
+_Default integer type:_ an integer literal with no expected type is `i64`, and so are lengths, indices and counts. There are no implicit widenings (a `T` is never silently an `i64`), so having one default everywhere is what keeps ordinary code cast-free; the narrower types are for layout, C interop and bit work, and a literal adapts to them wherever one is expected.
 
 ### M7 — Version resolution: minimal version selection
 
 Go's MVS. Reproducible without lockfiles and far simpler to implement than SAT solving.
 
-*(v0.66, D132: the major version is part of the version, not the path — identity is (repository, major).)* Requires: a hard "no breaking changes within a major version" culture, since MVS trusts that promise completely; ~~the major-version-in-import-path convention for v2 and later;~~ and an explicit upgrade command, because MVS selects the *minimum* satisfying version and will not pick up security patches on its own.
+_(v0.66, D132: the major version is part of the version, not the path — identity is (repository, major).)_ Requires: a hard "no breaking changes within a major version" culture, since MVS trusts that promise completely; ~~the major-version-in-import-path convention for v2 and later;~~ and an explicit upgrade command, because MVS selects the _minimum_ satisfying version and will not pick up security patches on its own.
 
 ### D22 — Method receivers: implicit `this` (spelled `self` before v0.40, D65); mutability is declared on the field (`var`)
 
@@ -384,15 +383,15 @@ struct Counter {
 
 - A **bare field** is never assigned after construction — not through `this`, not through a `var` binding, not through a pointer, not through `loop (&x in xs)`. The compiler reports it with a fix that inserts `var`.
 - A **`var` field** is assignable through any place: `this`, a binding whether `val` or `var`, a pointer, an element reference. `val`/`var` on a binding govern rebinding only (D11, amended) — as they always did for a `MutableList`.
-- `var` governs *that slot*. `o.inner.x = 1` needs `x` to be `var`, not `inner`: what is inside a field is governed by its own type, and a method call on `o.inner` could always reach it. The guarantee is therefore stated transitively: **a type with no `var` fields and no mutable collections reachable by value cannot change, whoever holds it.** Fields hold the truth about mutability where a reader looks for it, and `private var` next to a bare handle (`private var next: i64; private items: MutableList<Note>`) says exactly which two things in a type ever move.
+- `var` governs _that slot_. `o.inner.x = 1` needs `x` to be `var`, not `inner`: what is inside a field is governed by its own type, and a method call on `o.inner` could always reach it. The guarantee is therefore stated transitively: **a type with no `var` fields and no mutable collections reachable by value cannot change, whoever holds it.** Fields hold the truth about mutability where a reader looks for it, and `private var` next to a bare handle (`private var next: i64; private items: MutableList<Note>`) says exactly which two things in a type ever move.
 - `this` is not assignable as a whole (`this = ...`): assign its fields, or return the new value.
-- There is no method marker. Kotlin's `val`/`var` properties are the model; Swift's `mutating` and Rust's `&mut self` were the alternatives, and both exist to gate the *call* on the binding, which is the thing this design gives up. A struct is still a value: a method called on a temporary — `xs.at(i)?.bump()`, `make().bump()` — changes a copy that is discarded, which is an error when the method changes its receiver and returns nothing (the rule that guarded `mut fun` on a copy, D25 v0.27, kept). A struct passed to a function is a copy the callee may change without the caller seeing it; that is Go's value receiver and it is one rule rather than two.
+- There is no method marker. Kotlin's `val`/`var` properties are the model; Swift's `mutating` and Rust's `&mut self` were the alternatives, and both exist to gate the _call_ on the binding, which is the thing this design gives up. A struct is still a value: a method called on a temporary — `xs.at(i)?.bump()`, `make().bump()` — changes a copy that is discarded, which is an error when the method changes its receiver and returns nothing (the rule that guarded `mut fun` on a copy, D25 v0.27, kept). A struct passed to a function is a copy the callee may change without the caller seeing it; that is Go's value receiver and it is one rule rather than two.
 
-**Calling convention.** Every method receives a *pointer to the place it was called on*, and `this` reads as the value; a temporary is spilled first. The representation is not declared and not observable, as before. Two facts about each method are computed once every body is checked (the receiver pass), to a fixpoint over the call graph: whether it *may write* its receiver (assigns a field of `this`, takes a pointer into it, calls a method that does) — this is what the discarded-copy error uses — and whether the receiver *may escape* (a closure captures `this`, `&this` or a pointer into `this` is taken, a callee does either). A receiver that may escape cannot stay on the caller's stack: its variable is heap-allocated, the same promotion `&x` performs (D10). This closes a hole the `mut fun` design had: a closure over `this` in a `mut fun` held a pointer to the caller's stack frame.
+**Calling convention.** Every method receives a _pointer to the place it was called on_, and `this` reads as the value; a temporary is spilled first. The representation is not declared and not observable, as before. Two facts about each method are computed once every body is checked (the receiver pass), to a fixpoint over the call graph: whether it _may write_ its receiver (assigns a field of `this`, takes a pointer into it, calls a method that does) — this is what the discarded-copy error uses — and whether the receiver _may escape_ (a closure captures `this`, `&this` or a pointer into `this` is taken, a callee does either). A receiver that may escape cannot stay on the caller's stack: its variable is heap-allocated, the same promotion `&x` performs (D10). This closes a hole the `mut fun` design had: a closure over `this` in a `mut fun` held a pointer to the caller's stack frame.
 
 **Interaction with narrowing (D5).** `this` is a place like a local and its field paths narrow; a method call on a variable or on `this` drops the facts about paths through a `var` field and keeps those through bare fields, which no call can assign.
 
-**Interaction with tasks (D35).** A sendable closure shares its captures by reference, so it may capture only `val`s of Sendable types *without `var` fields* (transitively, by value; collections and `Mutex` excluded as before) — another task could otherwise watch them change; the error names the capture. `this` is judged by the receiver's type. `async recv.m()` copies the receiver into the task, as it always copied arguments. Elements of an immutable `List` are read as copies, so `var` fields inside them are unreachable and do not count.
+**Interaction with tasks (D35).** A sendable closure shares its captures by reference, so it may capture only `val`s of Sendable types _without `var` fields_ (transitively, by value; collections and `Mutex` excluded as before) — another task could otherwise watch them change; the error names the capture. `this` is judged by the receiver's type. `async recv.m()` copies the receiver into the task, as it always copied arguments. Elements of an immutable `List` are read as copies, so `var` fields inside them are unreachable and do not count.
 
 Rejected — Go's declared receiver (`(c Circle)` vs `(c *Circle)`): it declares representation, which produces two well-known failures. A value-receiver method that mutates silently modifies a copy with no diagnostic, and method sets diverge so that `Circle` does not satisfy an interface that `*Circle` does. Neither can arise here, because no representation is ever declared.
 
@@ -400,13 +399,13 @@ Rejected — Rust's `&self` / `&mut self`: enforced by a borrow checker Veles do
 
 Rejected — private-by-default fields alongside `var`: with bare fields immutable, an exposed field is readable and nothing else, which is what a record is for; three visibility levels need one unmarked level and it must be the same for fields, methods and top-level declarations (M5).
 
-*Addendum (v0.30) — `protected var`, and `val` written out.* Between "never assigned" and "assigned by anyone" sits the most common shape of managed state: a value everyone may read that only its type updates — C#'s `{ get; private set; }`, Swift's `private(set) var`, Kotlin's `var x` with a `private set`. Veles spells it `protected var`: `public protected var count: i64 = 0` is read wherever it is visible and assigned only inside the type's own declarations (methods, `implement` and `extend` blocks, the same set `private` uses). It replaces a `private var` plus a getter. The two modifiers answer two questions in order — the first word says who *sees* the field (`private` / nothing or `internal` / `public`), the rest who *assigns* it (bare or `val`: nobody; `protected var`: the type; `var`: anyone who sees it). `protected` always qualifies `var` (a bare field has nothing to protect; the compiler says so), and `private protected var` is refused as redundant — nobody outside can see the field, so `private var` already says it. It never restricts reading. For narrowing and for Sendable a `protected var` counts as `var` (the type can change it). The bare field may be written `val` for emphasis; the formatter keeps the author's word and never requires it.
+_Addendum (v0.30) — `protected var`, and `val` written out._ Between "never assigned" and "assigned by anyone" sits the most common shape of managed state: a value everyone may read that only its type updates — C#'s `{ get; private set; }`, Swift's `private(set) var`, Kotlin's `var x` with a `private set`. Veles spells it `protected var`: `public protected var count: i64 = 0` is read wherever it is visible and assigned only inside the type's own declarations (methods, `implement` and `extend` blocks, the same set `private` uses). It replaces a `private var` plus a getter. The two modifiers answer two questions in order — the first word says who _sees_ the field (`private` / nothing or `internal` / `public`), the rest who _assigns_ it (bare or `val`: nobody; `protected var`: the type; `var`: anyone who sees it). `protected` always qualifies `var` (a bare field has nothing to protect; the compiler says so), and `private protected var` is refused as redundant — nobody outside can see the field, so `private var` already says it. It never restricts reading. For narrowing and for Sendable a `protected var` counts as `var` (the type can change it). The bare field may be written `val` for emphasis; the formatter keeps the author's word and never requires it.
 
-On the word: `protected` means "the class and its subclasses" in Java, C#, C++ and Kotlin. Veles has no inheritance and will not get it — shared behaviour is a trait (D6/D9), closed families are sealed traits (D12) — so the subclass reading has nothing to attach to, and the word is free to mean what it says: protected from writes by anyone but the owner. The alternatives were weighed: `readonly` (TypeScript's and C#'s word for what Veles's *bare* field already is — it would invert the term for those readers, and it sits confusingly next to `val`), `var(private)` (not Veles syntax), Swift's `private(set)` (same). Making the protected level the *default* was proposed and rejected: it would take back the at-a-glance guarantee (a struct of bare fields cannot change) and make most `val` structs uncapturable by sendable closures.
+On the word: `protected` means "the class and its subclasses" in Java, C#, C++ and Kotlin. Veles has no inheritance and will not get it — shared behaviour is a trait (D6/D9), closed families are sealed traits (D12) — so the subclass reading has nothing to attach to, and the word is free to mean what it says: protected from writes by anyone but the owner. The alternatives were weighed: `readonly` (TypeScript's and C#'s word for what Veles's _bare_ field already is — it would invert the term for those readers, and it sits confusingly next to `val`), `var(private)` (not Veles syntax), Swift's `private(set)` (same). Making the protected level the _default_ was proposed and rejected: it would take back the at-a-glance guarantee (a struct of bare fields cannot change) and make most `val` structs uncapturable by sendable closures.
 
-*Addendum (2026-09-25) — a changed parameter is a lost change.* A struct parameter is the caller's value copied (D7), and `val`/`var` govern rebinding only, so a function may assign a `var` field of a parameter, or call a method that writes `this` on it — and the caller never sees it: `fun step(f: Fuzzer) { f.rng.next() }` advances a copy of the generator. This is a **warning**, on the parameter, naming the change and the fixes (`f: *Fuzzer`, or return the value). Silent when the copy is the point (the function returns the parameter's type, or uses the parameter whole after changing it), when the parameter's address is taken, and for writes through a reference field (seen by the caller). Rejected: Swift's immutable parameters, which would change the rule above for one case.
+_Addendum (2026-09-25) — a changed parameter is a lost change._ A struct parameter is the caller's value copied (D7), and `val`/`var` govern rebinding only, so a function may assign a `var` field of a parameter, or call a method that writes `this` on it — and the caller never sees it: `fun step(f: Fuzzer) { f.rng.next() }` advances a copy of the generator. This is a **warning**, on the parameter, naming the change and the fixes (`f: *Fuzzer`, or return the value). Silent when the copy is the point (the function returns the parameter's type, or uses the parameter whole after changing it), when the parameter's address is taken, and for writes through a reference field (seen by the caller). Rejected: Swift's immutable parameters, which would change the rule above for one case.
 
-### D23 — Methods in the struct body; `implement` blocks for traits; ~~no extension functions~~ *(extension functions allowed by D173, v0.87)*
+### D23 — Methods in the struct body; `implement` blocks for traits; ~~no extension functions~~ _(extension functions allowed by D173, v0.87)_
 
 Inherent methods are declared inside the struct. Trait implementations go in `implement Trait for Type` blocks, which are required anyway since D6 permits implementing traits for foreign types.
 
@@ -414,13 +413,13 @@ Inherent methods are declared inside the struct. Trait implementations go in `im
 
 Putting trait implementations in the struct body was considered and rejected. It would mean a trait implement could only be written by whoever controls the type's source, which makes `implement Display for SomeForeignType` impossible — removing the capability D6 grants, that D17's global coherence was built around, and that D23 cited as the reason extension functions were unnecessary. It would also force every trait a type ever implements to be named in its header.
 
-*Amended (v0.23):* the top-level block stays the general form, but for a type you declare an implement may also be written inside the struct body as `implement Trait { ... }` — sugar for `implement<Ps> Trait for Name<Ps>` with the struct's own type parameters. Nothing above changes: foreign types still take the top-level form, coherence is unchanged, and the header still names only sealed membership. An implement that needs bounds the struct lacks (`implement<T: Display> Display for Pair<T>`) is written at top level. A top-level implement for a struct of the same module that the inline form could express is a lint: a warning with an automatic fix that moves it into the body (editor quick fix, `veles check --fix`).
+_Amended (v0.23):_ the top-level block stays the general form, but for a type you declare an implement may also be written inside the struct body as `implement Trait { ... }` — sugar for `implement<Ps> Trait for Name<Ps>` with the struct's own type parameters. Nothing above changes: foreign types still take the top-level form, coherence is unchanged, and the header still names only sealed membership. An implement that needs bounds the struct lacks (`implement<T: Display> Display for Pair<T>`) is written at top level. A top-level implement for a struct of the same module that the inline form could express is a lint: a warning with an automatic fix that moves it into the body (editor quick fix, `veles check --fix`).
 
-*Amended (v0.23) — static functions.* A function in a struct body, trait, implement or extend block may be declared `static fun`: it has no receiver and is called on the type — `Point.origin()`, `i64.parse(s)`, `Stack<i64>.of(x)` — and, for a trait, on a type parameter bounded by it: `T.parse(s)` resolves to the implement for the concrete `T` of each stencil. An `extend` block in the prelude may add statics to a built-in generic type, called with the type arguments written: `MutableList<bool>.repeat(false, n)`, `MutableList<Row>.make(n, i => ...)` (v0.25). An implement declares `static` exactly where the trait does. A trait with a static function is not object-safe (D9), and a sealed trait cannot declare one (its methods dispatch on a variant). The prelude declares `Parsable { static fun parse(s: string): Self? }` for the numbers, `bool` and `string`.
+_Amended (v0.23) — static functions._ A function in a struct body, trait, implement or extend block may be declared `static fun`: it has no receiver and is called on the type — `Point.origin()`, `i64.parse(s)`, `Stack<i64>.of(x)` — and, for a trait, on a type parameter bounded by it: `T.parse(s)` resolves to the implement for the concrete `T` of each stencil. An `extend` block in the prelude may add statics to a built-in generic type, called with the type arguments written: `MutableList<bool>.repeat(false, n)`, `MutableList<Row>.make(n, i => ...)` (v0.25). An implement declares `static` exactly where the trait does. A trait with a static function is not object-safe (D9), and a sealed trait cannot declare one (its methods dispatch on a variant). The prelude declares `Parsable { static fun parse(s: string): Self? }` for the numbers, `bool` and `string`.
 
-*Addendum (v0.29) — static values.* A struct body may declare `static val name[: T] = expr`: a constant in the type's namespace, read as `Type.name` (`Status.notFound`, `http.Status.ok` from outside the module), `public` to export and module-private otherwise, initialised with the module's globals in source order. It is always a `val` — a mutable global belongs at module level, where it is visibly one — and a generic struct cannot have one (a value per instantiation would be a different feature; a `static fun` serves). Motivated by the HTTP module: status codes, methods and content types are *open* sets with well-known members, which is a value type plus named constants, not an enumeration; closed sets are `enum` (D57).
+_Addendum (v0.29) — static values._ A struct body may declare `static val name[: T] = expr`: a constant in the type's namespace, read as `Type.name` (`Status.notFound`, `http.Status.ok` from outside the module), `public` to export and module-private otherwise, initialised with the module's globals in source order. It is always a `val` — a mutable global belongs at module level, where it is visibly one — and a generic struct cannot have one (a value per instantiation would be a different feature; a `static fun` serves). Motivated by the HTTP module: status codes, methods and content types are _open_ sets with well-known members, which is a value type plus named constants, not an enumeration; closed sets are `enum` (D57).
 
-~~Consequence: inherent methods cannot be added to a type you do not own. Extension functions were declined, so the route is declaring a trait and implementing it.~~ *(v0.87, D173: extension functions are now allowed, scoped to the importer; the trait route stays for anything that must be part of the type's interface.)* Original text:
+~~Consequence: inherent methods cannot be added to a type you do not own. Extension functions were declined, so the route is declaring a trait and implementing it.~~ _(v0.87, D173: extension functions are now allowed, scoped to the importer; the trait route stays for anything that must be part of the type's interface.)_ Original text:
 
 Consequence: inherent methods cannot be added to a type you do not own. Extension functions were declined, so the route is declaring a trait and implementing it. This is narrower than it sounds — Veles owns `string` and the collections, so stdlib types stay method-rich; the ceremony only appears when extending a third-party type. Rust lives this way.
 
@@ -435,7 +434,7 @@ extend<T: Show> Stack<T> {          // bounded: only for showable elements
 }
 ```
 
-The ownership rule is unchanged — `extend` names only a type declared in the same package, and the built-in types (`string`, the numbers, `List`, `Map`, `Set`, `Range`, `Channel`) are declared by the standard library. *(v0.87: D173 now lets `extend` name a foreign type too, as a scoped extension function.)* This was not an extension-function mechanism: what it provides is a home for the methods of the built-in types, which have no struct body to hold them, so that `trim`, `split`, `take`, `chunked` and the rest are written in Veles in the prelude rather than in the compiler. A `MutableList<T>` also has every `extend<T> List<T>` method (D25). Method names must not collide with the struct body, another `extend` in the package, or a compiler built-in; coherence is checked program-wide like D17. `public` on the methods follows M5.
+The ownership rule is unchanged — `extend` names only a type declared in the same package, and the built-in types (`string`, the numbers, `List`, `Map`, `Set`, `Range`, `Channel`) are declared by the standard library. _(v0.87: D173 now lets `extend` name a foreign type too, as a scoped extension function.)_ This was not an extension-function mechanism: what it provides is a home for the methods of the built-in types, which have no struct body to hold them, so that `trim`, `split`, `take`, `chunked` and the rest are written in Veles in the prelude rather than in the compiler. A `MutableList<T>` also has every `extend<T> List<T>` method (D25). Method names must not collide with the struct body, another `extend` in the package, or a compiler built-in; coherence is checked program-wide like D17. `public` on the methods follows M5.
 
 ### D24 — Full prelude
 
@@ -447,7 +446,7 @@ The ownership rule is unchanged — `extend` names only a type declared in the s
 
 **Reference types, not values.** A `List<T>` is a header pointing at a heap buffer; as a value type, copying would share the buffer, which is precisely Go's slice-aliasing footgun where appending to a copy sometimes writes through and sometimes does not. Swift avoids this with copy-on-write, which needs cheap uniqueness checks that ARC provides and D1's tracing GC does not.
 
-**Cost, stated plainly:** because collections are references, `val list` does not prevent mutation. The `List` / `MutableList` split is the mitigation. *(v0.30: `val` no longer claims to prevent mutation of a struct either; what cannot change is declared on the type — D22, D11 amended — and a `MutableList` field is simply the mutable part of it, visible in the declaration.)*
+**Cost, stated plainly:** because collections are references, `val list` does not prevent mutation. The `List` / `MutableList` split is the mitigation. _(v0.30: `val` no longer claims to prevent mutation of a struct either; what cannot change is declared on the type — D22, D11 amended — and a `MutableList` field is simply the mutable part of it, visible in the declaration.)_
 
 **REVISED by D35 — `List` is genuinely immutable, not a read-only view.** The original design followed Kotlin, where a `List<T>` reference may point at a `MutableList<T>` and a holder of the mutable handle can change it underneath you. That is incompatible with D35's isolation rules: a view over someone else's mutable buffer can never be `Sendable`, which would make `List` useless for the case it most needs to serve.
 
@@ -459,17 +458,17 @@ D14 remains deferred; nothing here requires variance.
 
 ~~**Index assignment.** `map[key] = value` is supported on mutable collections via an assignable-index operator.~~
 
-**Element access is methods only (v0.24); reads are values, writes go through references (v0.27).** Brackets are collection-literal syntax and nothing else; there is no index operator, reading or writing. Lists read with `xs.at(i): T?` (null out of range, a negative index counting from the end), `xs.atOrPanic(i): T` (panics out of range — programmer error, D20, never a thrown error) and `xs.atOrDefault(i, d)`; maps with `m.get(k): V?`, `m.getOrPanic(k)` and `m.getOrDefault(k, d)`. Every read is a *value*: a struct element comes out as a copy, exactly as binding it to a name would copy it, so `xs.atOrPanic(i).n += 1` is the same mistake as `val t = xs.atOrPanic(i); t.n += 1` and both are errors ("a copy of the element"). The mutable kinds write with `xs.set(i, v)` and `m.set(k, v)`, or through a *reference* to the element: `xs.refOrPanic(i): *T` and `m.refOrPanic(k): *V` (panic when absent), `xs.ref(i): (*T)?` and `m.ref(k): (*V)?` (null when absent), and `loop (&x in xs)` / `loop ((k, &v) in m)` (D42). A reference is an ordinary pointer, so everything follows D10/D11 with no special case: `xs.refOrPanic(i).bump()`, `*counts.refOrPanic(x) += 1`, `m.ref(k)?.n += 1`, `val p = xs.refOrPanic(i)` (a `val` holding a pointer is still written through). `ref`/`refOrPanic` exist only on `MutableList`/`MutableMap` — a pointer into an immutable collection could change it. Sets are not addressable: an element is its own hash key. A pointer into a list or map stays valid as memory (D10, the collector keeps the old buffer alive) but points at stale storage once the collection has grown. Rationale: one spelling per operation with the failure mode in its name, and a read that can never be mistaken for a write — the earlier rule that made `xs.atOrPanic(i)` a place in some syntactic positions (v0.24–v0.26) meant two identical-looking expressions with different semantics. `&xs.atOrPanic(i)` is refused with a fix, since it would box a copy. The old forms are reported with fixes (`veles check --fix`).
+**Element access is methods only (v0.24); reads are values, writes go through references (v0.27).** Brackets are collection-literal syntax and nothing else; there is no index operator, reading or writing. Lists read with `xs.at(i): T?` (null out of range, a negative index counting from the end), `xs.atOrPanic(i): T` (panics out of range — programmer error, D20, never a thrown error) and `xs.atOrDefault(i, d)`; maps with `m.get(k): V?`, `m.getOrPanic(k)` and `m.getOrDefault(k, d)`. Every read is a _value_: a struct element comes out as a copy, exactly as binding it to a name would copy it, so `xs.atOrPanic(i).n += 1` is the same mistake as `val t = xs.atOrPanic(i); t.n += 1` and both are errors ("a copy of the element"). The mutable kinds write with `xs.set(i, v)` and `m.set(k, v)`, or through a _reference_ to the element: `xs.refOrPanic(i): *T` and `m.refOrPanic(k): *V` (panic when absent), `xs.ref(i): (*T)?` and `m.ref(k): (*V)?` (null when absent), and `loop (&x in xs)` / `loop ((k, &v) in m)` (D42). A reference is an ordinary pointer, so everything follows D10/D11 with no special case: `xs.refOrPanic(i).bump()`, `*counts.refOrPanic(x) += 1`, `m.ref(k)?.n += 1`, `val p = xs.refOrPanic(i)` (a `val` holding a pointer is still written through). `ref`/`refOrPanic` exist only on `MutableList`/`MutableMap` — a pointer into an immutable collection could change it. Sets are not addressable: an element is its own hash key. A pointer into a list or map stays valid as memory (D10, the collector keeps the old buffer alive) but points at stale storage once the collection has grown. Rationale: one spelling per operation with the failure mode in its name, and a read that can never be mistaken for a write — the earlier rule that made `xs.atOrPanic(i)` a place in some syntactic positions (v0.24–v0.26) meant two identical-looking expressions with different semantics. `&xs.atOrPanic(i)` is refused with a fix, since it would box a copy. The old forms are reported with fixes (`veles check --fix`).
 
-*Amended (v0.37, D62).* `atOrPanic`, `getOrPanic` and `refOrPanic` are removed. A read is `xs.at(i)` / `m.get(k)`, typed `T` where the checker can see the index is in range (D62 B); a read that can fail only through a bug says why where it is written, `xs.at(i) ?: panic("…")`. A pointer is `xs.ref(i)` / `m.ref(k)`, `*T` under the same proof. The paragraph above keeps the v0.27 wording for the record.
+_Amended (v0.37, D62)._ `atOrPanic`, `getOrPanic` and `refOrPanic` are removed. A read is `xs.at(i)` / `m.get(k)`, typed `T` where the checker can see the index is in range (D62 B); a read that can fail only through a bug says why where it is written, `xs.at(i) ?: panic("…")`. A pointer is `xs.ref(i)` / `m.ref(k)`, `*T` under the same proof. The paragraph above keeps the v0.27 wording for the record.
 
 **Literals are bracket-delimited** (Swift's form): `[1, 2, 3]` for lists, `["a": 1]` for maps, `[:]` for an empty map. `{}` was rejected because it already means block, lambda, and struct literal; a fourth meaning would make `{ port: port }` ambiguous between a map and a struct.
 
 A bare `[1, 2, 3]` with no expected type is a `List`. A growable collection therefore needs an annotation — `var xs: MutableList<i32> = []`, not `var xs = []` — or the `mut` prefix on the literal: `var xs = mut [1, 2, 3]` is a `MutableList<i32>` and `var m = mut ["k": 1]` a `MutableMap<string, i32>`. The empty forms `mut []` and `mut [:]` still need an annotation for the element types.
 
-*Amended (v0.25) — Deque and PriorityQueue.* The prelude adds `Deque<T>` (a ring buffer: O(1) at both ends, the FIFO queue and the sliding window) and `PriorityQueue<T>` (a binary heap over `Comparable` or a comparator), constructed by `deque<T>()`, `priorityQueue<T>()` and `priorityQueueBy(compare)`. Both are plain Veles (`std/prelude/collections.vs`) and have the reference semantics of this section, obtained by holding their state behind a GC pointer (D31): a `val` binding can grow them and a callee shares the caller's. `MutableList` serves as the stack. `MutableList<T>.fill(n, x)` and `.make(n, make)` build a list of known size; `swap(i, j)` exchanges two elements.
+_Amended (v0.25) — Deque and PriorityQueue._ The prelude adds `Deque<T>` (a ring buffer: O(1) at both ends, the FIFO queue and the sliding window) and `PriorityQueue<T>` (a binary heap over `Comparable` or a comparator), constructed by `deque<T>()`, `priorityQueue<T>()` and `priorityQueueBy(compare)`. Both are plain Veles (`std/prelude/collections.vs`) and have the reference semantics of this section, obtained by holding their state behind a GC pointer (D31): a `val` binding can grow them and a callee shares the caller's. `MutableList` serves as the stack. `MutableList<T>.fill(n, x)` and `.make(n, make)` build a list of known size; `swap(i, j)` exchanges two elements.
 
-*Amended (v0.26) — collections compare by content.* `==` on `List`, `Map` and `Set` (and their mutable views, which compare with each other) is element-wise: two lists are equal when they have the same elements in the same order, two maps when they hold the same keys with equal values, two sets when they hold the same elements — insertion order is not part of a map or set. It is defined whenever the elements are (structurally or through `Equatable`), so a struct with a `List` field keeps its structural equality. Hashing follows: an immutable `List`, `Map` or `Set` of hashable elements can be a map key or set element and is found by content; the mutable views cannot be keys, since they can change after they are stored. Handles are still references (assigning shares, `==` compares) — the split between identity and equality that Kotlin and Python make.
+_Amended (v0.26) — collections compare by content._ `==` on `List`, `Map` and `Set` (and their mutable views, which compare with each other) is element-wise: two lists are equal when they have the same elements in the same order, two maps when they hold the same keys with equal values, two sets when they hold the same elements — insertion order is not part of a map or set. It is defined whenever the elements are (structurally or through `Equatable`), so a struct with a `List` field keeps its structural equality. Hashing follows: an immutable `List`, `Map` or `Set` of hashable elements can be a map key or set element and is found by content; the mutable views cannot be keys, since they can change after they are stored. Handles are still references (assigning shares, `==` compares) — the split between identity and equality that Kotlin and Python make.
 
 ### D26 — Trait methods are always callable; ambiguity is an error
 
@@ -495,16 +494,16 @@ val s = Stack<i32>()
 
 Every struct gets an implicit constructor from its fields. Fields with declared defaults may be omitted.
 
-*Addendum (v0.28) — construction is by name only, with puns.* A constructor argument is always `field: value`; the one shorthand is a bare identifier that names both a field and a variable in scope, `Hashed(file, size: n)` for `file: file` (Rust's field-init shorthand, JS's `{ file }`), and `file: file` written out is a warning with a fix. Any other bare argument — `Point(3, -4)` — is an error with the fix that names the fields, so a reordered or renamed field can never silently change what a call means. Named arguments to *functions* keep D28's positional-then-named rule; the pun exists only where positional arguments do not. *(v0.82: a constructor with one parameter also takes it positionally — D163.)*
+_Addendum (v0.28) — construction is by name only, with puns._ A constructor argument is always `field: value`; the one shorthand is a bare identifier that names both a field and a variable in scope, `Hashed(file, size: n)` for `file: file` (Rust's field-init shorthand, JS's `{ file }`), and `file: file` written out is a warning with a fix. Any other bare argument — `Point(3, -4)` — is an error with the fix that names the fields, so a reordered or renamed field can never silently change what a call means. Named arguments to _functions_ keep D28's positional-then-named rule; the pun exists only where positional arguments do not. _(v0.82: a constructor with one parameter also takes it positionally — D163.)_
 
-*Amended (v0.23) — variadic parameters.* The last parameter of a function may be `name: T...`; the call supplies any number of trailing positional arguments (`join("/", "a", "b")`, `sum()`), collected into a `List<T>`, or one list spread with `join("/", parts...)`. Inside the function the parameter is a plain `List<T>`. A variadic parameter has no default, an `extern` function cannot declare one, and an implement declares it exactly as its trait does.
+_Amended (v0.23) — variadic parameters._ The last parameter of a function may be `name: T...`; the call supplies any number of trailing positional arguments (`join("/", "a", "b")`, `sum()`), collected into a `List<T>`, or one list spread with `join("/", parts...)`. Inside the function the parameter is a plain `List<T>`. A variadic parameter has no default, an `extern` function cannot declare one, and an implement declares it exactly as its trait does.
 
 - **Declaring an explicit constructor suppresses the implicit one.** Otherwise invariants could always be bypassed by calling the generated version.
-- **The implicit constructor is callable only where every field is visible.** Otherwise a `public` struct with private fields would leak construction. *(v0.30: refined for `private` fields by M5's amendment — a private field without a default is supplied by the call, one with a default is not.)*
+- **The implicit constructor is callable only where every field is visible.** Otherwise a `public` struct with private fields would leak construction. _(v0.30: refined for `private` fields by M5's amendment — a private field without a default is supplied by the call, one with a default is not.)_
 
-*Addendum (v0.30) — a default is a constant; derived fields are `init`'s.* A field default cannot read `this` (error, with the `init` form suggested). Defaults derived from earlier fields — `positions: List<i64> = this.toks.map(t => t.1)`, evaluated in declaration order on a partially built value, with a per-method field-use check for calls on `this` — were implemented and withdrawn the same day in favour of the `init` block below: two mechanisms for one job, and the declaration-order rule was a subtlety the block does not need (definite assignment orders things for you). What survives from that work is the receiver pass's field-use analysis, which `init` relies on.
+_Addendum (v0.30) — a default is a constant; derived fields are `init`'s._ A field default cannot read `this` (error, with the `init` form suggested). Defaults derived from earlier fields — `positions: List<i64> = this.toks.map(t => t.1)`, evaluated in declaration order on a partially built value, with a per-method field-use check for calls on `this` — were implemented and withdrawn the same day in favour of the `init` block below: two mechanisms for one job, and the declaration-order rule was a subtlety the block does not need (definite assignment orders things for you). What survives from that work is the receiver pass's field-use analysis, which `init` relies on.
 
-*Addendum (v0.30) — the `init` block.* A struct body may contain one `init { }` block (Kotlin's `init`): it runs after every construction — the fields bound from the call and the defaults, in order — on the freshly built value, before anyone sees it. It is compiled as a hidden method the constructor calls (named `$init`, so no user code can name, call, hover or complete it). A field *without a default* that the block assigns (`this.f = ...`, found syntactically) is the block's: the constructor call refuses it, and the block must assign it on every path before it ends — definite assignment is tracked as flow facts in the narrowing state, so it joins at `if`/`when`, dies in loops and is discharged by a diverging branch exactly like a smart cast. Until such a field is assigned, reading it, using `this` as a whole, or calling a method whose field-use set includes it is an error (the receiver pass computes, for every method, the receiver fields it uses — directly, through the methods it calls on `this`, through closures over `this`; using `this` as a whole counts as every field); afterwards the block is ordinary method code. `init` cannot suspend, and has no `throws` (a failing construction is a `static fun ... throws`); it has no visibility, one per struct, runs for a sealed variant before the tag is applied. Spelled `init` rather than the proposed `constructor` because it is not the constructor: it cannot take parameters or replace the implicit call by fields, it only runs after it. `init` is contextual (`init { ` at member position), so a field or function named `init` stays legal. Deriving from a `var` field is a warning, since the stored copy would not follow later changes. The spelling is `this.f` rather than a bare `f` so that a default cannot be misread as a global. It composes with M5's constructor rule: a private field with a derived default cannot be overridden from outside, so the derivation is an invariant the type can rely on. Motivated by a parser holding token positions next to its tokens, which otherwise needed a `static fun` for nothing but the derivation.
+_Addendum (v0.30) — the `init` block._ A struct body may contain one `init { }` block (Kotlin's `init`): it runs after every construction — the fields bound from the call and the defaults, in order — on the freshly built value, before anyone sees it. It is compiled as a hidden method the constructor calls (named `$init`, so no user code can name, call, hover or complete it). A field _without a default_ that the block assigns (`this.f = ...`, found syntactically) is the block's: the constructor call refuses it, and the block must assign it on every path before it ends — definite assignment is tracked as flow facts in the narrowing state, so it joins at `if`/`when`, dies in loops and is discharged by a diverging branch exactly like a smart cast. Until such a field is assigned, reading it, using `this` as a whole, or calling a method whose field-use set includes it is an error (the receiver pass computes, for every method, the receiver fields it uses — directly, through the methods it calls on `this`, through closures over `this`; using `this` as a whole counts as every field); afterwards the block is ordinary method code. `init` cannot suspend, and has no `throws` (a failing construction is a `static fun ... throws`); it has no visibility, one per struct, runs for a sealed variant before the tag is applied. Spelled `init` rather than the proposed `constructor` because it is not the constructor: it cannot take parameters or replace the implicit call by fields, it only runs after it. `init` is contextual (`init { ` at member position), so a field or function named `init` stays legal. Deriving from a `var` field is a warning, since the stored copy would not follow later changes. The spelling is `this.f` rather than a bare `f` so that a default cannot be misread as a global. It composes with M5's constructor rule: a private field with a derived default cannot be overridden from outside, so the derivation is an invariant the type can rely on. Motivated by a parser holding token positions next to its tokens, which otherwise needed a `static fun` for nothing but the derivation.
 
 **Named arguments are language-wide, not a constructor feature.** Consequences:
 
@@ -526,7 +525,7 @@ Supplies a default for a `T?`: `counts.get(word) ?: 0`. Pairs with D5's smart ca
 
 The safe-call `?.` is included: `a?.b?.c` short-circuits to `null` and the chain's type is `T?`. A receiver that is nullable more than once — `xs.at(i)` on a `List<T?>` is a `T??`, since a missing element and a stored `null` are different answers — is flattened by `?.`: `xs.at(i)?.f` is null when the index is out of range or the element is null, and `T??` values are otherwise kept apart (v0.26).
 
-*Addendum (v0.29) — the or-fail operator `?!`.* `x ?! e` turns absence or failure into failure with `e`: a `T?` becomes a `Result<T, E>`, a `Result<T, E1>` a `Result<T, E2>` with the original error dropped; `e` must be an error type and is evaluated only on that path. It rewrites the failure and nothing more — `try` remains the one place propagation happens, so `try users.get(id) ?! NotFound(id)` and `try parse(s) ?! BadRequest(...)` read "or fail with", and the parser takes `try x ?! e` as `try (x ?! e)` (the other grouping is written with its parentheses). `Result.mapError(f)` in the prelude is the form that keeps the old error in hand. Spelled `?!` rather than `??` because `??` is null-coalescing in C#, JS and Swift and would read as a second `?:`. Motivated by request handlers, where every lookup and parse must become a status code without a `when` per call.
+_Addendum (v0.29) — the or-fail operator `?!`._ `x ?! e` turns absence or failure into failure with `e`: a `T?` becomes a `Result<T, E>`, a `Result<T, E1>` a `Result<T, E2>` with the original error dropped; `e` must be an error type and is evaluated only on that path. It rewrites the failure and nothing more — `try` remains the one place propagation happens, so `try users.get(id) ?! NotFound(id)` and `try parse(s) ?! BadRequest(...)` read "or fail with", and the parser takes `try x ?! e` as `try (x ?! e)` (the other grouping is written with its parentheses). `Result.mapError(f)` in the prelude is the form that keeps the old error in hand. Spelled `?!` rather than `??` because `??` is null-coalescing in C#, JS and Swift and would read as a second `?:`. Motivated by request handlers, where every lookup and parse must become a status code without a `when` per call.
 
 ### D31 — Recursive data structures require indirection
 
@@ -552,7 +551,7 @@ val typed   = nums.map((x: i32) => x * 2)
 
 Parentheses are optional for a single untyped parameter and required otherwise. There is **no `it` shorthand** — every lambda names its parameters. The discard `_` is a parameter name (v0.25): `make(n, _ => [])` and `(_, x) => x` take an argument they do not use, as `loop (_ in xs)` does.
 
-No trailing-lambda sugar. ~~`=` was chosen over `=>` for expression bodies (§4) specifically to keep `=>` free for this.~~ *(v0.72, D140: expression bodies are `=> expr` too; the arrow means "yields" everywhere.)*
+No trailing-lambda sugar. ~~`=` was chosen over `=>` for expression bodies (§4) specifically to keep `=>` free for this.~~ _(v0.72, D140: expression bodies are `=> expr` too; the arrow means "yields" everywhere.)_
 
 ### D33 — `=>` is the only arrow
 
@@ -565,7 +564,7 @@ val area = when (s) {
 }
 ```
 
-*Known hazard:* a `when` branch returning a lambda reads `cond => x => x * 2`. It parses unambiguously — `=>` is right-associative — but it is hard to read. Accepted for now; a lint is the likely eventual answer. *(v0.60, D106: no lint — `veles fmt` prints it `cond => (x => x * 2)`.)*
+_Known hazard:_ a `when` branch returning a lambda reads `cond => x => x * 2`. It parses unambiguously — `=>` is right-associative — but it is hard to read. Accepted for now; a lint is the likely eventual answer. _(v0.60, D106: no lint — `veles fmt` prints it `cond => (x => x _ 2)`.)\*
 
 ### D34 — `scope` is a language construct, not a function
 
@@ -590,12 +589,12 @@ Tasks may run on multiple cores. Data-race freedom is a **compile-time guarantee
 
 **The rules:**
 
-- `Sendable` is an auto-derived marker: a type is `Sendable` when all its fields are. *(v0.25)* It is a nameable prelude trait usable as a bound (`extend<T: Sendable>`, `fun f<T: Sendable>`) and answered from the type's shape; an `implement Sendable for X` written by hand is an error.
+- `Sendable` is an auto-derived marker: a type is `Sendable` when all its fields are. _(v0.25)_ It is a nameable prelude trait usable as a bound (`extend<T: Sendable>`, `fun f<T: Sendable>`) and answered from the type's shape; an `implement Sendable for X` written by hand is an error.
 - Anything captured by an `async` call must be `Sendable`, immutable, or an explicitly synchronized wrapper (`Mutex<T>`, `Atomic<T>`).
 - A captured `var` cannot be mutated from more than one task; plain mutable references do not cross task boundaries.
-- *(v0.28)* **Structured cancellation reaches the body.** When a child of a fail-fast `scope` fails, the scope's own body is abandoned at its next suspension point (a `recv` on a channel the failed child was meant to feed would otherwise wait forever); the scope then joins the surviving children and re-raises. `Channel.closeAfter(n)` closes a channel after `n` further sends, so several producers can end a channel none of them owns. The prelude's `mapConcurrent`/`forEachConcurrent` (`std/prelude/concurrent.vs`) are the worker pool written once over these primitives.
-- *(v0.29)* **Cancellation, fully structured.** A task is cancelled when a sibling in its fail-fast scope fails, when the body of its scope leaves early (`return`, `throw`, a failed `try`, a cancellation from further out) while it is still running, or when `task.cancel()` is called on its handle. Cancellation is a *request*: the task runs to its next suspension point and unwinds there, running the `close()` of every `with` it is inside (D43 — this was specified before and is implemented now), and only then counts as finished, so its scope waits for the unwinding. A task blocked in a suspending call is unwound from the innermost call outwards (each suspending call is a task of its own in the bootstrap; the request follows the await chain down and the finishes come back up), so the deepest resource closes first. Leaving a `scope` or `gather` body early therefore cancels and joins its children as a cleanup, like a `with` close, and a body that always returns or throws is `Never`-typed. Cleanup code is shielded (D47): a suspension point inside it — the join of an abandoned scope — takes no cancellation. `withTimeout(ms, f)` in the prelude is `scope` + `async` + `race` over this: it throws `Timeout` after cancelling and joining `f`'s task, so nothing `f` opened is still open when the caller sees the error.
-- *(v0.28)* **Sendable functions.** A function type may be marked `sendable fun(A): R ...`; a value of it may cross a task boundary. A named function is sendable; a lambda is sendable exactly when every capture is a `val` whose type is Sendable (nothing it reaches can change under another task — Swift's `@Sendable` closure rule) — and, since v0.30, whose type has no `var` fields (D22): a captured `val` struct with a `var` field is shared with the lambda and could change under it. The property is part of the closure's type, inferred from its captures at the lambda, so `val g = x => x + k` is a `sendable fun`; a sendable function is assignable to the plain function type, never the reverse, and a lambda checked against a `sendable fun` reports the offending capture. This is what lets the prelude's `mapConcurrent` take an ordinary-looking lambda and run it in pool tasks. *Rationale for a type flag rather than a call-site check only:* a handler stored in a struct and invoked from worker tasks (an HTTP router) must carry the promise in its type.
+- _(v0.28)_ **Structured cancellation reaches the body.** When a child of a fail-fast `scope` fails, the scope's own body is abandoned at its next suspension point (a `recv` on a channel the failed child was meant to feed would otherwise wait forever); the scope then joins the surviving children and re-raises. `Channel.closeAfter(n)` closes a channel after `n` further sends, so several producers can end a channel none of them owns. The prelude's `mapConcurrent`/`forEachConcurrent` (`std/prelude/concurrent.vs`) are the worker pool written once over these primitives.
+- _(v0.29)_ **Cancellation, fully structured.** A task is cancelled when a sibling in its fail-fast scope fails, when the body of its scope leaves early (`return`, `throw`, a failed `try`, a cancellation from further out) while it is still running, or when `task.cancel()` is called on its handle. Cancellation is a _request_: the task runs to its next suspension point and unwinds there, running the `close()` of every `with` it is inside (D43 — this was specified before and is implemented now), and only then counts as finished, so its scope waits for the unwinding. A task blocked in a suspending call is unwound from the innermost call outwards (each suspending call is a task of its own in the bootstrap; the request follows the await chain down and the finishes come back up), so the deepest resource closes first. Leaving a `scope` or `gather` body early therefore cancels and joins its children as a cleanup, like a `with` close, and a body that always returns or throws is `Never`-typed. Cleanup code is shielded (D47): a suspension point inside it — the join of an abandoned scope — takes no cancellation. `withTimeout(ms, f)` in the prelude is `scope` + `async` + `race` over this: it throws `Timeout` after cancelling and joining `f`'s task, so nothing `f` opened is still open when the caller sees the error.
+- _(v0.28)_ **Sendable functions.** A function type may be marked `sendable fun(A): R ...`; a value of it may cross a task boundary. A named function is sendable; a lambda is sendable exactly when every capture is a `val` whose type is Sendable (nothing it reaches can change under another task — Swift's `@Sendable` closure rule) — and, since v0.30, whose type has no `var` fields (D22): a captured `val` struct with a `var` field is shared with the lambda and could change under it. The property is part of the closure's type, inferred from its captures at the lambda, so `val g = x => x + k` is a `sendable fun`; a sendable function is assignable to the plain function type, never the reverse, and a lambda checked against a `sendable fun` reports the offending capture. This is what lets the prelude's `mapConcurrent` take an ordinary-looking lambda and run it in pool tasks. _Rationale for a type flag rather than a call-site check only:_ a handler stored in a struct and invoked from worker tasks (an HTTP router) must carry the promise in its type.
 
 **What structured concurrency buys here.** Because `scope` (D34) guarantees children cannot outlive their parent frame, immutable values captured from the enclosing frame are provably safe to share by reference with no copy. Go's unstructured `go` statement cannot establish this; Veles gets it free from D3.
 
@@ -603,9 +602,9 @@ Tasks may run on multiple cores. Data-race freedom is a **compile-time guarantee
 
 **Shared mutable state is `Mutex<T>`, not actors — for now.** Two of the three classic lock hazards are already dead here: forgetting to lock doesn't compile under isolation, and **the compiler statically rejects `await` inside a lock scope**, because stackless coroutines make every suspension point known at compile time. That last one is the nastiest coroutine-plus-lock bug — suspend holding a lock, the releasing task can't run, the executor deadlocks — and Go and Rust cannot cleanly prevent it.
 
-Actors are deferred rather than rejected. Unlike `Sendable`, an actor is a new *kind* of type, so adding one later breaks nothing. The trigger to revisit: repeatedly wrapping the same struct in a mutex where every method is lock-work-unlock is an actor asking to exist. Note that under D2 actors would be more ergonomic in Veles than in Swift, where every cross-actor call needs a visible `await`. The cost is a third type kind plus a re-entrancy policy — Swift's actors are re-entrant across suspension points, so state can change mid-method, which is a documented and regularly-cursed footgun.
+Actors are deferred rather than rejected. Unlike `Sendable`, an actor is a new _kind_ of type, so adding one later breaks nothing. The trigger to revisit: repeatedly wrapping the same struct in a mutex where every method is lock-work-unlock is an actor asking to exist. Note that under D2 actors would be more ergonomic in Veles than in Swift, where every cross-actor call needs a visible `await`. The cost is a third type kind plus a re-entrancy policy — Swift's actors are re-entrant across suspension points, so state can change mid-method, which is a documented and regularly-cursed footgun.
 
-*Addendum (2026-10-09, concurrency review F3) — a suspending call is no longer a task; no change of meaning.* The v0.29 bullet describes the bootstrap's first implementation, where each call of a suspending function ran as a task of its own. Now the callee's frame runs in the caller's task: a call that finishes without waiting is a call (about 4 ns more than a plain one, `bench/suscall`; it was ~70 ns, with a task, a frame, an argument block and a result cell each time), and a call that waits parks the task in its own frame and hands the task back to its caller when it ends. Frames of calls come from a per-task arena, freed as calls return. Cancellation still unwinds innermost first; a failed child abandoning a scope body that is inside calls unwinds those calls first (each frame deeper than the body's sees a cancellation), so the body's own `with` closes after them — before, it closed first, while the call it was inside was still being cancelled. A panic anywhere in the chain unwinds the whole task, as D20 said.
+_Addendum (2026-10-09, concurrency review F3) — a suspending call is no longer a task; no change of meaning._ The v0.29 bullet describes the bootstrap's first implementation, where each call of a suspending function ran as a task of its own. Now the callee's frame runs in the caller's task: a call that finishes without waiting is a call (about 4 ns more than a plain one, `bench/suscall`; it was ~70 ns, with a task, a frame, an argument block and a result cell each time), and a call that waits parks the task in its own frame and hands the task back to its caller when it ends. Frames of calls come from a per-task arena, freed as calls return. Cancellation still unwinds innermost first; a failed child abandoning a scope body that is inside calls unwinds those calls first (each frame deeper than the body's sees a cancellation), so the body's own `with` closes after them — before, it closed first, while the call it was inside was still being cancelled. A panic anywhere in the chain unwinds the whole task, as D20 said.
 
 ### D36 — `scope` and `gather` are separate constructs
 
@@ -620,9 +619,9 @@ val results = gather {
 }   // List<Result<Page, FetchError>>
 ```
 
-Two constructs rather than one construct with a policy flag, because the two have different *types* — fail-fast produces nothing *(v0.81, D156: a `scope` may be used as a value, its body's last expression)*, collect-all must yield results — and a flag that changes a construct's type is hard to infer and harder to read.
+Two constructs rather than one construct with a policy flag, because the two have different _types_ — fail-fast produces nothing _(v0.81, D156: a `scope` may be used as a value, its body's last expression)_, collect-all must yield results — and a flag that changes a construct's type is hard to infer and harder to read.
 
-`gather` is **heterogeneous and tuple-typed**: children may return different types, and the result is a tuple of `Result`s in launch order. *(v0.60, D103: with exactly one launch the result is that task's `Result` itself.)*
+`gather` is **heterogeneous and tuple-typed**: children may return different types, and the result is a tuple of `Result`s in launch order. _(v0.60, D103: with exactly one launch the result is that task's `Result` itself.)_
 
 This would normally require variadic generics — a feature Rust still hasn't shipped and Swift only got in 5.9. It doesn't here, because `gather` is a language construct like `scope`, so the compiler special-cases its typing rather than exposing general variadic generics. Tuples themselves (D37) are a real addition.
 
@@ -635,13 +634,13 @@ val pair: (i32, string) = (1, "x")
 
 Required by D36's heterogeneous `gather`. Tuples destructure positionally in both bindings and `when` patterns (D13).
 
-*Parsing note:* `(a, b)` as a tuple literal and `(a, b) => ...` as a lambda parameter list need lookahead to distinguish. TypeScript has the same situation and handles it.
+_Parsing note:_ `(a, b)` as a tuple literal and `(a, b) => ...` as a lambda parameter list need lookahead to distinguish. TypeScript has the same situation and handles it.
 
-*(v0.82: tuple elements may be labelled — D166.)* **Tuple parameters auto-adapt.** A two-parameter lambda is accepted where a one-parameter lambda over a tuple is expected, so `entries().sortedByDescending((k, v) => v)` works without doubled parentheses. This is Scala's tupling conversion. Cost: a special case in the checker, and it can mask genuine arity errors, since a two-argument lambda passed where one argument is expected now silently succeeds.
+_(v0.82: tuple elements may be labelled — D166.)_ **Tuple parameters auto-adapt.** A two-parameter lambda is accepted where a one-parameter lambda over a tuple is expected, so `entries().sortedByDescending((k, v) => v)` works without doubled parentheses. This is Scala's tupling conversion. Cost: a special case in the checker, and it can mask genuine arity errors, since a two-argument lambda passed where one argument is expected now silently succeeds.
 
-*Addendum (v0.28) — patterns everywhere a tuple is bound.* Destructuring nests to any depth in `val`/`var`, in loop heads and in lambda parameters: `groups.map(((size, hash), files) => ...)`, `sortedWith((((sa, _), _), ((sb, _), _)) => sa - sb)`. A lambda parameter written as a tuple pattern binds the whole element to a hidden variable and destructures it as the body's first statements; it composes with the tupling conversion above.
+_Addendum (v0.28) — patterns everywhere a tuple is bound._ Destructuring nests to any depth in `val`/`var`, in loop heads and in lambda parameters: `groups.map(((size, hash), files) => ...)`, `sortedWith((((sa, _), _), ((sb, _), _)) => sa - sb)`. A lambda parameter written as a tuple pattern binds the whole element to a hidden variable and destructures it as the body's first statements; it composes with the tupling conversion above.
 
-*Addendum (v0.25) — destructuring assignment.* `(a, b) = expr` assigns to existing places (variables, fields, `*p` for a `p = xs.ref(i)` element) positionally. The right side is evaluated in full before the first store, so `(a, b) = (b, a)` swaps and `(a, b) = (b, a + b)` steps without a named temporary — Python's and Go's rule. Each place keeps its own mutability check (D11) and its own smart cast after the store (D5). Only plain `=` destructures; a compound `(a, b) += ...` is an error, since element-wise arithmetic on tuples is not defined. Nested tuples do not destructure in assignment, as they do not yet in bindings.
+_Addendum (v0.25) — destructuring assignment._ `(a, b) = expr` assigns to existing places (variables, fields, `*p` for a `p = xs.ref(i)` element) positionally. The right side is evaluated in full before the first store, so `(a, b) = (b, a)` swaps and `(a, b) = (b, a + b)` steps without a named temporary — Python's and Go's rule. Each place keeps its own mutability check (D11) and its own smart cast after the store (D5). Only plain `=` destructures; a compound `(a, b) += ...` is an error, since element-wise arithmetic on tuples is not defined. Nested tuples do not destructure in assignment, as they do not yet in bindings.
 
 ### D38 — `race { }` for the first-ready construct
 
@@ -659,11 +658,11 @@ race {
 }
 ```
 
-`race` is itself the suspension point, so arms carry no `await`. *(v0.61, D108: an arm may also be `ch.send(v)`.)* *(v0.83, D168: an arm may be `async f()`, owned by the race — losers cancelled and joined; an arm without `=> body` gives its value; a value is named `src as name =>`, not `val name = src =>`; handle arms lose their `await`.)*
+`race` is itself the suspension point, so arms carry no `await`. _(v0.61, D108: an arm may also be `ch.send(v)`.)_ _(v0.83, D168: an arm may be `async f()`, owned by the race — losers cancelled and joined; an arm without `=> body` gives its value; a value is named `src as name =>`, not `val name = src =>`; handle arms lose their `await`.)_
 
-*Addendum (v0.29).* Exactly one arm runs, so a smart cast made inside an arm (an assignment to a `var`) survives the race only when every arm makes it — the `if`/`else` join rule (D5). A race whose arms all return or throw is `Never`-typed, which is what lets `withTimeout` be written as `race { val r = await t => return try r; sleep(ms) => throw Timeout() }` inside a scope whose early exit cancels `t`. *(v0.73, D141: `return r` — the awaited value of a scope's task is its payload.)*
+_Addendum (v0.29)._ Exactly one arm runs, so a smart cast made inside an arm (an assignment to a `var`) survives the race only when every arm makes it — the `if`/`else` join rule (D5). A race whose arms all return or throw is `Never`-typed, which is what lets `withTimeout` be written as `race { val r = await t => return try r; sleep(ms) => throw Timeout() }` inside a scope whose early exit cancels `t`. _(v0.73, D141: `return r` — the awaited value of a scope's task is its payload.)_
 
-*Addendum (2026-10-02, written down while building D108; not a change).* **Which arm wins.** When the race starts, the arms are tried in written order and the first one ready wins, so an always-ready arm shadows the ones after it. If none is ready the race waits, and the first arm to become ready wins. The rule is deterministic and biased towards earlier arms; it is not fair in Go's sense (Go picks among ready cases at random). Changing it would be a decision.
+_Addendum (2026-10-02, written down while building D108; not a change)._ **Which arm wins.** When the race starts, the arms are tried in written order and the first one ready wins, so an always-ready arm shadows the ones after it. If none is ready the race waits, and the first arm to become ready wins. The rule is deterministic and biased towards earlier arms; it is not fair in Go's sense (Go picks among ready cases at random). Changing it would be a decision.
 
 Named `race` rather than Go's `select` because the three constructs then share a vocabulary — each name says what it does with the set of children — instead of borrowing the third from an unrelated tradition. Recorded against it: `select` is what anyone arriving from Go will look for, and Go's `select` is typically driven in a loop to service channels repeatedly, which "race" slightly undersells.
 
@@ -690,7 +689,7 @@ trait Fetcher {
 val handler: fun(Request): Response suspends throws HttpError
 ```
 
-**Error types on trait methods (revised v0.24).** A trait method says *that* it can fail; which error is either fixed by the trait or left to each implement:
+**Error types on trait methods (revised v0.24).** A trait method says _that_ it can fail; which error is either fixed by the trait or left to each implement:
 
 - `throws E` — every implement throws `E` (or a subset); callers see `E` however they reach the method.
 - a bare `throws` — the error is **implement-defined**: the trait carries an implicit associated type `Error` (D27), and each implement defines it through its methods: what they declare, or, when they too say only `throws`, what their bodies throw (D45 inference); an implement that cannot fail defines it as `Never`. Generic code sees it as `F.Error` (`fun load<F: Fetcher>(f: F): Bytes throws F.Error`) and, once stenciled, as the implement's exact union. Two throwing methods of one trait share the one `Error`. A trait may still write `type Error` and `throws Self.Error` explicitly — it is the same thing spelled out — and an implement may bind `type Error = E` to pin it.
@@ -704,17 +703,17 @@ Associated-type projections are written with a dot, `Self.Error`, `I.Item` (`::`
 
 **What this costs.** This is a partial retreat from D2's no-coloring goal, confined to trait declarations and function types — ordinary function definitions never carry an effect marker, so libraries still don't split into sync and async ecosystems. But a suspending iterator cannot share a trait with a non-suspending one, so Veles will need the `Iterator` / `AsyncIterator` split that Rust has as `Iterator` / `Stream` and Kotlin has as `Iterator` / `Flow`. That is the state of the art, not a Veles-specific failure, but it should be recorded as the price of D17's open impls.
 
-*Addendum (2026-10-04, D128) — a trait object's suspending methods.* A method declared `suspends` is callable through a trait object (it was refused): the vtable slot holds the coroutine form of the impl's method — a plain impl's through a ramp, so a file and a socket share one `io.Stream` — and the call runs it as a task and awaits it, as a call of a suspending function value does. A default argument written in the trait (`fun read(max: i64 = 65536)`) applies to calls through an object, read in the trait's module; impls need not repeat it.
+_Addendum (2026-10-04, D128) — a trait object's suspending methods._ A method declared `suspends` is callable through a trait object (it was refused): the vtable slot holds the coroutine form of the impl's method — a plain impl's through a ramp, so a file and a socket share one `io.Stream` — and the call runs it as a task and awaits it, as a call of a suspending function value does. A default argument written in the trait (`fun read(max: i64 = 65536)`) applies to calls through an object, read in the trait's module; impls need not repeat it.
 
-*Addendum (2026-10-04, user: recommended of 3) — a trait may require `Sendable`.* `trait Stream : Closeable + Sendable` is allowed (it was an error: "Sendable is derived … use it as a bound"). Objects of such a trait are `Sendable`, so a connection held as an `io.Stream` crosses into `async` and `withTimeout`; every implementor must itself be Sendable (an error at its `implement` naming the cause) and boxing a value that is not — a generic implementor's instance — is an error at the conversion. Rejected: a `sendable trait` modifier; objects never Sendable with `http` generic over its stream.
+_Addendum (2026-10-04, user: recommended of 3) — a trait may require `Sendable`._ `trait Stream : Closeable + Sendable` is allowed (it was an error: "Sendable is derived … use it as a bound"). Objects of such a trait are `Sendable`, so a connection held as an `io.Stream` crosses into `async` and `withTimeout`; every implementor must itself be Sendable (an error at its `implement` naming the cause) and boxing a value that is not — a generic implementor's instance — is an error at the conversion. Rejected: a `sendable trait` modifier; objects never Sendable with `http` generic over its stream.
 
-*Addendum (2026-10-04, D128) — an impl carries the trait's `throws`.* A method that implements a trait method declared `throws E` has that signature whatever it wrote: one that cannot fail still returns the `Result` (its plain value is the `Ok`), and one that throws fewer errors returns the wider union. D40 allowed "a subset" but the table slot of a trait object reads the trait's `Result`, so an impl that wrote no `throws` produced a mis-tagged value (a crash or a "non-exhaustive match" at the caller). Callers of such a method on the concrete type now `try` it like any other.
+_Addendum (2026-10-04, D128) — an impl carries the trait's `throws`._ A method that implements a trait method declared `throws E` has that signature whatever it wrote: one that cannot fail still returns the `Result` (its plain value is the `Ok`), and one that throws fewer errors returns the wider union. D40 allowed "a subset" but the table slot of a trait object reads the trait's `Result`, so an impl that wrote no `throws` produced a mis-tagged value (a crash or a "non-exhaustive match" at the caller). Callers of such a method on the concrete type now `try` it like any other.
 
 ### D41 — Collections are concrete types; abstraction goes through traits
 
 `List<T>`, `MutableList<T>`, `Map<K, V>` and `MutableMap<K, V>` are **concrete types**, not traits.
 
-This is forced by D9. An open trait used as a variable type is a boxed trait object, so declaring `val xs: List<i32>` against a `List` *trait* would allocate and dispatch dynamically on every operation. Kotlin pays exactly this cost because its `List` is an interface.
+This is forced by D9. An open trait used as a variable type is a boxed trait object, so declaring `val xs: List<i32>` against a `List` _trait_ would allocate and dispatch dynamically on every operation. Kotlin pays exactly this cost because its `List` is an interface.
 
 Abstraction moves to traits taken as generic bounds — `fun summarize<I: Iterable>(xs: I)` — which D8 stencils with no boxing and no dynamic dispatch.
 
@@ -722,7 +721,7 @@ Abstraction moves to traits taken as generic bounds — `fun summarize<I: Iterab
 
 `List<T>` and `MutableList<T>` are unrelated types (D25 removed the subtyping), converted explicitly by `toList()` and `toMutable()`, both of which copy. `List<T>` is `Sendable` when `T` is; `MutableList<T>` never is (D35).
 
-*Open:* whether literal syntax (`[1, 2]`, `["a": 1]`) is wired to fixed stdlib types or to an opt-in trait, Swift's `ExpressibleByArrayLiteral` style, so user types can use it too.
+_Open:_ whether literal syntax (`[1, 2]`, `["a": 1]`) is wired to fixed stdlib types or to an opt-in trait, Swift's `ExpressibleByArrayLiteral` style, so user types can use it too.
 
 ### D42 — `loop (x in c)` desugars through `Iterable`
 
@@ -756,13 +755,13 @@ loop {
 
 **One loop syntax covers sync and async.** An `AsyncIterable` whose `next` is declared `suspends` (D40) drives the identical `loop (x in c)`; the compiler selects by which trait the receiver implements, and the enclosing function is inferred suspending by D2. Because ordinary functions carry no effect markers, nothing at the call site changes. Rust requires `for await` or `while let`, and Kotlin requires `.collect { }`; Veles requires neither. Implementing both traits on one type is an ambiguity error.
 
-*Open:* loop labels for `break` and `continue` targeting an outer loop.
+_Open:_ loop labels for `break` and `continue` targeting an outer loop.
 
-*Addendum (v0.27) — iterating by reference.* `loop (&x in xs)` binds `x` to a pointer to each element of a `MutableList` (`x: *T`), and `loop ((k, &v) in m)` binds `v` to a pointer to each value of a `MutableMap` (`v: *V`), so the body changes the elements where they live: `loop (&c in counters) c.bump()`, `loop (&n in nums) *n += 1`. The plain forms copy (a value struct element is a copy, D25), which is why they cannot update anything — a `loop (x in xs) { x.n += 1 }` is an error, the variable being a `val`. `&` is refused on a read-only `List`/`Map`, on a set (elements are their own hash keys), on a map key, on a range and on an iterator. The list loop reads the element by index each time; the map loop snapshots the keys and looks each one up, so an entry the body removes is skipped and one it adds is not visited. This is D25.s `ref` spelled as a loop head: the same `&` in both places means the same thing.
+_Addendum (v0.27) — iterating by reference._ `loop (&x in xs)` binds `x` to a pointer to each element of a `MutableList` (`x: *T`), and `loop ((k, &v) in m)` binds `v` to a pointer to each value of a `MutableMap` (`v: *V`), so the body changes the elements where they live: `loop (&c in counters) c.bump()`, `loop (&n in nums) *n += 1`. The plain forms copy (a value struct element is a copy, D25), which is why they cannot update anything — a `loop (x in xs) { x.n += 1 }` is an error, the variable being a `val`. `&` is refused on a read-only `List`/`Map`, on a set (elements are their own hash keys), on a map key, on a range and on an iterator. The list loop reads the element by index each time; the map loop snapshots the keys and looks each one up, so an entry the body removes is skipped and one it adds is not visited. This is D25.s `ref` spelled as a loop head: the same `&` in both places means the same thing.
 
 ### D43 — `with` blocks for scoped resource cleanup
 
-Veles has a GC and therefore no destructors, and no `defer` (rejected again in D100; the word stays reserved). *(v0.59)* D100 adds the statement form `with x = e`, whose body is the rest of the enclosing block, and `with t = async f()`. Before this, nothing in the language released a file descriptor, a socket, a lock, or a C allocation.
+Veles has a GC and therefore no destructors, and no `defer` (rejected again in D100; the word stays reserved). _(v0.59)_ D100 adds the statement form `with x = e`, whose body is the rest of the enclosing block, and `with t = async f()`. Before this, nothing in the language released a file descriptor, a socket, a lock, or a C allocation.
 
 ```vs
 with (f = File.open(path)) {
@@ -776,11 +775,11 @@ Named `with` rather than `use`, because `use` is already the import keyword and 
 - Multiple bindings close in reverse order: `with (a = ..., b = ...) { }`.
 - Cleanup runs on **every** exit path. Under D20 cancellation is a panic delivered at a suspension point, so a `with` block containing a suspension point still releases when its task is cancelled.
 - If `close()` fails and the body also failed, the body's error wins and the close failure is attached rather than replacing it — Kotlin's suppression rule.
-- *(v0.29)* `with` is an expression: its value is the body's, and the resources close before the value is used (`val text = with (f = open(p)) { f.readAll() }`), so an "open, use, close" function has no `return` in its middle. In statement position the body is a plain block, as before.
+- _(v0.29)_ `with` is an expression: its value is the body's, and the resources close before the value is used (`val text = with (f = open(p)) { f.readAll() }`), so an "open, use, close" function has no `return` in its middle. In statement position the body is a plain block, as before.
 
-~~**This raises the stakes on §6.1.** The panic mechanism is still undecided, and~~ *(v0.59: stale — the mechanism is D49 and its v0.29 addendum; kept for history.)* `with` cleanup has to run during unwinding: under a hidden error-return path it is an ordinary code path, under DWARF it needs landing pads. Either works, but the choice is no longer purely internal.
+~~**This raises the stakes on §6.1.** The panic mechanism is still undecided, and~~ _(v0.59: stale — the mechanism is D49 and its v0.29 addendum; kept for history.)_ `with` cleanup has to run during unwinding: under a hidden error-return path it is an ordinary code path, under DWARF it needs landing pads. Either works, but the choice is no longer purely internal.
 
-`Mutex.withLock` predates this and takes a lambda instead. Whether it is rewritten as a `with` resource is an open stdlib question. *(v0.61: answered by D107 — `with p = m.lock()` beside `withLock`.)*
+`Mutex.withLock` predates this and takes a lambda instead. Whether it is rewritten as a `with` resource is an open stdlib question. _(v0.61: answered by D107 — `with p = m.lock()` beside `withLock`.)_
 
 ### D44 — `unsafe` blocks, and two kinds of pointer
 
@@ -803,7 +802,7 @@ unsafe {
 
 Raw pointer syntax and semantics are settled in D50.
 
-*Addendum (user decision 2026-09-18, built 2026-09-27) — the reason is written down.* An `unsafe { }` block in a function that is not `unsafe fun` carries a `// SAFETY:` comment saying why it is sound: on the lines directly above the line the block starts on, or as the first line inside the block (the place for a declaration's body, `fun pid(): i64 = unsafe {`, whose line above is its doc comment). Without one it is a **warning** (a lint, not a rule); the fix inserts `// SAFETY: ` and a comment with nothing after the marker still warns, so the fix cannot silence it. Blocks inside `unsafe fun` or inside another `unsafe` block are exempt — the obligation is already stated. Every block in the standard library carries a reason.
+_Addendum (user decision 2026-09-18, built 2026-09-27) — the reason is written down._ An `unsafe { }` block in a function that is not `unsafe fun` carries a `// SAFETY:` comment saying why it is sound: on the lines directly above the line the block starts on, or as the first line inside the block (the place for a declaration's body, `fun pid(): i64 = unsafe {`, whose line above is its doc comment). Without one it is a **warning** (a lint, not a rule); the fix inserts `// SAFETY: ` and a comment with nothing after the marker still warns, so the fix cannot silence it. Blocks inside `unsafe fun` or inside another `unsafe` block are exempt — the obligation is already stated. Every block in the standard library carries a reason.
 
 ### D45 — Inferred error types are unions, confined to error position
 
@@ -844,11 +843,11 @@ Eager methods on collections (`list.map(...)` returns a `List`), and lazy adapte
 
 Cost: every operation exists twice, so the collection area of the stdlib roughly doubles, and there is a performance cliff users have to learn. D23's absence of extension functions means both sets must be declared up front by whoever owns the types; neither can be added later from outside.
 
-*Amended (v0.24) — a throwing function in an eager operation.* `xs.map(x => try parse(x))` is `Result<List<U>, E>`: the inlined loop stops at the first `Err` and the operation yields it, dropping the partial result; otherwise `Ok(list)`. The same holds for `filter`, `fold`, `forEach`, `any`/`all`, `find`, `count`, and the map operations `forEach`/`mapValues`/`filter`. Callers write `try xs.map(...)` like any fallible call; nothing panics. `sortedBy` and `getOrPut` run their function where no loop can be left and refuse a throwing one. Lazy adapters do not take throwing functions (`next()` would have to become fallible).
+_Amended (v0.24) — a throwing function in an eager operation._ `xs.map(x => try parse(x))` is `Result<List<U>, E>`: the inlined loop stops at the first `Err` and the operation yields it, dropping the partial result; otherwise `Ok(list)`. The same holds for `filter`, `fold`, `forEach`, `any`/`all`, `find`, `count`, and the map operations `forEach`/`mapValues`/`filter`. Callers write `try xs.map(...)` like any fallible call; nothing panics. `sortedBy` and `getOrPut` run their function where no loop can be left and refuse a throwing one. Lazy adapters do not take throwing functions (`next()` would have to become fallible).
 
-*Amended (v0.28) — the same rule for functions written in Veles.* A higher-order function declares `f: fun(T): R throws E` with `E` one of its own type parameters and itself `throws E`; a lambda argument then has its error type *inferred* into `E` — a throwing lambda binds `E` to what it throws, a non-throwing one binds `E` to nothing, and an instance whose `E` is nothing is an ordinary non-throwing function (`throws Never` is erased at instantiation, and a `try` in the generic body on such a call is the identity). So `xs.mapConcurrent(x => try parse(x))` throws `E` exactly as the built-in `map` does, without the compiler knowing anything about `mapConcurrent`. Rust spells this `F: Fn(T) -> Result<R, E>`; Veles keeps the one error channel.
+_Amended (v0.28) — the same rule for functions written in Veles._ A higher-order function declares `f: fun(T): R throws E` with `E` one of its own type parameters and itself `throws E`; a lambda argument then has its error type _inferred_ into `E` — a throwing lambda binds `E` to what it throws, a non-throwing one binds `E` to nothing, and an instance whose `E` is nothing is an ordinary non-throwing function (`throws Never` is erased at instantiation, and a `try` in the generic body on such a call is the identity). So `xs.mapConcurrent(x => try parse(x))` throws `E` exactly as the built-in `map` does, without the compiler knowing anything about `mapConcurrent`. Rust spells this `F: Fn(T) -> Result<R, E>`; Veles keeps the one error channel.
 
-*Addendum (v0.29) — a type parameter in an error union.* Such a function may add errors of its own: `withTimeout(ms, f: fun(): R throws E): R throws E | Timeout`. On instantiation the union is normalised — a member bound to `Never` vanishes, so a non-throwing lambda gives `throws Timeout` and a throwing one `throws IoError | Timeout` — and the erasure reaches one step further than a call: in an instance where `E` is `Never`, a value the template typed as `Result<R, E>` (an awaited `Task<Result<R, E>>`) is already the payload, and a `try` on it is the identity.
+_Addendum (v0.29) — a type parameter in an error union._ Such a function may add errors of its own: `withTimeout(ms, f: fun(): R throws E): R throws E | Timeout`. On instantiation the union is normalised — a member bound to `Never` vanishes, so a non-throwing lambda gives `throws Timeout` and a throwing one `throws IoError | Timeout` — and the erasure reaches one step further than a call: in an instance where `E` is `Never`, a value the template typed as `Result<R, E>` (an awaited `Task<Result<R, E>>`) is already the payload, and a `try` on it is the identity.
 
 ### D47 — Cleanup is implicitly non-cancellable
 
@@ -856,7 +855,7 @@ D43 says `with` releases on cancellation; D20 says cancellation is a panic deliv
 
 **Cleanup runs shielded from cancellation.** No explicit construct; `close()` bodies are implicitly protected, so a suspending cleanup completes.
 
-*Hazard, to be documented:* a cleanup that hangs cannot be interrupted, and the enclosing scope hangs with it. Cleanup must be bounded. Kotlin's `NonCancellable` carries the identical warning.
+_Hazard, to be documented:_ a cleanup that hangs cannot be interrupted, and the enclosing scope hangs with it. Cleanup must be bounded. Kotlin's `NonCancellable` carries the identical warning.
 
 ### D48 — Alternative orderings use comparator lambdas
 
@@ -864,9 +863,9 @@ D17 permits one `Ord` implement per type, so descending and case-insensitive sor
 
 This **formally drops named-impls-as-values**, which had been recorded as still-useful since D17. Nothing else in the design now needs it.
 
-*Addendum (v0.28) — tuples are ordered.* A tuple whose elements are all ordered (numbers, strings, `Comparable` types, such tuples) is `Comparable`, element by element: `(1, "b") < (2, "a")`. The comparison is a function the compiler synthesizes per tuple type and reaches through the same path as a hand-written `compareTo` (`<`, `sorted`, `min`, a `T: Comparable` bound, `a.compareTo(b)`). Consequence: a multi-key sort is `sortedBy(e => (-e.size, e.name))` — Python's key tuple — with no comparator-combinator API; a comparator lambda remains for the cases a key cannot express (a descending string). Equality and hashing of tuples were already structural.
+_Addendum (v0.28) — tuples are ordered._ A tuple whose elements are all ordered (numbers, strings, `Comparable` types, such tuples) is `Comparable`, element by element: `(1, "b") < (2, "a")`. The comparison is a function the compiler synthesizes per tuple type and reaches through the same path as a hand-written `compareTo` (`<`, `sorted`, `min`, a `T: Comparable` bound, `a.compareTo(b)`). Consequence: a multi-key sort is `sortedBy(e => (-e.size, e.name))` — Python's key tuple — with no comparator-combinator API; a comparator lambda remains for the cases a key cannot express (a descending string). Equality and hashing of tuples were already structural.
 
-*Amended (v0.32).* Every comparison — `compareTo`, the synthesized tuple one, a comparator lambda — returns the prelude enum `Ordering` (`Less = -1`, `Equal`, `Greater`; D57), not an `i64`. A comparator that computed `a - b` is written `a.compareTo(b)`.
+_Amended (v0.32)._ Every comparison — `compareTo`, the synthesized tuple one, a comparator lambda — returns the prelude enum `Ordering` (`Less = -1`, `Equal`, `Greater`; D57), not an `i64`. A comparator that computed `a - b` is written `a.compareTo(b)`.
 
 ### D49 — Panics unwind via DWARF tables, with a separate coroutine-frame chain
 
@@ -888,7 +887,7 @@ After the GC, this is the largest single piece of runtime engineering in the com
 
 Rejected: a hidden error-return path, which works identically in native and coroutine frames because it is just code, needs no platform-specific machinery, and ports to wasm unchanged — at the cost of a predictable branch per call site and roughly 5–15% code size, much of it recoverable by panic-freedom analysis on leaf functions.
 
-*Addendum (v0.29) — what the bootstrap does today.* The bootstrap has no unwinder yet: a panic is a `longjmp` back into the executor, so nothing between the panic site and the resume point runs. What D43 promised — `with` closes on panic — is kept another way: every `with` entry (and every `scope` body) registers its cleanup with the task on a dynamic stack and unregisters it on each exit the compiler emits; `veles_task_panic` runs whatever is still registered, innermost first, on the live stack before the jump, so a plain function's resource (whose frame the jump would destroy) is closed while it still exists. A cleanup that panics does not stop the unwinding, and the first message is the one reported. A panicking scope body cancels its children (they unwind on their own; the owner is gone). This is the D20 "cheap option" restricted to cleanups: a push/pop pair per `with`, no landing pads, and it stays correct when the DWARF unwinder replaces the jump. Not covered, as before: a panic in a `close()` that suspends — cleanups do not suspend today.
+_Addendum (v0.29) — what the bootstrap does today._ The bootstrap has no unwinder yet: a panic is a `longjmp` back into the executor, so nothing between the panic site and the resume point runs. What D43 promised — `with` closes on panic — is kept another way: every `with` entry (and every `scope` body) registers its cleanup with the task on a dynamic stack and unregisters it on each exit the compiler emits; `veles_task_panic` runs whatever is still registered, innermost first, on the live stack before the jump, so a plain function's resource (whose frame the jump would destroy) is closed while it still exists. A cleanup that panics does not stop the unwinding, and the first message is the one reported. A panicking scope body cancels its children (they unwind on their own; the owner is gone). This is the D20 "cheap option" restricted to cleanups: a push/pop pair per `with`, no landing pads, and it stays correct when the DWARF unwinder replaces the jump. Not covered, as before: a panic in a `close()` that suspends — cleanups do not suspend today.
 
 ### D50 — Raw pointers: `*raw T`
 
@@ -935,11 +934,11 @@ Initial compiler-known set:
 - `@mustUse` — unused-result lint; this is what the `Channel.send()` returning `Result` decision needed
 - `@specialize` — makes §6's deferred specialization question expressible when wanted (D15)
 
-*Amended (v0.33, D58).* The derivation story exists, and with it the first attributes that carry data the compiler reads on the author's behalf — all of them serve the synthesized `Codable` impls and nothing else: `@key(...)`, `@skip`, `@required` on a field, `@key` on an enum member or sealed variant, `@tag(...)` on a sealed trait. They are still compiler-known; "user-definable attributes are deferred" stands. *Amended (v0.88, D174): user-defined annotations (`annotation`, read by compile-time reflection) replace the deferral; the compiler's own lowercase names stay reserved.*
+_Amended (v0.33, D58)._ The derivation story exists, and with it the first attributes that carry data the compiler reads on the author's behalf — all of them serve the synthesized `Codable` impls and nothing else: `@key(...)`, `@skip`, `@required` on a field, `@key` on an enum member or sealed variant, `@tag(...)` on a sealed trait. They are still compiler-known; "user-definable attributes are deferred" stands. _Amended (v0.88, D174): user-defined annotations (`annotation`, read by compile-time reflection) replace the deferral; the compiler's own lowercase names stay reserved._
 
 `extern struct` (FFI §3) is **retained as a keyword** rather than folded into a layout attribute.
 
-*Noted pressure point (answered in v0.64 by D120):* `extern struct` does not extend. Packed layout, explicit alignment, and transparent single-field wrappers all come up in FFI and wire-format work, and there is currently nowhere to express them without inventing further keywords or revisiting this.
+_Noted pressure point (answered in v0.64 by D120):_ `extern struct` does not extend. Packed layout, explicit alignment, and transparent single-field wrappers all come up in FFI and wire-format work, and there is currently nowhere to express them without inventing further keywords or revisiting this.
 
 ### D52 — A panic surfaces as a `Result` error at a `gather` boundary
 
@@ -949,9 +948,9 @@ D20 said a panic unwinds to the enclosing task scope. It never said anyone could
 
 **`scope` re-raises; `gather` captures.** A panic propagating out of a fail-fast `scope` remains a panic in the parent. Only `gather` converts it to a value.
 
-This keeps D4's line intact: panics remain non-recoverable *within* a task, and become observable only at a boundary where they were already terminating that task. It is not `catch` in arbitrary positions, and no `catch_unwind` equivalent is needed.
+This keeps D4's line intact: panics remain non-recoverable _within_ a task, and become observable only at a boundary where they were already terminating that task. It is not `catch` in arbitrary positions, and no `catch_unwind` equivalent is needed.
 
-*Open:* whether a cancellation — which is a panic under D20 — is distinguishable from a genuine panic in the captured value. A supervisor almost certainly wants to tell them apart.
+_Open:_ whether a cancellation — which is a panic under D20 — is distinguishable from a genuine panic in the captured value. A supervisor almost certainly wants to tell them apart.
 
 ### D53 — Traits may carry default method bodies
 
@@ -965,13 +964,13 @@ Default bodies may call the trait's other methods — that is the point, since `
 
 **`override` is required when overriding a default body**, and only then. A method with no default needs no keyword.
 
-*Consequence — this is the fifth breaking-change class.* Adding a default body to an existing trait method breaks every implement that already implements it, since all of them would suddenly require `override`. It joins D17 (new impls), D26 (new trait methods), D28 (parameter renames) and D45 (widened error unions). Kotlin avoids this by requiring `override` on every interface method implementation; Veles trades that for less ceremony and one more thing library authors must watch when bumping a major version.
+_Consequence — this is the fifth breaking-change class._ Adding a default body to an existing trait method breaks every implement that already implements it, since all of them would suddenly require `override`. It joins D17 (new impls), D26 (new trait methods), D28 (parameter renames) and D45 (widened error unions). Kotlin avoids this by requiring `override` on every interface method implementation; Veles trades that for less ceremony and one more thing library authors must watch when bumping a major version.
 
 ### D54 — Values crossing a task boundary must be `Sendable`, including error types
 
 D52 has a child's `Result<T, E | Panic>` cross into `gather`, and D35 requires anything crossing a task boundary to be `Sendable`. **Both `T` and `E` must therefore be `Sendable`**, and so must `Panic`.
 
-This was never stated and it constrains error design directly: an error type carrying a `MutableList` payload (D25 — mutable collections are never `Sendable`) silently becomes unusable in any concurrent code. Because D45 infers error *unions*, a single non-`Sendable` component poisons the whole union for every caller above it.
+This was never stated and it constrains error design directly: an error type carrying a `MutableList` payload (D25 — mutable collections are never `Sendable`) silently becomes unusable in any concurrent code. Because D45 infers error _unions_, a single non-`Sendable` component poisons the whole union for every caller above it.
 
 Consequences:
 
@@ -991,9 +990,9 @@ type StrMap<V> = Map<string, V>
 public type Point = geo.Point
 ```
 
-`type Name<T> = Type` at module level declares another name for a type. The alias is **transparent**: `Key` and `(Index, u64)` are the same type everywhere — assignable both ways, one instantiation of every generic, no conversion. A distinct type with the same representation is a one-field struct, as before; `type` never provides safety, only a name. What the alias does own is its *spelling*: diagnostics and hover print `Key` where the source said `Key`, its definition as written, and the full expansion when that differs (structural types carry the display name; a named type — struct, sealed, trait — keeps its own name, so `type Point = geo.Point` reads `Point`). The same mechanism names `error Set = A | B` in messages.
+`type Name<T> = Type` at module level declares another name for a type. The alias is **transparent**: `Key` and `(Index, u64)` are the same type everywhere — assignable both ways, one instantiation of every generic, no conversion. A distinct type with the same representation is a one-field struct, as before; `type` never provides safety, only a name. What the alias does own is its _spelling_: diagnostics and hover print `Key` where the source said `Key`, its definition as written, and the full expansion when that differs (structural types carry the display name; a named type — struct, sealed, trait — keeps its own name, so `type Point = geo.Point` reads `Point`). The same mechanism names `error Set = A | B` in messages.
 
-Rules. Module level only; `public` exports it, and a `public` alias of a private type is allowed — it *is* the facade (Go, TS). Parameters take no bounds (state them where the alias is used). No unions: `error` names an error set, `sealed trait` a closed family of types, and `type` never spells `A | B`. Not recursive: `type Json = Map<string, Json>` is an error; a recursive type is a sealed trait or a struct (which also gives its cases names). Everything else sees through the alias: `implement`/`extend` on an alias follow the underlying type's ownership rule (D23), an alias of a struct constructs (`Point(x: 1.0, y: 2.0)`), calls statics (`Point.origin()`) and matches (`is Point`); a generic alias in value position takes its arguments (`Pair<i64>(...)`).
+Rules. Module level only; `public` exports it, and a `public` alias of a private type is allowed — it _is_ the facade (Go, TS). Parameters take no bounds (state them where the alias is used). No unions: `error` names an error set, `sealed trait` a closed family of types, and `type` never spells `A | B`. Not recursive: `type Json = Map<string, Json>` is an error; a recursive type is a sealed trait or a struct (which also gives its cases names). Everything else sees through the alias: `implement`/`extend` on an alias follow the underlying type's ownership rule (D23), an alias of a struct constructs (`Point(x: 1.0, y: 2.0)`), calls statics (`Point.origin()`) and matches (`is Point`); a generic alias in value position takes its arguments (`Pair<i64>(...)`).
 
 Rejected: aliases in std for numbers (`int = i64`) — two spellings for one type is the import problem again; TS-style type-level computation (`keyof`, mapped and conditional types) — the Veles answer to "compute a type from a type" is an associated type on a trait (`Iterator.Item`).
 
@@ -1014,7 +1013,7 @@ with (listener = try net.listen(host: "", port: 8080)) {
 
 **How.** Sockets are non-blocking. A call that would block parks the task on the descriptor (`await ioWait(fd, write)`, a compiler intrinsic that exists only inside the standard library) and returns to the executor, which polls every parked descriptor together with its timers — `poll` on POSIX, `WSAPoll` on Windows — and resumes the task when the socket is ready; the call is then retried. Nothing blocks a thread, so one thread holds any number of idle connections, and a task blocked on a socket is cancelled like one blocked on a timer (D34 v0.29: it unwinds, its `with` closes the connection). The design is Go's netpoller and Node's event loop with the suspension explicit; it stays valid when the executor gains threads (D35), since the parked task is just a wait-list entry.
 
-*Addendum (2026-10-07, plan E3) — the reactor.* The executor no longer rebuilds a `poll`/`WSAPoll` set: a parked descriptor is armed one-shot in a reactor (`runtime/c/veles_poll.c`) — epoll on Linux, AFD poll requests completing on an I/O completion port on Windows (the readiness interface under `WSAPoll`, as libuv and mio use it), `poll()` over the armed set elsewhere until macOS gets kqueue (A7) — and one idle worker blocks in it until a socket is ready, the nearest timer, or new work interrupts it. Nothing a program sees changes; `bench/httphello` went from 20× Go to about 1.2× at eight threads (the plan's progress log has the steps).
+_Addendum (2026-10-07, plan E3) — the reactor._ The executor no longer rebuilds a `poll`/`WSAPoll` set: a parked descriptor is armed one-shot in a reactor (`runtime/c/veles_poll.c`) — epoll on Linux, AFD poll requests completing on an I/O completion port on Windows (the readiness interface under `WSAPoll`, as libuv and mio use it), `poll()` over the armed set elsewhere until macOS gets kqueue (A7) — and one idle worker blocks in it until a socket is ready, the nearest timer, or new work interrupts it. Nothing a program sees changes; `bench/httphello` went from 20× Go to about 1.2× at eight threads (the plan's progress log has the steps).
 
 **The `Conn`.** A connection is a handle plus a read-ahead buffer (`readLine` needs one). The buffer sits behind a `Mutex` so that `Conn` is Sendable — handing a connection to `async handle(conn)` or to `withTimeout(ms, () => try conn.readLine())` is the first thing a server does — with every access a short non-suspending section; the socket calls happen outside it. Two tasks reading one connection interleave bytes, as they do everywhere; the type system rules out the data race, not the protocol error.
 
@@ -1022,7 +1021,7 @@ with (listener = try net.listen(host: "", port: 8080)) {
 
 Not in this decision: TLS (a binding to a system library, later), UDP, name resolution beyond `getaddrinfo` at connect time.
 
-**The HTTP layer (v0.29, `std/http`)** is written in Veles on `net`, and its one design question was what a handler's error means. A handler stored in a router needs a closed type, Veles has no "any error" (D45), and forcing every handler to convert every `IoError` into a status by hand is the Go shape the language exists to avoid. The answer: the *stored* type is `Handler = sendable fun(Request): Response suspends` (no throws), and registration is error-polymorphic — `app.get<E>(pattern, h: fun(Request): Response suspends throws E | Fail)` — with one rule applied at that point: `Fail(status, text)` answers with its status, anything else answers 500 and is logged. Erasure happens in exactly one documented place; `try` stays free inside handlers; `?!` says which status a failure deserves. This needed a type parameter *inside* an error union to unify (`E` binds to what the lambda throws beyond `Fail`, `Never` when nothing; a lambda checked against `throws E | Fail` may throw `Fail` regardless). Panics in handlers are isolated per request by a `gather` around the call — no new construct, the panic is a value at that boundary (D52) — and the `with` cleanups a handler held have run by then (D49 addendum). Rejected: a `supervise` scope construct (Erlang/Kotlin `SupervisorScope`), noted as a possibility if a second program needs "children fail independently"; an open `Error` type, again.
+**The HTTP layer (v0.29, `std/http`)** is written in Veles on `net`, and its one design question was what a handler's error means. A handler stored in a router needs a closed type, Veles has no "any error" (D45), and forcing every handler to convert every `IoError` into a status by hand is the Go shape the language exists to avoid. The answer: the _stored_ type is `Handler = sendable fun(Request): Response suspends` (no throws), and registration is error-polymorphic — `app.get<E>(pattern, h: fun(Request): Response suspends throws E | Fail)` — with one rule applied at that point: `Fail(status, text)` answers with its status, anything else answers 500 and is logged. Erasure happens in exactly one documented place; `try` stays free inside handlers; `?!` says which status a failure deserves. This needed a type parameter _inside_ an error union to unify (`E` binds to what the lambda throws beyond `Fail`, `Never` when nothing; a lambda checked against `throws E | Fail` may throw `Fail` regardless). Panics in handlers are isolated per request by a `gather` around the call — no new construct, the panic is a value at that boundary (D52) — and the `with` cleanups a handler held have run by then (D49 addendum). Rejected: a `supervise` scope construct (Erlang/Kotlin `SupervisorScope`), noted as a possibility if a second program needs "children fail independently"; an open `Error` type, again.
 
 ### D57 — Enums: a closed set of named values of one integer type (v0.32)
 
@@ -1037,9 +1036,9 @@ when (guess.compareTo(secret)) {
 }
 ```
 
-D12 rejected `enum` as *sugar for sum types*, and that stands: alternatives that carry data are a sealed trait. What D12 did not cover is the closed set of *values* — a phase, a direction, the result of a comparison — which the language had been spelling as bare integers (the guessing game matched `-1`, `0`, `1`) or as a struct plus `static val` constants (D23 addendum, an *open* set with well-known members). An `enum` is the closed one: every value has a name, the compiler knows the whole list, and `when` over it is exhaustive by member (D13's rule, with the same `else` lints).
+D12 rejected `enum` as _sugar for sum types_, and that stands: alternatives that carry data are a sealed trait. What D12 did not cover is the closed set of _values_ — a phase, a direction, the result of a comparison — which the language had been spelling as bare integers (the guessing game matched `-1`, `0`, `1`) or as a struct plus `static val` constants (D23 addendum, an _open_ set with well-known members). An `enum` is the closed one: every value has a name, the compiler knows the whole list, and `when` over it is exhaustive by member (D13's rule, with the same `else` lints).
 
-**Representation.** A member is a number of one integer type: `i64` unless the declaration says `: u8` and the like (integers only — a value must be able to count). An explicit value is an integer literal; an implicit one is the previous member's plus one, and the first counts from 0. Two members cannot share a value, and a value must fit the type — both errors at the declaration. At run time an enum value *is* its number and nothing more: no allocation, no tag, structural equality and hashing are the integer's. The names live in the compiler, which spells them out where they are needed.
+**Representation.** A member is a number of one integer type: `i64` unless the declaration says `: u8` and the like (integers only — a value must be able to count). An explicit value is an integer literal; an implicit one is the previous member's plus one, and the first counts from 0. Two members cannot share a value, and a value must fit the type — both errors at the declaration. At run time an enum value _is_ its number and nothing more: no allocation, no tag, structural equality and hashing are the integer's. The names live in the compiler, which spells them out where they are needed.
 
 **What every enum has, with nothing to write.** `E.Member` names a value; `x.value` reads its number; `x.toString()` (and interpolation) is the member's name as declared; `E.values()` is every member in declaration order; `E.fromValue(n)` and `E.parse(s)` are `E?`, the inverses of `.value` and `toString`. An enum is `Comparable` by its numbers (`<`, `sorted()`, `min()`, a `T: Comparable` bound, `x.compareTo(y)`) and `Hashable` (a map key, a set element). It is `Sendable`.
 
@@ -1074,7 +1073,7 @@ val back = try json.decode<User>(text)         // DecodeError lists every proble
 
 **Mechanism: an empty `implement` opts in.** `implement Codable for User { }` — or, in a struct body, just `implement Codable`, the braces being optional when the body is empty — asks the compiler to synthesize the body from the type's fields. A method the author writes is kept and the rest is synthesized, so one direction can be hand-written; a foreign type is covered the same way at top level (`implement Codable for geo.Point`), one implement per pair program-wide as D17 already requires. On a generic struct the empty implement is read with the bounds the derive needs (`implement Codable` in `Page<T>` is `implement<T: Codable> Codable for Page<T>`; a parameter that appears only in a `@skip` field gets no bound), and hover shows the header and the body that were written. The formatter drops empty braces.
 
-*Why declared, when `==` is not.* The line is between a **property of the value** — equality, hashing, sendability, ordering of tuples, which hold because of what the value is — and a **contract with the outside world** — a wire format, which others depend on and which a renamed field silently breaks. The first kind is implicit; the second is declared, in one line, where a reader can see that the type is a DTO. Rejected: implicit-from-shape (every type a wire format by default: a `passwordHash` ships unless someone remembers `@skip`, a rename is a silent protocol change); Go's exported-field rule (couples API visibility to wire shape — "why is my field missing" is that language's most-asked serialization question); a `@derive(Codable)` attribute (a second spelling for "give me an implement", no partial override, no foreign types); user-definable derivation (compile-time code execution, hygiene, tooling — a later phase, to be built on the shape description this decision makes the compiler compute).
+_Why declared, when `==` is not._ The line is between a **property of the value** — equality, hashing, sendability, ordering of tuples, which hold because of what the value is — and a **contract with the outside world** — a wire format, which others depend on and which a renamed field silently breaks. The first kind is implicit; the second is declared, in one line, where a reader can see that the type is a DTO. Rejected: implicit-from-shape (every type a wire format by default: a `passwordHash` ships unless someone remembers `@skip`, a rename is a silent protocol change); Go's exported-field rule (couples API visibility to wire shape — "why is my field missing" is that language's most-asked serialization question); a `@derive(Codable)` attribute (a second spelling for "give me an implement", no partial override, no foreign types); user-definable derivation (compile-time code execution, hygiene, tooling — a later phase, to be built on the shape description this decision makes the compiler compute).
 
 **Target: one derive, every format.** The synthesized traits are format-agnostic — Swift's `Codable`, serde's `Serialize`/`Deserialize`:
 
@@ -1098,23 +1097,23 @@ trait Decoder {
 }
 ```
 
-A flat event stream: the derive writes `key("id")` and then the value encodes *itself* (`this.id.encode(to)`), so the traits carry no generic method (a boxed trait object could not, D9) and no value is boxed on the way out; a format is one implementation of each trait, and `std/json`, a row decoder and an environment decoder all drive the same synthesized code. The encoder is a **trait object**, one virtual call per primitive — `Encodable` stays object-safe and the derive stays simple; a program that links one JSON encoder devirtualizes later. The error types are fixed, as D40 requires of a trait used as an object. Rejected: a JSON-specific `toJson()`/`fromJson()` (a derive per format, a tree allocation per encode); Swift's container objects (`field<T>` is a generic method, impossible on a trait object, and its non-generic form boxes every value); a format-neutral `Value` tree as the intermediate (an allocation per field); a generic `fun encode<E: Encoder>(to: E)` (direct calls, but `Encodable` is no longer an object and every format stencils the world).
+A flat event stream: the derive writes `key("id")` and then the value encodes _itself_ (`this.id.encode(to)`), so the traits carry no generic method (a boxed trait object could not, D9) and no value is boxed on the way out; a format is one implementation of each trait, and `std/json`, a row decoder and an environment decoder all drive the same synthesized code. The encoder is a **trait object**, one virtual call per primitive — `Encodable` stays object-safe and the derive stays simple; a program that links one JSON encoder devirtualizes later. The error types are fixed, as D40 requires of a trait used as an object. Rejected: a JSON-specific `toJson()`/`fromJson()` (a derive per format, a tree allocation per encode); Swift's container objects (`field<T>` is a generic method, impossible on a trait object, and its non-generic form boxes every value); a format-neutral `Value` tree as the intermediate (an allocation per field); a generic `fun encode<E: Encoder>(to: E)` (direct calls, but `Encodable` is no longer an object and every format stencils the world).
 
-**`Codable` is a supertrait, and supertraits now exist.** `trait Codable : Encodable + Decodable { }` is an ordinary prelude trait, its supers spelled like a bound with no members of its own. A bound `T: Codable` expands transitively, so `T` has `encode` and `decode`; `implement Codable for X { ... }` requires that `X` implements the supers — and an *empty* implement of a trait with supertraits synthesizes every super implement the type lacks, which is how one line derives both directions. A trait with supertraits **is** a trait object: its method table is the supers' tables laid end to end, most-derived declaration winning a name they share, so an object answers to every inherited method and a default body from a super is in the table like any other. Two supers that neither requires the other declaring the same name is an ambiguity and the trait is not object safe; every other object-safety rule (no associated types, no generic methods, no static functions, no `Self` in a signature) is now asked of the supers too — which is why `Codable` is still not an object, `Decodable.decode` being static and returning `Self`. A trait object is never converted to another trait's object: that needs the concrete type back (§9 item 14). Rejected: `Codable` as compiler-known sugar (a prelude name that is not a trait — hover, docs and errors would all special-case it); `implement Encodable + Decodable for X` (new implement syntax, two names on every DTO).
+**`Codable` is a supertrait, and supertraits now exist.** `trait Codable : Encodable + Decodable { }` is an ordinary prelude trait, its supers spelled like a bound with no members of its own. A bound `T: Codable` expands transitively, so `T` has `encode` and `decode`; `implement Codable for X { ... }` requires that `X` implements the supers — and an _empty_ implement of a trait with supertraits synthesizes every super implement the type lacks, which is how one line derives both directions. A trait with supertraits **is** a trait object: its method table is the supers' tables laid end to end, most-derived declaration winning a name they share, so an object answers to every inherited method and a default body from a super is in the table like any other. Two supers that neither requires the other declaring the same name is an ambiguity and the trait is not object safe; every other object-safety rule (no associated types, no generic methods, no static functions, no `Self` in a signature) is now asked of the supers too — which is why `Codable` is still not an object, `Decodable.decode` being static and returning `Self`. A trait object is never converted to another trait's object: that needs the concrete type back (§9 item 14). Rejected: `Codable` as compiler-known sugar (a prelude name that is not a trait — hover, docs and errors would all special-case it); `implement Encodable + Decodable for X` (new implement syntax, two names on every DTO).
 
-**What the derive knows.** The prelude implements the traits for the primitives, `List<T>`, `Map<string, T>`, `T?`, tuples and the `Json` tree itself. A struct becomes an object of its non-skipped fields in declaration order. A field's key is its name, or `@key("user_id")` for every format, or `@key(json: "userId", db: "user_id")` per format by the string the encoder reports (a format written in a library picks its own string, no compiler change); a casing policy for a whole API is an *encoder option* (`json.Options(keys: KeyStyle.SnakeCase)`), never an attribute. `@skip` leaves a field out in both directions (it needs a default, or the decoder could not construct the value); `@skip(json)` for one format. Two fields on one key are a compile error; a field of a type that cannot be derived (a function, a `Mutex`, a raw pointer, a handle) is an error at the implement naming the field, as the `Equatable`-key check already does.
+**What the derive knows.** The prelude implements the traits for the primitives, `List<T>`, `Map<string, T>`, `T?`, tuples and the `Json` tree itself. A struct becomes an object of its non-skipped fields in declaration order. A field's key is its name, or `@key("user_id")` for every format, or `@key(json: "userId", db: "user_id")` per format by the string the encoder reports (a format written in a library picks its own string, no compiler change); a casing policy for a whole API is an _encoder option_ (`json.Options(keys: KeyStyle.SnakeCase)`), never an attribute. `@skip` leaves a field out in both directions (it needs a default, or the decoder could not construct the value); `@skip(json)` for one format. Two fields on one key are a compile error; a field of a type that cannot be derived (a function, a `Mutex`, a raw pointer, a handle) is an error at the implement naming the field, as the `Equatable`-key check already does.
 
-**Absent, null, required.** A field with no default and a non-nullable type is required: absent or `null` is a problem. A field default is the value when the key is absent — there is no `@default` attribute because the language already has one. A `T?` field reads `null` and *absent* both as `null` (Swift's and serde's rule; Kotlin's stricter one makes the most common API shape the most verbose); `@required` marks a nullable field whose key must be present. When absent and null must be told apart — a PATCH body — the field is `T??` (D5 nests) or `json.Patch<T>`. Encoding writes `null` for a null field; `json.Options(omitNulls: true)` drops them.
+**Absent, null, required.** A field with no default and a non-nullable type is required: absent or `null` is a problem. A field default is the value when the key is absent — there is no `@default` attribute because the language already has one. A `T?` field reads `null` and _absent_ both as `null` (Swift's and serde's rule; Kotlin's stricter one makes the most common API shape the most verbose); `@required` marks a nullable field whose key must be present. When absent and null must be told apart — a PATCH body — the field is `T??` (D5 nests) or `json.Patch<T>`. Encoding writes `null` for a null field; `json.Options(omitNulls: true)` drops them.
 
 **Sealed traits are internally tagged.** `implement Codable for Shape` covers the trait and every variant (the set is closed; a variant may still write its own implement): `{"type": "Circle", "r": 1.0}`, the tag being the variant's declared name (renamed by `@key` on the variant) under the key `"type"` (renamed by `@tag("kind")` on the trait; `@tag("type", content: "value")` opts into the adjacent layout `{"type": "Circle", "value": {...}}`). A variant with a field named like the tag is an error. Decoding takes the fast path when the tag is the first key — what this encoder writes — and otherwise buffers the object through the `Codable` `Json` tree and decodes the variant from that. A format that has no notion of variants (a row) reports a `DecodeError` at the path. Rejected: externally tagged `{"Circle": {...}}` (rare in APIs), untagged (try each variant: fragile, slow, and the errors are useless).
 
-**Enums need nothing.** An enum is compiler-owned (D57: no `implement` blocks), so like a primitive it is `Codable` without a declaration: its name on the wire, matched exactly on the way in (an unknown name is a problem listing the valid ones), `@key("active")` renaming a member. Whether an enum travels as its name or its number is a property of *where it is going*, not of the enum — JSON wants names, a `smallint` column wants numbers — so it is the format's policy: `json.Options(enums: EnumStyle.Number)`; `json` defaults to `Name`, a row codec to `Number`; decoding is strict per style. Rejected: `@key(number)` on the enum (a second meaning for `@key`); a new attribute for a rare case.
+**Enums need nothing.** An enum is compiler-owned (D57: no `implement` blocks), so like a primitive it is `Codable` without a declaration: its name on the wire, matched exactly on the way in (an unknown name is a problem listing the valid ones), `@key("active")` renaming a member. Whether an enum travels as its name or its number is a property of _where it is going_, not of the enum — JSON wants names, a `smallint` column wants numbers — so it is the format's policy: `json.Options(enums: EnumStyle.Number)`; `json` defaults to `Name`, a row codec to `Number`; decoding is strict per style. Rejected: `@key(number)` on the enum (a second meaning for `@key`); a new attribute for a rare case.
 
 **Decoding reports every problem.** `DecodeError { problems: List<Problem> }`, a `Problem` being a path and a message (`user.address[2].zip`: "expected a number, found a string"; `Problem.pointer()` is the RFC 6901 spelling, and a key containing a dot is quoted). The synthesized `decode` reads each field into a temporary, records a problem instead of throwing, skips what it cannot read, and throws once at the end; a nested struct's problems come back with the path prefixed; the list is capped so a hostile document cannot grow it. A malformed document is one problem — there is nothing to continue from. Validation, when it comes, appends to the same list, so a client fixes a request in one round trip. Rejected: fail-fast (one field per round trip); fail-fast for types with collected validation (two responses for one bad request).
 
 **Also synthesized: `Comparable`.** `implement Comparable for Version` orders lexicographically by field in declaration order — the tuple rule of D48 applied to a struct — and fails at the implement on a field that is not ordered. `==`, hashing and printing were already structural and stay implicit.
 
-*Implementation notes (v0.33).* A `Decoder` records a value of the wrong type as a problem, consumes it and returns a zero, so the derived code never has to recover a stream; `problem`/`problemAt`/`problems` are part of the trait. A nested value that cannot be built throws after its object is fully read, and its parent catches that, finishes its own checks, and fails once. Sealed families decode through the `Value` tree today; the in-stream fast path for a leading tag is still to come. Derived bodies are synthesized as syntax (with three nodes no source spells: a resolved type, a resolved type as a receiver, a field's default) and checked like anything written, so every rule of the language applies to them.
+_Implementation notes (v0.33)._ A `Decoder` records a value of the wrong type as a problem, consumes it and returns a zero, so the derived code never has to recover a stream; `problem`/`problemAt`/`problems` are part of the trait. A nested value that cannot be built throws after its object is fully read, and its parent catches that, finishes its own checks, and fails once. Sealed families decode through the `Value` tree today; the in-stream fast path for a leading tag is still to come. Derived bodies are synthesized as syntax (with three nodes no source spells: a resolved type, a resolved type as a receiver, a field's default) and checked like anything written, so every rule of the language applies to them.
 
 **Consequences.** D51 gains its first data-carrying attributes, all in service of this decision (`@key`, `@skip`, `@required`, `@tag`); the sentence "there is no derivation mechanism" is replaced by "derivation is what the compiler implements, requested by an empty `implement`". The compiler's synthesized-function machinery (tuple comparison, enum functions) becomes the general path for a derived body, so a later user-definable derivation has one description of a type's shape to expose. `std/json` is the first format; rows and environment follow.
 
@@ -1130,7 +1129,7 @@ short one.
 **Four modules, not one.** `crypto` holds the digests (SHA-256, SHA-384,
 SHA-512, SHA-1), HMAC, constant-time comparison, the system CSPRNG and
 UUIDs; `hex` and `base64` are their own modules; `jwt` sits on top of all
-three. base64 is an *encoding*, not encryption, and a name that suggests
+three. base64 is an _encoding_, not encryption, and a name that suggests
 otherwise is how `base64.encode(password)` gets written — so it does not
 live behind `crypto.`. Rejected: one `encoding` module with the codecs as
 statics (`encoding.Base64.encodeUrl(...)` is three hops for the commonest
@@ -1140,7 +1139,7 @@ protect nothing).
 **A hash returns a `Digest`, not `List<u8>`.** `Digest` implements
 `Display` (lower-case hex), `Hashable`, and `Equatable` with a
 **constant-time** `equals` — so `mac == expected` is the natural spelling
-*and* the safe one. `bytes()` is there for sending the digest, and its
+_and_ the safe one. `bytes()` is there for sending the digest, and its
 result compares with the structural, short-circuiting `==`; the asymmetry
 is deliberate, and `Digest.of(bytes)` wraps a signature that arrived from
 outside so it can be compared the safe way. `crypto.equalBytes(a, b)` is
@@ -1173,7 +1172,7 @@ not a condition a caller can answer: there is no weaker source worth
 falling back to, and nothing to decide. Threading `throws IoError` through
 every call site — including `uuidV4()`, which would then throw — buys
 nothing, and a panic is still caught at a request boundary (D56). This is
-the one place in the standard library where an *external* failure is a
+the one place in the standard library where an _external_ failure is a
 panic rather than an error, and the reason is that it is not recoverable
 rather than that it is rare. Go 1.24 moved `crypto/rand.Read` the same way.
 Rejected: `throws IoError` (every session-token line grows a `try`, and the
@@ -1192,7 +1191,7 @@ mutable state, which becomes a lock when the executor gets threads (D35).
 
 **A JWT library is a list of refusals.** `jwt` implements the HMAC family
 (`HS256`/`HS384`/`HS512`) and: takes the expected algorithm from the
-*caller*, never from the token's `alg` (the header is unsigned input — this
+_caller_, never from the token's `alg` (the header is unsigned input — this
 is `alg: none` and RS256-verified-as-HS256); requires `exp` unless asked
 not to; rejects `crit`; compares the signature through `Digest`; and
 refuses a key shorter than the digest (RFC 7518 §3.2) with a panic, because
@@ -1204,7 +1203,7 @@ else means "sign in again". `readHeader` exists for `kid` lookup and says
 in its doc that nothing it returns is trustworthy. RSA and ECDSA are out of
 scope until there is a bignum or a binding.
 
-*Implementation notes (v0.34).* All of it is Veles except one runtime call,
+_Implementation notes (v0.34)._ All of it is Veles except one runtime call,
 `veles_random_bytes` in `veles_os.c` (and `-lbcrypt` on Windows). The
 digests keep a per-hasher scratch buffer so a long message allocates
 nothing per block; the round-constant tables are module-level `val`s, which
@@ -1262,15 +1261,15 @@ write, on a round trip through a server whose job is to hand them back;
 nanoseconds would buy precision the OS clock does not have and cost the
 range, as Go's year-2262 ceiling shows. Microseconds span ±292,000 years
 and order two events inside one millisecond. `toSeconds`/`toMillis` round
-**down**, not toward zero — they name the second *containing* the instant,
+**down**, not toward zero — they name the second _containing_ the instant,
 which is what the calendar needs and what keeps working before 1970 —
 while `Duration`'s conversions truncate toward zero, because a length has a
 sign and a point does not.
 
 **Zones are a fixed `Offset`, and the calendar is pure Veles.** `Offset` is
 minutes east of UTC (±18:00); `DateTime` carries one, so it prints full
-RFC 3339, and `Offset.local(at:)` asks the host for its offset *at that
-instant*, which is the only form the question has. The conversion itself is
+RFC 3339, and `Offset.local(at:)` asks the host for its offset _at that
+instant_, which is the only form the question has. The conversion itself is
 Howard Hinnant's `days_from_civil` and its inverse, in Veles: deterministic,
 no C round trip, and no `mktime` ambiguity. The C side answers exactly two
 questions — what time is it, and what is this host's offset. The IANA
@@ -1346,7 +1345,7 @@ keeps making), and leaving `sleep` on `i64` (the one place in the language
 where a time would still be an unlabelled number).
 
 **Addendum (2026-09-25): a `Duration` on the wire.** `Duration` implements
-`Codable` by hand, and *how* it is written is the format's policy, not the
+`Codable` by hand, and _how_ it is written is the format's policy, not the
 type's — the `EnumStyle` precedent: `Encoder`/`Decoder` gained
 `durations(): DurationStyle` (default `Seconds`), `json.Options` a
 `durations` field, `ValueEncoder`/`ValueDecoder.of` a `durations`
@@ -1366,7 +1365,7 @@ standard libraries do not read it); a number of seconds as the default
 ### D61 — Falling back and bailing out: `??` and let-else (v0.36)
 
 `try` hands a failure up; `?:` (D30) replaces a missing value. What was
-missing was the same for a `Result`, and a way to *bind* a value or leave,
+missing was the same for a `Result`, and a way to _bind_ a value or leave,
 without burying the happy path in a `when` whose only job is to bail out
 (notes I1; the write-up with the alternatives is `archive/veles-guard-design.md`).
 
@@ -1378,7 +1377,7 @@ at `?:`'s precedence; a line may start with `??` and continue the previous
 one, as with `?:` and `?!`. In a type, `T??` is still two `?`.
 
 **One operator per kind of "maybe"** (user decision, 2026-09-25). `?:` is
-for a nullable, `??` for a `Result`; each on the other kind is an *error*
+for a nullable, `??` for a `Result`; each on the other kind is an _error_
 whose fix swaps the operator, so a reader always knows from the operator
 which kind is being unwrapped. Every other language with `??` (Swift, C#,
 JavaScript, Dart, PHP) means by it what Veles means by `?:`; the error and
@@ -1412,7 +1411,7 @@ recommended, and turned down so the operator shows the kind); a
 (a separate decision, not foreclosed by this one); Swift's `guard let`
 spelling (a second keyword for what `val` already says).
 
-*Amended by D98:* the handler forms that bound the error, `r ?? { e => ... }` and
+_Amended by D98:_ the handler forms that bound the error, `r ?? { e => ... }` and
 `val x = r else { e => ... }`, are removed; `r catch (e) { ... }` is the one
 spelling that sees the error. `r ?? fallback`, `r ?? return`, and let-else
 without a binding stay as written above.
@@ -1471,7 +1470,7 @@ immutable `List`'s facts survive calls. Arithmetic (`i + 1`) is not
 reasoned about; such reads stay `T?`. Losing a fact after a refactor is a
 compile error (a `T?` where a `T` was wanted), never a wrong program.
 
-*As built (2026-09-26).* The facts ride in the smart-cast map (D5), so
+_As built (2026-09-26)._ The facts ride in the smart-cast map (D5), so
 branches, `&&`/`||`/`!`, the early exit and the merge after an `if` treat
 them exactly as they treat a null check. `xs.first()` and `xs.last()` are
 `T` after a fact that the list is non-empty (`!xs.isEmpty()`,
@@ -1485,7 +1484,7 @@ rules miss is a panic, not an out-of-bounds read. A `while` over
 `var i = 0 … i += 1` is not covered (the assignment ends the fact); use
 `loop (i in xs.indices())`.
 
-*Gaining a fact must not break code.* When a read that used to be `T?`
+_Gaining a fact must not break code._ When a read that used to be `T?`
 becomes `T`, a `?:` after it is a **warning** with a fix that drops the
 fallback, not the usual "needs a nullable left operand" error: adding a
 length check above working code should never make that code an error.
@@ -1495,11 +1494,11 @@ removed. A read that can only fail through a bug says so where it is
 written: `xs.at(i) ?: panic("json: the stack is never empty while
 parsing")`. `panic(message)` is the one way to panic from Veles code, so
 `panic(` finds every site. The removed names are errors carrying a fix to
-the `?: panic("...")` form with the reason left for the author. *(Built v0.37: the fix writes `(x.at(i) ?: panic("TODO: say why this cannot fail"))`; `panic(` never returns, so it does not end bounds facts.)*
+the `?: panic("...")` form with the reason left for the author. _(Built v0.37: the fix writes `(x.at(i) ?: panic("TODO: say why this cannot fail"))`; `panic(` never returns, so it does not end bounds facts.)_
 
 **D — Shapes instead of indexes, in std.** `xs.indices(): Range`,
 `s.splitOnce(sep): (string, string)?`, and `enumerate()`/`zip()` on
-`List` directly, so the common loops need no index at all. *(Built v0.37: `enumerate()` is eager, like the other `List` adapters; `xs.iter().enumerate()` stays the lazy form.)*
+`List` directly, so the common loops need no index at all. _(Built v0.37: `enumerate()` is eager, like the other `List` adapters; `xs.iter().enumerate()` stays the lazy form.)_
 
 Rejected: keeping `atOrPanic` behind a lint (the short spelling stays the
 unchecked one); an `.expect("why")` method (a second spelling of
@@ -1511,7 +1510,7 @@ and errors nobody can predict).
 
 D35 made `List` genuinely immutable and `mutableList.toList()` a copy, but
 the checker still let a `MutableList` stand where a `List` was expected,
-passing the *same* handle — so a "List" could change during a call (found
+passing the _same_ handle — so a "List" could change during a call (found
 by D62's bounds facts: a `List` parameter shrank through a global alias),
 and could be shared with a task while its owner kept writing. The same
 holds for `MutableMap`/`Map` and `MutableSet`/`Set`.
@@ -1575,7 +1574,7 @@ none; a field with a default, so `Panic(message: m)` still builds), and
 Rejected: `!!` everywhere; `!!` with a warning and a `--fix` to
 `?: panic("TODO…")`; `!!` only in tests.
 
-*Known gap:* a panic written in std for a caller's misuse
+_Known gap:_ a panic written in std for a caller's misuse
 (`xs.swap(0, 7)`, `chunked(0)`) reports the std line, not the caller's —
 Rust's `#[track_caller]` is the model if it proves to matter.
 
@@ -1610,7 +1609,7 @@ D35 promised that tasks run on several cores; this fixes how. **Tasks are
 scheduled M:N onto a pool of worker threads (one per core by default,
 `VELES_THREADS` to override) and a suspended task may resume on any of
 them** — Go's and Tokio's model. There is one garbage-collected heap;
-collection stops every worker at a *safepoint* (an allocation or a
+collection stops every worker at a _safepoint_ (an allocation or a
 suspension point, both of which the compiler already knows) and marks
 from all their roots. Each worker allocates from a buffer of its own so
 the common allocation takes no lock. `Mutex<T>` becomes a real lock and
@@ -1632,21 +1631,21 @@ saves about a third of the work); staying single-threaded with an
 offload pool and scaling by processes (breaks D35's promise, no in-process
 parallel computation).
 
-*Stage 1 built (v0.42).* What the decision left to the implementation:
+_Stage 1 built (v0.42)._ What the decision left to the implementation:
 a call to a foreign function (an extern outside std, or through an
-`extern fun` pointer) runs in a *safe region* — the collector does not
+`extern fun` pointer) runs in a _safe region_ — the collector does not
 wait for a thread blocked in C, and a callback from C leaves the region
 for its Veles code. `Mutex` re-locked inside its own `withLock` panics
 rather than hanging, and a panicking `withLock` function releases the
 lock. `Atomic<T>` gains `update(f)`, the read-modify-write a
 `load`/`store` pair cannot do without losing a concurrent store.
-*Stage 2 built (v0.42).* Each worker has a run queue of its own that
+_Stage 2 built (v0.42)._ Each worker has a run queue of its own that
 idle workers steal half of, plus a shared queue; a task's scheduling
 state is one word changed by compare-and-swap, so taking, running and
 requeueing a task, spawning one, and a successful finish take no global
 lock. Channels, races and timers stay one runtime structure under one
 lock.
-*Addendum (v0.42): word atomics and blocking calls.* An `Atomic<T>` whose
+_Addendum (v0.42): word atomics and blocking calls._ An `Atomic<T>` whose
 `T` is an integer, a float or `bool` takes no lock: `load`, `store`
 and `swap` are single sequentially consistent instructions, and
 `update(f)` loops on compare-and-swap — so under contention `f` may run
@@ -1665,7 +1664,7 @@ task's step down to the next suspension (the frame is on its stack), and
 waits as a spare. At most `VELES_THREADS` threads run Veles code at once;
 threads blocked in calls are extra. The monitor sleeps once nothing has
 blocked for 100 ms and is woken by the next blocking call.
-*Addendum (v0.42): channels.* `Channel<T>()` — no capacity — is a
+_Addendum (v0.42): channels._ `Channel<T>()` — no capacity — is a
 rendezvous: `send` completes when a receiver has taken the value (it had
 behaved as capacity 1). A blocked sender or receiver waits with its value
 slot in its node and the side arriving second copies across (Go's
@@ -1704,7 +1703,7 @@ by name through `lib-paths` and clang's own library directories and
 passes its path, which is what makes a link static on every platform
 (a linker shown only `-lz` prefers the shared library).
 
-*(2026-10-01, plan A8 — a bug fixed, no change of meaning.)* An `extern
+_(2026-10-01, plan A8 — a bug fixed, no change of meaning.)_ An `extern
 struct` passed or returned by value follows the platform's C calling
 convention — Windows x64, System V x86-64, AAPCS64 — in calls to C, calls
 through `extern fun` pointers and exported `extern "C" fun`s
@@ -1750,7 +1749,7 @@ must reach shared state through `sendable` captures); `serve` handling
 signals itself by default (hidden global behaviour that any second
 server or other cleanup has to undo).
 
-*Not taken with it (asked 2026-09-26):* making a std panic caused by the
+_Not taken with it (asked 2026-09-26):_ making a std panic caused by the
 caller (`xs.swap(0, 7)`) report the caller's line. It keeps reporting the
 std line until stack traces exist (D64's known gap).
 
@@ -2027,7 +2026,7 @@ test "parses a port" {
   sides. A bare `check(...)` with no declaration of that name is an error
   naming `assert`.
 
-*Built 2026-09-27.* A test lowers to a function with a bare `throws`
+_Built 2026-09-27._ A test lowers to a function with a bare `throws`
 (nobody wrote the clause, so D45's "needless throws" lint skips it); its
 name is the sentence, its symbol none. `expect(a OP b)` binds each side
 once, in source order (a literal side takes the other's type, as in the
@@ -2044,11 +2043,11 @@ named `E`. `expectPanics` launches the body through a private prelude
 test code (a `test fun` or anything in a test file) from other code is an
 error, by name or `module.name`.
 
-*Amended 2026-09-27 — suites.* The user: "I think both is the answer" —
+_Amended 2026-09-27 — suites._ The user: "I think both is the answer" —
 `suite "name" { ... }` holds tests, nested suites and `test fun` helpers
 (visible only inside the suite, so two suites may each have their own),
 and a `*.test.vs` file is a suite named after the file. A test's full name
-is its suites' names and its own joined with ` / `; the summary lists it,
+is its suites' names and its own joined with `/`; the summary lists it,
 `--filter` matches it, and names must differ only within one suite. The
 report is grouped (the user's choice over one qualified line per test): a
 heading per suite, its tests indented under it, nested suites further in,
@@ -2061,7 +2060,7 @@ Rejected (user, recommended combination): `test fun name()` as the test
 form; a `testing` module anyone can import (leaks into programs, needs
 `try`, loses the location); a built-in `assert` everywhere.
 
-*Amended 2026-10-04 — test files (user: "in `*.test.vs` files there should not be `fun` functions, only `test fun` functions... and I think the module should not know about any declarations there, BUT later we should be able to export test functions so people can create reusable test libraries").* A top-level `fun` in a `*.test.vs` file is an error with a fix that writes `test fun` (methods in `struct`/`implement` bodies are not top-level and stay as they are), and a type, value or helper declared in a test file is an error when a non-test file names it (by name, by type name, or `module.name`): the module's own files cannot see their tests' declarations; tests still see the module's private names. Open, by the user's own "later": exporting test code from a package so that others can build reusable test libraries (checklist §11).
+_Amended 2026-10-04 — test files (user: "in `_.test.vs`files there should not be`fun`functions, only`test fun`functions... and I think the module should not know about any declarations there, BUT later we should be able to export test functions so people can create reusable test libraries").* A top-level`fun`in a`\*.test.vs`file is an error with a fix that writes`test fun`(methods in`struct`/`implement`bodies are not top-level and stay as they are), and a type, value or helper declared in a test file is an error when a non-test file names it (by name, by type name, or`module.name`): the module's own files cannot see their tests' declarations; tests still see the module's private names. Open, by the user's own "later": exporting test code from a package so that others can build reusable test libraries (checklist §11).
 
 ### D79 — A diagnostic belongs to a named family; `veles explain <family>` (v0.45)
 
@@ -2290,7 +2289,7 @@ fun main() {
 
 `protected var` already meant "assigned only by its type" (D22). For a field
 whose type is a mutable collection (`MutableList`, `MutableMap`, `MutableSet`,
-`Deque`) it also means the collection's *contents* are the type's:
+`Deque`) it also means the collection's _contents_ are the type's:
 outside the type's own declarations the field may only be the receiver of the
 immutable form's methods, a loop head, or interpolated; a mutating method,
 binding it, passing it and returning it are errors, keeping D25's no-views
@@ -2317,7 +2316,7 @@ Rejected (user, recommended of 3): leaving it (debug's `called from` only),
 automatic caller reporting for every std panic (needs the frame chain in
 release).
 
-*Addendum 2026-10-11.* A function that suspends may be marked too (the
+_Addendum 2026-10-11._ A function that suspends may be marked too (the
 first build refused it): its site is one more argument of the call in
 the task, and of a launch, which is the site of a function started with
 `async` — a plain marked one through its ramp, which had left it out.
@@ -2334,8 +2333,8 @@ public use shapes { area, Circle as Round }   // flattened: use mathlib → math
 
 `public use` in any module adds the named module, or the named items, to that
 module's public surface; ~~the root module's public surface is the package's,~~
-*(D142, v0.74: every module's `public` declarations are reachable from other
-packages at their own path; `public use` is the optional facade)* and the manifest's `exports` list goes away (the bootstrap has no users to
+_(D142, v0.74: every module's `public` declarations are reachable from other
+packages at their own path; `public use` is the optional facade)_ and the manifest's `exports` list goes away (the bootstrap has no users to
 keep compatible; a manifest that still has one gets an error naming the fix).
 Forms mirror `use` (D85): `public use m` re-exports the module under its
 name, `public use m { a, T as U }` flattens those items into this module
@@ -2345,9 +2344,9 @@ for now (revisit with M7). `public use` is a `use` edge for import-cycle
 detection; a flattened name collides with a declaration of the module as a
 duplicate does. The dependency graph still comes from manifests; ~~the loader
 reads a dependency's root module to learn its surface, and the error for a
-module that is not re-exported names the `public use` to add.~~ *(D142: the
+module that is not re-exported names the `public use` to add.~~ _(D142: the
 loader reads the modules a dependent imports; an item that is not `public`
-gets an error naming the word to add.)* Hover and
+gets an error naming the word to add.)_ Hover and
 go-to-definition follow a re-export to the original.
 
 Rejected (user, recommended of 3): keeping manifest `exports`, whole modules
@@ -2462,7 +2461,7 @@ the recursion was — the chain keeps the first 4096 calls); a release build
 says a debug build shows the chain. Exit code 101 as any panic that ends the
 process. It is not catchable and does not unwind — there is no stack to
 unwind on — so `recursion.Depth` (D75) stays the way a walk over input
-turns depth into an *error*.
+turns depth into an _error_.
 
 Not covered: a single frame larger than the guard region (a huge local
 array) can jump the guard and fault elsewhere — clang's stack probes would
@@ -2716,7 +2715,7 @@ new (the `.git`/`.env` exposure and the broken relative links stay).
 named options; the low-level piece is `fs.stat`, which any tool that asks "is
 this out of date" (a build system, the compiler's own incremental cache) needs.
 
-*Addendum (D97):* the body is no longer read whole — `http.files` streams from
+_Addendum (D97):_ the body is no longer read whole — `http.files` streams from
 disk with a declared length, so a range is a seek and `HEAD` never opens the
 file. `contentTypeOf` is gone: `MediaType.ofExtension` (D97) is its one spelling.
 
@@ -2865,7 +2864,7 @@ the one that failed". Veles had handlers for one call (`r ?? { e => }`, D61's
 `val x = r else { e => }`, `when`), and the immediately called closure
 `(() => { ... })()` with a `??` after it worked for several — but a closure is a
 lambda, so `continue`/`break` in its body is refused ("outside of a loop") and
-`return` returns from the closure. The rejection of a `catch` for *panics*
+`return` returns from the closure. The rejection of a `catch` for _panics_
 (2026-09-26, D52) is a different thing and stands: a panic is the bug channel;
 `do/catch` handles typed errors (`Result`/`throws`), which are ordinary values
 (D4).
@@ -2899,21 +2898,21 @@ val u = do { val a = try f(); try g(a) } catch (e) { "failed: ${e.message()}" }
   see an error. So "give me the error" has exactly one spelling, and D61's
   toolbox has one form fewer.
 - **`try chain catch (e) { }`** (the user's question: "`(parse(s) catch (e) {
-  0 }).len()` is not looking good... what about `parse(s)?.len() catch (e) {}`
+0 }).len()` is not looking good... what about `parse(s)?.len() catch (e) {}`
   working as well?"). `try` already covers a whole method chain by grammar, so
   `try parse(s).len() catch (e) { -1 }` is `do { try parse(s).len() } catch (e)
-  { -1 }`: the `catch` after a `try` belongs to the whole `try` expression, the
+{ -1 }`: the `catch` after a `try` belongs to the whole `try` expression, the
   handler yields the chain's type, and the "write the parentheses" warning of
   `try f().m()` stays quiet because a `catch` follows. (A `catch` after a bare
   Result still attaches to that Result.) A chain with two failing calls still
-  wants `do { }` or parentheses *(v0.67: no longer — D134, one `try` covers
-  every failing call in its chain)*: a postfix marker per call (`?.` for a Result,
+  wants `do { }` or parentheses _(v0.67: no longer — D134, one `try` covers
+  every failing call in its chain)_: a postfix marker per call (`?.` for a Result,
   or `!.`) was not chosen — `?.` means nullable chaining (D70, and D61's "one
   operator per kind of maybe"), and `!.` reads as the rejected `!!` (D64); it
   stays open as a separate decision if such chains turn out to be common.
 - **Refused:** `catch` after a nullable ("a nullable has none; its fallback is
   `?:`"), after a value that cannot fail, alone, and `catch (e)` written as
-  `catch { e => }`; `try f() catch` is *not* refused (unlike `try f() ?? 0`,
+  `catch { e => }`; `try f() catch` is _not_ refused (unlike `try f() ?? 0`,
   where `try` would propagate the very error `??` handles, a `catch` intercepts
   it).
 - **Patterns** (the user: "one way of addressing it would be the patterns but
@@ -2938,7 +2937,7 @@ start the next line, as an `else` may (D61).
 
 **Block, not lambda.** `return` leaves the function, `break`/`continue` the loop
 (or labelled loop) around the `do`, and a call that suspends needs nothing
-declared, exactly as in D95's `if (val ...)`. The handler is *outside* the
+declared, exactly as in D95's `if (val ...)`. The handler is _outside_ the
 block: a `try` or `throw` in it belongs to the function or to a `do` around it,
 so `catch (e) { throw Wrapped(cause: e) }` makes the function `throws Wrapped`.
 Errors the handler catches are not the function's: a function whose only
@@ -2952,7 +2951,7 @@ handler may run from anywhere in it; nor do facts about what it assigned.
 `loop { ...; if (!cond) break }`); a `catch` with no `do`; a block in which
 nothing can fail ("the `catch` could never run"); and — refused rather than
 mis-compiled — a fail-fast `scope` inside the block that launches a child which
-can fail, because a scope passes its error to the *function*, past the handler:
+can fail, because a scope passes its error to the _function_, past the handler:
 put the scope in its own function and `try` that.
 
 **`do` and `catch` were already reserved words** (the lexer refused them as
@@ -3012,7 +3011,7 @@ C2's last task. The user chose the recommended option of each of four.
   A graceful stop wakes an accept that waits for a permit. Rejected: accept then
   503 (each refusal still costs a task and a write under a flood); unbounded.
 - **CORS.** `http.cors(origins:, methods:, headers:, expose:, credentials:,
-  maxAge:)`. The default allows no origin. `origins` is exact strings, `["*"]`,
+maxAge:)`. The default allows no origin. `origins` is exact strings, `["*"]`,
   or `https://*.example.com` (matched by the library on a dot boundary, so
   `evilexample.com` never matches). Preflight (`OPTIONS` with
   `Access-Control-Request-Method`) is answered by the middleware before routing;
@@ -3072,28 +3071,28 @@ keeps `with (a = …, b = …)`). If the block ends in an expression that is its
 value, the value is computed first and the resources close before it is used
 (D43 v0.29).
 
-- *Where.* Any braced statement block: function, test, `test fun`, lambda,
+- _Where._ Any braced statement block: function, test, `test fun`, lambda,
   loop body (it closes at the end of every iteration), `if`/`else`/`when`-arm
   block, `do` block, `scope`/`gather` body. Refused, each with an error naming
   the block form: at module level; as an expression-bodied function
   (`fun f() => …`); as a braceless `if`/`loop`/arm body (nothing would follow
   it); as the operand of an expression.
-- *Order.* Statement-form `with`s, block-form `with`s and the with-tasks of
+- _Order._ Statement-form `with`s, block-form `with`s and the with-tasks of
   part 2 in one block form one stack: the last registered is closed first.
-- *A `with` that is the last statement* has an empty body: the value is closed
+- _A `with` that is the last statement_ has an empty body: the value is closed
   at once. That is a warning ("closed as soon as it is opened") with no fix.
-- *Nothing changes for tooling that reads the tree*: the formatter prints the
+- _Nothing changes for tooling that reads the tree_: the formatter prints the
   statement as written and never converts between forms; the parser keeps it as
   its own node (`ast.WithStmt`, or a flag on the existing `With` node with the
   body span running to the enclosing `}`), so hover, rename and go-to work on
   `x`. Hover on `with` says where it closes ("closed at the end of this block,
   line 42"); an LSP inlay hint after the enclosing `}` lists what closes there
   in order (`closes second, first; cancels server; closes listener`).
-- *Code generation*: none new. The checker lowers it to the block form, so the
+- _Code generation_: none new. The checker lowers it to the block form, so the
   IR is identical to the nested program.
 
 **2. A task bound by `with`.** `with t = async f(args)` (and the block form
-`with (t = async f(args)) { }`) starts `f` as a *background child* of the rest
+`with (t = async f(args)) { }`) starts `f` as a _background child_ of the rest
 of the block:
 
 - It is fail-fast like a `scope` child (D34/D35 v0.28): if it throws or panics,
@@ -3107,11 +3106,11 @@ of the block:
   is not an error; a failure raised while it unwinds follows D43's suppression
   rule; the join is shielded cleanup (D47).
 - `async` is therefore allowed in exactly two places: lexically inside
-  `scope`/`gather`, and as the whole value of a `with` binding. *(v0.62,
+  `scope`/`gather`, and as the whole value of a `with` binding. _(v0.62,
   D111: and as a field of a task-holding value that is returned or
-  `with`-bound.)* *(v0.81, D156: and as the whole value of a `val`, which
+  `with`-bound.)_ _(v0.81, D156: and as the whole value of a `val`, which
   must then be awaited on every normal path, and as an argument of
-  `awaitAll`.)* The error for
+  `awaitAll`.)_ The error for
   `async` elsewhere names both. The value must be the `async` call itself — a
   `Task` obtained another way is not a with-resource (`Task` does not implement
   `Closeable`).
@@ -3120,14 +3119,14 @@ of the block:
   joins its other children; inside `gather` it is not one of the gathered
   results.
 - Lowering: `with t = async f(); S…` is a scope whose body is `S…` and whose
-  child `t` is flagged *cancel at end*; the runtime already cancels children
+  child `t` is flagged _cancel at end_; the runtime already cancels children
   when a scope body leaves early, so the new path is the same request made on
   the normal exit before the join.
 
-`scope { }` stays for tasks that are to be *waited for* (a worker pool).
-*(v0.73, D141: the handles of a `scope`'s or `gather`'s tasks are held to
+`scope { }` stays for tasks that are to be _waited for_ (a worker pool).
+_(v0.73, D141: the handles of a `scope`'s or `gather`'s tasks are held to
 part 3 below as a with-task is, and `await` on a with-task or scope task of
-a throwing function gives its value.)*
+a throwing function gives its value.)_
 
 **3. A resource must not outlive its block** (new, both forms). It is an error
 (a new family `resources` in `source/family.go` and `reference/errors.md`,
@@ -3163,12 +3162,12 @@ every block, Swift `async let` style (any `}` or `return` may wait invisibly);
 `with val f = …` and `val f = with …` spellings; a warning plus fix for the old
 shape.
 
-*(2026-10-01, built — plan B10; decision-free details recorded here.)*
+_(2026-10-01, built — plan B10; decision-free details recorded here.)_
 `ast.WithStmt` holds one binding and stays flat in its block; the checker
 reads the statements after it as the body of D43's block form, so codegen
 sees the nested program. A with-task lowers to a `ScopeBlock` flagged
 `Cancel`, whose only child is the launch: an `async` written in the body
-still needs a `scope`/`gather` of its own and joins *that* scope. Codegen
+still needs a `scope`/`gather` of its own and joins _that_ scope. Codegen
 cancels the flagged scope's children when its body ends, before the join.
 On the fail-fast abort path of a suspension point (an enclosing scope's
 child failed), the innermost scope's children are now cancelled before its
@@ -3191,8 +3190,8 @@ about, and stay.
 
 ### D101 — Which heads write `val` (v0.60)
 
-**Rule:** *a head that holds an expression writes `val` to bind a name in it;
-a head that can only bind does not.* `if (val x = e && …)` (D95) and
+**Rule:** _a head that holds an expression writes `val` to bind a name in it;
+a head that can only bind does not._ `if (val x = e && …)` (D95) and
 `when (val n = e)` take any expression, so `val` marks the binding; `with (f =
 e)`, `with f = e` (D100), `loop (x in c)` and `catch (e)` can only bind, so
 they do not. This states what already holds; nothing changes in meaning.
@@ -3306,12 +3305,12 @@ Rust's names, camel-cased, as the existing `countOnes`, `leadingZeros`,
 `trailingZeros` (Q20). Compiler built-ins in the catalogue (hover, completion,
 docs), on every integer type (`i8 i16 i32 i64 isize u8 u16 u32 u64 usize`):
 
-| Method | Result | Meaning | LLVM |
-|---|---|---|---|
-| `x.rotateLeft(n: i64)` | same type | bits rotated left by `n` mod width; a negative `n` rotates right (Go) | `fshl` |
-| `x.rotateRight(n: i64)` | same type | the reverse | `fshr` |
-| `x.swapBytes()` | same type | byte order reversed (identity on 8-bit types) | `bswap` |
-| `x.reverseBits()` | same type | bit order reversed | `bitreverse` |
+| Method                  | Result    | Meaning                                                               | LLVM         |
+| ----------------------- | --------- | --------------------------------------------------------------------- | ------------ |
+| `x.rotateLeft(n: i64)`  | same type | bits rotated left by `n` mod width; a negative `n` rotates right (Go) | `fshl`       |
+| `x.rotateRight(n: i64)` | same type | the reverse                                                           | `fshr`       |
+| `x.swapBytes()`         | same type | byte order reversed (identity on 8-bit types)                         | `bswap`      |
+| `x.reverseBits()`       | same type | bit order reversed                                                    | `bitreverse` |
 
 Signed types operate on the bit pattern (no overflow is possible). On `f32`/`f64`:
 `x.copySign(y)` (magnitude of `x`, sign of `y`; `llvm.copysign`),
@@ -3342,12 +3341,12 @@ User, 2026-09-30, recommended of 3. Rejected: `StringBuilder` only; leaving it.
 ### D106 — Three small ones: `var xs = []`, `Range.isEmpty`, `cond => (x => …)` (v0.60)
 
 - **An empty literal still needs its type, and the tool writes it.** `var xs =
-  []` / `val m = [:]` stays an error, but its message names the right kind
+[]` / `val m = [:]` stays an error, but its message names the right kind
   (`MutableList` for a `var` that is changed, `List` otherwise; `i64`/`f64` as
   the literal defaults) and, when a later use in the same function fixes the
   element type (`xs.push(1)`, an argument, an assignment), carries a fix that
   writes the annotation (`var xs: MutableList<i64> = []`), applied by `veles
-  check --fix` and the editor (preferred). No fix when no use decides it.
+check --fix` and the editor (preferred). No fix when no use decides it.
   Rejected: inference from later use (Rust — larger checker change, type not
   visible at the declaration); the message only.
 - **`Range.isEmpty()`**: public on every range, what the prelude called
@@ -3358,7 +3357,7 @@ User, 2026-09-30, recommended of 3. Rejected: `StringBuilder` only; leaving it.
 
 User, 2026-09-30, recommended of 3, and both small ones accepted.
 
-*(2026-10-01, D101–D106 built — plan B11; decision-free details.)* **D101**:
+_(2026-10-01, D101–D106 built — plan B11; decision-free details.)_ **D101**:
 the parser reads `IDENT =` opening an `if`/`when` head as the binding, so the
 head goes on (`&&` included) without a second error. **D102**: the
 compile-time check matches the loop's collection by its source text (a
@@ -3404,7 +3403,7 @@ braces for the block form. Inside it:
 - **a suspension is a compile error** (family `tasks`): any suspending call,
   `await`, `race`, `scope`, `gather`, `async` — "the lock on 'notes' is held
   until the end of this block; release it first with the block form `with (n =
-  notes.lock()) { … }`". This is D35's rule, which `withLock` gets from its
+notes.lock()) { … }`". This is D35's rule, which `withLock` gets from its
   lambda type (`fun(*T): R` cannot suspend); the guard gets it from the region;
 - the pointer cannot leave the region (D100 part 3);
 - locking the same `Mutex` again panics, as inside `withLock`; holding two
@@ -3418,7 +3417,7 @@ would have made it ordinary library code, were not adopted (D111). `with notes.l
 User, 2026-10-01, recommended of 3 (spec §7, open since D43). Rejected: the
 guard replacing `withLock` (longer one-liners); `withLock` only.
 
-*Built 2026-10-02.* `lock()` returns the prelude's private `Locked<T>` (the
+_Built 2026-10-02._ `lock()` returns the prelude's private `Locked<T>` (the
 `Held` and the `*T`); the `with` holds it under a hidden name and binds `n` to
 the pointer. Suspension points the checker sees (`await`, `race`, `scope`,
 `gather`, `async`, `send`, `recv`, `sleep`, a call of a suspending function
@@ -3456,7 +3455,7 @@ working.
 User, 2026-10-01, recommended of 3 (§9 Q1, asked 2026-09-27). Rejected: leaving
 it (a task per bounded send); keeping it open.
 
-*Built 2026-10-02.* The which-arm rule is now written in D38 (first ready in
+_Built 2026-10-02._ The which-arm rule is now written in D38 (first ready in
 written order, else first to become ready; not random). A send arm's node waits
 in the channel's senders; whoever takes its value claims its race first, and a
 send arm that meets another race's receive arm on the same channel takes both
@@ -3475,7 +3474,7 @@ soon as it is opened" warning applies when the statement is last.
 
 User, 2026-10-01, recommended of 2. Rejected: requiring `with _ = expr`.
 
-*Built 2026-10-02.* `with _ = expr` did not parse before; it does now, and
+_Built 2026-10-02._ `with _ = expr` did not parse before; it does now, and
 means `with expr`. In the statement form, `with` followed by anything but `(`
 is the statement; `with (` is the block form. `with conn` holds a copy of
 `conn` and closes it; `conn` is a resource from there on (D100 part 3, D136).
@@ -3487,7 +3486,7 @@ question (notes P11). Prelude unless noted; each `@caller_location` for its
 misuse panics (D88).
 
 - **`retry<R, E>(times: i64, f: fun(): R suspends throws E, delay: Duration =
-  Duration.zero): R throws E`** — calls `f` until it returns; after a thrown
+Duration.zero): R throws E`** — calls `f` until it returns; after a thrown
   error, waits `delay` and tries again, up to `times` calls in all; then throws
   the last error. A panic is not retried. Cancellation stops it at the wait.
   `times < 1` panics.
@@ -3497,7 +3496,7 @@ misuse panics (D88).
   second close does nothing. Used as `with sem.acquire()` (D109). `n < 1`
   panics.
 - **`ch.forEach(f: fun(T) suspends throws E) throws E`** and **`ch.toList():
-  List<T>`** on `Channel<T>`: receive until the channel is closed and drained.
+List<T>`** on `Channel<T>`: receive until the channel is closed and drained.
 - **`time.ticker(every: Duration): time.Ticker`** — in `std/time`, not the
   prelude, because its ticks are `Timestamp`s (consistency pass 2026-10-01).
   `Ticker` is `Closeable` and has
@@ -3512,7 +3511,7 @@ Not approved yet, asked when a program needs them: `filterConcurrent`,
 
 User, 2026-10-01: all four ticked.
 
-*Built 2026-10-02.* `retry` is not `@caller_location`: it suspends, and D88
+_Built 2026-10-02._ `retry` is not `@caller_location`: it suspends, and D88
 forbids that, so its `times < 1` panic reports the std line (checklist §11;
 marked since 2026-10-11, when D88 took suspending functions).
 `Semaphore` is a channel of permits; `Permit` closes once through an
@@ -3556,7 +3555,7 @@ reference to something should work like in golang? and that would work with
 fixture is an ordinary function returning an ordinary value.
 
 - **Task-holding types.** A struct or sealed variant with a field of type
-  `Task<…>`, or of a task-holding type, is *task-holding* (from its declared
+  `Task<…>`, or of a task-holding type, is _task-holding_ (from its declared
   fields; a generic instantiated with `Task` is not, so a `Task` cannot reach
   one). Hover on the type and on a call returning one: "holds a task: receive
   it with `with`".
@@ -3569,8 +3568,8 @@ fixture is an ordinary function returning an ordinary value.
 - **Its tasks belong to that block.** They are fail-fast background children
   of the `with`'s block exactly as in D100 part 2: a task that panics, or ends
   with an `Err` (an async call of a throwing function is `Task<Result<R, E>>`,
-  so `E` is in the field type — *v0.73, D141: still so for a field, while a
-  handle in a `scope` is `Task<R>`*), cancels the rest of the block and the error
+  so `E` is in the field type — _v0.73, D141: still so for a field, while a
+  handle in a `scope` is `Task<R>`_), cancels the rest of the block and the error
   propagates from it (joining the enclosing function's inferred `throws`); at
   the end of the block every held task is cancelled and joined, in reverse
   field order, **before** the value's own `close()` (so the listener closes
@@ -3589,11 +3588,11 @@ User, 2026-10-01, recommended of 4 (§9 Q2, open since 2026-09-27). Rejected:
 lending functions (`with fun … yield v` — "not convinced"); suite-level setup
 lines (the 2026-09-27 rejection stands); leaving it open.
 
-*Built 2026-10-02 (B13).* How the tasks reach the block, the user's choice
+_Built 2026-10-02 (B13)._ How the tasks reach the block, the user's choice
 when adopting them after the return proved racy (a finishing task against
 the move; a cancelled caller orphaning them): while a `with` computes a
 value that holds tasks, the running task carries that `with`'s scope as its
-*receiving scope* (a task-local binding, so a suspending callee inherits it),
+_receiving scope_ (a task-local binding, so a suspending callee inherits it),
 and an `async` field argument launches straight into it. `return helper()`
 passes it through untouched. An `async` field argument's own arguments are
 evaluated in place, but the task starts only after every field of the value
@@ -3633,7 +3632,7 @@ error: "a Secret holds text or bytes"); it owns a private copy of the bytes.
   `Sendable`.
 - **Wiped twice.** `Closeable`: `close()` zeroes its bytes, after which
   `expose()` panics at the caller (D88). And the collector zeroes them when it
-  frees them: the bytes live in an object whose header carries a *wipe* flag,
+  frees them: the bytes live in an object whose header carries a _wipe_ flag,
   and the sweep `memset`s flagged objects before reusing them — no finalizer,
   no ordering. Honest limit, stated in the docs: what `expose()` returned is
   ordinary memory.
@@ -3641,7 +3640,7 @@ error: "a Secret holds text or bytes"); it owns a private copy of the bytes.
 User, 2026-10-01: "also zero when collected" (over the recommended
 redact-and-zero-on-close only). Rejected: leaving it.
 
-*Built 2026-10-02 (B13).* Implementation choices, the user's (recommended
+_Built 2026-10-02 (B13)._ Implementation choices, the user's (recommended
 of 3 each): the wipe flag is a bit of the type descriptor's `kind`
 (`DESC_WIPE`, objects do not grow); std's keys move to `Secret`:
 `jwt.sign`/`verify` and `crypto.hmac…()` take `Secret<List<u8>>`, while
@@ -3712,8 +3711,8 @@ Rejected: expressions only; expressions and tables without functions;
 `comptime fun` (a second word beside `const`); no marker (Zig-style inference
 — an edit inside a function breaks constants in other packages).
 
-*Built 2026-10-03 (B14 parts 1, 2 and 4 of this entry; `const fun`, part 3
-above, followed on 2026-10-05, see below).* Implementation choices (user, recommended of each):
+_Built 2026-10-03 (B14 parts 1, 2 and 4 of this entry; `const fun`, part 3
+above, followed on 2026-10-05, see below)._ Implementation choices (user, recommended of each):
 a constant `Map`/`Set` is laid out whole by the compiler — entries,
 metadata and hash index, hashed by a Go copy of the runtime's structural
 hash (a differential test checks every key is found at run time) — so a
@@ -3741,7 +3740,7 @@ compiler's stack. Now they are initialized in dependency order — reads
 through called functions and lambdas count — and a cycle is an error,
 family `constants` (as Go does).
 
-*Part 3, `const fun`, built 2026-10-05 (B14 part 4).* `const` is a modifier of
+_Part 3, `const fun`, built 2026-10-05 (B14 part 4)._ `const` is a modifier of
 `fun`, spelled in the author's order beside the others (`public const fun`,
 `static const fun`); on a free function, a method, a static function, an
 `extend` or inline `implement` method; `const` followed by anything else still
@@ -3795,7 +3794,7 @@ index out of bounds" at the caller (Rust's debug assertion in
 behaviour. The compiler keeps removing the checks it can prove (D62 B).
 D21's overflow policy is not reopened.
 
-*Built 2026-10-02 (B13).* `i` is the plain offset (`0 <= i < len`), never
+_Built 2026-10-02 (B13)._ `i` is the plain offset (`0 <= i < len`), never
 counted from the end; the debug panic reads "unchecked index 3 out of
 bounds for list of length 3" at the caller.
 
@@ -3814,7 +3813,7 @@ callee that drops it. Measured over std and examples before it lands, each
 hit fixed. Task-holding values (D111) need no warning — not receiving them
 with `with` is an error.
 
-*Built 2026-10-02 (B13).* The discard that silences the second warning is
+_Built 2026-10-02 (B13)._ The discard that silences the second warning is
 Veles's existing `val _ = …` (user: the explicit discard silences it, over
 warning anyway); the quick fix writes `with _ = …`. A local counts as made
 here only when its initializer is a call or a constructor (under `try`), so
@@ -3842,9 +3841,9 @@ a lock, spreading to every caller of `log.withFields` and `TaskLocal.withValue`
 speed, is what blocked moving them into the prelude (plan B8).
 
 **Rule.** A parameter whose type is a function type marked `suspends` (also
-`(… suspends)?`) means *may suspend*. A function's suspension then has two
-sources: *unconditional* (an `await`, a call that suspends unconditionally,
-`scope`/`race`/`async`) and *conditional* (calling such a parameter, or passing
+`(… suspends)?`) means _may suspend_. A function's suspension then has two
+sources: _unconditional_ (an `await`, a call that suspends unconditionally,
+`scope`/`race`/`async`) and _conditional_ (calling such a parameter, or passing
 it on to another function's such parameter). A function whose only suspension
 is conditional is **conditionally suspending**; a call of it suspends exactly
 when an argument bound to one of those parameters suspends — a lambda whose
@@ -3878,7 +3877,7 @@ with `veles-bench` (B8 found the prelude form 0.53 s against 0.56 s at
 Self-hosting: a compiler's passes are higher-order functions over trees; they
 are written once and stay plain where nothing suspends.
 
-*Built 2026-10-02 (B15, with B8).* Sema: the suspension pass computes two
+_Built 2026-10-02 (B15, with B8)._ Sema: the suspension pass computes two
 views per function, its coroutine instance's and (when it has
 suspend-parameters) its plain instance's; a call of a conditional function
 suspends when an argument bound to one of them does — a lambda whose body
@@ -3891,7 +3890,7 @@ is emitted when a value of it is made, under the view of the instance making
 it, plain when the call it is passed to is; a conditional function's
 coroutine copy is kept only if something refers to it. Limits, by
 construction: only first-order parameters count (one whose own parameters
-are not suspending functions); a function that *keeps* such a parameter
+are not suspending functions); a function that _keeps_ such a parameter
 (stores, returns, or hands it to a function that is not conditional) is not
 conditional, since a plain instance would hand out a plain function where a
 coroutine is called later. Found on the way: a call through a suspending
@@ -3950,7 +3949,7 @@ instance's dictionary (one entry per `implements` in the body).
 
 Rejected: run time only, compile time only, neither.
 
-*Built 2026-10-02 (B15).* Run time: with D135 (its build note). A trait whose
+_Built 2026-10-02 (B15)._ Run time: with D135 (its build note). A trait whose
 supertraits make it an object is allowed (supertrait objects were built with
 D58 since this was written). The "always true/false" warning also covers a
 trait the object's own trait already requires; on an `is` expression its fix
@@ -4003,7 +4002,7 @@ it"); generic code is what field defaults do not reach.
 User, 2026-10-01, recommended of 3. Rejected: automatic for every struct whose
 fields all have defaults (a contract nobody declared); leaving it.
 
-*Built 2026-10-02 (B15):* `std/prelude/default.vs`; tuples up to eight
+_Built 2026-10-02 (B15):_ `std/prelude/default.vs`; tuples up to eight
 elements (prelude implements, as for any arity a program writes by hand). An
 enum cannot implement any trait (D57), so it cannot write `default()` by hand
 either — the D57 error stands. A struct whose `init` takes a parameter with no
@@ -4033,8 +4032,8 @@ D51 intends attributes to be.
 
 - **`@packed`** on an `extern struct` or `extern union`: no padding, alignment
   1. A field read copies with an unaligned load; `&s.field` on a packed field
-  is an error (the pointer would be misaligned — Rust's rule). Refused on a
-  plain struct (its layout is the compiler's).
+     is an error (the pointer would be misaligned — Rust's rule). Refused on a
+     plain struct (its layout is the compiler's).
 - **`@align(n)`** on any struct, or on a field of an `extern struct`: `n` a
   power of two not below the natural alignment (else an error naming it);
   the size rounds up to it. On a plain struct it is the low-level tool for
@@ -4046,7 +4045,7 @@ D51 intends attributes to be.
   `Display`, not derivable.
 - **`@transparent`** on a struct with exactly one field: its layout and C ABI
   are the field's, so it may appear in `extern` signatures and in `extern
-  struct`s wherever the field's type may; otherwise an ordinary struct
+struct`s wherever the field's type may; otherwise an ordinary struct
   (methods, implements). A binding gives its handles their own types at no
   cost.
 
@@ -4054,7 +4053,7 @@ User, 2026-10-01, recommended of 3. Rejected: a layout clause
 `extern(packed, align: 16) struct` (a second syntax for what attributes
 express); leaving it.
 
-*Built 2026-10-03 (B16).* Settled while building: `@align(n)` takes a
+_Built 2026-10-03 (B16)._ Settled while building: `@align(n)` takes a
 literal power of two from 1 to 4096 (a page; the collector's spans are
 aligned to more). An over-aligned struct is aligned where it is stored —
 locals, globals, fields, list storage, boxed and captured values (the
@@ -4100,7 +4099,7 @@ another array, an `extern struct` (C's `T x[N]`) — with no heap allocation.
 - **Reads** as a list's (D25/D62): `a.at(i): T?`, `T` where the index is
   proven — a constant index is always proven, so it compiles to a plain load;
   `atUnchecked` in `unsafe` (D114). `len()` is the constant `N`. `loop (x in
-  a)`, the read-only collection methods (`map`, `fold`, `contains`, …, D46),
+a)`, the read-only collection methods (`map`, `fold`, `contains`, …, D46),
   `a.toList()`, `xs.toArray<N>(): Array<T, N>?` (null on a length mismatch).
 - **Construction**: a literal `[…]` where the type is expected (the length
   must match: a compile error otherwise); `Array<T, N>.make(value)` fills;
@@ -4122,7 +4121,7 @@ the lexer's small buffers. Brackets stay literal syntax (D25).
 User, 2026-10-01, recommended of 4. Rejected: `[T; N]` (a second meaning for
 brackets); arrays only inside `extern struct`; leaving it.
 
-*Built 2026-10-03 (B16).* Settled while building:
+_Built 2026-10-03 (B16)._ Settled while building:
 
 - **Type arguments take constants.** Where a type argument goes, a number or
   an expression of constants is a constant argument: `Array<u8, 64>`,
@@ -4218,7 +4217,7 @@ the easy half.
 User, 2026-10-01, recommended of 2 (Q7). Rejected: keeping them excluded (a C
 wrapper file per variadic function).
 
-*Built 2026-10-03 (B16).* Settled while building: a literal among the extra
+_Built 2026-10-03 (B16)._ Settled while building: a literal among the extra
 arguments is typed as C types it — an integer literal is an `i32` (C's
 `int`), a float literal an `f64` — so `printf("%d", 5)` passes what `%d`
 reads (a Veles literal would default to `i64`); `-5` likewise. The extra
@@ -4234,9 +4233,9 @@ Written in Veles (D99), measured against Go's `compress/flate` with
 `veles-bench`; miniz in the runtime stays the fallback if it is far slower.
 
 - `compress.gzip(bytes, level: i64 = 6): List<u8>`, `compress.gunzip(bytes,
-  max: i64 = 64 * 1024 * 1024): List<u8> throws CompressError`; raw
+max: i64 = 64 * 1024 * 1024): List<u8> throws CompressError`; raw
   `deflate`/`inflate` the same; streaming `compress.GzipWriter(to: io.Stream,
-  level:)` and `compress.GzipReader(from: io.Stream, max:)` (D128).
+level:)` and `compress.GzipReader(from: io.Stream, max:)` (D128).
   `CompressError.kind`: `Corrupt`, `Truncated`, `TooLarge` (the output passed
   `max`). `level` 0–9, else a panic at the caller (D88).
 - **The decompression ceiling is a default, 64 MiB**, changeable with `max:`
@@ -4246,13 +4245,14 @@ Written in Veles (D99), measured against Go's `compress/flate` with
   JSON, JavaScript, SVG, XML) and the handler set no `Content-Encoding`; adds
   `Vary: Accept-Encoding`; a streamed body (D97) is compressed as it streams.
   `http.files` serves `name.gz` when it exists beside `name` and the client
-  accepts gzip. Compressed *request* bodies are not decoded unless asked
+  accepts gzip. Compressed _request_ bodies are not decoded unless asked
   (`http.decompressRequests(max:)`).
 
 User, 2026-10-01: default 64 MiB (over the recommended required `max:`).
 Rejected: a required `max:`; no limit.
 
-*Built 2026-10-04 (the decisions it needed, all inside this entry's text or the plan's brief):*
+_Built 2026-10-04 (the decisions it needed, all inside this entry's text or the plan's brief):_
+
 - `gunzip` joins several members as `gzip -d` does and checks the CRC and the length;
   `inflate`/`gunzip` apply `max` to the output of the whole call. The decoder resumes at the last
   whole symbol, so `GzipReader(from:, max:)` works on a stream that arrives in pieces; its
@@ -4288,11 +4288,11 @@ val cfg = try config.load<Config>(files: [".env"])
 ```
 
 - `config.load<T: Decodable>(files: List<string> = [], prefix: string = ""):
-  T throws config.Error` decodes `T` through a `codec.Decoder` (format name
+T throws config.Error` decodes `T` through a `codec.Decoder` (format name
   `env`, so `@key(env: "…")` works) over the variables.
 - **Names**: a field `databaseUrl` is `DATABASE_URL`; a nested struct
   prefixes (`db.poolSize` → `DB_POOL_SIZE`); `@key` replaces the name; `prefix:
-  "APP_"` goes in front of every name.
+"APP_"` goes in front of every name.
 - **Values by type**: numbers, `bool` (`true`/`false` only), `string`,
   `Secret` (D112), `Duration` (`"30s"`, D60), `Timestamp` (RFC 3339), enums
   by member name (exact, D58), `List<T>` comma-separated, `T?` (absent →
@@ -4314,7 +4314,7 @@ User, 2026-10-01, recommended of 3. Rejected: environment only; getters.
 **Addendum 2026-10-04 (user, all three recommended): how `config` knows the shape of `T`.**
 
 - **`Decodable` gains a defaulted `static fun schema(format: string, keys:
-  KeyStyle): Schema`.** A hand-written `implement Decodable` needs nothing (the default
+KeyStyle): Schema`.** A hand-written `implement Decodable` needs nothing (the default
   is an `Opaque` leaf: one value, read as text); the derive overrides it **beside a derived
   `decode`** (a hand-written `decode` can read a shape the fields do not describe) for
   structs (the fields, their keys as `decode` would see them for that format, whether each
@@ -4340,7 +4340,7 @@ User, 2026-10-01, recommended of 3. Rejected: environment only; getters.
 - **Problems** are rewritten to variable names: `DB_URL: not set (expected text)`,
   `PORT: expected an integer, found "abc" (from the environment)` (a file's name where the value
   came from one); a `Secret`'s value is never echoed. `describe<T>()` lists `Variable { name,
-  what, required, secret, default: string? }` straight from the schema (`what` is the text of
+what, required, secret, default: string? }` straight from the schema (`what` is the text of
   the expectation: `an integer`, `one of "Debug", "Info"`). A struct field none of whose
   variables is set takes its default (or `null`); one that must be given reports each missing
   variable.
@@ -4374,7 +4374,7 @@ The user chose all three signals and the protobuf encoding (over the
 recommended metrics + traces with OTLP/JSON). Module `std/otel`.
 
 - **Start**: `otel.start(service:, endpoint:, headers: Map<string, Secret<string>>,
-  interval: Duration = 10s, resource: attrs)` returns a task-holding value
+interval: Duration = 10s, resource: attrs)` returns a task-holding value
   (D111) that batches and exports in the background; received with `with` in
   `main`, its close flushes. Before `start` (and in tests) every instrument is
   a no-op costing one load and branch.
@@ -4384,7 +4384,7 @@ recommended metrics + traces with OTLP/JSON). Module `std/otel`.
   aggregation per attribute set; runtime metrics (GC pauses and heap from E5,
   tasks, threads, open connections) registered automatically.
 - **Traces**: `with span = otel.span(name, attrs:, kind:)` (D109 allows `with
-  otel.span(…)` without a name); the current span is a task-local (D72), so
+otel.span(…)` without a name); the current span is a task-local (D72), so
   child tasks continue it; `span.set(attr)`, `span.event(name)`,
   `span.fail(error)` (status error + exception event); a span that ends by a
   panic or a thrown error records it. `http.serve` opens a server span per
@@ -4408,7 +4408,7 @@ User, 2026-10-01: "All signals + protobuf" (over the recommended metrics +
 traces with OTLP/JSON and a Prometheus exporter). Rejected: Prometheus-shaped
 metrics as the model; metrics first; counters and gauges only.
 
-*Addendum (2026-10-05) — as built.* Two questions came up in the build, both answered by the user.
+_Addendum (2026-10-05) — as built._ Two questions came up in the build, both answered by the user.
 
 1. **The module cycle** (`otel` needs `http` to export; `http` needs `otel` for spans). The user chose **an explicit exporter** (over the recommended hook in `http`, and over a second HTTP client inside `otel`): `std/otel` imports nothing from `http`; `std/http` imports it and offers `http.otlp(endpoint:, headers:, timeout:, gzip:)`, so the start is `otel.start(service: "notes", exporter: http.otlp(endpoint: url))`, not `endpoint:`. `Exporter` is a public trait (`export(signal, body) suspends throws ExportError`), so a test or another transport writes its own. The exporter's own client is untraced (its requests must not become telemetry).
 2. **Making a span current for a `with` block.** The user chose **`TaskLocal.bind(value)` as a public `Closeable` (`LocalBinding`) plus `otel.inSpan(name, f)`** (the recommended "both"): `with span = otel.span(...)` binds and unbinds the current span; `inSpan` records a thrown error as the span's failure, which a `with` cannot see. `bind` is the primitive `withValue` was built on, now usable for any task-local (request ids, user contexts).
@@ -4430,11 +4430,11 @@ val users = try client.get("https://api.example.com/users").json<List<User>>()
 The user chose both spellings.
 
 - `http.fetch(url, method: Method = Method.get, headers:, body: List<u8>? =
-  null, text: string? = null, json: T? = null, form: …, timeout: Duration =
-  30s, redirect: bool = true, retry: i64 = 0): http.ClientResponse throws
-  http.FetchError`; `http.get/post/put/patch/delete(url, …)` are the same with
+null, text: string? = null, json: T? = null, form: …, timeout: Duration =
+30s, redirect: bool = true, retry: i64 = 0): http.ClientResponse throws
+http.FetchError`; `http.get/post/put/patch/delete(url, …)` are the same with
   the method fixed; a `http.Client(timeout:, headers:, maxRedirects: 10,
-  maxIdlePerHost: 8, proxy:)` has the same methods (`client.fetch`,
+maxIdlePerHost: 8, proxy:)` has the same methods (`client.fetch`,
   `client.get`, …) and is `Closeable` (closes idle connections); the
   top-level functions use a shared default client.
 - `ClientResponse`: `status`, `headers`, `ok` (2xx), `ensureSuccess()` (throws
@@ -4452,7 +4452,7 @@ User, 2026-10-01: "Both spellings" (over the recommended `fetch` only).
 Rejected: one spelling only; a separate request type with `send(req)` (the
 named parameters already describe a request).
 
-*Addendum (2026-10-04, user: recommended of 3) — the body is a `Payload`.*
+_Addendum (2026-10-04, user: recommended of 3) — the body is a `Payload`._
 `json: T? = null` cannot be written: a generic parameter whose argument is
 left out has nothing to infer `T` from ("cannot infer type parameter"). The
 request body is one non-generic parameter, `body: Payload? = null`, built by
@@ -4465,11 +4465,11 @@ separate `postJson`/`putJson` functions (a function per method, nothing for a
 custom method or a form); an explicit type argument at every call
 (`fetch<Note>(…)`, `fetch<()>(url)` for a plain `get`).
 
-*As built (2026-10-04):* `ClientResponse.ok` is a field; `Client` also has
+_As built (2026-10-04):_ `ClientResponse.ok` is a field; `Client` also has
 `idleTimeout` (30 s) and `head`; `retry:` is not on `post`/`patch` (never
 repeated). A body is bounded where it is read: `text/bytes/json(max:)`
 (64 MiB by default), `Content-Length` over `max` refused before the first
-byte. The one `timeout:` is a deadline over the request *and* its body.
+byte. The one `timeout:` is a deadline over the request _and_ its body.
 `https://` is `FetchKind.Unsupported` until E1; proxies, transparent
 decompression and per-phase timeouts are in checklist §11.
 
@@ -4498,22 +4498,23 @@ system roots is on, and the only opt-out says what it is.
 User, 2026-10-01, recommended of 2. Rejected: a separate `tls.Conn` with its
 own HTTP path.
 
-*Addendum (2026-10-05, D128) — `http.serve` takes the certificate.* `http.serve(listener, handler, tls: cert)` (user, recommended of 3; rejected: an `io.Listener` trait that `serve` would take, and leaving `serve` plain): each accepted connection is secured with `tls.accept(conn, cert)` in its own serving task, so the handshake never holds up the accept loop; a `tls.reloading` certificate renews for new connections.
+_Addendum (2026-10-05, D128) — `http.serve` takes the certificate._ `http.serve(listener, handler, tls: cert)` (user, recommended of 3; rejected: an `io.Listener` trait that `serve` would take, and leaving `serve` plain): each accepted connection is secured with `tls.accept(conn, cert)` in its own serving task, so the handshake never holds up the accept loop; a `tls.reloading` certificate renews for new connections.
 
-*Addendum (2026-10-05, D128) — how E1 was built.* The engine (`runtime/c/veles_tlsio.c`) never touches a
+_Addendum (2026-10-05, D128) — how E1 was built._ The engine (`runtime/c/veles_tlsio.c`) never touches a
 socket: it is fed the ciphertext that arrived and hands back the ciphertext to send, so `tls.Conn` wraps
-*any* `io.Stream` and every wait is a Veles suspension. SChannel on Windows; OpenSSL elsewhere, opened with
+_any_ `io.Stream` and every wait is a Veles suspension. SChannel on Windows; OpenSSL elsewhere, opened with
 `dlopen` on first use (no headers at build time, nothing linked, a program without TLS needs no library).
 Additions to the API above: `tls.client(stream, serverName, options)` (the handshake over a stream that is
 already connected); `Certificate.fromPem(chain, key: Secret<string>)` and `replace`; `alpn` is a parameter of
 the certificate (the server's list is part of its credentials) and an `Options` field of the client. The
 verification is the engine's own on both backends, the same everywhere: chain to the system roots (or to
-`Options.roots`, PEM text trusted *instead of* the system's) and the name, with `dangerouslyAcceptAnyCertificate`
+`Options.roots`, PEM text trusted _instead of_ the system's) and the name, with `dangerouslyAcceptAnyCertificate`
 the only way out; revocation is not checked. A peer that closes the transport without `close_notify` makes the
 next read throw (never a silently short body); `close()` sends no `close_notify` because closing cannot suspend —
 `shutdownWrite()` does. A server connection's handshake runs on its first read or write, in the serving task, so a
 slow client cannot hold up `accept`. **Deviation, forced by D111:** the reloader is `tls.reloading(certPath, keyPath,
 every:)`, a function returning a `CertificateReloader` (a constructor cannot throw the first load's error nor take an\n`async` argument); `reloader.certificate()` is what `listen` takes, and a failed renewal keeps the old certificate.\nKeys: RSA and ECDSA P-256/384/521 in PKCS#8, PKCS#1 or SEC1 PEM; an encrypted key is refused. On Windows SChannel finds a\nserver key through the certificate, so the key is stored under a per-process name in the user's key store and deleted when\nthe certificate is closed; the next process deletes the leftovers of one that crashed.\n
+
 ### D129 — Template literals, and `std/db` with `sql"…"` (v0.65)
 
 ```veles
@@ -4529,7 +4530,7 @@ separate protocol fields, and a plain string is refused), chose it
 
 **1. Template literals (language).** An identifier — or a qualified name
 (`db.sql`) — written directly before a string literal, with no space, is a
-*template literal*: `sql"…"`. The name must resolve to a function marked
+_template literal_: `sql"…"`. The name must resolve to a function marked
 `@template` whose parameters are `(parts: List<string>, values: List<V>)`; the
 compiler calls it with the literal's text pieces (escapes processed; always
 written in the source, never input — one more piece than values) and the
@@ -4541,6 +4542,7 @@ hover (the template function), highlighting (the tag coloured; embedded SQL
 highlighting may come later). Later uses: `html"…"` that escapes, `regex"…"`.
 
 **2. `std/db`** (plan E2, libpq first):
+
 - `db.Sql` is made only by `@template fun sql(parts, values: List<db.Param>)`;
   `db.Param` is implemented for the numbers, `bool`, `string`, `List<u8>`,
   `Timestamp`, `Duration`, `Uuid`, `T?` of those, `Secret` (sent, never
@@ -4552,7 +4554,7 @@ highlighting may come later). Later uses: `html"…"` that escapes, `regex"…"`
   like D128's opt-out.
 - `with pool = try db.open(url: Secret<string>, size: 10)` — a task-holding
   value (D111: its health checks run in the background); `pool.query<T:
-  Decodable>(sql): List<T>`, `queryOne<T>(sql): T?`, `exec(sql): i64` (rows
+Decodable>(sql): List<T>`, `queryOne<T>(sql): T?`, `exec(sql): i64` (rows
   affected), `pool.ping()`; rows decode by the derive with column names as keys
   (`@key(db: "user_id")`, D58; `Number` enums, D58 part 2); statement and
   connection timeouts (`timeout:` per call, defaults on the pool).
@@ -4561,9 +4563,9 @@ highlighting may come later). Later uses: `html"…"` that escapes, `regex"…"`
   error, a panic, cancellation, or simply forgetting) rolls back.
 - A span per query (D126) with the statement text, never the values.
 
-*Part 2 built 2026-10-05 (E2).* `std/db` is the wire protocol written in Veles (version 3, the extended query protocol with every value a separate bind field; SCRAM-SHA-256 on `std/crypto`; TLS through `std/tls`) — **not libpq**, so no native library is needed on any platform and waiting is a task suspension. `Sql` is `(parts, args)`: splicing is concatenating parts, so no scan of the text renumbers anything. `db.Param` is `fun toArg(): db.Arg` (type OID, text or bytes, secret flag); a `string` is sent with no type so the server reads it as the column's type. Errors are one `DbError` with a `kind` and the SQLSTATE `code`. `db.open` takes `Secret<string>`: `postgres://user:password@host:port/database?sslmode=…&sslrootcert=…&application_name=…`; TLS is **on and verified by default for any host but loopback**, `sslmode=disable` and `sslmode=insecure` (TLS without the check) are the only others, there is no `prefer`, and an unknown query parameter is an error. Rows decode through a `codec.Decoder` of format `"db"` (snake_case, `@key(db:)`). A statement past its time or a cancelled task drops its connection. **Deviation, forced by the language:** `with tx = pool.begin()` cannot send `ROLLBACK` at its close (`Closeable.close()` cannot suspend), so a transaction left without `commit()` drops its connection and the server rolls back (`tx.rollback()` returns the connection to the pool) — the same question as `otel.start`'s flush. Password hashing (D130): `crypto.hashPassword`/`verifyPassword` are Argon2id **in Veles** (RFC 9106; ~60 ms for 19 MiB/2 passes at -O2) instead of the libargon2 binding, with `Uuid` made `Codable` on the way; recorded here for the user.
+_Part 2 built 2026-10-05 (E2)._ `std/db` is the wire protocol written in Veles (version 3, the extended query protocol with every value a separate bind field; SCRAM-SHA-256 on `std/crypto`; TLS through `std/tls`) — **not libpq**, so no native library is needed on any platform and waiting is a task suspension. `Sql` is `(parts, args)`: splicing is concatenating parts, so no scan of the text renumbers anything. `db.Param` is `fun toArg(): db.Arg` (type OID, text or bytes, secret flag); a `string` is sent with no type so the server reads it as the column's type. Errors are one `DbError` with a `kind` and the SQLSTATE `code`. `db.open` takes `Secret<string>`: `postgres://user:password@host:port/database?sslmode=…&sslrootcert=…&application_name=…`; TLS is **on and verified by default for any host but loopback**, `sslmode=disable` and `sslmode=insecure` (TLS without the check) are the only others, there is no `prefer`, and an unknown query parameter is an error. Rows decode through a `codec.Decoder` of format `"db"` (snake_case, `@key(db:)`). A statement past its time or a cancelled task drops its connection. **Deviation, forced by the language:** `with tx = pool.begin()` cannot send `ROLLBACK` at its close (`Closeable.close()` cannot suspend), so a transaction left without `commit()` drops its connection and the server rolls back (`tx.rollback()` returns the connection to the pool) — the same question as `otel.start`'s flush. Password hashing (D130): `crypto.hashPassword`/`verifyPassword` are Argon2id **in Veles** (RFC 9106; ~60 ms for 19 MiB/2 passes at -O2) instead of the libargon2 binding, with `Uuid` made `Codable` on the way; recorded here for the user.
 
-*Part 1 built 2026-10-04.* `ast.TemplateExpr{Tag, Lit}`; the parser makes one when a string token starts exactly where a name (or `module.name`, not `?.`, no type arguments) ends — with a space it is an error that says to write `sql"…"`. The checker lowers `tag"a ${x} b ${y}"` to the call `tag(["a ", " b ", ""], [x, y])` (pieces always one more than values, escapes processed), so values convert to the element type as list elements do (a trait object boxes each) and every call diagnostic applies; a tag that is not a function, or a function not marked `@template`, is an error at the tag, and `@template` itself is checked at the declaration (a module-level function of `(parts: List<string>, values: List<V>)`; `V` may be generic). The formatter prints the literal as written; `ast.Dump` prints `(template tag (str …))`; the VS Code grammar colours the tag. Hover and go-to-definition work through the call. Example `examples/templates` (`html` that escapes, `sql` that keeps values apart); docs chapter 2 and the attributes table. `std/db` (E2) and the std tags (`html`, `regex`) are not built.
+_Part 1 built 2026-10-04._ `ast.TemplateExpr{Tag, Lit}`; the parser makes one when a string token starts exactly where a name (or `module.name`, not `?.`, no type arguments) ends — with a space it is an error that says to write `sql"…"`. The checker lowers `tag"a ${x} b ${y}"` to the call `tag(["a ", " b ", ""], [x, y])` (pieces always one more than values, escapes processed), so values convert to the element type as list elements do (a trait object boxes each) and every call diagnostic applies; a tag that is not a function, or a function not marked `@template`, is an error at the tag, and `@template` itself is checked at the declaration (a module-level function of `(parts: List<string>, values: List<V>)`; `V` may be generic). The formatter prints the literal as written; `ast.Dump` prints `(template tag (str …))`; the VS Code grammar colours the tag. Hover and go-to-definition work through the call. Example `examples/templates` (`html` that escapes, `sql` that keeps values apart); docs chapter 2 and the attributes table. `std/db` (E2) and the std tags (`html`, `regex`) are not built.
 
 Self-hosting: neutral (the compiler emits IR through `StringBuilder`).
 
@@ -4573,6 +4575,7 @@ by hand); a plain string plus arguments.
 ### D130 — Small std additions (v0.65)
 
 Pre-approved together (user, all four ticked):
+
 - **`with srv = try http.testServer(handler)`** (D111): a real listener on a
   free loopback port running `serve`; `srv.url`, `srv.port()`.
 - **Endian bytes** (D104's naming, D121's arrays): `x.toBeBytes()` /
@@ -4582,7 +4585,7 @@ Pre-approved together (user, all four ticked):
   `MutableList<u8>.pushU32Be(x)`-style writers.
 - **`std/fs`**: `fs.writeAtomic(path, bytes)` (temp file in the same
   directory, fsync, rename, fsync of the directory on POSIX), `with lock = try
-  file.lock()` / `file.tryLock(): Lock?` (exclusive advisory: `flock` /
+file.lock()` / `file.tryLock(): Lock?` (exclusive advisory: `flock` /
   `LockFileEx`), `file.sync()`, `file.seek(offset)`, `fs.lines(path, max:)`
   (a lazy iterator, each line bounded), `fs.copy(from, to)`.
 - **Password hashing**: `crypto.hashPassword(Secret<string>): string` (PHC
@@ -4644,10 +4647,10 @@ have similar thing… most of the language features shouldn't be possible (but
   `Arch.Arm64`), `target.release` — describes the target, so a cross-compile
   sees the target. (Spelled `build.os` while being asked; renamed in the
   consistency pass, since the module's names are in scope unqualified.)
-  *(2026-10-14: in program code the target is `build.target` from an imported
+  _(2026-10-14: in program code the target is `build.target` from an imported
   `build` module, D160 — not a free `target` name. `package.vs` is decided but
   held back (user); when it is built, whether its unqualified `target` stays
-  is asked again.)* **No environment variables**
+  is asked again.)_ **No environment variables**
   (user, recommended): a checkout builds the same in every shell, which
   reproducibility, `veles.sum` and caching rely on.
 - **`Package`**: `name` (required in a package), `description`, `license`,
@@ -4661,7 +4664,7 @@ have similar thing… most of the language features shouldn't be possible (but
   (`use httputil`). A version is a string checked at compile time (`"1.4.2"`)
   or `commit("3f2a9c1")` (D132).
 - **Scripts**: a `.vss` may declare the same top-level `const package =
-  Package(require: […])` (name defaulting to the file's); the `build` names
+Package(require: […])` (name defaulting to the file's); the `build` names
   are in scope in that initializer; checksums go in `<script>.vss.sum` beside
   it. This closes M1's "scripts will import dependencies… (open)".
 - **Tools.** `veles add/remove/update` (D132) edit the `require` list
@@ -4689,11 +4692,11 @@ replaced.
 
 - **Identity is (repository, major version).** `github:` / `gitlab:` /
   `codeberg:` / `sourcehut:` shorthands in `Package` (`github("acme/httputil",
-  …)`) expand to the https git URL; any other host is written in full with
+…)`) expand to the https git URL; any other host is written in full with
   `git("git.example.com/team/lib", …)`. Paths appear in `package.vs` only —
   code says `use httputil` (M6).
 - **The major is in the version, not the path.** `github("veles-db/pg",
-  "2.1.0")`, never `…/pg/v2`. Two majors of one repository coexist only under
+"2.1.0")`, never `…/pg/v2`. Two majors of one repository coexist only under
   two local names (`as: "pg1"`). MVS selects per (repository, major).
 - **Versions are tags**: `v1.4.2` or `1.4.2` in the repository, written
   `"1.4.2"`; a pre-release is selected only when written exactly. **No
@@ -4732,7 +4735,7 @@ Left out of D126 (they came with the Prometheus option the user did not
 take); the user confirmed them 2026-10-01.
 
 - `http.Health()` is a builder like `Router`; `check<E>(name, f: sendable
-  fun() suspends throws E, timeout: Duration = Duration.seconds(2))` is
+fun() suspends throws E, timeout: Duration = Duration.seconds(2))` is
   error-polymorphic per call (the router's erasure rule, D-std/http v0.29).
 - `endpoints(live: "/healthz", ready: "/readyz")` is middleware that answers
   those two paths before routing:
@@ -4751,9 +4754,9 @@ take); the user confirmed them 2026-10-01.
 
 User, 2026-10-01: "yes, add health endpoints".
 
-*Addendum (2026-10-04, user: recommended of 3) — how readiness learns of the stop.* `http.serve(…, health: health, stop: …)` takes the `Health` and calls its `stopping()` when the stop begins, before it closes anything; `health.stopping()` is public for a service that stops by other means. Rejected: calling `health.drain()` by hand inside `stop:` (forgetting it, or doing it after a slow step, silently leaves readiness at 200 — the failure D133 exists to prevent); `endpoints()` returning a stop hook.
+_Addendum (2026-10-04, user: recommended of 3) — how readiness learns of the stop._ `http.serve(…, health: health, stop: …)` takes the `Health` and calls its `stopping()` when the stop begins, before it closes anything; `health.stopping()` is public for a service that stops by other means. Rejected: calling `health.drain()` by hand inside `stop:` (forgetting it, or doing it after a slow step, silently leaves readiness at 200 — the failure D133 exists to prevent); `endpoints()` returning a stop hook.
 
-*As built:* the probes carry no spans or log line because the `Response` is marked `quiet` (a private field kept through `withHeader`, `withCookie`, compression and HEAD handling), which `logging()` and `serve` honour; `/readyz` answers `{"status": "ok"|"unavailable"|"stopping", "checks": {name: "ok"|"failed"}}`, `cache-control: no-store` on both; a check that panics fails; `GET` and `HEAD` only (405 + `Allow` otherwise).
+_As built:_ the probes carry no spans or log line because the `Response` is marked `quiet` (a private field kept through `withHeader`, `withCookie`, compression and HEAD handling), which `logging()` and `serve` honour; `/readyz` answers `{"status": "ok"|"unavailable"|"stopping", "checks": {name: "ok"|"failed"}}`, `cache-control: no-store` on both; a check that panics fails; `GET` and `HEAD` only (405 + `Allow` otherwise).
 
 ### D134 — One `try` covers every failing call in its chain (v0.67)
 
@@ -4779,12 +4782,12 @@ it. The user chose it (recommended of 2).
   you may pass on purpose).
 - `try chain catch (e) { }` (D98) handles the union; `do { }` unchanged.
 - The "write the parentheses" warning and its fix are removed; `try (try
-  f()).g()` stays legal but warns that the inner `try` is redundant, with a
+f()).g()` stays legal but warns that the inner `try` is redundant, with a
   fix; std, examples and docs migrated in the same change.
 
 Rejected: keeping one `try` per failing call (parentheses or two lines).
 
-*(2026-10-01, built — plan B11.)* A field link (`try f().body`) is a link
+_(2026-10-01, built — plan B11.)_ A field link (`try f().body`) is a link
 too. When the chain's last value is not a `Result` but an inner link was
 unwrapped, the `try` is satisfied by those links. A `(try x).m()` followed
 by an operator (`== `, `?:`) stays parenthesized: one `try` would take the
@@ -4798,8 +4801,8 @@ fun param(v: db.Param, out: *SqlBuilder) {
 }
 ```
 
-D117 tests whether a trait object's concrete type implements a *trait*; this
-tests whether it *is* a concrete type — Go's type assertion, Kotlin's `is`.
+D117 tests whether a trait object's concrete type implements a _trait_; this
+tests whether it _is_ a concrete type — Go's type assertion, Kotlin's `is`.
 Found in the consistency pass: D129 splices a `Sql` given as a `${…}` value by
 exactly this test, which was refused with a wrong message ("can never be").
 The user chose it (recommended of 2, over a `asSql(): Sql?` method on
@@ -4810,14 +4813,14 @@ The user chose it (recommended of 2, over a `asSql(): Sql?` method on
   box's type id with `T`'s — no table; in the true branch `x` is `T`.
   ~~A value struct is read out by value (D7).~~ **Amended 2026-10-02 (user,
   recommended of 3, found building it):** the narrowed `x` is the value
-  *inside* the box, not a copy — a field write or a method that changes
+  _inside_ the box, not a copy — a field write or a method that changes
   `this` reaches what the object's own methods see next (Kotlin's smart
   cast). Read by value, a write would have changed a copy silently; refusing
   writes was the other option. A `T` that does not implement the trait is
   the "never matches" error, now correct; a type parameter `T` is refused
   (D117's `T implements X` is the compile-time form).
 - Sealed traits already narrow by variant (D12); this is for open traits.
-- *Built 2026-10-02 (B15), with D117's run-time half:* slot 0 of every method
+- _Built 2026-10-02 (B15), with D117's run-time half:_ slot 0 of every method
   table points to the type's info global (a dense id); `is T` compares that
   pointer, `is Trait` loads Trait's table at the id (null: not implemented)
   and narrows to an object over the same data. The tables cover every type
@@ -4902,7 +4905,7 @@ important part (maybe with 'manual' reviewing acceptance there)… the safety an
   with `const fun` constructors checking version strings, evaluate under D113.)
 - **Sources: a registry and git, both from the first release.** Registry packages are named `owner/name` (the owner is a verified
   identity, which stops most name squatting without reviewing names); any git URL is the unofficial path, as in Go. The registry is an
-  index plus an *immutable, content-addressed mirror* (a version is never deleted, only yanked), so a deleted repository cannot break
+  index plus an _immutable, content-addressed mirror_ (a version is never deleted, only yanked), so a deleted repository cannot break
   a build, and it is also the proxy. The client speaks a documented HTTP protocol from the start and fetches through a built-in HTTPS
   client (no `git` needed on that path); git is the other path (user: "git and proxy with built-in https"). The registry service is
   built after the client works end to end against git and a local proxy.
@@ -4915,7 +4918,7 @@ important part (maybe with 'manual' reviewing acceptance there)… the safety an
   working files (CRLF conversion must not change it), plus a registry checksum log. (3) **Capabilities are computed from source**, not
   declared: every `unsafe`, `extern`, `[native]` library and std module imported (`net`, `fs`, `os`, `ffi`, …) of a package and its
   dependencies; `veles add` shows them and a project policy can refuse some ("no package that uses the network except these").
-  (4) **Tiers**: *unreviewed* — any version, any git URL, a warning with the capability report; *listed* — 1.0.0 or later, automated
+  (4) **Tiers**: _unreviewed_ — any version, any git URL, a warning with the capability report; _listed_ — 1.0.0 or later, automated
   gates passed (builds on Windows and Linux, its tests pass, an API-diff against the previous version for D17/D26/D28's breaking
   classes). A project policy can demand "listed only". This is where the user's "versions below 1 not accepted, like Go, but then
   reviewed and approved" lands: 0.x lives in the unreviewed tier. (5) **Reviews are opt-in, signed attestations** per version by
@@ -4934,7 +4937,7 @@ naming both; dependencies' `[native]` tables merge into the link line, per targe
 Rejected: a central registry only (not "free to use"); decentralized only with a checksum log (no names, tiers or reviews);
 mandatory manual approval to be listed; checksums and immutability only; `package.vs` first; TOML forever.
 
-*Addendum (2026-10-07, built in E7 stages a–e; defaults taken while building, none asked) — what the tools do where D138 was silent:*
+_Addendum (2026-10-07, built in E7 stages a–e; defaults taken while building, none asked) — what the tools do where D138 was silent:_
 
 - **Manifest spelling.** A registry dependency is `{ registry = "owner/name", version = "…" }`; a git one `{ git = "url", version | commit }`; a bare string is a path (and `"1.4.2"` bare is an error showing the table). A dependency is pinned by one exact version, never a range. A package `version` must be `major.minor.patch[-pre]`. Unknown tables and keys are errors.
 - **Identity in the loader.** One instance per resolved directory; the module prefix is `dep/<the package's own manifest name>/`, with a short hash added when two different packages share a name.
@@ -4967,7 +4970,7 @@ Completes D138's safety layers 4 and 5. Decided with the user on 2026-10-07 (rec
   ```
 
 - **Integrity (C2).** `.info` is `{"version","time","hash","tier","yanked","yankReason","key","sig"}`. The signature is ed25519 over the text `veles-info-v1 <owner/name> <version> <hash> <tier> <0|1 yanked> <time>`; `key` and `sig` are `ed25519:<base64>` and base64. A project pins the registry's key (`[registry] key = "ed25519:…"` beside `url`); a signature that does not verify against it, or an archive that does not hash to `info.hash`, or an `info.hash` that differs from `veles.sum`, is a hard error. Without a pinned key `.info` is still checked against the archive and `veles.sum` (trust on first use) and `veles audit` says the key is not pinned. The key rotates by editing the manifest. Not provided: replay protection of an old signed `.info` (the time is signed, not enforced), and a transparency log (Merkle tree and signed tree heads; the next step if the registry is ever run for the public).
-- **Tiers (T1).** `tier` is `listed` or `unreviewed`. *Listed* is for the registry's automated gates (version 1.0.0 or later; builds on Windows and Linux; its tests pass; an API diff against the previous version) — run by the service, not by the compiler. A git package, a commit pin and a registry version without the tier are `unreviewed`. In a policy, `unlisted` is a capability like those of D138: `deny = ["unlisted"]` refuses every registry or git package that is not listed, `allow = { unlisted = ["acme/x"] }` exempts one; path dependencies are never policed.
+- **Tiers (T1).** `tier` is `listed` or `unreviewed`. _Listed_ is for the registry's automated gates (version 1.0.0 or later; builds on Windows and Linux; its tests pass; an API diff against the previous version) — run by the service, not by the compiler. A git package, a commit pin and a registry version without the tier are `unreviewed`. In a policy, `unlisted` is a capability like those of D138: `deny = ["unlisted"]` refuses every registry or git package that is not listed, `allow = { unlisted = ["acme/x"] }` exempts one; path dependencies are never policed.
 - **Yanks (Cargo's rule).** A yanked version stays downloadable. A resolution that has no `veles.sum` line for it (`add`, `update`, a fresh clone with no sum) refuses it and prints the reason; a build whose `veles.sum` already holds it warns and continues. `update`'s newest release skips yanked versions.
 - **Reviews (S2).** A statement is one line, `attest v1 <git|registry> <source> <version|commit:full> <h1 hash> <claim> <time> <ed25519:key> <sig>`, signed over `veles-attest-v1 <git|registry> <source> <ref> <hash> <claim> <time>`. The claim is a word (`reviewed` is the one policy asks for). A statement is about exact bytes: it counts only if the hash is the package's hash. It verifies on its own, wherever it is kept: served at `.attest`, committed under `attestations/` (the workspace root's, else the package's), or imported with `veles attest import <file|url>`. A project says whom it trusts and what it needs:
 
@@ -4979,15 +4982,16 @@ Completes D138's safety layers 4 and 5. Decided with the user on 2026-10-07 (rec
   ```
 
   `veles attest keygen <name>` writes `~/.veles/keys/<name>.key` and prints the public key; `sign <package> [--claim reviewed] [--key name] [--push]` signs the exact hash of the version in the build; `verify` checks every statement the project holds; `import` adds statements after checking them. The `reviewed` requirement covers registry and git packages.
+
 - **Manifest.** `[registry] url, key`; `[package] registry = "owner/name"` (where `veles publish` publishes); `[policy] trust, require`. `veles publish [dir]` checks the package, requires `[package] version` and `registry`, zips the directory (no `.git`, `vendor/`, `bin/`, `veles.sum`, hidden directories) and PUTs it; `veles yank <owner/name>@<version> [--reason …] [--undo]`.
 - **A reference server** (`registry` package) implements the protocol in memory for tests and private use; the hosted service, the real gates and registration by repository are separate work.
 - Self-hosting: Go's standard library does the signatures now. A Veles-written client needs `ed25519` in `std/crypto` (recorded in the checklist); everything else — SHA-256, JSON, HTTPS, zip — exists or is planned.
 
 Rejected: upload-only or pull-only publishing (the user wants both); a separate `tier` policy key and tier shown only; registry-hosted-only reviews, and cargo-vet-style imports by URL (no tamper evidence beyond the host); trust on first use alone, and a Merkle log now.
 
-*Addendum (2026-10-07, a review of the package system for holes; no semantics asked of the user, all of it refusals and keys):*
+_Addendum (2026-10-07, a review of the package system for holes; no semantics asked of the user, all of it refusals and keys):_
 
-- **Git addresses are validated** (`fetch/urls.go`): no leading `-` (an option), no whitespace, no transport helpers (`ext::…`), and git runs with `GIT_ALLOW_PROTOCOL=file:http:https:ssh:git`. A *fetched* package's manifest — written by a stranger — may use only `https`, `ssh`, `git` or `user@host:path` addresses, never a local path or `file://`/`http://`; `VELES_ALLOW_LOCAL_GIT` lifts that for a private mirror on disk and for tests. `ls-remote` gets `--`.
+- **Git addresses are validated** (`fetch/urls.go`): no leading `-` (an option), no whitespace, no transport helpers (`ext::…`), and git runs with `GIT_ALLOW_PROTOCOL=file:http:https:ssh:git`. A _fetched_ package's manifest — written by a stranger — may use only `https`, `ssh`, `git` or `user@host:path` addresses, never a local path or `file://`/`http://`; `VELES_ALLOW_LOCAL_GIT` lifts that for a private mirror on disk and for tests. `ls-remote` gets `--`.
 - **Archives**: any `:` or `\` in a name (NTFS streams, drive letters), empty or `.` parts, any `.git` part, and names that differ only in case are refused, as are links and `..`.
 - **The module cache is keyed by the registry's address** as well as `owner/name` (a private and a public `acme/lib` never share an entry: dependency confusion), and the tier and yank state kept with a cached package are believed by a project that pins a registry key only if they were verified with that key (`signed` in the marker); otherwise they are asked again, or, offline, the package counts as unreviewed.
 - **Capabilities cannot be hidden**: every directory below the root counts (the loader reads any directory with sources as a module, so one named `vendor`, or holding a `veles.toml`, was a hiding place), and a directory with no sources does not shadow std (`fs/` holding a README hid `use fs`).
@@ -5050,7 +5054,7 @@ finished, or has been cancelled and has run its cleanups (D3, D34, D43); a
 child that fails cancels its siblings and the error leaves the scope (D35
 v0.28). That is what lets children borrow the parent's immutable values with
 no copy (D35). **An unawaited task is fine**: the scope joins it, and its
-failure fails the scope. `await` is how the body *uses* a child's value
+failure fails the scope. `await` is how the body _uses_ a child's value
 before the end, never what keeps the child alive.
 
 **Rule 1 — a handle does not leave the block that started it.** The handle
@@ -5081,7 +5085,7 @@ progress) at that `await`.
 
 **Handling a child's error locally** is done where the error is a value: in
 `gather`; or inside the child (launch a function that catches and returns a
-fallback); or by launching a function that *returns* a
+fallback); or by launching a function that _returns_ a
 `Result<R, E>` without `throws` — its `Err` is a value, not a failure, and
 `await` gives the `Result`.
 
@@ -5092,7 +5096,7 @@ the identity when `E` is `Never`") no longer arises in a scope. A handle's type 
 `MutableList<Task<i64>>` for a throwing child in a scope.
 
 **Runtime facts this relies on** (built with it): a failing child marks its
-scope failed and cancels its siblings *before* it publishes its result, so
+scope failed and cancels its siblings _before_ it publishes its result, so
 whoever wakes on it sees the failure; a scope body abandoned by a failed
 child also cancels and waits for the suspending call it was inside (before,
 that call ran on after the scope had rethrown — an orphan, against D3).
@@ -5134,12 +5138,12 @@ was everywhere and guarded little.
 
 **The levels** (one rule for top-level declarations, fields and methods):
 
-| Written | Visible to |
-|---|---|
-| `private` | the type's own declarations (M5 v0.29, unchanged) |
-| `internal` | the module |
-| *nothing* | the package |
-| `public` | other packages |
+| Written    | Visible to                                        |
+| ---------- | ------------------------------------------------- |
+| `private`  | the type's own declarations (M5 v0.29, unchanged) |
+| `internal` | the module                                        |
+| _nothing_  | the package                                       |
+| `public`   | other packages                                    |
 
 **Export by path.** A `public` declaration in any module is reachable from
 a package that depends on this one at its module path: dependency `http =
@@ -5159,7 +5163,7 @@ other packages only under the facade's name, not at `lexer.Token`. An
 level). `public use m` of a whole module exports that module's unmarked and
 `public` declarations under the facade.
 
-*Built 2026-10-17.* `public` in a program (root declares `main`) is a warning with a fix; migration removed it from programs and kept it in libraries; unmarked old items were not rewritten to `internal` (the level widened to the package). A module of another package is reached by its path; `public use m` of a whole module shows its unmarked items under the facade.
+_Built 2026-10-17._ `public` in a program (root declares `main`) is a warning with a fix; migration removed it from programs and kept it in libraries; unmarked old items were not rewritten to `internal` (the level widened to the package). A module of another package is reached by its path; `public use m` of a whole module shows its unmarked items under the facade.
 
 **A `public` signature names only types other packages can see** (Q23,
 user, recommended of 3). `public fun parse(): Token` with `Token` neither
@@ -5174,14 +5178,15 @@ allowing it (callers get a value whose type they cannot write).
 **A member of an exported type is unmarked → package-only.** It is not
 readable, assignable or bindable in a pattern from another package. The
 implicit constructor follows M5's v0.30 rule for private fields: from another
-package a field it cannot see is *supplied* if it has no default ("if it is
-needed for creation, it should be needed for creation", user) and *left to
-its default* otherwise. So adding a field without a default to a `public`
+package a field it cannot see is _supplied_ if it has no default ("if it is
+needed for creation, it should be needed for creation", user) and _left to
+its default_ otherwise. So adding a field without a default to a `public`
 type breaks other packages' construction calls; adding one with a default
 does not. Methods likewise: an unmarked method of a `public` type is the
 package's.
 
 **Edge cases.**
+
 - `private` on a top-level declaration is an error with the fix `internal`.
   A file-scoped `private` (Kotlin's top-level rule) was considered and kept
   for later: refusing it now leaves the word free (checklist §11).
@@ -5237,8 +5242,8 @@ with audio = try Thread.start(name: "audio", priority: Priority.High, cpus: [3],
                                                  // plain code on a thread of its own; joined when the block ends
 ```
 
-*(The example as amended 2026-10-10, below; it was `Executor(threads: 4, name: "cpu")`
-and `Thread.start(…) { audioLoop() }`.)*
+_(The example as amended 2026-10-10, below; it was `Executor(threads: 4, name: "cpu")`
+and `Thread.start(…) { audioLoop() }`.)_
 
 The concurrency review (2026-10-09, `veles-concurrency-review.md`) found
 that the only control over threads was `VELES_THREADS`: a task resumes on
@@ -5253,7 +5258,7 @@ native OS threads".
   still overrides it. A dependency's `[runtime]` is ignored: the program
   decides.
 - ~~**`Executor(threads: n, name: s)`**~~ **`Executor.pool(threads: n, name: s)`**
-  *(amended 2026-10-10)* is a pool of worker threads of its own,
+  _(amended 2026-10-10)_ is a pool of worker threads of its own,
   scheduled as D66 describes. `Executor.thread(name: s)` is one OS thread
   running an event loop. Both are `Closeable` and `Sendable`; closing one
   waits for the tasks placed on it (they are children of scopes, which have
@@ -5272,7 +5277,7 @@ native OS threads".
   (D66 addendum) stays; `blocking` is for a call known to block, which then
   skips the detection. `f` does not suspend.
 - **`Thread.start(name:, priority:, cpus:, stackSize:)` ~~`{ body }`~~ `f:`**
-  *(amended 2026-10-10)* starts an
+  _(amended 2026-10-10)_ starts an
   OS thread running `body` (plain code: it does not suspend, but may create
   and run an executor of its own). It is used as the value of a `with` and
   joined when the block ends; a panic in the body is re-raised there.
@@ -5284,10 +5289,10 @@ native OS threads".
 - Values crossing to another executor follow `Sendable` (D35, D54) exactly
   as between workers of one pool.
 
-*Left open by the user's choice of this option:* whether tasks on an
+_Left open by the user's choice of this option:_ whether tasks on an
 `Executor.thread` may share non-Sendable state without locks (Swift's
-`@MainActor`), decided after this is built. *(Decided 2026-10-11: D150,
-declared executors with state of their own.)*
+`@MainActor`), decided after this is built. _(Decided 2026-10-11: D150,
+declared executors with state of their own.)_
 
 Both levels: the high level is unchanged (no `on:`, the default pool);
 the low level gets pools, single threads, priority and affinity.
@@ -5299,8 +5304,9 @@ User, 2026-10-09, recommended of 4. Rejected: a minimal set
 CPU work, no priority or affinity); raw threads only (Rust's `std::thread`;
 no placement of tasks); leaving `VELES_THREADS` as the only control.
 
-*Amended 2026-10-10 (user, while building it).* Three points the entry
+_Amended 2026-10-10 (user, while building it)._ Three points the entry
 left open or that clashed with earlier rules:
+
 - **Construction is by static functions that throw**:
   `try Executor.pool(threads:, name:, priority: Priority.Normal, cpus: [])`
   and `try Executor.thread(name:, priority:, cpus:)`, both `throws ThreadError`.
@@ -5325,12 +5331,13 @@ left open or that clashed with earlier rules:
 The user also rewrote `Executor.run`'s body as `return await async f()`
 (it was `val t = async f()` and `return await t`), which already compiles.
 
-*Built (2026-10-10, concurrency review F8).* The runtime keeps one record
+_Built (2026-10-10, concurrency review F8)._ The runtime keeps one record
 per executor — its shared queue, its threads' run queues, their idle,
 waking and spinning counts — and a task runs on the executor of the scope
 it was launched in (the scope's `exec`: `on:`, or the owner's), so every
 wake queues it back there; no field was added to a task. Details settled
 while building, the conservative way:
+
 - **Timers and sockets stay one set, served by the default pool.** A
   pool's threads only run their tasks; one that arms a timer earlier than
   the nearest, or parks on a socket while no default thread waits in the
@@ -5344,9 +5351,9 @@ while building, the conservative way:
 - ~~**No hand-off outside the default pool.** A blocking call on a pool's
   thread lets the collector run but does not move the queue to a spare
   thread: a pool's threads are the ones it was made with, and
-  `Executor.thread`'s tasks must stay on one.~~ *(Superseded 2026-10-11 by
+  `Executor.thread`'s tasks must stay on one.~~ _(Superseded 2026-10-11 by
   D153: a pool hands off as the default pool does; a one-thread executor
-  still never does.)*
+  still never does.)_
 - **The blocking pool** is made at start (a prelude global) with no
   threads; a call that finds every thread busy starts one, at most 128,
   and a thread idle for 10 s ends (Tokio's keep-alive, a quarter of its
@@ -5403,7 +5410,7 @@ nothing lock-free could be built (no compare-and-set).
   are used to test the bits a call changed). Overflow wraps, as an atomic
   add does on every machine (D21's `+%`), in every build.
 - **Memory orders.** Every operation takes an optional `order:
-  MemoryOrder` — `Relaxed`, `Acquire`, `Release`, `AcqRel`, `SeqCst`
+MemoryOrder` — `Relaxed`, `Acquire`, `Release`, `AcqRel`, `SeqCst`
   (the default). An order invalid for the operation (`Release` or `AcqRel`
   on a load, `Acquire` or `AcqRel` on a store) is a compile error naming the
   valid ones. `compareAndSet`/`compareExchange` take `order:` for success
@@ -5421,13 +5428,14 @@ User, 2026-10-09, recommended of 3. Rejected: the operations with
 sequential consistency only (Go's choice — no low-level control); leaving
 `load`/`store`/`swap`/`update`.
 
-*Built (2026-10-09, concurrency review F5).* `MemoryOrder` is a prelude
+_Built (2026-10-09, concurrency review F5)._ `MemoryOrder` is a prelude
 enum; `compareAndSet(expected, new, order:, failure:)`,
 `compareExchange(…)`, and `order:` on `load`/`store`/`swap`/`update` are on
 every `Atomic`; `add`/`sub`/`fetchAnd`/`fetchOr`/`fetchXor` are in an
 `extend Atomic<T>` block per integer type, so on any other `Atomic` they
 are "no method", with a hint naming the integer `Atomic`s. Details the
 decision left open, settled the conservative way:
+
 - **`failure:` left out** is the strongest load `order:` allows
   (`AcqRel` → `Acquire`, `Release` → `Relaxed`, others unchanged), as C++
   derives it.
@@ -5475,9 +5483,12 @@ task that never suspended never gave its thread up.
   preemption). A plain function cannot yield (it has no frame to resume),
   so a long plain computation is fair only by the pool's other threads —
   which is what `blocking` and `scope(on:)` (D143) are for.
-- **`yieldNow()`** gives the thread up once (what `await sleep(Duration.zero)`
+- ~~**`yieldNow()`** gives the thread up once (what `await sleep(Duration.zero)`
   was used for, which keeps working); **`checkCancelled()`** is the
-  cancellation check at any point, plain functions included. Both prelude.
+  cancellation check at any point, plain functions included. Both prelude.~~
+  **Amended by D197 (specified, not implemented):** `cede` replaces the
+  prelude yield function; `checkCancelled()` and zero-duration sleep remain.
+  Ceding offers scheduling, not an ordering guarantee over runnable tasks.
 - The check is a load and a branch folded into the safepoint poll's.
 
 Both levels: `withTimeout` and scope cancellation now simply work; the
@@ -5489,10 +5500,10 @@ User, 2026-10-09, recommended of 4. Rejected: explicit points only (Kotlin's
 queue to a spare thread (fixes latency only, and breaks D66's "at most
 `VELES_THREADS` threads run Veles code"); leaving it.
 
-*Built 2026-10-09 (plan F4).* A back edge polls one word, `veles_attention`
+_Built 2026-10-09 (plan F4)._ A back edge polls one word, `veles_attention`
 (it replaces the collector's flag there and is raised by it too), so the
 untaken path is the same load and branch as before. A cancellation of a
-*running* task, a failed child's abandonment of its body, and a request to
+_running_ task, a failed child's abandonment of its body, and a request to
 yield raise it; the slow path asks the runtime. In a suspending function the
 frame then takes its ordinary cancellation path (scopes joined, closes
 innermost first), yields through the `sleep(0)` path, or — in a scope body —
@@ -5516,7 +5527,7 @@ Under `VELES_THREADS=1` a plain computation still keeps the only thread, so
 a `withTimeout` around it fires only when it ends (the timer's task needs a
 thread). Pinned by `driver/TestLoopsAreCancellationPoints`.
 
-*Fixed 2026-10-11.* A task woken while it runs (`S_WOKEN`: a child of its
+_Fixed 2026-10-11._ A task woken while it runs (`S_WOKEN`: a child of its
 scope ended, say) was not told to look: a cancellation, a fired
 `withTimeout` deadline (D151) and a failed child marked the loops of a
 running task only when its state read `S_RUNNING`, so a plain loop in a
@@ -5525,7 +5536,7 @@ limit was 100 ms. Every such request now treats `S_WOKEN` as running.
 Found chasing a flaky `TestLoopsAreCancellationPoints` (a run once took 48
 s); pinned by `driver/TestWokenTaskStillLooks`.
 
-*Fixed 2026-10-11, the same day.* A request delivered while a task was
+_Fixed 2026-10-11, the same day._ A request delivered while a task was
 queued or running is seen at its next suspension point, and two cases put
 it off past the one it reached first: a send or receive the other side had
 completed returns before the request is looked at (`chan_done`), and a
@@ -5586,7 +5597,7 @@ All prelude, all `Sendable` for a `Sendable` `T`.
 User, 2026-10-09, all four (of four offered). Not offered: `Barrier`/`Latch`
 (`scope` joins).
 
-*Built (2026-10-09, concurrency review F6).* `RwLock` is a two-word lock
+_Built (2026-10-09, concurrency review F6)._ `RwLock` is a two-word lock
 in the runtime (`veles_rw_*`: writer bit, parked bit, readers; a count of
 waiting writers that keeps new readers out), parked like a `Mutex`; the
 thread remembers the RwLocks it holds, which is how a re-lock panics.
@@ -5598,6 +5609,7 @@ when it wins, so a losing arm takes nothing. `Lazy` runs `init` under
 its lock and records a panic through a `close()` that reads the
 unwinding panic's message (`veles_panic_current`). Details the decision
 left open, settled as below:
+
 - **A `Watch`'s "last seen" is per copy** (a field of the value): a task
   given its own copy — a parameter — follows the changes it has not seen;
   the lint for changing a copied parameter is silent for these types.
@@ -5609,7 +5621,7 @@ left open, settled as below:
 - **Added beside the decided API, for parity:** `RwLock.get()`/`set(v)`
   (`Mutex` has them) and `Lazy.isReady()`.
 - A re-lock panics on the second take (`an RwLock was locked again while
-  this task holds it`); the thread tracks up to 8 held RwLocks, more
+this task holds it`); the thread tracks up to 8 held RwLocks, more
   are not checked (they still work).
 
 ### D147 — A `close()` may suspend; suspension follows the type (v0.75)
@@ -5652,11 +5664,11 @@ User, 2026-10-09, recommended of 3. Rejected: a second trait
 (`SuspendingCloseable`, C#'s `IAsyncDisposable` — two names for closing);
 leaving explicit `shutdown()`/`rollback()`/`finish()` calls as the only way.
 
-*Built (2026-10-10, concurrency review F7).* The `suspends` on `close()`
+_Built (2026-10-10, concurrency review F7)._ The `suspends` on `close()`
 is required: a close that suspends without it is an error asking for it,
 so the cost is stated where the type is. Suspension inference sees the
 `with`'s close call and needs nothing else; generic instances follow from
-one body per instance. The close is shielded by the *task* (a count in
+one body per instance. The close is shielded by the _task_ (a count in
 the task, since it may resume on another thread): a cancellation then
 neither wakes the parked task nor abandons a scope body; it is seen at
 the first suspension point after the close. A panic (or a cancellation in
@@ -5812,7 +5824,7 @@ This also gives Veles its first mutable global state: a module-level `var`
 stays an error (D66: every task on every thread could reach it), an
 executor's `var` is allowed because one thread runs everything that names it.
 
-*Built 2026-10-11 (plan F17).* An executor is a module global initialised
+_Built 2026-10-11 (plan F17)._ An executor is a module global initialised
 with the module's globals (in their dependency order, not after them) by
 the prelude's `startExecutor`; a one-thread executor's state is then made
 by a plain function run on its own thread, before `main` and before any
@@ -5839,7 +5851,7 @@ level is unchanged (`Executor.thread`, `Mutex`, atomics). Self-hosting: the
 compiler does not need it; a compiler server with an editor-facing thread
 could keep its caches this way.
 
-*Addendum 2026-10-11 (Q31).* An executor's function named as a value
+_Addendum 2026-10-11 (Q31)._ An executor's function named as a value
 outside its code (`val load = gl.texture`) stays an error with the fix,
 the lambda `(id: i64) => gl.texture(id)` (a value of type
 `fun(i64): string suspends`): the hop to gl's thread is written where it
@@ -5875,7 +5887,7 @@ had to be `sendable`, which is why `net.Conn` kept its read buffer in a
 limit fired after 16 s: the timer's task never got the only thread).
 
 - **The signature loosens:** `withTimeout<R, E>(limit: Duration, f: fun():
-  R suspends throws E): R throws E | Timeout` — no `sendable`, no
+R suspends throws E): R throws E | Timeout` — no `sendable`, no
   `R: Sendable`. Every program that compiled still compiles.
 - `f` runs **in the calling task**, as an ordinary call. A timer armed for
   `limit` requests a cancellation that reaches only as far as
@@ -5896,7 +5908,7 @@ limit fired after 16 s: the timer's task never got the only thread).
 - The run-time gotcha "`withTimeout` around a function that never
   suspends" disappears, so it needs no compile-time refusal.
 
-*Built 2026-10-11 (plan F16).* The deadline is a record in `withTimeout`'s
+_Built 2026-10-11 (plan F16)._ The deadline is a record in `withTimeout`'s
 own frame with a timer of its own in the timer heaps, so a call allocates
 no task (76 ns a call, was ~450; `f`'s Result is written by the call
 straight into `withTimeout`'s frame, so the caller's closure is the one
@@ -5954,7 +5966,7 @@ recommended of 3. Rejected: letting a `Thread`'s function suspend (a
 `Thread` would become an `Executor.thread` under another name, and real-time
 code would lose "no scheduler in the way"); leaving it.
 
-*Built 2026-10-11 (plan F15).* `runBlocking` starts a task running `f`,
+_Built 2026-10-11 (plan F15)._ `runBlocking` starts a task running `f`,
 placed on `e` in a scope with no owner (at first a task of the default
 pool that hopped to `e` with `e.run`: one task more), and parks
 the calling thread until that task ends (its end looks up the waiting
@@ -5978,7 +5990,7 @@ is for). D143's built note "no hand-off outside the default pool" is
 superseded. User, 2026-10-11, recommended of 3. Rejected: an opt-in
 `handOff: true`; leaving a pool exactly its threads.
 
-*Built 2026-10-11 (plan F14).* The monitor looks at the pools' threads as
+_Built 2026-10-11 (plan F14)._ The monitor looks at the pools' threads as
 at the default pool's: a thread one look found inside the same call, with
 tasks queued and no thread of the pool idle, loses its queue to a waiting
 spare of the pool or a new one. A spare without a queue for 10 s ends.
@@ -6008,7 +6020,7 @@ A cancel on only some paths keeps the run-time panic. The same local,
 flow-based check as D141. User, 2026-10-11, recommended of 3. Rejected: a
 warning; leaving only the run-time panic.
 
-*Built 2026-10-11 (plan F13).* The cancel is a flow fact kept with the
+_Built 2026-10-11 (plan F13)._ The cancel is a flow fact kept with the
 smart casts, so it holds after a join only when every path made it.
 **Found while building it:** a fact the body of a loop set outlived the
 loop — after `loop (a in xs) { x = a }` the checker took `x: i64?` for an
@@ -6031,7 +6043,7 @@ val (a, b) = gather {
 
 A child's outcome in `gather` (D52) is `Ok(value)` when its function
 finished and `Err(e)` when it threw `e` or panicked. A function that
-*returns* a `Result` without `throws` finished either way, so that
+_returns_ a `Result` without `throws` finished either way, so that
 `Result` is its value. Before, the checker flattened it into the gather's
 error (`Result<i64, Boom | Panic>`), so a returned `Err` could not be told
 from a panic — while in a `scope` (D141) and a D111 field the same child's
@@ -6040,7 +6052,7 @@ throwing or panicking. A function value launched in a gather follows its
 type's `throws` the same way. Rust's `JoinHandle` nests the same way
 (`Result<Result<T, E>, JoinError>`).
 
-*Found while building it:* a function not declared `throws` with a failing
+_Found while building it:_ a function not declared `throws` with a failing
 child in a `scope`, or receiving with `with` a value whose task field is
 `Task<Result<T, E>>` (D111), crashed the compiler (the scope's rethrow had
 nowhere to go). Both are now errors naming the fix — declare the function
@@ -6100,12 +6112,12 @@ whole initializer of a `val` — is allowed in any braced block, not only in
 `scope`/`gather` bodies (inside those nothing changes: the scope joins its
 children whether awaited or not, D141).
 
-- *It is a fail-fast child of the rest of the block*, like a with-task
+- _It is a fail-fast child of the rest of the block_, like a with-task
   (D100 part 2): if it throws or panics, the rest of the block is cancelled
   at its next suspension point and the error leaves the block; its error
   types join the enclosing function's inferred `throws`. `h` is `Task<R>`
   and `await h` is `R`, no `try` (D141 rule 2).
-- *Must await.* Every **normal** path from the binding to the end of the
+- _Must await._ Every **normal** path from the binding to the end of the
   block — falling off its end, `return`, a `break` or `continue` that leaves
   it, the end of a loop iteration when the binding is in the loop body —
   must pass a consuming use of `h`: `await h`, `awaitAll(…, h, …)` (part 2),
@@ -6113,23 +6125,23 @@ children whether awaited or not, D141).
   only). A path that does not is an error, family `tasks`: "'h' (started at
   line 2) is not awaited on this path; await it, or start it with 'with' to
   have it cancelled when the block ends (D156)"~~, with the `with` fix~~
-  *(built without a fix: replacing `val` by `with` changes what the task
-  does, so it is the author's choice)*.
+  _(built without a fix: replacing `val` by `with` changes what the task
+  does, so it is the author's choice)_.
   Checked like definite assignment: a binding before a loop awaited only in
   the loop's body is not awaited (the loop may run no times).
-- *Abnormal exits* — a failed `try`, `throw`, a panic, a cancellation from
+- _Abnormal exits_ — a failed `try`, `throw`, a panic, a cancellation from
   further out, a sibling's failure — cancel `h` and join it, as shielded
   cleanup (D47), in the block's one stack of `with`s and with-tasks (D100
   part 1: the last registered first). These are the only exits that wait
   for `h` without an `await` written, and they already run cleanups.
-- *A second `await h`* gives the value again, as for any handle.
-- *No other use.* `h` may not be passed as an argument, stored, captured by a
+- _A second `await h`_ gives the value again, as for any handle.
+- _No other use._ `h` may not be passed as an argument, stored, captured by a
   lambda, returned, put in a collection, or cancelled (`h.cancel()`): each is
   an error naming `with` (a task one may stop) or `scope` (a task one hands
   around). `var h = async …` and a destructured binding are refused.
-- *Hover* on `h`: "must be awaited before the block ends; awaited at line
-  N". *Formatter*: nothing new.
-- *Lowering*: the with-task path (a scope whose body is the rest of the
+- _Hover_ on `h`: "must be awaited before the block ends; awaited at line
+  N". _Formatter_: nothing new.
+- _Lowering_: the with-task path (a scope whose body is the rest of the
   block and whose child is `h`); the end-of-block cancel is never needed on
   a normal path, since `h` has finished there.
 
@@ -6170,12 +6182,12 @@ before the body; `n < 1` panics (a constant one is a compile error), as
 
 - ~~Every task started in the body counts — `async` statements, handles,
   with-tasks, the tasks of a value received with `with` (D111). A nested
-  `scope`'s children count towards that scope.~~ *(Built 2026-10-13: the
+  `scope`'s children count towards that scope.~~ _(Built 2026-10-13: the
   scope's own children count — its `async` statements and handles. A
   with-task, a `val` task or a held value in the body is a child of its
   own block, as a nested scope's children are of that scope; that is
   where the runtime puts them, and counting them would make the limit
-  depend on how the body is written.)*
+  depend on how the body is written.)_
 - At the limit, the next launch **suspends the body** (a cancellation point)
   until a child finishes, then starts; waiting launches go first come, first
   served. Memory stays bounded for any input size.
@@ -6245,8 +6257,8 @@ here a normal path cannot pass the end of the block or a `return` without
 an `await` written, so the only unwritten waits are on error and
 cancellation exits, where `with` already closes and joins.
 
-*Built 2026-10-13 (plan F19), with what building it settled — no change
-of meaning:*
+_Built 2026-10-13 (plan F19), with what building it settled — no change
+of meaning:_
 
 - The errors read "'h' is not awaited on this path (it was started at
   line N)" at a `return`/`break`/`continue`, and "'h' is not awaited on
@@ -6266,7 +6278,7 @@ of meaning:*
   already. It was refused before, which made a list of handles usable
   only by `loop (t in tasks)`.
 - **`AsyncIterator`** (D42) is built: `trait AsyncIterator { type Item;
-  fun next(): Item? suspends }` in the prelude, driven by `loop (x in it)`
+fun next(): Item? suspends }` in the prelude, driven by `loop (x in it)`
   exactly as an `Iterator` is. `ConcurrentMap<I, R, E>`, what
   `it.mapConcurrent` gives, implements it: the looping task takes elements
   from the source and hands them to a runner task (the field the value
@@ -6346,7 +6358,7 @@ struct Parser {
   field path `this.cause`), same receiver passes.
 - **Shadowing.** A local or parameter hides a member; `this.name` reaches the
   member. A warning (family `this`) when one body both declares a local
-  that hides a member *and* reads that member bare elsewhere — the one case
+  that hides a member _and_ reads that member bare elsewhere — the one case
   where a reader cannot tell which is meant. A module-level declaration
   with the same name as a member is reached by its module path or an import
   rename; the member wins inside the type (a warning at the declaration of
@@ -6373,12 +6385,12 @@ the parser's state is mostly written); leaving `this.` mandatory (Rust,
 Python and TypeScript do; Kotlin, Swift, Java, C# and C++ do not, and the
 count above is the cost).
 
-*Built 2026-10-17.* A rewrite before a body is checked turns each bare name
+_Built 2026-10-17._ A rewrite before a body is checked turns each bare name
 that is a member of the receiver (and bound nowhere in the body as a local)
 into `this.name`, each bare static member into `Type.name`. A name the body
 binds as a local anywhere is left alone: where the local is in scope it is the
 local, elsewhere the error says `this.name`. The shadowing warning of "Shadowing"
-above is built only for a member hiding a *module-level* name (reported at the
+above is built only for a member hiding a _module-level_ name (reported at the
 use: `'x' means this.x here`); the local-versus-member warning is not.
 
 ### D159 — `std/bluetooth`: Bluetooth LE central, high level first (v0.82)
@@ -6410,14 +6422,14 @@ fun main() throws bluetooth.Error | Timeout {
 - **Surface (first version, central role; the shape is decided, the names
   are confirmed when plan P7 is built):** `bluetooth.adapter()` (the
   default radio) and `adapters()`; `Adapter.scan(services: List<Uuid> = [],
-  duplicates: bool = false): Scan` — a `Closeable` whose `next()` suspends
+duplicates: bool = false): Scan` — a `Closeable` whose `next()` suspends
   for an `Advertisement` (`device`, `name: string?`, `rssi: i64`, `services`,
   `manufacturerData: Map<u16, List<u8>>`, `serviceData`) and which is an
   iterable for `loop`; scanning stops when it closes. `Device.connect(): Link`
   (`Closeable`: disconnects); `Link.services()`, `Link.characteristic(service,
-  id)`, `Link.mtu()`, `Link.disconnected(): Event`; `Characteristic.read():
-  List<u8>`, `write(bytes, response: bool = true)`, `subscribe():
-  Subscription<List<u8>>` (notifications or indications, whichever the
+id)`, `Link.mtu()`, `Link.disconnected(): Event`; `Characteristic.read():
+List<u8>`, `write(bytes, response: bool = true)`, `subscribe():
+Subscription<List<u8>>` (notifications or indications, whichever the
   characteristic offers; closing it unsubscribes). Every call that waits
   suspends, is cancellable and honours `withTimeout`; reads are bounded by
   the MTU.
@@ -6480,7 +6492,7 @@ val separator = if (build.target.os == Os.Windows) "\\" else "/"
 - **Constant branches.** An `if`/`when` whose condition is a constant (this
   one included) is checked whole and compiles only the taken branch (D117's
   dead-branch rule, D113 constants); `static assert(build.target.os !=
-  Os.MacOS, "…")` works.
+Os.MacOS, "…")` works.
 - **Everything is checked on every platform.** `veles check` (and the LSP)
   checks a module with suffixed files once per OS whose file set differs, so
   a mistake in `serial_linux.vs` is reported on Windows; `veles build`
@@ -6564,7 +6576,7 @@ val n = Num(3)                                // a sealed variant with one field
   whose constructor call takes exactly one argument — one field that a call
   may supply, or an `init(…)` with one parameter (D73) — accepts it
   positionally. Fields with defaults count as parameters (`struct A { x: i64;
-  y: i64 = 0 }` has two, so stays by name).
+y: i64 = 0 }` has two, so stays by name).
 - **Kept:** the named form (`UsageError(message: …)`), puns (D28), generic
   inference from the argument (`Mutex(Notes())` is `Mutex<Notes>`), the
   formatter keeping what was written.
@@ -6719,7 +6731,7 @@ fun main() {
   for its flag, defaults shown; `--help`/`-h` always; `--version` when the
   package declares a version.
 - **Subcommands** are a sealed trait whose variants each `implement
-  cli.Args` (`veles build …`, `veles test …`): the variant's name in kebab
+cli.Args` (`veles build …`, `veles test …`): the variant's name in kebab
   case is the word.
 - **Two levels.** `cli.parse<T>(args)` handles `--help` and usage errors
   itself (prints, exits 0 / 2); `cli.tryParse<T>(args): T throws cli.Error`
@@ -6780,34 +6792,34 @@ arms do different things, every line an alternative as in `when`.
 **1. `async` arms.** A `race` arm may be `async f(…)` (a call, or a function
 value as D103 allows). Rules:
 
-- *Start.* When the race starts, its `async` arms' tasks are launched in
+- _Start._ When the race starts, its `async` arms' tasks are launched in
   written order, and then the other arms' operands are evaluated once, in
-  written order (D108's rule). *(Built so, 2026-10-15: the launches come
-  first; an operand with a side effect sees the tasks already started.)* A race with an `async` arm is allowed wherever a `race` is —
+  written order (D108's rule). _(Built so, 2026-10-15: the launches come
+  first; an operand with a side effect sees the tasks already started.)_ A race with an `async` arm is allowed wherever a `race` is —
   no enclosing `scope` is needed, because the race is the scope of its own
   `async` arms (the place list of D156 gains "a `race` arm").
-- *Winning.* Any arm may win (a receive, a sleep, a send, a handle, an
+- _Winning._ Any arm may win (a receive, a sleep, a send, a handle, an
   `async` arm). An `async` arm is ready when its task has finished.
-- *Losers.* When an arm wins, every `async` arm task of that race still
+- _Losers._ When an arm wins, every `async` arm task of that race still
   running is **cancelled and joined** (shielded, as D47's cleanups), and
   then the winning arm's body runs (or its value is the race's value). The
   losers' `with` cleanups have run by then; an error a loser throws while
   unwinding is dropped (it lost); a panic in a loser is a panic.
-- *Errors: the first to finish wins, error included* (user: "first to
+- _Errors: the first to finish wins, error included_ (user: "first to
   finish"). An `async` arm whose task throws is finished; if it is the first,
   the losers are cancelled and joined and the race throws that error — the
   fail-fast rule of `scope`. The race's error type joins every `async` arm's
   errors into the enclosing function's inferred `throws`. The arm's value
   (bare or named with `as`) is the task's success value, no `Result`, no
   `try` — as `await h` is (D141 rule 2).
-- *Handles are not `async` arms.* A handle started outside the race (`val
-  h = async …`, a with-task, a handle in a `scope` body) belongs to the block
+- _Handles are not `async` arms._ A handle started outside the race (`val
+h = async …`, a with-task, a handle in a `scope` body) belongs to the block
   that started it: a losing handle arm is **not** cancelled and is still
   awaited by its own rules (the lazy `mapConcurrent` in the prelude relies on
   this: the oldest call loses a race to a new job and is awaited later). The
   rule in one line: a task belongs to the place its `async` is written.
-- *Which arm wins* when several are ready: D38's rule (written order).
-- *Suspension and Sendable*: an `async` arm's function and arguments follow
+- _Which arm wins_ when several are ready: D38's rule (written order).
+- _Suspension and Sendable_: an `async` arm's function and arguments follow
   D35 as any `async` does; a task a loser runs in a blocking C call delays
   the race until it reaches a cancellation point (D145) — hover on an
   `async` arm says "started by this race; cancelled if another arm wins".
@@ -6850,7 +6862,7 @@ hover, completion, docs; a reserved prelude name):
   with 'async …', or write a 'race' arm"), and so is an argument that is not
   a task (the `awaitAll` error, naming `async`). One argument: "'awaitFirst'
   of one task is the call itself; call 'f(…)'" with that fix. `await
-  awaitFirst(…)` is an error, as for `awaitAll`.
+awaitFirst(…)` is an error, as for `awaitAll`.
 - Not over a list (`awaitFirst(tasks)`): checklist §11, with "first over a
   list of inputs" (`firstConcurrent`, notes P11).
 
@@ -6858,11 +6870,11 @@ hover, completion, docs; a reserved prelude name):
 names the new form and a fix, and the whole tree migrates in the same
 change):
 
-| Old | Error and fix |
-|---|---|
-| `val x = src => body` | "an arm names its value after the source: 'src as x => body' (D168)" |
-| `val r = await h => body` | "write 'h as r => body': a race arm does not take 'await' (D168)" |
-| `val _ = src => body` | "write 'src => body': an arm need not name a value it does not use (D168)" |
+| Old                       | Error and fix                                                              |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `val x = src => body`     | "an arm names its value after the source: 'src as x => body' (D168)"       |
+| `val r = await h => body` | "write 'h as r => body': a race arm does not take 'await' (D168)"          |
+| `val _ = src => body`     | "write 'src => body': an arm need not name a value it does not use (D168)" |
 
 **Edge cases.** A race in a `scope(on: e)` body does **not** launch its
 `async` arms on `e`: they run where the race runs (built so; placing them is
@@ -6873,7 +6885,7 @@ race's). Nested races: each owns its own arms. The formatter aligns the `=>`
 column within a race as before (`src as name` counts as the head); a bare
 arm takes no column. The self-hosted parser (G-gates) reads the new arms.
 
-**Later, not decided:** a first-*success* form (the user: "if we need first
+**Later, not decided:** a first-_success_ form (the user: "if we need first
 success, we would need to start `race try` or something better named") —
 errors ignored unless every arm fails; checklist §11.
 
@@ -6884,10 +6896,10 @@ forget, and the probe showed it forgotten); first-success semantics for
 in handle arms, or allowing both spellings; `val name = src => body` (reads
 as a statement, not as a branch); `src => name => body` (two arrows); a
 redesign after Kotlin's `select { a.onAwait { … } }` (more ceremony); a
-cancelled losing *handle* (the lazy `mapConcurrent` needs the loser to run
+cancelled losing _handle_ (the lazy `mapConcurrent` needs the loser to run
 on).
 
-*Superseded in part by D169 (2026-10-16), a day after it was built:* the
+_Superseded in part by D169 (2026-10-16), a day after it was built:_ the
 construct with arms is now `select`; `race { }` is a block like `gather`;
 ~~bare arms~~, ~~`src as name =>`~~ and ~~`awaitFirst`~~ are gone (the user:
 "naming 'as' in race arms was a mistake"). What stands: `async` arms owned
@@ -6939,24 +6951,24 @@ of the race (not one inside a nested `scope`, `gather`, `race` or a `with t
 = async`) is a contestant. When the body has run, the race waits for the
 first contestant to finish:
 
-- *Success*: its value is the race's value; the other contestants are
+- _Success_: its value is the race's value; the other contestants are
   cancelled and joined (their `with` cleanups run) before the race gives it.
-- *Failure*: the first to finish with an error makes the race throw it,
+- _Failure_: the first to finish with an error makes the race throw it,
   after cancelling and joining the rest (D168's rule, `scope`'s fail-fast).
   The error joins the enclosing function's inferred `throws`; as for `scope`,
   it leaves the function — `race { … } catch` is not a thing, a function
   around the race is.
-- *Types*: every contestant gives the same type `T` (a different one is an
+- _Types_: every contestant gives the same type `T` (a different one is an
   error naming both); the race is `T`.
-- *None*: a body that starts no task is a compile error when no `async` is
+- _None_: a body that starts no task is a compile error when no `async` is
   written in it; one that starts none at run time (a loop over an empty
   list) panics at the race: "race started no task".
-- *One*: a body with exactly one `async` and no loop is a warning — "a race
+- _One_: a body with exactly one `async` and no loop is a warning — "a race
   of one task is the call itself".
-- *Order*: contestants start in the order the body starts them; when
+- _Order_: contestants start in the order the body starts them; when
   several have finished before the race looks, the first started wins.
-- *Timeouts*: `race { async fetch(u); async { await sleep(d); throw
-  Timeout(limit: d) } }`, or `withTimeout` as before.
+- _Timeouts_: `race { async fetch(u); async { await sleep(d); throw
+Timeout(limit: d) } }`, or `withTimeout` as before.
 - `race(on: e)` / `race(workers: n)` are not part of this decision.
 
 **2. `select { arms }`.** The construct of D38/D108/D168 under the name Go
@@ -6977,7 +6989,7 @@ lambda of no parameters and started at once — the function and the start in
 one — so:
 
 - it stands where `async f()` may: a `scope`/`gather`/`race` body, `val t =
-  async { … }` (awaited before the block ends, D156), `with t = async { … }`
+async { … }` (awaited before the block ends, D156), `with t = async { … }`
   (D100), a `select` arm;
 - captures follow D35: `val`s of Sendable types without `var` fields; a
   captured `var` is an error with the fix (copy it into a `val`, or share
@@ -6993,11 +7005,11 @@ one — so:
 **4. Removed** (D-rule: each keeps parsing as an error naming the new form
 with a fix; the tree migrates in the same change):
 
-| Old | New |
-|---|---|
-| `race { src => body … }` (arms) | `select { src => body … }` |
-| `src as name => body` (D168) | `val name = src => body` |
-| a bare arm `src` (D168) | `val v = src => v` |
+| Old                                       | New                             |
+| ----------------------------------------- | ------------------------------- |
+| `race { src => body … }` (arms)           | `select { src => body … }`      |
+| `src as name => body` (D168)              | `val name = src => body`        |
+| a bare arm `src` (D168)                   | `val v = src => v`              |
 | `awaitFirst(async a(), async b())` (D168) | `race { async a(); async b() }` |
 
 **Both levels.** `race` and `async { }` are the high level: what to run,
@@ -7120,7 +7132,7 @@ it is a statically resolved call, no vtable, no dictionary, nothing to link.
 - **Own type:** `extend` is as before (D23 addendum v0.22) — a real inherent
   method. The `with fun` form is the same thing for one function.
 - **Foreign type** (declared in another package, or a built-in the std does not
-  extend for you): the same spelling declares an *extension function*, with
+  extend for you): the same spelling declares an _extension function_, with
   these rules. The compiler always knows which case applies (who declares the
   type); hover says "extension from `strx`".
   1. **An inherent method always wins.** An extension with the name of an
@@ -7132,7 +7144,7 @@ it is a statically resolved call, no vtable, no dictionary, nothing to link.
   4. **Visible where its module is imported** — `use strx` brings the module's
      `public` extensions into scope for that file. Not global like D17.
   5. **Two visible extensions with one name on one type** (or an extension and
-     a trait method) are an *ambiguity error at the call*, with the fix (call
+     a trait method) are an _ambiguity error at the call_, with the fix (call
      the function by its module name or drop one import). Never picked silently.
   6. Generics and bounds work as on the existing `extend`; `this` is implicit
      (D158); effects (suspension, errors) are inferred like any function's.
@@ -7154,7 +7166,7 @@ the author never opts in); a separate `extension` keyword (the user's
 `extend … with fun` form was preferred, it also covers one-liners); `|>` /
 `->` now; Kotlin's `fun T.name()`; per-name imports of extensions.
 
-*Built 2026-10-17 (plan B25).* As built: a braced `use m { x }` brings the
+_Built 2026-10-17 (plan B25)._ As built: a braced `use m { x }` brings the
 module's extensions like `use m`; the scope is the file, not the module; a
 `private` marker, a `static fun`, and a `Result` or `Option` receiver are
 errors; `public extend T { }` and `internal extend T { }` give the block's
@@ -7191,15 +7203,13 @@ struct Options {
 - **Checks.** An annotation on a target not listed after `on` is an error naming the allowed targets. Because every annotation names its reader, one used on a declaration whose type does not implement (or cannot reach) any of its `for` traits is a **warning** — "`@Short` is read by `cli.Args`, but `Options` does not implement it" — so nothing is silently ignored (D51's rule, kept). Behaviour annotations stay closed: a library cannot write a `@cached` that changes compilation; wrapping behaviour is a higher-order function or a middleware.
 - **Reading — at compile time only, two layers.** There is no run-time reflection. `T.fields` / `Self.fields` is a constant description of a type — for each member its name, type, doc comment, default, and the annotations on it (`f.attr<Short>()` is `Short?`, `f has Hidden` a `bool`); likewise for enum members and a sealed trait's variants. (1) **`const fun`** (D113) reads it as data and builds tables the compiler stores read-only in the binary — help text, a route table, SQL columns, a config schema — computed once, free at start-up; `loop (f in Self.fields)` is an ordinary loop there. (2) **A trait's default body**, which is compiled once per type, may use `inline loop (f in Self.fields)`: unrolled, each iteration with its own static `f.Type`, so it can read and assign real fields; an empty `implement Trait` runs it (D58's rule; D117's compile-time branches decide which code each copy keeps). This is how `std/cli`, `config`, `db` and a user's `Validate` are written, in Veles, with no code in the compiler. The exact names of the reflection members, the typing of `get`/`set` by field and the error text inside an unrolled body (which must name the field and its type) are confirmed when it is built, as D167's were.
 - **Order.** (1) the mechanism: `annotation`, `T.fields`, `inline loop`, the checks, hover and `veles doc` showing annotations and their values, formatter, docs; (2) `std/cli` (plan C9) written on it instead of adding five annotations to the Go compiler; (3) later, `@key`/`@skip`/`@required`/`@tag` and the `Codable` derive (about 1 550 lines of Go: `derive.go`, `derive_print.go`, `derive_schema.go`) move to `std/codec` as ordinary code — the case for the self-hosted compiler, which then needs only the reflection primitive, not every derive.
-- **Terminology.** The user's word is *annotation*; the docs, the `ast` and the diagnostics say "annotation" for all of it (the compiler's own included) when this is built.
+- **Terminology.** The user's word is _annotation_; the docs, the `ast` and the diagnostics say "annotation" for all of it (the compiler's own included) when this is built.
 
 Rejected: any struct usable as an annotation without a declaration (no target check, no way to know whether anything reads it); leaving annotations std-only with a table beside the struct (metadata away from the field, every std addition a compiler change); a constant run-time descriptor (`describe<T>()`) — run-time reflection, ruled out by the user ("no run-time"); a `const fun` that emits code or macros (D118); `const fun` only (libraries could not set fields from input, so `cli`/`config`/decoders would keep a compiler-written part); trait bodies only (no compile-time tables); `attribute` as the keyword and the `{ value: i64 }` body form (the declaration did not look like the use site). User, 2026-10-18: declaration "header plus reader clause" with `annotation` for the keyword; reading "both: const fun and trait bodies"; UpperCamel user names with lowercase reserved; the order above (all recommended, the keyword the user's).
 
-*Built 2026-10-18 (plan B26), as spelled; `T.annotated<A>()` added the same day (user: "reading helpers").* `annotation Name(params) on targets [for Traits]` parses (Go and `selfhost/`, gates green) into a `StructDecl` whose fields are the parameters, with `Annotation` info beside; an annotation declared `public` has public fields. A use `@Name(args)` / `@mod.Name(args)` is resolved after all types exist (`sema/annotation.go`): a construction with constant arguments (one bare argument when there is exactly one parameter), kept by declaration node for reflection, with the target check, the duplicate check and the "nothing reads it" warning (fields, enum members, variants, structs, enums with a generic-free owner that implements none of the `for` traits). Reflection (`sema/reflect.go`): prelude `FieldInfo` (name, doc, typeName, hasDefault, index, owner); `T.fields` and `Self.fields` (the parser makes `Self` a receiver before a dot) as a constant `List<FieldInfo>`; in a `const fun` a `FieldInfo` answers `f.has<A>()` and `f.attr<A>()` through evaluator builtins (`reflect.has`/`reflect.attr`); `inline loop (f in T.fields)` unrolls the body once per field with `f` a compile-time handle — `f.name`, `f.doc`, `f.typeName`, `f.hasDefault`, `f.index`, `f.Type` (as a type or a receiver), `f.get(x)`, `f.has<A>()` and `f.attr<A>()` as constants, an `if` on `f.has<A>()` or `if (val a = f.attr<A>())` keeping only the branch that applies, no `break`/`continue`; `T.build(f => value)` makes a `T` with the lambda's body checked once per field. Differences from the text above: the methods are `f.has<A>()` and `f.attr<A>()` (no `has` operator); `f.get(x)` reads a field whatever its visibility only inside a trait's default body for the implementing type, and follows the usual rules anywhere else; a function that reads annotations is refused when code that runs calls it (`checkReflectUse`), its emitted body is never reached; a generic body's `inline loop` is checked in the copy for each type, not once abstractly. Not built: `T.members` for enums and variants, `f.set(x, v)`, `veles doc` and completion for annotations, the "annotation" wording in the compiler's own diagnostics for `@key`-style attributes (checklist §11).
+_Built 2026-10-18 (plan B26), as spelled; `T.annotated<A>()` added the same day (user: "reading helpers")._ `annotation Name(params) on targets [for Traits]` parses (Go and `selfhost/`, gates green) into a `StructDecl` whose fields are the parameters, with `Annotation` info beside; an annotation declared `public` has public fields. A use `@Name(args)` / `@mod.Name(args)` is resolved after all types exist (`sema/annotation.go`): a construction with constant arguments (one bare argument when there is exactly one parameter), kept by declaration node for reflection, with the target check, the duplicate check and the "nothing reads it" warning (fields, enum members, variants, structs, enums with a generic-free owner that implements none of the `for` traits). Reflection (`sema/reflect.go`): prelude `FieldInfo` (name, doc, typeName, hasDefault, index, owner); `T.fields` and `Self.fields` (the parser makes `Self` a receiver before a dot) as a constant `List<FieldInfo>`; in a `const fun` a `FieldInfo` answers `f.has<A>()` and `f.attr<A>()` through evaluator builtins (`reflect.has`/`reflect.attr`); `inline loop (f in T.fields)` unrolls the body once per field with `f` a compile-time handle — `f.name`, `f.doc`, `f.typeName`, `f.hasDefault`, `f.index`, `f.Type` (as a type or a receiver), `f.get(x)`, `f.has<A>()` and `f.attr<A>()` as constants, an `if` on `f.has<A>()` or `if (val a = f.attr<A>())` keeping only the branch that applies, no `break`/`continue`; `T.build(f => value)` makes a `T` with the lambda's body checked once per field. Differences from the text above: the methods are `f.has<A>()` and `f.attr<A>()` (no `has` operator); `f.get(x)` reads a field whatever its visibility only inside a trait's default body for the implementing type, and follows the usual rules anywhere else; a function that reads annotations is refused when code that runs calls it (`checkReflectUse`), its emitted body is never reached; a generic body's `inline loop` is checked in the copy for each type, not once abstractly. Not built: `T.members` for enums and variants, `f.set(x, v)`, `veles doc` and completion for annotations, the "annotation" wording in the compiler's own diagnostics for `@key`-style attributes (checklist §11).
 
-
-
-*Reading helpers (2026-10-18, user: "Reading helpers (Recommended)").* `T.annotated<A>()` is a constant `List<(FieldInfo, A)>` of the fields that carry `A` with its value, for a `const fun` (`loop ((f, a) in T.annotated<A>())`); `inline loop ((f, a) in T.annotated<A>())` is unrolled for those fields only, `a` bound to the annotation, so a reader needs no `has`/`attr` question. Typed decorators (annotations that wrap a function) were asked for the same day: D176.
+_Reading helpers (2026-10-18, user: "Reading helpers (Recommended)")._ `T.annotated<A>()` is a constant `List<(FieldInfo, A)>` of the fields that carry `A` with its value, for a `const fun` (`loop ((f, a) in T.annotated<A>())`); `inline loop ((f, a) in T.annotated<A>())` is unrolled for those fields only, `a` bound to the annotation, so a reader needs no `has`/`attr` question. Typed decorators (annotations that wrap a function) were asked for the same day: D176.
 
 ### D175 — The implementing type is `This` (v0.89)
 
@@ -7212,7 +7222,6 @@ trait Validate { static fun blank(): This => This.build(f => f.Type.default()) }
 ```
 
 `This` is a keyword in type position and, before a dot, a receiver in an expression (`This.fields`, `This.default()`); `This.Item` is an associated type as `Self.Item` was. `Self` keeps parsing as the same type with an error whose fix writes `This` (`veles check --fix` migrates a package); std, `selfhost/`, examples, docs and the tests were migrated in the same change. User, 2026-10-18, recommended of 2 (neutral): rename. Rejected: keeping Rust's and Swift's `Self` (the user preferred the pair with `this`, the Kotlin word chosen in D65); accepting both (one way to do a thing).
-
 
 ### D176 — Typed decorators: `annotation Name(…) on fun = wrapper` (v0.90)
 
@@ -7255,6 +7264,7 @@ long_line = "warn"
 **Rules are ordinary Veles, run by the compiler.** A rule is a value of `lint.Rule` in a normal package: a name, a doc string, a default level and a `create` function returning a `lint.Visitor` with one callback per node kind (ESLint's shape). A callback reads the node and reports through `ctx.report(span, message, fix:)`. The compiler runs the rules in its compile-time evaluator (D113), as `const fun`: no extra process, no I/O, deterministic, cacheable per file, and a rule can ask the compiler's own tables for types (type-aware rules). The AST is reflected into Veles types from `selfhost/ast`. `veles check --fix` applies the fixes as it does for built-in lints.
 
 **Formatter options** (`[format]`, a closed set; no formatter plugins, so one source has one canonical layout):
+
 - `trailing_commas = "multiline" | "never"`: default `"multiline"` (today's behaviour, a comma after the last element of a list broken across lines); one setting for arguments, literals and parameters.
 - `line_endings = "lf" | "crlf" | "auto"`: default `"lf"`.
 - Unchanged: `indent` (2), `max_blank_lines` (1), `imports` (lines). A file ends with one newline, not an option.
@@ -7262,9 +7272,9 @@ long_line = "warn"
 
 Rejected: a `lint Name on node { }` declaration syntax (a rule is a normal value); plugin executables fed a serialized tree (a second public AST format, a process per run); a linter binary linking the rules (syntax-only until a Veles sema exists); declarative-only rules; `trailing_commas = "always"`; per-construct comma settings; a reflowing `max_width`; a default width of 100 (the user: too narrow today); formatter plugins; per-directory lint overrides (until needed).
 
-*Addendum (2026-10-19, run model confirmed after measuring).* A `const fun` walking a std-sized tree (294k nodes, lambda callbacks per kind) cost about 2.8 µs per node, roughly 7× a trivial `veles check` per rule pass, and the evaluator cannot hold sealed variants yet (`sema/consteval.go`). The user chose to extend the evaluator (sealed variants, then speed) over the `veles lint` binary; if a real rule set over the real AST is over budget the numbers go back to the user before the model changes.
+_Addendum (2026-10-19, run model confirmed after measuring)._ A `const fun` walking a std-sized tree (294k nodes, lambda callbacks per kind) cost about 2.8 µs per node, roughly 7× a trivial `veles check` per rule pass, and the evaluator cannot hold sealed variants yet (`sema/consteval.go`). The user chose to extend the evaluator (sealed variants, then speed) over the `veles lint` binary; if a real rule set over the real AST is over budget the numbers go back to the user before the model changes.
 
-*Built (2026-10-19).* `std/lint` is `Rule`, `Visitor` (an optional `on<Node>` callback for every struct of `selfhost/ast`, entered parents first), `Context.report(span, message, fix:)` and `Fix` (`replace`, `remove`, `insertBefore`); its tree is `selfhost/ast` written out as public declarations. A package lists its rules in `public const fun rules(): List<lint.Rule>`; a manifest turns one on as `[lint] dep.rule = "warn"`, where `dep` is the dependency's name in `[dependencies]` (an identifier, so `acme-lints.x` is `acme_lints.x`). The evaluator holds sealed variants and pointers while it runs; a constant's *result* still cannot be one. A rule sees the parser's tree, not types. Left: `[lint.forbid]`, type-aware rules, exit callbacks (checklist §11).
+_Built (2026-10-19)._ `std/lint` is `Rule`, `Visitor` (an optional `on<Node>` callback for every struct of `selfhost/ast`, entered parents first), `Context.report(span, message, fix:)` and `Fix` (`replace`, `remove`, `insertBefore`); its tree is `selfhost/ast` written out as public declarations. A package lists its rules in `public const fun rules(): List<lint.Rule>`; a manifest turns one on as `[lint] dep.rule = "warn"`, where `dep` is the dependency's name in `[dependencies]` (an identifier, so `acme-lints.x` is `acme_lints.x`). The evaluator holds sealed variants and pointers while it runs; a constant's _result_ still cannot be one. A rule sees the parser's tree, not types. Left: `[lint.forbid]`, type-aware rules, exit callbacks (checklist §11).
 
 Both levels: the level table and `[lint.forbid]` are the high-level spelling; rules in Veles are the low-level escape. Self-hosting: the rule API sits on the Veles AST, so the compiler's own Go lints can become rules in it once S6–S9 land.
 
@@ -7288,13 +7298,13 @@ suite "db" {
 }
 ```
 
-- **Vocabulary** (test code only, like `require`): `skip(why: string): Never` ends the test as *skipped*; `skipIf(cond: bool, why: string)` is `if (cond) skip(why)`. Both work from a `test fun` helper and from a lambda, by the mechanism of `require`. A test that already recorded a failed `expect` and then skips stays failed. A skipped test's body is still compiled.
+- **Vocabulary** (test code only, like `require`): `skip(why: string): Never` ends the test as _skipped_; `skipIf(cond: bool, why: string)` is `if (cond) skip(why)`. Both work from a `test fun` helper and from a lambda, by the mechanism of `require`. A test that already recorded a failed `expect` and then skips stays failed. A skipped test's body is still compiled.
 - **Suites.** `skip(why)` and `skipIf(cond, why)` may be written directly in a `suite` body (the only statements allowed there); the condition is evaluated once, before the suite's first test, and skips every test of the suite and of its nested suites.
 - **Annotations.** `@Skip("why")` and `@SkipIf(cond, "why")` stand on a `test` or a `suite`; the annotation targets gain `test` and `suite`. The condition is a constant (D113), so `build.target` works and the test is reported skipped without running. `Skip`/`SkipIf` are std annotations in scope in test code.
 - **Report.** `test x ... skipped: why`; the summary is `3 passed, 1 failed, 2 skipped: parsesDates` (names after the colon stay the failed tests). A run whose only non-passes are skips exits 0; `veles test --fail-on-skip` makes them fail. `--filter` treats a skipped test like any other.
 - **Helpers do not propagate.** A `test fun` that calls `skip` skips the test that called it, at run time; nothing is inferred statically about which tests may skip (the user: "maybe it is an overdoing").
 
-*(Built 2026-10-18, plan B28. A suite's statements become one gate function per suite, run once as a task before the first test is queued; `@Skip`/`@SkipIf` accept their arguments positionally, as written above; the summary shows `, K skipped` only when K > 0.)*
+_(Built 2026-10-18, plan B28. A suite's statements become one gate function per suite, run once as a task before the first test is queued; `@Skip`/`@SkipIf` accept their arguments positionally, as written above; the summary shows `, K skipped` only when K > 0.)_
 
 Rejected: a test modifier `test "x" skip "why" { }` (constant conditions only, new syntax in both parsers, competes with D170's label); leaving the early `return` (a false `ok`); a header clause or a shared helper for suites; propagating a helper's skip into a static property of the calling test.
 
@@ -7353,13 +7363,13 @@ val backref = try Regex.compile(`(\w)\1`, backtracking: true)
 
 Edge cases settled with the options: the raw backtick string cannot hold a backtick (so a tagged `` regex`…` `` was not chosen); the formatter keeps a literal verbatim; the one lexer miss is a regex directly after `)` on the same line (`if (ok) /x/.matches(s)` — braces, as Veles requires).
 
-Rejected: a tagged raw string `regex\`…\``; a backtracking engine by default or a flag letter for it; methods on `string` only without a `Regex` type; Unicode classes by default.
+Rejected: a tagged raw string `regex\`…\``; a backtracking engine by default or a flag letter for it; methods on `string`only without a`Regex` type; Unicode classes by default.
 
 What this means for writing the compiler in Veles: the literal's compile-time check reuses `std/regex` through the evaluator, so the Veles compiler needs no regex code of its own; the lexer's regex rule is added to the Go and the `selfhost/` lexers together (G1).
 
-*Built 2026-10-19 (v0.96), with these names settled.* `std/regex`: `Regex.compile(pattern, ignoreCase, multiLine, dotAll, extended)` throws `RegexError { message, position }`; `Regex.escape`; `test` (anywhere) and `matches` (the whole text); `find(text, from)`, `findAll`, `replaceAll(text, replacement)`, `replaceFirst`, `replaceEach(text, f)`, `split(text, limit)`; `Match.value/start/end/groupAt(i)/group(name)/span(i)/groupCount`; the string extensions `matches`, `find`, `findAll`, `replaceAll(re, replacement)`, `splitBy`. The replacement parameter is `replacement`, not `with` (`with` is a keyword, D100), and `group(name)` / `groupAt(index)` are two names because there is no overloading (D179). A replacement reads `$1`, `${1}`, `${name}`, `$0` and `$$`. The engine is a Pike VM plus a bounded backtracker (a visited set of (instruction, position), used when program × text ≤ 262 144 pairs), identical results, both linear. The parser and the instruction builder are `const fun`s that record the first problem instead of throwing (a `const fun` cannot throw), which is how the compiler runs `regex.validate(pattern, flags)` on every literal; a literal lowers to `regex.literal(pattern, flags)`, which compiles each distinct literal once. Not built: typed groups; see checklist §11.
+_Built 2026-10-19 (v0.96), with these names settled._ `std/regex`: `Regex.compile(pattern, ignoreCase, multiLine, dotAll, extended)` throws `RegexError { message, position }`; `Regex.escape`; `test` (anywhere) and `matches` (the whole text); `find(text, from)`, `findAll`, `replaceAll(text, replacement)`, `replaceFirst`, `replaceEach(text, f)`, `split(text, limit)`; `Match.value/start/end/groupAt(i)/group(name)/span(i)/groupCount`; the string extensions `matches`, `find`, `findAll`, `replaceAll(re, replacement)`, `splitBy`. The replacement parameter is `replacement`, not `with` (`with` is a keyword, D100), and `group(name)` / `groupAt(index)` are two names because there is no overloading (D179). A replacement reads `$1`, `${1}`, `${name}`, `$0` and `$$`. The engine is a Pike VM plus a bounded backtracker (a visited set of (instruction, position), used when program × text ≤ 262 144 pairs), identical results, both linear. The parser and the instruction builder are `const fun`s that record the first problem instead of throwing (a `const fun` cannot throw), which is how the compiler runs `regex.validate(pattern, flags)` on every literal; a literal lowers to `regex.literal(pattern, flags)`, which compiles each distinct literal once. Not built: typed groups; see checklist §11.
 
-*Built the same day (second part).* `\p{Name}`, `\pL`, `\P{…}`, `\p{^…}` (any general category or script of Unicode 15, `Any`), in or out of a class; the `u` flag (`/…/u`, `(?u)`, `unicode: true`): `\d` is `Nd`, `\w` letters + marks + `Nd` + connector punctuation, `\s` `White_Space`, `\b` and `i` follow Unicode (simple case folding). The tables are `std/regex/unicode.vs`, generated from Go's `unicode` package (`go test ./std -run RegexUnicodeTables -update-unicode`). `Regex.compile(pattern, …, unicode: false, backtracking: false)`: with `backtracking: true`, `\1`, `\k<name>`, `(?=…)`, `(?!…)`, `(?<=…)` and `(?<!…)` run on an exhaustive depth-first engine with no visited set (it can take exponential time; no step limit); a `/…/` literal never has it, and the refusal names this call.
+_Built the same day (second part)._ `\p{Name}`, `\pL`, `\P{…}`, `\p{^…}` (any general category or script of Unicode 15, `Any`), in or out of a class; the `u` flag (`/…/u`, `(?u)`, `unicode: true`): `\d` is `Nd`, `\w` letters + marks + `Nd` + connector punctuation, `\s` `White_Space`, `\b` and `i` follow Unicode (simple case folding). The tables are `std/regex/unicode.vs`, generated from Go's `unicode` package (`go test ./std -run RegexUnicodeTables -update-unicode`). `Regex.compile(pattern, …, unicode: false, backtracking: false)`: with `backtracking: true`, `\1`, `\k<name>`, `(?=…)`, `(?!…)`, `(?<=…)` and `(?<!…)` run on an exhaustive depth-first engine with no visited set (it can take exponential time; no step limit); a `/…/` literal never has it, and the refusal names this call.
 
 ---
 
@@ -7371,13 +7381,13 @@ What this means for writing the compiler in Veles: the literal's compile-time ch
 - **`panic(message)`** — a built-in that never returns (D20); a `T?` fallback like `xs.at(i) ?: panic("...")` types as `T`.
 - **`Set`** — follows D25's immutable/mutable split and is insertion-ordered, matching `Map`.
 - **`gc.retain` handles** — `Closeable`, acquired through `with` (D43).
-- **`implement`, not `impl`** *(v0.33)* — the keyword is the word: `implement Display for Point { }`, `implement Codable` in a struct body. `impl` was the Rust abbreviation; the parser still reads it and reports the spelling with the fix. The AST node keeps its name.
-- **A function's type parameters follow its name** *(v0.33)* — `fun encode<T: Encodable>(value: T)`, as on a struct (`struct Page<T>`) and at the call (`decode<User>(text)`); Swift, TypeScript, Go and Rust agree. Kotlin's `fun <T> encode(...)` was accepted alongside it since v0.1 and is now an error with the fix: one spelling.
-- **Module interface files** — build cache, regenerated. Packages distribute as source under the decentralized registry model (manifest §7), so there is nothing to ship them in. *(v0.59: not built — the bootstrap checks a package whole; see §5 and plan E8.)*
+- **`implement`, not `impl`** _(v0.33)_ — the keyword is the word: `implement Display for Point { }`, `implement Codable` in a struct body. `impl` was the Rust abbreviation; the parser still reads it and reports the spelling with the fix. The AST node keeps its name.
+- **A function's type parameters follow its name** _(v0.33)_ — `fun encode<T: Encodable>(value: T)`, as on a struct (`struct Page<T>`) and at the call (`decode<User>(text)`); Swift, TypeScript, Go and Rust agree. Kotlin's `fun <T> encode(...)` was accepted alongside it since v0.1 and is now an error with the fix: one spelling.
+- **Module interface files** — build cache, regenerated. Packages distribute as source under the decentralized registry model (manifest §7), so there is nothing to ship them in. _(v0.59: not built — the bootstrap checks a package whole; see §5 and plan E8.)_
 - **`veles.sum`** — mandatory. Supply-chain integrity is not opt-in.
-- ~~**Variadic C functions** — excluded. The varargs calling convention differs per platform and is the nastiest corner of the C ABI; bind a fixed-arity wrapper instead.~~ *(v0.64: superseded by D123 — calling is allowed, defining is not.)*
+- ~~**Variadic C functions** — excluded. The varargs calling convention differs per platform and is the nastiest corner of the C ABI; bind a fixed-arity wrapper instead.~~ _(v0.64: superseded by D123 — calling is allowed, defining is not.)_
 - ~~**`testing`** — stdlib, with a `test` build mode. Go's version of this is a genuine strength.~~ Superseded by D78 (`test "…" { }`, a test-only vocabulary, no importable `testing` module).
-- **Discarded `async` handles** — no different from bound ones. `scope` joins either way, so there is nothing to warn about. *(v0.59: a task bound by `with` (D100) is the exception — it is cancelled, not waited for, when its block ends.)* *(v0.81: and a `val h = async f()` outside a scope must be awaited on every normal path, D156.)*
+- **Discarded `async` handles** — no different from bound ones. `scope` joins either way, so there is nothing to warn about. _(v0.59: a task bound by `with` (D100) is the exception — it is cancelled, not waited for, when its block ends.)_ _(v0.81: and a `val h = async f()` outside a scope must be awaited on every normal path, D156.)_
 
 ---
 
@@ -7403,13 +7413,13 @@ Self-hosting sets stdlib priority order: the first thing Veles must be able to w
 - Size-segregated spans with per-span metadata, so any address resolves to its base object
 - Non-generational (generational collection is substantially harder without moving; Go does not have one)
 - Fragmentation is a permanent operational concern, not a solvable one
-- *(2026-10-13, plan F18)* No store barrier in the generated code: coroutine frames are heap objects LLVM writes its spills into, and the runtime's C writes pointers in hundreds of places, so a barrier would be both unsound and invasive. Marking runs alongside the program by asking the OS which pages were written meanwhile (Windows' write watch; Boehm's mostly-concurrent collection) and rescanning them in a short last pause. Where the OS cannot say cheaply, marking stays in the pause.
+- _(2026-10-13, plan F18)_ No store barrier in the generated code: coroutine frames are heap objects LLVM writes its spills into, and the runtime's C writes pointers in hundreds of places, so a barrier would be both unsound and invasive. Marking runs alongside the program by asking the OS which pages were written meanwhile (Windows' write watch; Boehm's mostly-concurrent collection) and rescanning them in a short last pause. Where the OS cannot say cheaply, marking stays in the pause.
 
 **Two inferred effects require materialized module interfaces.** Suspension (D2) and error type (D4) are both inferred, and both leak into a module's public interface without appearing in its source. The fix for both: infer within a module, then write the results into a generated interface file — the model used by Rust's crate metadata and Swift's `.swiftinterface`. Downstream compilation reads materialized facts and never re-infers.
 
 Combined with M2, the **module is the inference unit**, and one interface file is generated per module. This format is load-bearing far beyond error handling; it is the backbone of the module system and the package manager, and should be designed early rather than treated as a compiler implementation detail.
 
-*(v0.59, state)* Not built: the bootstrap loads and checks a whole package, dependencies included, from source on every build, and infers across modules in one pass. Interface files arrive with per-module caching (plan E8) and the registry (E7).
+_(v0.59, state)_ Not built: the bootstrap loads and checks a whole package, dependencies included, from source on every build, and infers across modules in one pass. Interface files arrive with per-module caching (plan E8) and the registry (E7).
 
 ---
 
@@ -7417,13 +7427,13 @@ Combined with M2, the **module is the inference unit**, and one interface file i
 
 ~~**6.1 — Whether to lint the `cond => x => ...` case.** See D33. Accepted as-is for now.~~ Decided in D106: the formatter parenthesizes the lambda, no lint.
 
-**6.2 — Manifest schema.** ~~Drafted in `veles-manifest.md`.~~ *(v0.59: that file does not exist; `veles.toml` as built is described in the docs, chapter 11, and its open syntax is checklist §9 Q14.)* *(v0.66: decided — D131, `package.vs`.)*
+**6.2 — Manifest schema.** ~~Drafted in `veles-manifest.md`.~~ _(v0.59: that file does not exist; `veles.toml` as built is described in the docs, chapter 11, and its open syntax is checklist §9 Q14.)_ _(v0.66: decided — D131, `package.vs`.)_
 
-*(v0.59)* The open questions now live in `veles-checklist.md` §9; this section keeps 6.1 and 6.2 for their history.
+_(v0.59)_ The open questions now live in `veles-checklist.md` §9; this section keeps 6.1 and 6.2 for their history.
 
 ## 7. Not yet designed
 
-*(v0.59, reviewed.)* Most of this list has since been designed and built; the struck items name where.
+_(v0.59, reviewed.)_ Most of this list has since been designed and built; the struck items name where.
 
 - ~~Trait declaration syntax~~ — built (D23, D40, D84; bounds after the name, v0.33)
 - ~~Closure representation and capture semantics~~ — built (D32, D35 v0.28 sendable functions)
@@ -7436,7 +7446,6 @@ Combined with M2, the **module is the inference unit**, and one interface file i
 - Standard library scope beyond the self-hosting minimum — decided API by API (plan track C)
 - ~~Build tooling, formatter, LSP~~ — built
 
-
 ---
 
 ## 8. Interop — scoping note
@@ -7447,7 +7456,7 @@ The tractable version:
 
 - **C ABI FFI** for native targets — reaches C, C++, Rust, Zig, and anything else speaking the C ABI
 - **JS import/export** for the WebAssembly target when it arrives
-- ~~**A declaration-file system**, in the spirit of `.d.ts`, so foreign libraries can be bound with Veles-side type safety~~ *(v0.64, D122: bindings are ordinary packages of `extern` blocks; no separate file kind.)*
+- ~~**A declaration-file system**, in the spirit of `.d.ts`, so foreign libraries can be bound with Veles-side type safety~~ _(v0.64, D122: bindings are ordinary packages of `extern` blocks; no separate file kind.)_
 
 This covers the large majority of the practical value at a small fraction of the cost.
 
@@ -7473,8 +7482,8 @@ Self-hosting review 2026-10-19 (the user, seeing `isDigit` written in six module
 if (b.isAsciiDigit()) ...                // 0-9
 b.isAsciiLetter(), b.isAsciiLower(), b.isAsciiUpper(), b.isAsciiAlphanumeric()
 b.toAsciiLower(), b.toAsciiUpper()       // 'A' to 'a', and back; any other byte as it is
-b.isAsciiHexDigit(), b.isAsciiSpace()    // space, 	 
- 
+b.isAsciiHexDigit(), b.isAsciiSpace()    // space,
+
   
 val v = b.digitValue(16) ?: return null  // i64?: 0-9, a-z, A-Z up to the radix (2 to 36, default 10)
 ```
@@ -7493,7 +7502,7 @@ use regex { Regex } extend { find }       // the type, bare; and only `find` on 
 use regex { Regex, Match as M } extend    // names, and all the extensions
 ```
 
-The clause is last on the spec, after the braced names, on the same line (a new line starting `extend T { }` is a declaration, as before). It amends D173 rule 4 (*visible where its module is imported*): an extension function is visible in a file only through an `extend` clause that is bare or names it. Further rules:
+The clause is last on the spec, after the braced names, on the same line (a new line starting `extend T { }` is a declaration, as before). It amends D173 rule 4 (_visible where its module is imported_): an extension function is visible in a file only through an `extend` clause that is bare or names it. Further rules:
 
 - The names are the functions' own, never renamed (`as` is an error); each must be an extension function of the module (error with a did-you-mean and the list), and a module with no extension functions refuses `extend` ("drop 'extend'").
 - Two visible extensions of one name, or an extension and a trait method, are still an ambiguity error at the call (D173 rule 5).
@@ -7501,7 +7510,7 @@ The clause is last on the spec, after the braced names, on the same line (a new 
 - A call that needs an extension the file did not import fails with "no method 'find' on type 'string'; 'find' is an extension function in module 'regex': import it with 'use regex extend { find }'".
 - The formatter keeps the clause and sorts its names like the braced ones; the tree dump prints `(use regex { Regex } extend { find })`.
 
-**A bug found on the way, fixed with it:** extension functions that a *std* module wrote on a built-in type (`std/regex`'s `extend string …`) were treated as the type's own methods — visible in every file of the program once any file loaded the module, whatever it imported. Only the prelude owns the built-in types now; every other module's methods on them are extension functions scoped by import, as D173 says.
+**A bug found on the way, fixed with it:** extension functions that a _std_ module wrote on a built-in type (`std/regex`'s `extend string …`) were treated as the type's own methods — visible in every file of the program once any file loaded the module, whatever it imported. Only the prelude owns the built-in types now; every other module's methods on them are extension functions scoped by import, as D173 says.
 
 Rejected: `extensions: false` (all or nothing, and an opt-out where the default is to include); a per-name list inside the braces (`use regex { Regex, find }`: a name and a method share one list, and `find` could mean either); keeping the old default (a use brings all extensions) with the new clause only restricting it — a braced list would not be exact, and a reader could not tell from the `use` line what methods a file has.
 
@@ -7530,24 +7539,24 @@ Not built (checklist §11): hyphen ranges (`1.2.3 - 2.3.4`), a minimal-version-s
 
 ### D187 — What an empty or unused value costs: nothing it does not need (v0.101)
 
-2026-10-20. The user, looking at a struct of four `List<string>` fields each defaulted to `[]`: "would it be good for performance if we added `lazy` for variables and fields?" — then, after the first change: "check for map, set, stringbuilder … and write this to the spec, what other types and things in the language must be aware of (no/low cost whenever possible, but decided, not done by accident)". Other languages: Kotlin `by lazy` and Scala `lazy val` pay a flag, a lock and an extra object per field; Swift `lazy var` stores an `Optional`; Rust/Go/Zig/C# make the *empty* collection free (`Vec::new()` does not allocate) and use an explicit `OnceCell`/`sync.Once`/`Lazy<T>` for the expensive field. Veles follows the second group.
+2026-10-20. The user, looking at a struct of four `List<string>` fields each defaulted to `[]`: "would it be good for performance if we added `lazy` for variables and fields?" — then, after the first change: "check for map, set, stringbuilder … and write this to the spec, what other types and things in the language must be aware of (no/low cost whenever possible, but decided, not done by accident)". Other languages: Kotlin `by lazy` and Scala `lazy val` pay a flag, a lock and an extra object per field; Swift `lazy var` stores an `Optional`; Rust/Go/Zig/C# make the _empty_ collection free (`Vec::new()` does not allocate) and use an explicit `OnceCell`/`sync.Once`/`Lazy<T>` for the expensive field. Veles follows the second group.
 
 **The rule.** A value that holds nothing owns no storage beyond its own header; the first write allocates, growth is geometric from a floor. Writing `= []` / `= [:]` / `= StringBuilder()` as a field default is therefore the cheap way to say "starts empty", and no language feature is needed to avoid paying for it. A type that must allocate on creation says so here.
 
-| Thing | Cost when empty or unused | First use | Decided |
-|---|---|---|---|
-| `List`, `Map`, `Set` (immutable) | an empty `[]` / `[:]` / `List<T>()` / `Set<T>()` is one shared constant per element type: nothing is allocated, even for the header | never written; `.toList()` of a non-empty mutable one is a copy, of an empty one the constant | D187 |
-| `MutableList` | the header (a heap object with its own identity, D25 — a slot in the frame when it never leaves the function, D188); `cap 0`, no element buffer | first `push`/`addAll`/`reserve` allocates 4 elements (`append` on bytes: 16) and doubles | D187 |
-| `MutableMap`, `MutableSet` | the header; no key, value, metadata or index array | first insert/`reserve` allocates room for 8 entries (keys, values, hashes) and no hash index: up to 8 entries a lookup scans the stored hashes; the entry arrays growing past 8 builds the index | D187 |
-| `Deque`, `PriorityQueue` (prelude) | a small state object and an empty list: the ring buffer / heap array is allocated by the first add (4 slots, then doubling) | first `addFirst`/`addLast`/`add` | D187 (already so) |
-| `StringBuilder` | its list: a header | as a list of bytes | D187 |
-| `string` | `""` is a constant. In a concatenation or interpolation a literal `""` piece is dropped at compile time; if nothing else is left the result is the constant, and a single remaining string piece is the result itself (no copy). When no piece is a formatted number, the runtime also hands back the one non-empty piece (`a + ""` is `a`: strings are immutable). A formatted number is a temporary buffer until copied, so a concatenation with an integer piece always copies | — | D187 |
-| `Array<T, N>`, tuples, structs, enums, nullable, `Result` | no heap: values, inline (memory class above 128 bytes, D121) | — | existing |
-| a closure without captures | `{ fn, null }`, no environment | with captures: one environment object | existing |
-| constants and `const` tables (D113) | static data, never seen by the collector | — | existing |
-| `Lazy<T>` (D146) | the cell; `init` has not run | `get()` runs it once | existing |
-| `Channel` | its header; a buffer of exactly the capacity asked for, none when unbuffered | — | the capacity is the program's request |
-| `Secret<T>` | the bytes, in a wiping object | — | D112 |
+| Thing                                                     | Cost when empty or unused                                                                                                                                                                                                                                                                                                                                                                                                                                                         | First use                                                                                                                                                                                        | Decided                               |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
+| `List`, `Map`, `Set` (immutable)                          | an empty `[]` / `[:]` / `List<T>()` / `Set<T>()` is one shared constant per element type: nothing is allocated, even for the header                                                                                                                                                                                                                                                                                                                                               | never written; `.toList()` of a non-empty mutable one is a copy, of an empty one the constant                                                                                                    | D187                                  |
+| `MutableList`                                             | the header (a heap object with its own identity, D25 — a slot in the frame when it never leaves the function, D188); `cap 0`, no element buffer                                                                                                                                                                                                                                                                                                                                   | first `push`/`addAll`/`reserve` allocates 4 elements (`append` on bytes: 16) and doubles                                                                                                         | D187                                  |
+| `MutableMap`, `MutableSet`                                | the header; no key, value, metadata or index array                                                                                                                                                                                                                                                                                                                                                                                                                                | first insert/`reserve` allocates room for 8 entries (keys, values, hashes) and no hash index: up to 8 entries a lookup scans the stored hashes; the entry arrays growing past 8 builds the index | D187                                  |
+| `Deque`, `PriorityQueue` (prelude)                        | a small state object and an empty list: the ring buffer / heap array is allocated by the first add (4 slots, then doubling)                                                                                                                                                                                                                                                                                                                                                       | first `addFirst`/`addLast`/`add`                                                                                                                                                                 | D187 (already so)                     |
+| `StringBuilder`                                           | its list: a header                                                                                                                                                                                                                                                                                                                                                                                                                                                                | as a list of bytes                                                                                                                                                                               | D187                                  |
+| `string`                                                  | `""` is a constant. In a concatenation or interpolation a literal `""` piece is dropped at compile time; if nothing else is left the result is the constant, and a single remaining string piece is the result itself (no copy). When no piece is a formatted number, the runtime also hands back the one non-empty piece (`a + ""` is `a`: strings are immutable). A formatted number is a temporary buffer until copied, so a concatenation with an integer piece always copies | —                                                                                                                                                                                                | D187                                  |
+| `Array<T, N>`, tuples, structs, enums, nullable, `Result` | no heap: values, inline (memory class above 128 bytes, D121)                                                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                                                                                                                                | existing                              |
+| a closure without captures                                | `{ fn, null }`, no environment                                                                                                                                                                                                                                                                                                                                                                                                                                                    | with captures: one environment object                                                                                                                                                            | existing                              |
+| constants and `const` tables (D113)                       | static data, never seen by the collector                                                                                                                                                                                                                                                                                                                                                                                                                                          | —                                                                                                                                                                                                | existing                              |
+| `Lazy<T>` (D146)                                          | the cell; `init` has not run                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `get()` runs it once                                                                                                                                                                             | existing                              |
+| `Channel`                                                 | its header; a buffer of exactly the capacity asked for, none when unbuffered                                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                                                                                                                                | the capacity is the program's request |
+| `Secret<T>`                                               | the bytes, in a wiping object                                                                                                                                                                                                                                                                                                                                                                                                                                                     | —                                                                                                                                                                                                | D112                                  |
 
 **What follows for the language and the library**
 
@@ -7556,7 +7565,7 @@ Not built (checklist §11): hyphen ranges (`1.2.3 - 2.3.4`), a minimal-version-s
 - **Shared immutable values never allocate on read.** A `List`/`Map` seen by several tasks is not changed (D35), so lazy storage needs no synchronisation: only a mutable value, owned by one task, allocates.
 - **A new type states its empty cost** in its spec entry (a row here or one line in its own entry), and a benchmark or test pins it when it is a collection (`TestEmptyListNoStorage`: live bytes per empty list, map and set).
 - **`lazy` fields are not added.** A `lazy var f: T = []` would save nothing over this (an empty list is a header) and would put a flag and a branch on every read; for an expensive field the answer is `Lazy<T>` (D146) today. A `lazy val` field over `Lazy<T>` stays a possible later sugar, to be decided if real cases appear.
-- **`lazy` parameters (D90)** are unrelated: they delay *computing an argument* (a thunk), not storage.
+- **`lazy` parameters (D90)** are unrelated: they delay _computing an argument_ (a thunk), not storage.
 
 Measured (`bench/emptycoll`, two million records with three empty collections each): about 205 ms before D187, about 70 ms after. Go takes 19 ms when the record does not escape (its escape analysis puts the record and its map header on the stack) and about 105 ms when the record is heap-allocated (a pointer stored in a global): against Go's own heap allocation Veles is ahead, and the remaining gap to the 19 ms is stack allocation of a non-escaping value, which Veles lacks (checklist §3, escape analysis).
 
@@ -7609,7 +7618,7 @@ Rejected: an explicit compile-time `.move()` alone (the proof is the limit, not 
 - **The inlay hint**: the editor shows `moved immutable` after each expression D63 hands over without a copy (`sema.Index.Moved`, `lsp/inlay.go`; `lsp/move_hint_test.go`), so a move that depends on the proof is visible, and one that stops being provable shows as the error it becomes.
 
 - **`freeze()` (Q56 answered above)**: built 2026-10-20. `xs.freeze()` on a `MutableList` / `MutableMap` / `MutableSet` returns the same object as the immutable type (`list.freeze` / `map.freeze`, `runtime/c/veles_rt.c`); a flags word (EXPOSED, FROZEN) ends every list and map header (`listHeader`, `mapHeader`, the static tables, the stack headers). A pointer into the storage sets EXPOSED where it is made (`AddrOf` of an element place, `map.ref`, `rawData`); an element write, a pointer, and every runtime change (`push`, `pop`, `clear`, `reserve`, `addAll`, a map's `set` / `remove` / `clear` / `reserve`) check FROZEN first and panic with `list was frozen by freeze() and cannot be changed; copy it with toMutable()`. Freezing an exposed collection copies its storage first; a frozen one is never a stack header (the collection is returned). The write guard costs a load and a compare per element write: no change within noise on `sort`, `gzip`, `gunzip`, `intern`. `TestFreeze` runs every change as its own panicking program, in debug and release. `xs.isFrozen()` (on the three mutable types only: a `List` is immutable by its type) asks the frozen bit, one inline load and a test; it is not a "mutating" method for a `protected var` (D87). Asked for by the user (2026-10-20: "should we have a possibility to check in code if the mutables are frozen?"); the documentation says the usual answer is to refuse or report an error, not to skip the change.
-Not covered by the proof (each keeps the error and its `.toList()` fix): a method call on the collection's owner that passes it on, a call through a trait object or closure, a collection reached through a parameter. Not covered by stack headers (heap as before): a `var` collection variable (a method call marks it address-taken), a collection that becomes another struct's field, a function that can suspend.
+  Not covered by the proof (each keeps the error and its `.toList()` fix): a method call on the collection's owner that passes it on, a call through a trait object or closure, a collection reached through a parameter. Not covered by stack headers (heap as before): a `var` collection variable (a method call marks it address-taken), a collection that becomes another struct's field, a function that can suspend.
 
 ### D189 — `x in c` and `x !in c` (v0.103)
 
@@ -7740,6 +7749,65 @@ The cost is retention: a 4-element window of a 1 GiB list keeps the 1 GiB alive 
 Not built, and not needed yet (checklist §11): an explicit view type with its own methods (option C of the research), and a mutable window (option D).
 
 Built 2026-10-21 (`veles_list_view` in the runtime, chosen in codegen by the receiver's static type; `driver/listview_test.go`).
+
+### D197 — Cede: explicit cooperative scheduling (v0.104; amends D145)
+
+2026-10-21. User requested thorough research and a specification for `cede`
+and deletion of `yieldNow()`, before returning to generator planning. User
+selected the recommended statement-only form, a reserved keyword, and a
+scheduler opportunity rather than "every runnable task gets a turn".
+**Decided, not implemented.** Implementation and migration are plan F20.
+
+```veles
+fun checkpoint() {
+  cede
+}
+```
+
+This is proposed syntax. The current compiler still requires `yieldNow()`.
+
+1. `cede` is a reserved, operand-free statement, permitted in ordinary
+   executable blocks and unbraced bodies where suspension is allowed. It
+   ends at normal statement boundaries, including a newline or EOF. It is
+   not a value or function: `cede()`, `await cede`, `cede value`, `return
+cede` and `fun checkpoint() => cede` are errors. Use a block body;
+   launching requires the existing `async { cede }` task form and obligations.
+2. It infers and propagates suspension through ordinary calls, callback
+   effects and generic instances. Existing plain-callback, held-lock,
+   constant/global and other non-suspending-context restrictions apply.
+   Suspended cleanup remains permitted only under D147's rules and retains
+   D47's cancellation shielding. No new `noSuspend` feature is introduced.
+3. The current task relinquishes inline continuation to scheduler dispatch
+   and remains eligible without an external wake. It may be selected next,
+   including when alone. No FIFO order, run of another task, global fairness
+   pass or elapsed-time bound is guaranteed. It creates no child task or
+   sleep deadline, is not synchronization and cannot be optimized away as
+   an unused result. Existing automatic loop-yield policy is unchanged.
+4. Observe existing task cancellation and enclosing fail-fast failure before
+   normal continuation, except where existing shielding defers delivery.
+   Preserve cleanup order, child cancellation/join and timeout ownership.
+   Preserve task identity, locals and executor membership; fixed-thread
+   executors retain their OS-thread affinity. No cross-task memory-order
+   guarantee or Sendable exemption is added.
+5. Remove the executable prelude `yieldNow` declaration with the whole-tree
+   live-source/docs migration. Retain removed-form errors and safe fixes,
+   respecting name resolution: a user-defined `yieldNow` is not removed.
+   Standalone calls become `cede`; function-value uses need a suspending
+   block lambda, not a keyword value; expression/async contexts require
+   structural migration. `checkCancelled()` and `await sleep(Duration.zero)`
+   remain. Historical records and archives are not rewritten.
+
+The detailed normative rules and acceptance matrix are in sections 1-7 of
+[Cede: explicit cooperative scheduling](veles-cede-spec.md), alongside
+research sources, migration inventory and implementation guidance. All
+compiler layers and both frontends must agree before this is built.
+
+Rationale: the user prefers keywords for compiler/control-flow operations
+and expects explicit ceding to be uncommon, "just a possibility". Rejected:
+keeping `yieldNow()` as the public spelling, a Unit-valued expression,
+a contextual keyword, `yield suspend`/`await cede` ceremony, and a global
+round-robin promise. Separating scheduler ceding from generator yielding
+does not decide generators; I1 remains open and is the next planning topic.
 
 ### I1 — generators: investigated, not decided
 

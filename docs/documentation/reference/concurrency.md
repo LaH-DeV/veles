@@ -64,6 +64,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 the task's copy is at 1
 c is still at 0
@@ -153,6 +154,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 sum 60; they finished in the order [3, 2, 1]
 ```
@@ -185,6 +187,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 7 7 8
 ```
@@ -193,7 +196,7 @@ Output:
 the task's value — `Task<i64>` for a function that `throws`, and no `try`
 on the `await`, because the error never reaches it: it fails the scope
 instead (below). In `gather` the handle is `Task<Result<T, E>>`, and a
-function that *returns* a `Result` without `throws` gives that `Result`
+function that _returns_ a `Result` without `throws` gives that `Result`
 as its value there too: `Result<Result<T, E>, Panic>` in the gather's
 tuple (D155). A function with a failing child in a `scope`, or receiving
 a value whose task can fail (D111), is declared `throws`: the error
@@ -212,16 +215,16 @@ A task is interrupted — by the scheduler, by a cancellation, by a failed
 sibling — at a point where it **actually waits**, and at the end of each
 loop iteration (D145, below):
 
-| Waits (a suspension point) | Does not wait |
-|---|---|
-| `await t` on a task not yet finished | `await t` on a finished task |
-| `await sleep(d)`, any `d` (zero yields: back of the queue) | a computation, a loop, a call of a non-suspending function |
-| `await ch.recv()` on an empty channel | `ch.send(v)` with room in the buffer, `trySend`, `tryRecv` |
-| `ch.send(v)` on a full (or rendezvous) channel | `println` (it writes and returns; see Output) |
-| a socket or TLS read or write that has to wait | `Mutex.withLock`, `with m.lock()` (a thread lock — below) |
-| `race`, `select`, the end of a `scope`, `gather` | `Atomic` operations |
-| `await e.wait()`, `await w.changed()`, `try await sub.recv()` with nothing to take (D146) | `e.set()`, `w.set(v)`, `news.send(v)`; `with l.read()` (a thread lock) |
-| the end of a `with` whose `close()` is declared `suspends` (D147: a transaction, telemetry) | the end of any other `with` |
+| Waits (a suspension point)                                                                  | Does not wait                                                          |
+| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `await t` on a task not yet finished                                                        | `await t` on a finished task                                           |
+| `await sleep(d)`, any `d` (zero yields: back of the queue)                                  | a computation, a loop, a call of a non-suspending function             |
+| `await ch.recv()` on an empty channel                                                       | `ch.send(v)` with room in the buffer, `trySend`, `tryRecv`             |
+| `ch.send(v)` on a full (or rendezvous) channel                                              | `println` (it writes and returns; see Output)                          |
+| a socket or TLS read or write that has to wait                                              | `Mutex.withLock`, `with m.lock()` (a thread lock — below)              |
+| `race`, `select`, the end of a `scope`, `gather`                                            | `Atomic` operations                                                    |
+| `await e.wait()`, `await w.changed()`, `try await sub.recv()` with nothing to take (D146)   | `e.set()`, `w.set(v)`, `news.send(v)`; `with l.read()` (a thread lock) |
+| the end of a `with` whose `close()` is declared `suspends` (D147: a transaction, telemetry) | the end of any other `with`                                            |
 
 **The end of a loop iteration is a cancellation point** (D145): a task
 that is cancelled while it computes stops at the end of the iteration it
@@ -249,6 +252,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 stopped early: true
 ```
@@ -327,6 +331,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 the scope threw Boom 2
 ```
@@ -373,6 +378,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 closed child's resource
 run threw Boom 9
@@ -385,8 +391,7 @@ say its resource is open, rather than sleeping and hoping it has started.
 **A panic** in a task is handled the same way — siblings cancelled and
 cleaned up — and then continues as a panic in the task that owns the
 scope, and so on outwards. Unless a `gather` turns it into a value, the
-program ends with the panic's message on standard error and exit code
-101.
+program ends with the panic's message on standard error and exit code 101.
 
 **In `gather`: nothing is cancelled.** Every task runs to its end; each
 outcome, panics included, is a `Result` in the gathered tuple (D36, D52):
@@ -412,18 +417,19 @@ fun main() {
     async fail()
     async slow()
   }
-  io.println("$a $b")
+  io.println("${a.toString()} ${b.toString()}")
 }
 ```
 
 Output:
+
 ```text
 slow finished
 Err(error: Boom(n: 1)) Ok(value: 2)
 ```
 
 To handle one task's error yourself inside a `scope`, launch a function
-that *returns* a `Result` (without `throws`): its `Err` is a value, and
+that _returns_ a `Result` (without `throws`): its `Err` is a value, and
 `await` gives the `Result`.
 
 ## Cancellation
@@ -485,6 +491,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 timed out after 1ms; stopped within a second: true
 ```
@@ -508,7 +515,7 @@ timed out after 1ms; stopped within a second: true
 ## `select`
 
 - `select { arms }` (D38, D169): each arm is `source => body`, or `val
-  name = source => body` to name what the source gave. A source is a
+name = source => body` to name what the source gave. A source is a
   receive, a send (D108), a `sleep`, a task handle, an Event's `wait()`, a
   Watch's `changed()`, a Subscription's `recv()`, or `async f()` /
   `async { … }`. No arm takes `await`.
@@ -546,6 +553,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 won: the timer
 the slow task finished anyway
@@ -560,7 +568,7 @@ scope done
 - `async { body }` (D169) starts the block as a task: a sendable function
   of no parameters, called at once. It stands where `async f()` may
   (`scope`/`gather`/`race` bodies, `val t = async { … }`, `with t = async
-  { … }`, a `select` arm); `await` gives the block's value.
+{ … }`, a `select` arm); `await` gives the block's value.
 - `return v` ends the block with `v`; `break`/`continue` to an outer loop
   are errors. `try`/`throw` fail the task as a throwing `async f()` does.
 - Captures follow D35: `val`s of Sendable types without `var` fields.
@@ -576,7 +584,7 @@ scope done
 - `close()`: values already buffered are still received; after them,
   `recv()` returns `null` at once, for every receiver. Closing twice does
   nothing. **`send` on a closed channel panics** (`send on a closed
-  channel`) — close a channel from the side that sends, after the last
+channel`) — close a channel from the side that sends, after the last
   send, or use `closeAfter(n)` when several tasks send.
 - `trySend` and `tryRecv` never wait: `false` when full, `null` when
   nothing is buffered (also when closed).
@@ -607,12 +615,13 @@ fun main() {
 ```
 
 Output:
+
 ```text
 each task waits for the other
 ```
 
 Standard error then reads `panic: deadlock: every task is blocked`, and
-the exit code is 101. Only a *whole-program* deadlock is detected: if some
+the exit code is 101. Only a _whole-program_ deadlock is detected: if some
 tasks are stuck while another still runs, sleeps on a timer or waits on a
 socket (a server's accept loop, a ticker), the stuck ones wait forever.
 Give such waits a limit (`select` with a `sleep` arm, `withTimeout`).
@@ -649,7 +658,7 @@ and end updates a table, so it is a tool for a hunt, not for production.
   the runtime notices within about a millisecond and moves that thread's
   queued tasks to a spare thread.
 - Taking a `Mutex` again while the same task holds it panics (`a Mutex
-  was locked again while this task holds it`) rather than hanging.
+was locked again while this task holds it`) rather than hanging.
   Holding two different ones is allowed; the order is yours.
 - A lock is released when its function or block ends, also by a panic.
 - An `Atomic` of a number, `bool`, enum or pointer (nullable or not)
@@ -664,7 +673,7 @@ and end updates a table, so it is a tool for a hunt, not for production.
   writer (`with c = l.read()`, `with w = l.write()`, `withRead`,
   `withWrite`); the same rules apply, a waiting writer keeps new readers
   out, and taking it again in its own region panics (`an RwLock was
-  locked again while this task holds it`) (D146). `Lazy.get()` takes a
+locked again while this task holds it`) (D146). `Lazy.get()` takes a
   lock only until the value is built; its `init` runs under it.
 - `Event.wait()`, `Watch.changed()` and `Subscription.recv()` are
   suspension points like `ch.recv()`: awaited, cancellable, and usable as
@@ -700,17 +709,17 @@ and end updates a table, so it is a tool for a hunt, not for production.
 
 ### Executors (D143)
 
-| Spelling | Means |
-|---|---|
-| `try Executor.pool(threads: n, name: s, priority:, cpus:)` | n threads of its own, named `s-0`, `s-1`, … |
-| `try Executor.thread(name: s, priority:, cpus:)` | one thread: every task placed on it runs on that OS thread |
-| `scope(on: e) { … }`, `gather(on: e) { … }` | every child launched in the block runs on `e` |
-| `e.run(f)` | runs `f` as a task on `e` and waits: `R throws E` |
-| `e.runBlocking(f)` | the same from plain code: blocks the OS thread until `f` returns (D152) |
-| `executor gl(priority:, cpus:) { state; functions }` | a declared one-thread executor: its state is named by its code alone, `gl.f(x)` from outside runs `f` there (D150) |
-| `executor cpu(threads: n, …) { functions }` | a declared pool: functions, no state |
-| `Executor.default` | the default pool, where `main` runs |
-| `try Thread.start(name: s, priority:, cpus:, stackSize:, f: f)` | plain `f` on an OS thread outside every executor |
+| Spelling                                                        | Means                                                                                                              |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `try Executor.pool(threads: n, name: s, priority:, cpus:)`      | n threads of its own, named `s-0`, `s-1`, …                                                                        |
+| `try Executor.thread(name: s, priority:, cpus:)`                | one thread: every task placed on it runs on that OS thread                                                         |
+| `scope(on: e) { … }`, `gather(on: e) { … }`                     | every child launched in the block runs on `e`                                                                      |
+| `e.run(f)`                                                      | runs `f` as a task on `e` and waits: `R throws E`                                                                  |
+| `e.runBlocking(f)`                                              | the same from plain code: blocks the OS thread until `f` returns (D152)                                            |
+| `executor gl(priority:, cpus:) { state; functions }`            | a declared one-thread executor: its state is named by its code alone, `gl.f(x)` from outside runs `f` there (D150) |
+| `executor cpu(threads: n, …) { functions }`                     | a declared pool: functions, no state                                                                               |
+| `Executor.default`                                              | the default pool, where `main` runs                                                                                |
+| `try Thread.start(name: s, priority:, cpus:, stackSize:, f: f)` | plain `f` on an OS thread outside every executor                                                                   |
 
 - A task stays on its executor across every suspension. A child runs
   where its scope says (`on:`), or else where the task that launched it
@@ -730,7 +739,7 @@ and end updates a table, so it is a tool for a hunt, not for production.
   holds them up (`blocking(f)` is the way out).
 - Closing an `Executor` stops its threads (its tasks have been joined by
   their scopes by then); placing a task on a closed one panics (`the
-  executor was closed: nothing more runs on it`), and closing one from its
+executor was closed: nothing more runs on it`), and closing one from its
   own task panics, as does closing `Executor.default`. Closing a `Thread`
   blocks until `f` returns and re-raises a panic of `f`.
 - `runBlocking` is for plain code that is not on an executor's thread: a
@@ -739,7 +748,7 @@ and end updates a table, so it is a tool for a hunt, not for production.
   compile error; on a thread of the default pool, a pool or an
   `Executor.thread` — plain code a task calls included — it panics
   (`runBlocking on a thread of an executor would block a thread its
-  tasks need, or wait for itself; a task waits with run`). A panic in
+tasks need, or wait for itself; a task waits with run`). A panic in
   `f` is raised again in the caller.
 - `priority:` is `Priority.Low`, `Normal` (the default: left as the OS
   made the thread), `High` or `Realtime`; `cpus:` lists logical CPUs from
@@ -781,20 +790,20 @@ the exit code is 101.
 
 ## Mistakes the compiler stops, and those it cannot
 
-| Mistake | What happens |
-|---|---|
-| Starting a task that belongs to no scope | compile error (D3) |
-| Keeping a handle after its scope | compile error (D141) |
-| Sharing a `MutableList` or a `var` with a task | compile error (D35) |
-| Waiting while holding a lock | compile error (D35, D107) |
-| `try` on an `await` in a scope | compile error with a fix (D141) |
-| Ignoring a task's failure | impossible: it fails the scope |
-| A long loop that never waits | stopped by a cancellation at the end of an iteration (D145); in a function that does not suspend it keeps its thread — `yieldNow()` gives it up |
-| `await` on a task you cancelled | panic (`awaited task was cancelled`) unless it had finished |
-| `send` on a closed channel | panic (`send on a closed channel`) |
-| Locking a `Mutex` you already hold | panic, not a hang |
-| Every task waiting for another | panic (`deadlock: every task is blocked`) |
-| Some tasks waiting for each other while others run | waits forever; put a limit on the wait |
-| Relying on which task prints or runs first | no order is guaranteed; collect, then print |
-| Expecting `async obj.method()` to change `obj` | the task works on a copy |
-| A losing task in a `race` or `select` | started by it (`async f()`, `async { }`): cancelled and waited for; a handle started before a `select`: keeps running, its scope waits for it (D168, D169) |
+| Mistake                                            | What happens                                                                                                                                               |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Starting a task that belongs to no scope           | compile error (D3)                                                                                                                                         |
+| Keeping a handle after its scope                   | compile error (D141)                                                                                                                                       |
+| Sharing a `MutableList` or a `var` with a task     | compile error (D35)                                                                                                                                        |
+| Waiting while holding a lock                       | compile error (D35, D107)                                                                                                                                  |
+| `try` on an `await` in a scope                     | compile error with a fix (D141)                                                                                                                            |
+| Ignoring a task's failure                          | impossible: it fails the scope                                                                                                                             |
+| A long loop that never waits                       | stopped by a cancellation at the end of an iteration (D145); in a function that does not suspend it keeps its thread — `yieldNow()` gives it up            |
+| `await` on a task you cancelled                    | panic (`awaited task was cancelled`) unless it had finished                                                                                                |
+| `send` on a closed channel                         | panic (`send on a closed channel`)                                                                                                                         |
+| Locking a `Mutex` you already hold                 | panic, not a hang                                                                                                                                          |
+| Every task waiting for another                     | panic (`deadlock: every task is blocked`)                                                                                                                  |
+| Some tasks waiting for each other while others run | waits forever; put a limit on the wait                                                                                                                     |
+| Relying on which task prints or runs first         | no order is guaranteed; collect, then print                                                                                                                |
+| Expecting `async obj.method()` to change `obj`     | the task works on a copy                                                                                                                                   |
+| A losing task in a `race` or `select`              | started by it (`async f()`, `async { }`): cancelled and waited for; a handle started before a `select`: keeps running, its scope waits for it (D168, D169) |

@@ -44,6 +44,7 @@ var builtinFamilies = []struct{ family, header, doc string }{
 	{"MutableSet", "struct MutableSet<T> : Set<T>", "A hash set that can be changed in place."},
 	{"Channel", "struct Channel<T>", "A bounded channel between tasks (D16). `Channel<T>(capacity: n)` creates one."},
 	{"Task", "struct Task<T>", "A handle to a running child of a `scope`, from `async f()` — or of a block, from `with t = async f()`, which cancels it when the block ends (D100); `await t` is its result, `t.cancel()` stops it."},
+	{"Result", "sealed trait Result<T, E>", "A success or a typed error. Handle it before interpolation; toString() explicitly prints the wrapper (D157)."},
 	{"Range", "struct Range<T>", "`lo..hi` (inclusive) or `lo..<hi` (exclusive); iterate with `loop (i in r)`."},
 	{"float", "struct f64", "Floating-point numbers (`f64`, `f32`). Every method is a single machine instruction."},
 	{"int", "struct i64", "Integers (`i8`..`i64`, `u8`..`u64`). Arithmetic panics on overflow in debug builds."},
@@ -51,6 +52,7 @@ var builtinFamilies = []struct{ family, header, doc string }{
 }
 
 var builtinDocs = []BuiltinDoc{
+	{"Result", "toString", "(): string", "Explicitly formats the Result, including its Ok or Err wrapper. Unlike interpolation, this deliberately prints an unhandled result (D157)."},
 	{"string", "len", "(): i64", "Length in bytes."},
 	{"string", "isEmpty", "(): bool", "True when the length is zero."},
 	{"string", "startsWith", "(prefix: string): bool", "True when the text begins with `prefix`."},
@@ -300,6 +302,10 @@ func builtinFamily(t types.Type) string {
 		return "Channel"
 	case *types.Task:
 		return "Task"
+	case *types.Sealed:
+		if isResultType(tt) {
+			return "Result"
+		}
 	case *types.Range:
 		return "Range"
 	case *types.Enum:

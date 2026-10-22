@@ -65,6 +65,95 @@ func expectWarning(t *testing.T, src, want string) {
 
 const prelude = "use io\n"
 
+func TestInterpolationRequiresHandledResult(t *testing.T) {
+	cases := []struct {
+		name, src string
+	}{
+		{"call", `error ParseError { }
+fun parse(): i64 throws ParseError => 42
+fun main() { io.println("${parse()}") }`},
+		{"local", `fun main() { val result: Result<i64, string> = Ok(value: 42); io.println("$result") }`},
+		{"format", `error ParseError { }
+fun parse(): i64 throws ParseError => 42
+fun main() { io.println("${parse():>8}") }`},
+		{"task", `fun work(): i64 => 42
+fun main() { with task = async work(); io.println("$task") }`},
+		{"template", `error ParseError { }
+fun parse(): i64 throws ParseError => 42
+@template
+fun text(parts: List<string>, values: List<Result<i64, ParseError>>): string => parts.join("")
+fun main() { io.println(text"${parse()}") }`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			expectError(t, prelude+tc.src, "cannot interpolate")
+		})
+	}
+}
+
+func TestInterpolationHandledValues(t *testing.T) {
+	for _, body := range []string{
+		`io.println("${try parse()}")`,
+		`io.println("${parse() ?? 0}")`,
+		`val result = parse(); io.println("${result.toString()}")`,
+		`val result = parse(); if (result.ok) io.println("$result")`,
+		`with task = async work(); io.println("${await task}")`,
+		`io.println(display(parse()))`,
+		`io.println(text"${try parse()}")`,
+		`expect(parse() == parse())`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			expectClean(t, prelude+`error ParseError { }
+fun parse(): i64 throws ParseError => throw ParseError()
+fun work(): i64 => 42
+fun display<T>(value: T): string => "$value"
+@template
+fun text(parts: List<string>, values: List<i64>): string => "${parts.len()} ${values.len()}"
+test "handled interpolated values" { `+body+` }
+fun main() { }`)
+		})
+	}
+}
+
+func TestInterpolationResultFix(t *testing.T) {
+	for _, expr := range []string{`"$result"`, `"${parse()}"`, `"${parse():>8}"`, `"${if (true) parse() else parse()}"`} {
+		t.Run(expr, func(t *testing.T) {
+			src := prelude + `error ParseError { }
+fun parse(): i64 throws ParseError => throw ParseError()
+fun main() throws { val result = parse(); io.println(` + expr + `); val _ = result }
+`
+			diags := checkSource(t, src)
+			found := false
+			for _, diagnostic := range diags.Items {
+				if !strings.Contains(diagnostic.Message, "(D157)") {
+					continue
+				}
+				found = true
+				if source.FamilyOf(diagnostic.Message) != "results-and-errors" {
+					t.Fatalf("wrong family: %s", diagnostic.Message)
+				}
+				if diagnostic.Fix == nil || diagnostic.Fix.Guess || len(diagnostic.Fix.Edits) != 1 {
+					t.Fatalf("missing mechanical fix: %+v", diagnostic.Fix)
+				}
+				edit := diagnostic.Fix.Edits[0]
+				fixed := src[:edit.Span.Start] + edit.NewText + src[edit.Span.End:]
+				expectClean(t, fixed)
+			}
+			if !found {
+				t.Fatalf("missing interpolation diagnostic:\n%s", diags.Render())
+			}
+		})
+	}
+	diags := checkSource(t, prelude+`error ParseError { }
+fun parse(): i64 throws ParseError => throw ParseError()
+fun main() { io.println("${parse()}") }`)
+	for _, diagnostic := range diags.Items {
+		if strings.Contains(diagnostic.Message, "(D157)") && diagnostic.Fix != nil {
+			t.Fatal("a non-throwing function must not receive an automatic try fix")
+		}
+	}
+}
+
 func TestSpecRules(t *testing.T) {
 	cases := []struct {
 		name, src, want string
@@ -1394,7 +1483,7 @@ fun main() {
   val m: Result<string, Missing> = load(Memory(data: [:]), "k")
   val a = load(Always(), "y")
   val p: Result<string, HttpError> = load(Pinned(), "z")
-  io.println("$h $m $a $p")
+	io.println("${h.toString()} ${m.toString()} $a ${p.toString()}")
 }`
 	expectClean(t, src)
 	expectError(t, prelude+`
@@ -1470,7 +1559,7 @@ fun main() {
   val plain: List<i64> = [1, 2].map(x => x + 1)
   val q: u8 = '"'
   val d = 'a' + 1
-  io.println("${all([1])} ${r.ok} ${k.ok} ${s.ok} ${f.ok} ${e.ok} ${mv.ok} $plain $q $d ${'0' == 48}")
+	io.println("${all([1]).toString()} ${r.ok} ${k.ok} ${s.ok} ${f.ok} ${e.ok} ${mv.ok} $plain $q $d ${'0' == 48}")
 }`)
 	expectError(t, prelude+`
 error Bad { n: i64 }
@@ -2125,7 +2214,7 @@ fun thrower(): i64 throws Boom {
     throw Boom()
   }
 }
-fun main() { io.println("${early()} ${thrower()}") }`)
+fun main() { io.println("${early()} ${thrower().toString()}") }`)
 }
 
 func TestErrorUnionWithTypeParam(t *testing.T) {
@@ -2141,7 +2230,7 @@ fun guarded<R, E>(flag: bool, f: fun(): R throws E): R throws E | Timeout {
 fun failing(): i64 throws Late => throw Late()
 fun onlyTimeout(): i64 throws Timeout => try guarded(false, () => 5)
 fun both(): i64 throws Late | Timeout => try guarded(false, () => try failing())
-fun main() { io.println("${onlyTimeout()} ${both()}") }`)
+fun main() { io.println("${onlyTimeout().toString()} ${both().toString()}") }`)
 	expectError(t, prelude+`
 error Timeout { }
 error Late { }
@@ -2167,12 +2256,12 @@ fun failing(): string? throws Late {
 }
 fun a(): i64 throws Timeout => try withTimeout(Duration.millis(100), () => slow())
 fun b(): string? throws Late | Timeout => try withTimeout(Duration.millis(100), () => try failing())
-fun main() { io.println("${a()} ${b()}") }`)
+fun main() { io.println("${a().toString()} ${b().toString()}") }`)
 	// D151: f runs in the calling task, so it may change the caller's state
 	expectClean(t, prelude+`
 fun main() {
   var n = 0
-  io.println("${withTimeout(Duration.millis(10), () => { n += 1; n })}")
+	io.println("${withTimeout(Duration.millis(10), () => { n += 1; n }).toString()}")
 }`)
 }
 
@@ -2186,7 +2275,7 @@ fun lookup(users: Map<string, string>, id: string): string throws NotFound => tr
 fun number(s: string): i64 throws Bad => try parse(s) ?! Bad(text: "bad request: $s")
 fun kept(s: string): Result<i64, Bad> => parse(s) ?! Bad(text: "as a value")
 fun wrapped(s: string): i64 throws Bad => try parse(s).mapError(e => Bad(text: "at ${e.at}"))
-fun main() { io.println("${lookup(["a": "b"], "a")} ${number("1")} ${kept("x")} ${wrapped("1")}") }`)
+fun main() { io.println("${lookup(["a": "b"], "a").toString()} ${number("1").toString()} ${kept("x").toString()} ${wrapped("1").toString()}") }`)
 	expectError(t, prelude+`
 error Bad { text: string }
 fun main() { val n: i64 = 3; io.println("${n ?! Bad(text: "x")}") }`, "'?!' needs a nullable or a Result")
@@ -2267,20 +2356,20 @@ func TestTryChain(t *testing.T) {
 error Bad { }
 fun text(): string throws Bad => "  hi  "
 fun a(): string throws Bad => try text().trim()
-fun main() { io.println("${a()}") }`)
+fun main() { io.println("${a().toString()}") }`)
 	// a written inner `try` still compiles, and is said to be redundant
 	expectWarning(t, prelude+`
 error Bad { }
 fun text(): string throws Bad => "  hi  "
 fun a(): string throws Bad => try (try text()).trim()
-fun main() { io.println("${a()}") }`, "the inner 'try' is redundant")
+fun main() { io.println("${a().toString()}") }`, "the inner 'try' is redundant")
 	// a Result method still applies to the Result, silently
 	expectClean(t, prelude+`
 error Bad { }
 error Worse { }
 fun text(): string throws Bad => "hi"
 fun d(): string throws Worse => try text().mapError(e => Worse())
-fun main() { io.println("${d()}") }`)
+fun main() { io.println("${d().toString()}") }`)
 }
 
 func TestStaticVal(t *testing.T) {
@@ -2886,7 +2975,7 @@ fun roundTrip<T: Codable>(x: T): T throws DecodeError {
   val _ = x.encode(e)
   try T.decode(codec.ValueDecoder.of(e.value()))
 }
-fun main() { io.println("${roundTrip(U(id: 3))}") }`, ""},
+fun main() { io.println("${roundTrip(U(id: 3)).toString()}") }`, ""},
 		{"a combination trait is satisfied by its parts", `struct U { id: i64
   implement Encodable
   implement Decodable }

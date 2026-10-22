@@ -480,6 +480,10 @@ func (f *fnCtx) stringLit(e *ast.StringLit) Expr {
 		f.lookOnly(p.Expr) // D87: interpolating only looks
 		x := f.checkExpr(p.Expr, nil)
 		f.takeLooked()
+		if !f.checkInterpolation(p.Expr, x) {
+			cat.Parts = append(cat.Parts, bad())
+			continue
+		}
 		if _, ok := p.Expr.(*ast.SelfExpr); ok && f.inOwnToString(x.Type()) {
 			f.errorf(p.Expr.Span(), "interpolating 'this' inside its own 'toString' calls the same 'toString' again, forever; interpolate the fields instead, e.g. \"(${this.x}, ${this.y})\"")
 		}
@@ -490,6 +494,31 @@ func (f *fnCtx) stringLit(e *ast.StringLit) Expr {
 		cat.Parts = append(cat.Parts, f.toString(x, p.Expr.Span()))
 	}
 	return cat
+}
+
+func (f *fnCtx) checkInterpolation(e ast.Expr, x Expr) bool {
+	if f.declaredTypeParam(e) != nil {
+		return true
+	}
+	span, text := e.Span(), srcText(e)
+	var fix *source.Fix
+	if isResultType(x.Type()) {
+		if f.throws && text != "" {
+			replacement := "try (" + text + ")"
+			if span.File != nil && span.Start > 0 && span.File.Content[span.Start-1] == '$' {
+				span.Start--
+				replacement = "${" + replacement + "}"
+			}
+			fix = fixReplace("Propagate the interpolated error with 'try'", span, replacement)
+		}
+		f.c.errorFix(e.Span(), fix, "cannot interpolate '%s' of type '%s': its error would be lost; use 'try (%s)' to propagate it or '%s ?? fallback' to handle it, or write '%s.toString()' to print the Result explicitly (D157)", text, x.Type(), text, text, text)
+		return false
+	}
+	if _, task := x.Type().(*types.Task); task {
+		f.errorf(e.Span(), "cannot interpolate task handle '%s' of type '%s': use 'await %s' to obtain its value before interpolating it (D157)", text, x.Type(), text)
+		return false
+	}
+	return true
 }
 
 // inOwnToString reports whether the function being checked is the
@@ -1661,12 +1690,14 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 	}
 	lit := &ListLit{}
 	for _, el := range e.Elems {
-		var x Expr
-		if elem != nil {
-			x = f.checkExprTo(el, elem)
-		} else {
-			x = f.checkExpr(el, nil)
+		x := f.checkExpr(el, elem)
+		if e == f.templateValues && !f.checkInterpolation(el, x) {
+			x = bad()
+		}
+		if elem == nil {
 			elem = x.Type()
+		} else {
+			x = f.coerce(x, elem, el.Span())
 		}
 		lit.Elems = append(lit.Elems, x)
 	}
@@ -1872,8 +1903,11 @@ func (f *fnCtx) tryLinks(x ast.Expr, pos source.Span, unwrapped *bool) Expr {
 }
 
 // hasMethod reports whether a method of that name applies to the type
-// through an extend block or a trait impl (a Result has no built-ins).
+// through a built-in, an extend block or a trait impl.
 func (f *fnCtx) hasMethod(rt types.Type, name string) bool {
+	if isResultType(rt) && name == "toString" {
+		return true
+	}
 	for _, view := range receiverViews(rt) {
 		for _, ext := range f.c.extends {
 			if _, ok := ext.Methods[name]; ok && unify(ext.Target, view, map[*types.TypeParam]types.Type{}) {

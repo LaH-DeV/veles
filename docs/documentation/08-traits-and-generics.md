@@ -42,6 +42,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 circle with area 3.0
 a square of side 2.0
@@ -55,7 +56,7 @@ a square of side 2.0
   form is the same thing written apart, and it is the form for a type
   you did not write (`implement Shape for i64`), or when the implement needs
   bounds the struct does not have (`implement<T: Display> Display for
-  Pair<T>`). Writing it at top level for your own type in the same
+Pair<T>`). Writing it at top level for your own type in the same
   module is a lint: the compiler warns, and the editor's quick fix moves
   it into the body (`veles check --fix` does the same in bulk).
 - An implement must write every method the trait declares without a
@@ -63,7 +64,7 @@ a square of side 2.0
   editor's **Add the missing methods** writes them for you as stubs
   (`fun name(): string => panic("'name' is not written yet")`) to fill in.
 - A type may implement any number of traits, and you may implement
-  *your* trait for a type you did not write — `implement Shape for i64` is
+  _your_ trait for a type you did not write — `implement Shape for i64` is
   legal. What is not legal is two impls of the same trait for the same
   type anywhere in the program (D17).
 - Trait method calls need no import; if two traits in scope both define
@@ -75,19 +76,19 @@ a square of side 2.0
 A trait is close to an interface, with these differences — each one a
 deliberate choice, so it is worth knowing which is which.
 
-| | TypeScript / Go interface | Kotlin interface | Veles trait |
-|---|---|---|---|
-| How a type gets it | structurally: having the methods is enough | `class C : I` at the class | `implement I for C` (or `implement I { }` in the body): explicit, by name |
-| For a type you did not write | Go: yes (structural); TS: yes | no (extension functions do not implement interfaces) | yes: `implement Display for i64` in your package; for a helper that need not be part of the type, an extension function (`extend i64 with fun f()`, [chapter 5](05-structs-and-methods.md#extension-functions-extend-on-a-type-you-did-not-write)) |
-| Default method bodies | TS: no (abstract only); Go: no | yes | yes; an implement that replaces one writes `override` |
-| Static / constructor-like members | TS: no; Go: no | companion objects | `static fun` on the trait: `T.parse(s)` in generic code |
-| Associated types | generics on the interface | generics | `type Item` inside the trait (`Iterator.Item`) |
-| A closed set of implementors | discriminated union (TS) | `sealed interface` | `sealed trait` + variant structs (chapter 9) |
-| Used as a runtime value | yes | yes | yes, as a trait object `val s: Shape = ...` (boxed), or statically through a bound `<T: Shape>` |
+|                                   | TypeScript / Go interface                  | Kotlin interface                                     | Veles trait                                                                                                                                                                                                                                        |
+| --------------------------------- | ------------------------------------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| How a type gets it                | structurally: having the methods is enough | `class C : I` at the class                           | `implement I for C` (or `implement I { }` in the body): explicit, by name                                                                                                                                                                          |
+| For a type you did not write      | Go: yes (structural); TS: yes              | no (extension functions do not implement interfaces) | yes: `implement Display for i64` in your package; for a helper that need not be part of the type, an extension function (`extend i64 with fun f()`, [chapter 5](05-structs-and-methods.md#extension-functions-extend-on-a-type-you-did-not-write)) |
+| Default method bodies             | TS: no (abstract only); Go: no             | yes                                                  | yes; an implement that replaces one writes `override`                                                                                                                                                                                              |
+| Static / constructor-like members | TS: no; Go: no                             | companion objects                                    | `static fun` on the trait: `T.parse(s)` in generic code                                                                                                                                                                                            |
+| Associated types                  | generics on the interface                  | generics                                             | `type Item` inside the trait (`Iterator.Item`)                                                                                                                                                                                                     |
+| A closed set of implementors      | discriminated union (TS)                   | `sealed interface`                                   | `sealed trait` + variant structs (chapter 9)                                                                                                                                                                                                       |
+| Used as a runtime value           | yes                                        | yes                                                  | yes, as a trait object `val s: Shape = ...` (boxed), or statically through a bound `<T: Shape>`                                                                                                                                                    |
 
 The structural-vs-explicit difference is the one that changes how you
 write code: in Veles a type never satisfies a trait by accident, and the
-compiler tells you *at the implement* what is missing, not at the first call.
+compiler tells you _at the implement_ what is missing, not at the first call.
 The price is one `implement` line per type; the return is that `Comparable`,
 `Display` and your own traits can carry meaning ("this type promises
 its `compareTo` is a total order") rather than only a method shape.
@@ -119,6 +120,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 9.0
 ```
@@ -161,6 +163,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 6 11 [0, 0, 0, 0, 0]
 8 16
@@ -175,7 +178,7 @@ needs the longer array takes it as a second parameter, `const M: i64`.
 
 ### Asking about `T`: `T implements Trait`
 
-A bound is a promise every `T` must keep. When a function can do *more*
+A bound is a promise every `T` must keep. When a function can do _more_
 for the types that implement something, it asks instead (D117):
 
 ```veles
@@ -199,6 +202,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 cat Tom; something unshowable
 ```
@@ -216,7 +220,7 @@ print, compare and hash by themselves rather than through the traits, so
 
 ## Trait objects: mixing types at run time
 
-Sometimes a list must hold *different* shapes. Use the trait itself as
+Sometimes a list must hold _different_ shapes. Use the trait itself as
 the type: a `Shape` value carries a pointer to the data and a table of
 its methods (D9):
 
@@ -254,6 +258,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 circle 3.0
 square 4.0
@@ -295,6 +300,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 square! square 4.0
 ```
@@ -304,7 +310,7 @@ Encodable + Decodable { }` — is an object too, built from the implements
 of its parts; nothing implements it directly. Two required traits that
 declare the same method name are an ambiguity, and the compiler refuses
 the object rather than pick one. A trait object does not convert to
-*another* trait's object by itself — `val n: Named = s` is refused — but
+_another_ trait's object by itself — `val n: Named = s` is refused — but
 it can be asked, which the next section shows.
 
 ### Asking what a trait object holds: `is`
@@ -312,7 +318,7 @@ it can be asked, which the next section shows.
 A trait object remembers the type it was made from, so `is` can ask about
 it at run time. `s is Circle` tests for a concrete type (D135); `s is
 Flusher` tests whether the value's type implements another trait (D117).
-In the branch where the test holds, `s` *is* that type or that trait's
+In the branch where the test holds, `s` _is_ that type or that trait's
 object, with its fields and methods:
 
 ```veles
@@ -366,6 +372,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 console: hello
 nothing to flush
@@ -374,7 +381,7 @@ flushed 1
 
 - `!is` and `is` arms in `when` work the same way; `is Circle(r)` in a
   `when` arm destructures the fields.
-- Narrowed to a concrete type, the name is the value *inside* the object,
+- Narrowed to a concrete type, the name is the value _inside_ the object,
   not a copy: `if (c is Clicks) c.n = 0` changes what the object's methods
   see next.
 - A type that does not implement the object's trait can never be there,
@@ -413,6 +420,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [#7] ['hi']
 #1 #2 #3
@@ -445,6 +453,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 1 a true [false, false, false]
 ```
@@ -480,6 +489,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [Celsius(degrees: 21.5), null] [1, 2, null] true
 ```
@@ -490,7 +500,7 @@ value to dispatch on), and sealed traits cannot declare one.
 ### `Default`: a value to start from
 
 The prelude's `Default` (D119) is the static trait generic code reaches
-for when it has to *make* a `T`: `T.default()` is `0`, `false`, `""`, an
+for when it has to _make_ a `T`: `T.default()` is `0`, `false`, `""`, an
 empty collection, `null` for a `T?`, `Duration.zero`, or a tuple of those.
 A struct opts in with an empty `implement Default`, which builds the value
 from each field's declared default, or else its type's `default()`:
@@ -522,6 +532,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 Score(points: 0, bonus: false, tags: [], limit: 10)
 {a: 2, b: 1}
@@ -540,12 +551,12 @@ with `$x` without writing anything: equality is field by field, so is the
 hash, and the text is `Name(field: value, ...)`. Four prelude traits let a
 type replace that behaviour:
 
-| Trait | Method | Replaces |
-|---|---|---|
+| Trait        | Method                             | Replaces                                           |
+| ------------ | ---------------------------------- | -------------------------------------------------- |
 | `Comparable` | `compareTo(other: This): Ordering` | `<`, `<=`, `>`, `>=`, `sorted()`, `min()`, `max()` |
-| `Equatable` | `equals(other: This): bool` | `==`, `!=`, `contains`, `indexOf` |
-| `Hashable` | `hash(): i64` | map keys and set elements |
-| `Display` | `toString(): string` | interpolation, `"$x"` |
+| `Equatable`  | `equals(other: This): bool`        | `==`, `!=`, `contains`, `indexOf`                  |
+| `Hashable`   | `hash(): i64`                      | map keys and set elements                          |
+| `Display`    | `toString(): string`               | interpolation, `"$x"`                              |
 
 `compareTo` returns `Ordering.Less`, `Ordering.Equal` or `Ordering.Greater` — an
 enum (chapter 9) whose values are -1, 0 and 1, so `a.compareTo(b) < 0` reads
@@ -597,6 +608,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 true [v1.9, v1.10] v1.10 y
 true 1
@@ -615,13 +627,13 @@ associated types for the right operand and the result, read off the method
 you write, so an implement is just the method — and the operand and result
 may be other types:
 
-| Trait | Method | Operator |
-|---|---|---|
-| `Addable` | `plus(other: Rhs): Out` | `a + b`, `a += b` |
-| `Subtractable` | `minus(other: Rhs): Out` | `a - b`, `a -= b` |
-| `Multipliable` | `times(other: Rhs): Out` | `a * b`, `a *= b` |
-| `Divisible` | `dividedBy(other: Rhs): Out` | `a / b`, `a /= b` |
-| `Negatable` | `negate(): Out` | `-a` |
+| Trait          | Method                       | Operator          |
+| -------------- | ---------------------------- | ----------------- |
+| `Addable`      | `plus(other: Rhs): Out`      | `a + b`, `a += b` |
+| `Subtractable` | `minus(other: Rhs): Out`     | `a - b`, `a -= b` |
+| `Multipliable` | `times(other: Rhs): Out`     | `a * b`, `a *= b` |
+| `Divisible`    | `dividedBy(other: Rhs): Out` | `a / b`, `a /= b` |
+| `Negatable`    | `negate(): Out`              | `-a`              |
 
 ```veles
 use io
@@ -656,6 +668,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 €8.20 €7.00
 1m30.5s -1s
@@ -669,21 +682,21 @@ trait to implement.
 
 ## Comparing values
 
-Three questions have three separate answers in Veles: *are these equal?*
-(`==`), *which comes first?* (`<`, `sorted()`), and *can this be a key?*
+Three questions have three separate answers in Veles: _are these equal?_
+(`==`), _which comes first?_ (`<`, `sorted()`), and _can this be a key?_
 (maps and sets). The table says what each type does by default:
 
-| Type | `==` | `<`, `sorted()`, `min()` | Map key / set element |
-|---|---|---|---|
-| numbers, `bool`, `string` | by value | numbers and strings: natural order | yes |
-| tuples | element by element | no (use a key or comparator) | when the elements are |
-| structs | field by field | only with `implement Comparable` | when the fields are |
-| sealed types | same variant, equal fields | only with `implement Comparable` | when the variants are |
-| `T?` | both null, or both present and equal | no | when `T` is |
-| `List`, `Map`, `Set` | by content (chapter 4) | no | immutable ones, when the elements are |
-| `MutableList`, `MutableMap`, `MutableSet` | by content | no | never — they can change after being stored |
-| pointers, channels, tasks | same object (identity) | no | pointers: by identity |
-| functions | not comparable | no | no |
+| Type                                      | `==`                                 | `<`, `sorted()`, `min()`           | Map key / set element                      |
+| ----------------------------------------- | ------------------------------------ | ---------------------------------- | ------------------------------------------ |
+| numbers, `bool`, `string`                 | by value                             | numbers and strings: natural order | yes                                        |
+| tuples                                    | element by element                   | no (use a key or comparator)       | when the elements are                      |
+| structs                                   | field by field                       | only with `implement Comparable`   | when the fields are                        |
+| sealed types                              | same variant, equal fields           | only with `implement Comparable`   | when the variants are                      |
+| `T?`                                      | both null, or both present and equal | no                                 | when `T` is                                |
+| `List`, `Map`, `Set`                      | by content (chapter 4)               | no                                 | immutable ones, when the elements are      |
+| `MutableList`, `MutableMap`, `MutableSet` | by content                           | no                                 | never — they can change after being stored |
+| pointers, channels, tasks                 | same object (identity)               | no                                 | pointers: by identity                      |
+| functions                                 | not comparable                       | no                                 | no                                         |
 
 A struct changes any answer by implementing the matching trait —
 `Equatable` for `==`, `Comparable` for ordering, `Hashable` for keys — as
@@ -692,26 +705,26 @@ A struct changes any answer by implementing the matching trait —
 
 ### Comparing with a different strategy
 
-The trait gives a type *one* natural meaning. Every other meaning is
+The trait gives a type _one_ natural meaning. Every other meaning is
 passed at the call, as a **key** (a function from the element to something
 `Comparable`) or a **comparator** (a function of two elements returning a
 negative number, zero or a positive number):
 
-| Want | Write |
-|---|---|
-| natural order | `xs.sorted()`, `xs.min()`, `xs.max()`, `xs.sortedDescending()` |
-| order by a field or derived value | `xs.sortedBy(x => x.age)`, `xs.sortedByDescending(key)`, `xs.minBy(key)`, `xs.maxBy(key)` |
-| any order at all | `xs.sortedWith((a, b) => ...)`, `xs.minWith(compare)`, `xs.maxWith(compare)`, `ml.sortWith(compare)` |
-| uniqueness by a key | `xs.distinctBy(x => x.email.toLower())` |
-| a queue in a custom order | `PriorityQueue<T>(compare: (a, b) => ...)` |
-| several keys at once | a tuple key: `xs.sortedBy(e => (-e.size, e.name))` — tuples of `Comparable` elements compare lexicographically, so this is "largest first, then by name" |
-| equality with a different meaning | `xs.any(x => sameName(x, y))`, or a wrapper struct with its own `Equatable` |
+| Want                              | Write                                                                                                                                                    |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| natural order                     | `xs.sorted()`, `xs.min()`, `xs.max()`, `xs.sortedDescending()`                                                                                           |
+| order by a field or derived value | `xs.sortedBy(x => x.age)`, `xs.sortedByDescending(key)`, `xs.minBy(key)`, `xs.maxBy(key)`                                                                |
+| any order at all                  | `xs.sortedWith((a, b) => ...)`, `xs.minWith(compare)`, `xs.maxWith(compare)`, `ml.sortWith(compare)`                                                     |
+| uniqueness by a key               | `xs.distinctBy(x => x.email.toLower())`                                                                                                                  |
+| a queue in a custom order         | `PriorityQueue<T>(compare: (a, b) => ...)`                                                                                                               |
+| several keys at once              | a tuple key: `xs.sortedBy(e => (-e.size, e.name))` — tuples of `Comparable` elements compare lexicographically, so this is "largest first, then by name" |
+| equality with a different meaning | `xs.any(x => sameName(x, y))`, or a wrapper struct with its own `Equatable`                                                                              |
 
 Sorting is stable: elements the strategy cannot tell apart keep their
 order, so sorting by one key and then by another gives a two-level order.
 A tuple orders element by element (`(1, "b") < (2, "a")`), which makes
 `sortedBy` with a tuple key the way to sort on several fields; negate a
-number to flip its direction, and write a comparator when a *string* must
+number to flip its direction, and write a comparator when a _string_ must
 run backwards.
 
 ```veles
@@ -745,6 +758,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [ann, Ann, Bob, Ola]
 [Bob, ann, Ola, Ann]
@@ -752,7 +766,7 @@ Ola ann
 [Ola, ann, Bob] true
 ```
 
-When a *different equality* is needed everywhere a type appears — not
+When a _different equality_ is needed everywhere a type appears — not
 just in one call — give the type an `Equatable` implement (with `Hashable`), as
 `Name` does above. When two meanings are needed for one type, wrap it: a
 `struct CaseInsensitive { text: string }` with its own `Equatable` and
@@ -761,7 +775,7 @@ just in one call — give the type an `Equatable` implement (with `Hashable`), a
 
 ## Associated types
 
-A trait can declare a *type* its implementors choose, not just methods.
+A trait can declare a _type_ its implementors choose, not just methods.
 The standard `Iterator` is the canonical example:
 
 ```veles
@@ -833,7 +847,7 @@ fun load<F: Fetcher>(f: F, url: string): string throws F.Error {
 }
 
 fun main() {
-  io.println("${load(Http(), "x")}")
+  io.println("${load(Http(), "x").toString()}")
   val r = load(Http(), "bad")
   if (r.err) io.println("http: ${r.message()}")
   val m = load(Memory(data: ["k": "v"]), "zz")
@@ -842,6 +856,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 Ok(value: [http:x])
 http: HttpError(status: 500)

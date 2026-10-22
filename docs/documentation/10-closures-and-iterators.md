@@ -24,6 +24,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [6, 2, 4] 6 [<3>, <1>, <2>] [3, 2]
 ```
@@ -52,6 +53,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 42 2
 10
@@ -95,6 +97,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 third call: 3
 [a, b]
@@ -120,21 +123,21 @@ Each word is a separate promise, and each answers a different question.
 
 - `fun(A, B): R` — what goes in and what comes out. Parameter names are
   not part of the type (a lambda may call them anything).
-- `suspends` — *calling it may pause the task*: it awaits a channel, a
+- `suspends` — _calling it may pause the task_: it awaits a channel, a
   timer or another task somewhere inside, so it can only be called from
   code that may itself suspend. A function without it is a plain call
   that runs to completion. Chapter 12 explains what suspending means.
-- `throws E` — *calling it may fail with E*: the call yields a `Result`
+- `throws E` — _calling it may fail with E_: the call yields a `Result`
   and the caller writes `try` or handles it with `when` (chapter 7). A
   function without it cannot fail.
-- `sendable` — *the value may be handed to another task*: it touches no
+- `sendable` — _the value may be handed to another task_: it touches no
   shared mutable state, so two tasks may call it at once. Chapter 12's
   [What may cross a task boundary](12-concurrency.md#what-may-cross-a-task-boundary)
   has the rule; in short, a named function always is, and a lambda is
   when everything it captures is a `val` of a Sendable type.
 
-The first three describe what happens when the function is *called*; the
-last describes what the *value* is. That difference decides how they
+The first three describe what happens when the function is _called_; the
+last describes what the _value_ is. That difference decides how they
 adapt.
 
 **A lambda written where a function is expected takes the expected
@@ -154,7 +157,7 @@ and a sendable function is accepted wherever a plain one is, never the
 reverse.
 
 **Generic code names the effects it passes through.** A function that
-takes a callback and may fail *because the callback does* is written
+takes a callback and may fail _because the callback does_ is written
 
 ```veles
 // fragment
@@ -186,14 +189,15 @@ fun parseAll(words: List<string>): List<i64> throws NotANumber =>
   try words.map(w => w.toInt() ?: throw NotANumber(text: w))
 
 fun main() {
-  io.println("${parseAll(["1", "2", "3"])}")
-  io.println("${parseAll(["1", "x", "3"])}")
+  io.println("${parseAll(["1", "2", "3"]).toString()}")
+  io.println("${parseAll(["1", "x", "3"]).toString()}")
   val r = ["4", "5"].map(w => w.toInt() ?: throw NotANumber(text: w))
   if (r.ok) io.println("parsed $r")
 }
 ```
 
 Output:
+
 ```text
 Ok(value: [1, 2, 3])
 Err(error: NotANumber(text: x))
@@ -228,6 +232,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 5 [1=one, 2=two]
 [10, 4]
@@ -281,6 +286,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 3 2 1 liftoff
 [16, 9, 4, 1]
@@ -316,13 +322,14 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [4, 16, 36]
 [10, 20] [5, 6]
 [0:1, 1:2, 2:3, 3:4, 4:5, 5:6]
 [(1, a), (2, b), (3, c)]
 6 21 4
-100 200 300 
+100 200 300
 ```
 
 When to use which: `xs.map(f)` on a list is eager and returns a `List`

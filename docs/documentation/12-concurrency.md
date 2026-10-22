@@ -7,7 +7,7 @@ deadlock, and the mistakes the compiler cannot catch — is collected in
 [Concurrency: what happens, exactly](reference/concurrency.md).
 
 Veles concurrency rests on two decisions. First, there is no `async`
-keyword on function declarations: whether a function *suspends* (may
+keyword on function declarations: whether a function _suspends_ (may
 pause waiting for something) is **inferred** from its body, the same way
 its error type is (D2). The editor shows what was inferred: hovering a
 function, at its declaration or at any call, reads `fun wait() suspends`,
@@ -18,7 +18,7 @@ the task has (D3). Nothing leaks, nothing is fire-and-forget.
 
 Because a suspending function is called like any other, calling one and
 waiting for its result needs no keyword at all: `io.println(load(path))`.
-`async` means only one thing — *run this alongside what follows*.
+`async` means only one thing — _run this alongside what follows_.
 
 ## Starting tasks
 
@@ -43,6 +43,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 both started
 task 2 done
@@ -59,7 +60,7 @@ scope finished
 - `await` is only written on the primitives that are known to suspend
   (`sleep`, `recv`, task handles); a call to an ordinary function that
   happens to suspend needs nothing (D16).
-- `async` also starts a function *value* whose type is `sendable fun(...)`
+- `async` also starts a function _value_ whose type is `sendable fun(...)`
   — a parameter, a field, a local: `async handler(req)`. The function and
   its arguments are evaluated here, and the task's errors are the ones its
   type declares (D103). A plain `fun(...)` value is refused: what it
@@ -103,6 +104,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 550
 ```
@@ -172,6 +174,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 user7 has 21 orders
 no such user -1
@@ -220,6 +223,7 @@ fun main() throws {
 ```
 
 Output:
+
 ```text
 slow tick 0
 ```
@@ -236,7 +240,7 @@ every task started inside has finished — or, if the scope was left early,
 has been cancelled and has run its cleanups. So:
 
 - **A task you never await is fine.** The scope waits for it, and its
-  failure fails the scope. `await` is how the body *uses* a task's value
+  failure fails the scope. `await` is how the body _uses_ a task's value
   before the end, never what keeps the task alive.
 - **A handle stays inside its scope** (D141). Storing it in something
   declared before the scope, or returning it, is a compile error: after an
@@ -273,6 +277,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 total 600
 total -2
@@ -284,7 +289,7 @@ keep the `Result`.
 ## Background tasks: `with t = async f()`
 
 A `scope` waits for its tasks, which is right for work you want
-finished. A task that should run only *while* something else happens —
+finished. A task that should run only _while_ something else happens —
 a server under test, a ticker, a reader draining a socket — is started
 with `with` instead (D100). It runs in the background until the block it
 is written in ends, and is then **cancelled, then joined**; a task that
@@ -317,6 +322,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 work gave 42
 ticked meanwhile: true
@@ -382,6 +388,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 first tick: 1
 closed after the ticker stopped
@@ -435,8 +442,8 @@ fun main() {
     async mayFail(2)
     async crashes()
   }
-  io.println("$a")
-  io.println("$b")
+  io.println("${a.toString()}")
+  io.println("${b.toString()}")
   when (c) {
     is Ok(v)            => io.println("ok $v")
     is Err(e)           => when (e) {
@@ -447,6 +454,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 Ok(value: 10)
 Err(error: Boom(n: 2))
@@ -458,7 +466,7 @@ a one-element tuple: `when (gather { async risky() }) { ... }` is how a
 program runs code and finds out whether it panicked (D103).
 
 A task's error is the `Err` only when its function `throws`. A function
-that *returns* a `Result` finished either way, so its `Result` is the
+that _returns_ a `Result` finished either way, so its `Result` is the
 task's value: `async check(n)` with `check(n: i64): Result<i64, Boom>`
 gives a `Result<Result<i64, Boom>, Panic>`, where `Ok(Err(…))` is "check
 said no" and `Err(Panic(…))` is "check crashed" (D155) — as in a `scope`,
@@ -505,6 +513,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 4 results, jobs [1, 2, 3, 4]
 ```
@@ -548,6 +557,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 receiver ready
 handed over
@@ -579,6 +589,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 dropped tick
 dropped stop
@@ -628,6 +639,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [101, 104, 109, 116, 125]
 handled all, total 15
@@ -670,6 +682,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 saved part 1
 saved part 2
@@ -717,6 +730,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 260 lines
 ```
@@ -790,6 +804,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [1, 2, 3, 4]
 at most 2 at once
@@ -841,6 +856,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 fastest: us
 served by backup
@@ -856,7 +872,7 @@ first of three: b
   leaves the function, so a race that can fail goes in a function you
   `try` or `catch`.
 - A timeout is one more contestant — `async { await sleep(d); throw
-  Timeout(limit: d) }` — or `withTimeout` around the race.
+Timeout(limit: d) }` — or `withTimeout` around the race.
 - A body that starts no task is a compile error, or a panic when a loop
   started none; a race of one task is a warning (call it directly).
 
@@ -903,6 +919,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 got hello / timeout
 too slow
@@ -939,6 +956,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 true false
 first then nothing
@@ -982,6 +1000,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 adding in the background
 total 5050
@@ -1051,6 +1070,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 closed a
 gave up
@@ -1106,6 +1126,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 failed: timed out after 20ms
 got 7
@@ -1163,6 +1184,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [-] booting
 [req-1] start
@@ -1248,7 +1270,7 @@ as a state machine (see below), which is why a named non-suspending
 function does not fit a `suspends` parameter as a value: pass
 `x => f(x)` and the lambda is compiled the suspending way.
 
-On a parameter, `suspends` means *may* suspend (D116). A function whose
+On a parameter, `suspends` means _may_ suspend (D116). A function whose
 only waiting is calling such a parameter — or passing it on to another
 function's — suspends exactly when what it is given does. Given a lambda
 that does not suspend, the call is an ordinary call, allowed wherever
@@ -1276,6 +1298,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 total 12
 waited for 1
@@ -1284,7 +1307,7 @@ waited for 1
 
 The compiler makes two copies of such a function, an ordinary one and a
 suspending one, and each call picks the one it needs; the hover says
-"suspends if `f` does". A function that *keeps* the parameter — stores it,
+"suspends if `f` does". A function that _keeps_ the parameter — stores it,
 returns it, hands it to a function that keeps it — cannot know how it will
 be called later, so it suspends whenever it is called. A trait method
 keeps the effects its trait declares.
@@ -1298,14 +1321,14 @@ give back), and an `Atomic` of a number, a `bool`, an enum or a pointer
 takes no lock at all — its operations are single processor instructions.
 What an `Atomic` offers:
 
-| | |
-|---|---|
-| `load()`, `store(v)`, `swap(v)` | read, replace, replace and return the old value |
-| `add(n)`, `sub(n)` | an integer's counter step; returns the new value, wraps on overflow |
-| `fetchAnd(m)`, `fetchOr(m)`, `fetchXor(m)` | change an integer's bits; return the old value |
-| `compareAndSet(expected, new)` | store `new` only if the value is still `expected`; says whether it did |
-| `compareExchange(expected, new)` | the same, returning the value it found |
-| `update(f)` | replace the value with `f(value)`, retrying until no other task got in between |
+|                                            |                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------ |
+| `load()`, `store(v)`, `swap(v)`            | read, replace, replace and return the old value                                |
+| `add(n)`, `sub(n)`                         | an integer's counter step; returns the new value, wraps on overflow            |
+| `fetchAnd(m)`, `fetchOr(m)`, `fetchXor(m)` | change an integer's bits; return the old value                                 |
+| `compareAndSet(expected, new)`             | store `new` only if the value is still `expected`; says whether it did         |
+| `compareExchange(expected, new)`           | the same, returning the value it found                                         |
+| `update(f)`                                | replace the value with `f(value)`, retrying until no other task got in between |
 
 `update`'s function may run more than once, so it should only compute the
 new value. Every operation is sequentially consistent — all tasks see the
@@ -1339,6 +1362,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 hits 4000, total 4000
 ```
@@ -1384,6 +1408,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 saved 3
 ```
@@ -1418,13 +1443,13 @@ Five more types cover the other shapes shared state takes (D146). Each is
 `Sendable` when what it holds is, and copies of one are the same lock,
 event or feed.
 
-| Type | For | Operations |
-|---|---|---|
-| `RwLock<T>` | read often, changed rarely: many readers at once, one writer | `with c = l.read()`, `with w = l.write()`, `withRead(f)`, `withWrite(f)`, `get()`, `set(v)` |
-| `Event` | "it happened": tasks wait until one sets it | `set()`, `reset()`, `isSet()`, `await e.wait()` |
-| `Lazy<T>` | a value built once, on first use, by whoever asks first | `Lazy(init: f)`, `get()`, `isReady()` |
-| `Broadcast<T>` | every receiver gets every value | `send(v)`, `subscribe()`, `close()`; `try await sub.recv()` |
-| `Watch<T>` | the latest value of something that changes | `set(v)`, `get()`, `await w.changed()` |
+| Type           | For                                                          | Operations                                                                                  |
+| -------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `RwLock<T>`    | read often, changed rarely: many readers at once, one writer | `with c = l.read()`, `with w = l.write()`, `withRead(f)`, `withWrite(f)`, `get()`, `set(v)` |
+| `Event`        | "it happened": tasks wait until one sets it                  | `set()`, `reset()`, `isSet()`, `await e.wait()`                                             |
+| `Lazy<T>`      | a value built once, on first use, by whoever asks first      | `Lazy(init: f)`, `get()`, `isReady()`                                                       |
+| `Broadcast<T>` | every receiver gets every value                              | `send(v)`, `subscribe()`, `close()`; `try await sub.recv()`                                 |
+| `Watch<T>`     | the latest value of something that changes                   | `set(v)`, `get()`, `await w.changed()`                                                      |
 
 `RwLock`'s `read()` and `write()` follow `Mutex.lock()`'s rules: usable
 only as a `with` value, nothing in the region may suspend, and taking the
@@ -1495,6 +1520,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [a at level 2, b at level 2]
 last seen: 2
@@ -1511,12 +1537,12 @@ core, or the number `[runtime] threads` gives in the program's
 `veles.toml` (`VELES_THREADS` in the environment overrides both). Most
 programs never need more. Four tools place work elsewhere (D143):
 
-| Tool | For |
-|---|---|
-| `try Executor.pool(threads: n, name: s)` | CPU-heavy work that must not take the threads a server answers on |
-| `try Executor.thread(name: s)` | a library that must always be called from the same OS thread (a GL context, COM, a GUI loop) |
-| `blocking(f)` | one call known to block its thread, such as a synchronous C read |
-| `try Thread.start(name: s, f: f)` | plain code on an OS thread of its own: an audio loop, a pinned worker |
+| Tool                                     | For                                                                                          |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `try Executor.pool(threads: n, name: s)` | CPU-heavy work that must not take the threads a server answers on                            |
+| `try Executor.thread(name: s)`           | a library that must always be called from the same OS thread (a GL context, COM, a GUI loop) |
+| `blocking(f)`                            | one call known to block its thread, such as a synchronous C read                             |
+| `try Thread.start(name: s, f: f)`        | plain code on an OS thread of its own: an audio loop, a pinned worker                        |
 
 `scope(on: e) { … }` and `gather(on: e) { … }` start every child of the
 block on `e`; everything else about the scope is as before. A task
@@ -1541,7 +1567,7 @@ fun main() throws ThreadError {
     async checksum(1000)
     async checksum(2000)
   }
-  io.println("${a} ${b}")
+  io.println("${a.toString()} ${b.toString()}")
 
   with ui = try Executor.thread(name: "ui")
   io.println(ui.run(() => render(1)))
@@ -1557,6 +1583,7 @@ fun main() throws ThreadError {
 ```
 
 Output:
+
 ```text
 Ok(value: 737307) Ok(value: 418372)
 frame 1 drawn
@@ -1653,6 +1680,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 1 2 1
 preloaded 3, 2 uploads
@@ -1686,7 +1714,7 @@ on cpu
 
 A suspending function becomes a state machine: its locals move into a
 heap-allocated frame and each `await` is a resume point (this is why
-the design calls them *stackless coroutines*). A function that does not
+the design calls them _stackless coroutines_). A function that does not
 suspend is a plain function with a plain stack frame; deciding which is
 which is the inference pass. Trait methods declare `suspends` explicitly
 (D40) so that callers through the trait know which calling convention to

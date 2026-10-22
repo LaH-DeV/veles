@@ -110,7 +110,7 @@ both can import, or merge the two.
 The four levels (D142): `private` (the type), `internal` (the module),
 nothing (the package), `public` (other packages). Reaching an `internal`
 name from another module of the package: leave the word off to share it
-with the package. Reaching an unmarked name from another *package*: mark
+with the package. Reaching an unmarked name from another _package_: mark
 it `public` there, or have its facade export it. The same holds for
 a field, a method or a static of a type. For a standard module or a
 dependency the message says instead that the name is not part of that
@@ -271,6 +271,20 @@ name (`unused Result 'r'`) and never read it. Decide: `try f()` if your
 function is `throws`, or `when (val r = f()) { is Ok => ...; is Err => ... }`.
 Ignoring a failure is not an option; `val _ = f()` is the deliberate
 discard. (D4)
+
+#### `cannot interpolate 'expr' of type 'Result<T, E>': its error would be lost`
+
+Printing an unhandled result would turn a failure into ordinary text.
+Use `"${try expr}"` in a throwing function, or `"${expr ?? fallback}"`
+to handle it locally. `check --fix` and the editor's preferred quick fix
+add `try` when the enclosing function may throw. Explicit
+`expr.toString()` prints the wrapper on purpose. Template values and
+formatted interpolation follow the same rule. (D157)
+
+#### `cannot interpolate task handle 'expr' of type 'Task<T>'`
+
+A handle is not its task's value. Await it first, for example
+`"${await task}"`. The task's errors belong to its owning block. (D157)
 
 #### `'try' propagates an error, but the enclosing function is not declared 'throws'`
 
@@ -517,7 +531,7 @@ combining marks and digits after the first letter (Unicode's identifier
 rules, UAX #31). A character that is none of those is reported by name,
 because it is usually invisible: a no-break space pasted from a web page,
 a zero-width space, a byte-order mark in the middle of a file. A
-*bidirectional control* (U+202A–U+202E, U+2066–U+2069) is refused in code
+_bidirectional control_ (U+202A–U+202E, U+2066–U+2069) is refused in code
 and in comments: it makes a file display in a different order from how it
 compiles (the "Trojan source" attack). Inside a string it is a warning —
 write it as `\u{202E}` so it can be seen. (D18)
@@ -527,7 +541,7 @@ write it as `\u{202E}` so it can be seen. (D18)
 Interpolation prints a value through its `Display` implementation, so
 `"$this"` inside that very `toString` is the function calling itself with
 the same argument — a stack overflow at run time. Interpolate the fields
-(`"(${this.x}, ${this.y})"`). Printing a *different* value of the type is
+(`"(${this.x}, ${this.y})"`). Printing a _different_ value of the type is
 allowed, since that recursion can end. (P7)
 
 ### mutability
@@ -649,8 +663,8 @@ a struct, trait, impl or extend body`, `struct 'Node' has infinite size`.
 
 #### `extension 'trim' on 'string' is never called`
 
-`extend T { }` on a type your package does not own declares *extension
-functions* (D173), and an inherent method of the type always wins: the
+`extend T { }` on a type your package does not own declares _extension
+functions_ (D173), and an inherent method of the type always wins: the
 struct body's, a compiler built-in's, or a method of the same name in an
 `extend` of the type's own package. An extension with such a name is never
 reached; rename it. Also refused there: a `static fun` (write a free
@@ -660,7 +674,7 @@ extending a `Result` or an `Option`. See
 
 #### `'protected' qualifies 'var'`
 
-`protected` restricts *who may assign* a field, so it goes with `var`:
+`protected` restricts _who may assign_ a field, so it goes with `var`:
 `protected var count: i64`. A bare field is never assigned by anyone, and
 so has nothing to protect (D22).
 
@@ -779,7 +793,7 @@ the way out.
 
 A `val` task is checked to be awaited on every path, which only works
 while every use of it is an `await` in its own block (D156). Pass the
-*value* (`show(await t)`), start a task you want to cancel with `with`,
+_value_ (`show(await t)`), start a task you want to cancel with `with`,
 and keep handles you hand around in a `scope`.
 
 #### `a task is bound with 'val' (it must then be awaited) or 'with' (it is cancelled when the block ends), not 'var'`
@@ -821,7 +835,7 @@ When control passes a `scope`'s `}`, each of its tasks has finished — or,
 if the scope was left early, has been cancelled (D141). A handle kept in
 something declared before the scope (an outer `var` or list, a field), or
 returned, would outlive the task it names. Declare the list inside the
-scope, await there, and keep the *values*:
+scope, await there, and keep the _values_:
 
 ```veles
 // fragment
@@ -842,7 +856,7 @@ block (D34) — it never reaches an `await`. So the handle of a throwing
 `f` holds `f`'s value, and `await t` needs no `try` (D141; the quick fix
 removes it). To handle a child's error yourself, use `gather` (its
 handles and results keep the `Result`), or launch a function that
-*returns* a `Result` instead of throwing.
+_returns_ a `Result` instead of throwing.
 
 #### `'TestServer' holds a running task, so it must be received with 'with' where it is made`
 
@@ -1184,7 +1198,7 @@ level other than `"allow"`, `"warn"` or `"deny"` names the three.
 A dependency that names no source, two sources, a version that is not
 `major.minor.patch`, a bare `"1.4.2"` where a path is expected, or a
 `[workspace]` member that leaves the workspace each get a message saying
-what to write instead (see *The manifest in full* in chapter 11).
+what to write instead (see _The manifest in full_ in chapter 11).
 
 ### internal
 
