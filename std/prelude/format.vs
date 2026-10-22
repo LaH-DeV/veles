@@ -25,8 +25,8 @@ fun fmtText(text: string, fill: string, align: i64, width: i64): string => fmtPa
 // the digits of `body` in groups of three from the right of the integer part
 fun fmtGroup(body: string): string {
   val dot = body.indexOf(".")
-  val whole = if (dot < 0) body else body.substring(0, dot) ?: body
-  val rest = if (dot < 0) "" else body.slice(dot, body.len())
+  val whole = if (dot == null) body else body.substring(0, dot) ?: body
+  val rest = if (dot == null) "" else body.slice(dot, body.len())
   val out = StringBuilder()
   val n = whole.len()
   loop (i in 0..<n) {

@@ -729,6 +729,36 @@ func (c *Checker) refFieldLabels(st *types.Struct, args []ast.Arg, punned []bool
 	}
 }
 
+// refCopy records a call of the generated `copy` (D164): its signature as
+// the reader would write it — every field this call site may change, each
+// defaulting to the receiver's — and the struct it belongs to.
+func (c *Checker) refCopy(span source.Span, st *types.Struct, names []string) {
+	if c.index == nil || !span.IsValid() {
+		return
+	}
+	def := source.Span{}
+	if d, ok := templateOf(st).Decl.(*ast.StructDecl); ok {
+		def = d.Name.Pos
+	}
+	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: def, Kind: "fun", Name: "copy",
+		Detail: "fun " + st.String() + "." + copySig(st, names) + "  (generated)",
+		Doc:    "A copy of this value with the named fields changed; every other field keeps its value, and `init` runs again (D164)."})
+}
+
+// copySig is the generated `copy`'s parameter list and result for the
+// fields names, e.g. `copy(x: i64 = this.x, y: i64 = this.y): Point`.
+func copySig(st *types.Struct, names []string) string {
+	var params []string
+	for _, n := range names {
+		for _, fld := range st.Fields {
+			if fld.Name == n {
+				params = append(params, n+": "+fld.Type.String()+" = this."+n)
+			}
+		}
+	}
+	return "copy(" + strings.Join(params, ", ") + "): " + st.String()
+}
+
 func (c *Checker) refField(span source.Span, st *types.Struct, fld *types.Field) {
 	if c.index == nil || fld == nil || !span.IsValid() {
 		return

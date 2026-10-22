@@ -41,6 +41,13 @@ The old form still parses, so the rest of the file checks, and the error
 carries the fix: the editor's quick fix, or `veles check --fix` for a
 whole package, rewrites it.
 
+`'indexOf' answers null when nothing is found, never -1 (D165)`: the
+index-of family (`indexOf`, `indexOfFirst`, `lastIndexOf`, `binarySearch`,
+`binarySearchBy`, `binarySearchWith`) answers `i64?`, so a test of the old
+`-1` — `>= 0`, `< 0`, `== -1`, `!= -1` — is refused with the fix that tests
+for null. Better still: `val i = xs.indexOf(v) ?: return`, after which
+`xs.at(i)` is a `T`, or `contains` when the index is not needed.
+
 #### `the receiver is spelled 'this'`
 
 A method's receiver is `this`, as in most languages that have one. `self`
@@ -629,9 +636,18 @@ Once you name one argument, name the rest: `f(1, b: 2, c: 3)` is fine,
 path`.
 
 A struct is built by naming its fields, `Point(x: 1, y: 2)`; a field with
-a default may be left out. An `init` block runs after the fields are set
-and must give every field without a default a value before it ends (D28,
-D73).
+a default may be left out. A constructor that takes one parameter also
+takes it positionally, `Meters(5)` (D163); when the type grows a second
+one, the call is this error with a fix that names the field. An `init`
+block runs after the fields are set and must give every field without a
+default a value before it ends (D28, D73).
+
+`'copy' takes the fields it changes by name`, `field 'area' is assigned by
+the 'init' block of 'Rect', which a copy runs again`, `'Worker' holds a
+running task, which a copy would duplicate`: the generated `copy` (D164)
+names what changes, cannot name what `init` assigns or what the call site
+cannot see, and is refused for task-holding types, `with`-bound resources
+and types whose `init` takes parameters.
 
 ### this
 

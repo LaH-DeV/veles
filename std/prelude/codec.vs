@@ -283,7 +283,7 @@ public trait Codable : Encodable + Decodable
 
 /// The path of a member `key` under `base`.
 public fun childPath(base: string, key: string): string {
-  val plain = !key.isEmpty() && key.indexOf(".") < 0 && key.indexOf("[") < 0 && key.indexOf("]") < 0 && key.indexOf("\"") < 0
+  val plain = !key.isEmpty() && !key.contains(".") && !key.contains("[") && !key.contains("]") && !key.contains("\"")
   when {
     plain && base.isEmpty() => key
     plain                   => "$base.$key"

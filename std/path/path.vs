@@ -35,15 +35,15 @@ public fun base(p: string): string {
 /// The extension of the last component including its dot (`".vs"`), or `""`.
 public fun ext(p: string): string {
   val name = base(p)
-  val i = name.lastIndexOf(".")
-  if (i <= 0) "" else name.slice(i, name.len())
+  val i = name.lastIndexOf(".") ?: return ""
+  if (i == 0) "" else name.slice(i, name.len())
 }
 
 /// The last component without its extension.
 public fun stem(p: string): string {
   val name = base(p)
-  val i = name.lastIndexOf(".")
-  if (i <= 0) name else name.substring(0, i) ?: name
+  val i = name.lastIndexOf(".") ?: return name
+  if (i == 0) name else name.substring(0, i) ?: name
 }
 
 /// True for `/x`, `C:\x`, `C:/x` and `\server\x`.

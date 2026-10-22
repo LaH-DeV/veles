@@ -339,7 +339,7 @@ extend Parser {
       }
       Kind.Regex => {
         this.next()
-        val closing = t.text.lastIndexOf("/")
+        val closing = t.text.lastIndexOf("/") ?: 0
         // an unterminated literal: the lexer reported it
         if (closing < 1) return ast.RegexLit(pattern: t.text.slice(1, t.text.len()), pos: t.span)
         return ast.RegexLit(pattern: t.text.slice(1, closing), flags: t.text.slice(closing + 1, t.text.len()), pos: t.span)

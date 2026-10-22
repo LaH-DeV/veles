@@ -363,8 +363,8 @@ fun serverSpan(req: Request): otel.Span {
 
 // the peer's address without its port: `127.0.0.1:5000` → `127.0.0.1`
 fun addressOf(peer: string): string {
-  val i = peer.lastIndexOf(":")
-  if (i < 0) peer else (peer.substring(0, i) ?: peer)
+  val i = peer.lastIndexOf(":") ?: return peer
+  peer.substring(0, i) ?: peer
 }
 
 // What the answer was; a probe's span is left out, a 5xx marks it failed.

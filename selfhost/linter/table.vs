@@ -28,7 +28,7 @@ fun lintSchema(): Schema<LintSettings> => Schema(
       loop (rule in section.within(table).entries()) {
         settings.library.set("${entry.key}.${rule.key}", try libraryLevel(section, "${entry.key}.${rule.key}", rule.value))
       }
-    } else if (entry.key.indexOf(".") >= 0) {
+    } else if (entry.key.contains(".")) {
       settings.library.set(entry.key, try libraryLevel(section, entry.key, entry.value))
     } else {
       throw section.failAt(entry.value, unknownLint(entry.key))

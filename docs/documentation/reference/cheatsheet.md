@@ -133,6 +133,8 @@ struct Shared<T> {
   init(value: T) { this.cell = &value }     // init parameters join the constructor (D73): Shared(value: 1)
 }
 val p = Point(x: 1)             // named construction (Point(x, y) puns variables named like fields); p == q, "$p" work
+val s = Shared(1)               // one constructor parameter: positional too (D163); throw UsageError("bad flag")
+val q = p.copy(x: 5)            // generated copy: named fields change, the rest kept, init runs again (D164)
 val n = i64.parse("42")         // i64?; Parsable — T.parse(s) in generic code
 val z = T.default()             // Default (D119): 0, false, "", empty, null; a struct: `implement Default` (fields' defaults, else their types')
 
@@ -213,7 +215,8 @@ shapes.filterIs<Circle>(); maybes.filterNotNull()   // narrowed lists: List<Circ
 xs.take(2); xs.drop(2); xs.slice(1, 3); xs.zip(ys); xs.enumerate(); xs.flatMap(f); xs.distinct(); xs.chunked(2); xs.windowed(2)
 xs.sorted(); xs.sortedBy(key); xs.sortedBy(e => (-e.size, e.name)); xs.sortedDescending(); xs.sortedWith((a, b) => ...); xs.reversed(); xs.min(); xs.max(); xs.sum(); xs.join(", "); xs.iter()  // tuples order element by element
 xs.minBy(key); xs.maxBy(key); xs.minWith(cmp); xs.maxWith(cmp); xs.distinctBy(key); xs == ys  // lists, maps, sets compare by content
-sorted.binarySearch(x); sorted.binarySearchBy(key, target); sorted.binarySearchWith(e => e.compareTo(x))  // first match or -1; the list must already be in order
+sorted.binarySearch(x); sorted.binarySearchBy(key, target); sorted.binarySearchWith(e => e.compareTo(x))  // first match or null; the list must already be in order
+val i = xs.indexOf(v) ?: return; xs.at(i)  // the index family answers i64?, never -1 (D165); after `?: return` xs.at(i) is a T (D62)
 sorted.lowerBound(x); sorted.upperBound(x); sorted.partitionPoint(e => e < x)   // insertion points; upperBound - lowerBound is how many times x occurs
 ml.push(x); ml.pop(); ml.set(i, x); ml.insert(i, x); ml.removeAt(i); ml.addAll(ys); ml.sort(); ml.clear(); ml.toList(); xs.toMutable()
 ml.swap(i, j); ml.fill(x); ml.incrementAt(i) /* MutableList<i64> */; ml.updateAt(i, f) /* MutableList<T>; transforms and returns the new value */; MutableList.repeat(false, n) /* MutableList<bool>: a generic static infers its type, D137 */; MutableList<MutableList<i64>>.make(n, _ => [])

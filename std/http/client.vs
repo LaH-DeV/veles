@@ -114,8 +114,8 @@ fun parseUrl(text: string): Url throws FetchError {
   val slash = noFragment.indexOf("/")
   val query = noFragment.indexOf("?")
   var end = noFragment.len()
-  if (slash >= 0 && slash < end) end = slash
-  if (query >= 0 && query < end) end = query
+  if (slash != null && slash < end) end = slash
+  if (query != null && query < end) end = query
   val authority = noFragment.slice(0, end)
   val tail = noFragment.slice(end, noFragment.len())
   if (authority.contains("@")) {
@@ -124,8 +124,7 @@ fun parseUrl(text: string): Url throws FetchError {
   var host = authority
   var port: i64 = if (secure) 443 else 80
   if (authority.startsWith("[")) {
-    val close = authority.indexOf("]")
-    if (close < 0) throw invalid(text, "an IPv6 address needs its closing bracket")
+    val close = authority.indexOf("]") ?: throw invalid(text, "an IPv6 address needs its closing bracket")
     host = authority.slice(1, close)
     val after = authority.slice(close + 1, authority.len())
     if (!after.isEmpty()) {
@@ -137,7 +136,7 @@ fun parseUrl(text: string): Url throws FetchError {
     }
   } else {
     val colon = authority.indexOf(":")
-    if (colon >= 0) {
+    if (colon != null) {
       host = authority.slice(0, colon)
       port = try portOf(text, authority.slice(colon + 1, authority.len()))
     }
@@ -193,21 +192,21 @@ fun resolve(base: Url, location: string): Url throws FetchError {
 }
 
 fun hasScheme(text: string): bool {
-  val i = text.indexOf("://")
-  if (i <= 0) return false
+  val i = text.indexOf("://") ?: return false
+  if (i == 0) return false
   text.slice(0, i).bytes().all(b => b.isAsciiAlphanumeric() || b in ['+', '-', '.'])
 }
 
 fun pathOf(target: string): string {
-  val q = target.indexOf("?")
-  if (q < 0) target else (target.substring(0, q) ?: target)
+  val q = target.indexOf("?") ?: return target
+  target.substring(0, q) ?: target
 }
 
 // the path up to and including its last `/`
 fun directoryOf(target: string): string {
   val path = pathOf(target)
-  val i = path.lastIndexOf("/")
-  if (i < 0) "/" else (path.substring(0, i + 1) ?: "/")
+  val i = path.lastIndexOf("/") ?: return "/"
+  path.substring(0, i + 1) ?: "/"
 }
 
 // `.` and `..` segments resolved, as a server would before routing

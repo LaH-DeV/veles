@@ -333,7 +333,8 @@ func TestInferredThrowsAndReceiverCompletion(t *testing.T) {
 	}
 	// a binding introduced in the same (non-parsing) edit still resolves
 	got := complete(withLine("  val pt = ParseError(text: \"a\")\n  pt.\n"), 20, 5)
-	if len(got) != 2 || got[0] != "message" || got[1] != "text" {
+	// (an error has the generated `copy` too, D164)
+	if len(got) != 3 || got[0] != "copy" || got[1] != "message" || got[2] != "text" {
 		t.Errorf("new error binding mid-edit offered %v", got)
 	}
 }
@@ -1004,7 +1005,7 @@ func TestCompletionVisibility(t *testing.T) {
 	}
 	// `p.` in main: no private field, method or static; no statics at all
 	got := labels(strings.Replace(base, "  //B\n", "  p.\n", 1), 23, 4)
-	for _, want := range []string{"tag", "next", "done", "rewind"} {
+	for _, want := range []string{"tag", "next", "done", "rewind", "copy"} {
 		if !got[want] {
 			t.Errorf("p. in main should offer %q: %v", want, got)
 		}

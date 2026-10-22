@@ -26,14 +26,15 @@ extend<T> List<T> {
   /// checker knows each `i` is in range, so `xs.at(i)` is a `T` (D62).
   public const fun indices(): Range<i64> => 0..<this.len()
 
-  /// The index of the first element `pred` accepts, or -1.
-  public const fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64 throws E {
+  /// The index of the first element `pred` accepts, or null when it accepts
+  /// none (D165).
+  public const fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64? throws E {
     var i: i64 = 0
     loop (x in this) {
       if (try pred(x)) return i
       i += 1
     }
-    -1
+    null
   }
 
   /// The number of elements `pred` accepts.
@@ -338,7 +339,7 @@ extend<T> List<T> {
     lo
   }
 
-  /// The index of the first element `compare` calls `Equal`, or -1 — the
+  /// The index of the first element `compare` calls `Equal`, or null — the
   /// same answer shape as `indexOf`, in log n comparisons instead of n.
   ///
   /// `compare(element)` answers where the element sits *relative to what is
@@ -346,25 +347,25 @@ extend<T> List<T> {
   /// after. So a search of a list ordered by `id` is
   /// `rows.binarySearchWith(r => r.id.compareTo(wanted))`, and a descending
   /// list flips the arguments: `xs.binarySearchWith(x => wanted.compareTo(x))`.
-  public const fun binarySearchWith(compare: fun(T): Ordering): i64 {
+  public const fun binarySearchWith(compare: fun(T): Ordering): i64? {
     val at = this.partitionPoint(x => compare(x) < 0)
-    val found = this.at(at) ?: return -1  // at == len(): nothing is Equal
-    if (compare(found) == Ordering.Equal) at else -1
+    val found = this.at(at) ?: return null  // at == len(): nothing is Equal
+    if (compare(found) == Ordering.Equal) at else null
   }
 
-  /// The index of the first element whose key equals `target`, or -1:
+  /// The index of the first element whose key equals `target`, or null:
   /// `people.binarySearchBy(p => p.name, "ann")` on a list sorted by name.
-  public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64 =>
+  public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64? =>
     this.binarySearchWith(x => key(x).compareTo(target))
 }
 
 extend<T: Comparable> List<T> {
-  /// The index of the first element equal to `x`, or -1. The *first*, not
-  /// any: a list with duplicates gives the same answer every time.
-  public const fun binarySearch(x: T): i64 {
+  /// The index of the first element equal to `x`, or null. The *first*,
+  /// not any: a list with duplicates gives the same answer every time.
+  public const fun binarySearch(x: T): i64? {
     val at = this.lowerBound(x)
-    val found = this.at(at) ?: return -1  // at == len(): x belongs at the end
-    if (found.compareTo(x) == Ordering.Equal) at else -1
+    val found = this.at(at) ?: return null  // at == len(): x belongs at the end
+    if (found.compareTo(x) == Ordering.Equal) at else null
   }
 
   /// The first index whose element is not less than `x` — where `x` belongs

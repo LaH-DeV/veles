@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.104** — decisions D1–D197. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.105** — decisions D1–D197. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -6619,6 +6619,40 @@ val renamed = decl.copy(name: ident, span: span)   // compiler-shaped code: rebu
 
 Rejected: spread syntax `Point(..p, x: 5)` (new syntax inside construction,
 and the spread reads as "all fields" while visibility hides some); leaving it.
+
+_Addendum (v0.105, 2026-10-23) — no `copy` where `init` takes parameters,
+nor on an `extern union`._ Settled when D164 was built:
+
+```veles
+struct Tile {
+  width: i64
+  height: i64
+  pixels: i64
+  init(scale: i64 = 1) { this.pixels = this.width * this.height * scale * scale }
+}
+val t = Tile(width: 2, height: 3, scale: 4)
+t.copy(width: 10)    // error: 'Tile' cannot be copied: its 'init' takes parameters, and a copy has no value to pass them; construct a new 'Tile' instead (D164)
+Bits(i: 1).copy(i: 2) // error: an extern union has no 'copy': its fields share one place
+```
+
+- **A type whose `init` takes parameters (D73) has no generated `copy`.** A
+  parameter is not stored, so the copy has nothing to pass `init`. Every such
+  type in the tree is a handle (`Mutex`, `Semaphore`, `PriorityQueue`,
+  `Socket`, the compression streams), for which a "copy" would be either the
+  same handle — what assignment already gives — or a new construction under
+  another name. Hover and completion do not offer it.
+- **An `extern union` has no `copy`.** Its fields share one place, so naming
+  one says nothing about the others; construct it, `Bits(i: 2)`.
+
+Rejected (user, recommended of 4): copying the fields as they are without
+running `init` (a field `init` derives goes stale — `pixels` stays 96 when
+`width` becomes 10 — breaking this entry's promise that `init` runs);
+running `init` with the parameters' defaults (computes from the wrong input,
+silently: `scale` becomes 1); making `init`'s parameters required named
+arguments of `copy` (correct, but for a handle it is a construction under
+the name "copy"; it can still be added later without breaking code). For the
+union (user, recommended of 2): writing the named field over the receiver's
+bytes.
 
 ### D165 — The index-of family answers `i64?` (v0.82)
 

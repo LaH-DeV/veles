@@ -777,12 +777,19 @@ func (f *fnCtx) inferStructArgs(t *types.Struct, args []ast.Arg, want types.Type
 	if initT := f.c.methods[t]["$init"]; initT != nil && initT.Sig != nil {
 		params = append(params, initT.Sig.Params...) // D73: `Boxed(value: 1)` infers T too
 	}
-	// a pun names its parameter (D28); constructStruct reports the rest
+	// a pun names its parameter (D28), and so does the one positional
+	// argument of a one-parameter constructor (D163): `Mutex(Notes())` is a
+	// `Mutex<Notes>`; constructStruct reports the rest
 	named := make([]ast.Arg, len(args))
 	for i, a := range args {
 		named[i] = a
-		if n, isName := a.Value.(*ast.NameExpr); a.Name == nil && isName && len(n.TypeArgs) == 0 && (hasField(t, n.Name) || f.c.hasInitParam(t, n.Name)) {
+		if a.Name != nil {
+			continue
+		}
+		if n, isName := a.Value.(*ast.NameExpr); isName && len(n.TypeArgs) == 0 && (hasField(t, n.Name) || f.c.hasInitParam(t, n.Name)) {
 			named[i].Name = &ast.Ident{Name: n.Name, Pos: n.Pos}
+		} else if p := f.soleParam(t); p != "" && len(args) == 1 {
+			named[i].Name = &ast.Ident{Name: p}
 		}
 	}
 	bound, ok := f.bindArgs(params, named, "struct '"+t.Name+"'", span)
@@ -936,11 +943,8 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	}
 	var result Expr = lit
 	if initT != nil {
-		// `init { }`: the block runs on the freshly built value, then the
-		// value is the result (D28); its parameters are the arguments
-		// after the fields (D73)
-		built := f.newTemp(st)
-		args := []Expr{&AddrOf{exprBase{&types.Pointer{Elem: st}}, ref(built)}}
+		// its parameters are the arguments after the fields (D73)
+		var args []Expr
 		for j, p := range initFn.Sig.Params {
 			k := len(st.Fields) + j
 			switch {
@@ -953,15 +957,150 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 				args = append(args, bad())
 			}
 		}
-		call := &Call{exprBase: exprBase{types.TUnit}, Fn: initFn, Args: args}
-		call.Recv, call.RecvRoot, call.RecvSpan, call.RecvType = RecvPlace, built, span, st
-		body := &Block{Stmts: []Stmt{&ExprStmt{X: call}}, Value: ref(built), Type: st}
-		result = &Let{exprBase{st}, built, lit, &BlockExpr{exprBase{st}, body}}
+		result = f.runInit(st, initFn, lit, args, span)
 	}
 	if st.Sealed != nil && !variantWanted(want, st) {
 		result = &MakeVariant{exprBase{st.Sealed}, st.Sealed, st, result}
 	}
 	return result
+}
+
+// runInit is lit with the `init { }` block run on it: the block runs on the
+// freshly built value, then the value is the result (D28); args are the
+// block's parameters (D73).
+func (f *fnCtx) runInit(st *types.Struct, initFn *Func, lit Expr, args []Expr, span source.Span) Expr {
+	built := f.newTemp(st)
+	args = append([]Expr{&AddrOf{exprBase{&types.Pointer{Elem: st}}, ref(built)}}, args...)
+	call := &Call{exprBase: exprBase{types.TUnit}, Fn: initFn, Args: args}
+	call.Recv, call.RecvRoot, call.RecvSpan, call.RecvType = RecvPlace, built, span, st
+	body := &Block{Stmts: []Stmt{&ExprStmt{X: call}}, Value: ref(built), Type: st}
+	return &Let{exprBase{st}, built, lit, &BlockExpr{exprBase{st}, body}}
+}
+
+// copyStruct lowers `v.copy(field: e, …)` (D164): a construction of v's
+// type in which every field not named keeps v's value. It is built like a
+// construction — `init` runs, so the fields it derives are computed again —
+// and names only what a construction from here could: not a field `init`
+// assigns, nor one this caller cannot see (M5, D142), which keeps its
+// value. v is evaluated once, before the arguments.
+func (f *fnCtx) copyStruct(recv Expr, st *types.Struct, callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr) Expr {
+	refuse := func(format string, args ...any) Expr {
+		f.errorf(e.Pos, format, args...)
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	if len(typeArgs) != 0 {
+		return refuse("'copy' takes no type arguments (D164)")
+	}
+	if st.Union {
+		return refuse("an extern union has no 'copy': its fields share one place, so naming one says nothing about the others (D164)")
+	}
+	if f.c.taskHolding(st) {
+		return refuse("'%s' holds a running task, which a copy would duplicate; 'copy' is refused for task-holding types (D111, D164)", st.Name)
+	}
+	if r, _ := f.heldResource(callee.X); r != nil {
+		return refuse("'%s' is bound by 'with', which closes it when the block ends; a copy would be a second handle to the same resource (D100, D164)", srcText(callee.X))
+	}
+	initT := f.c.methods[templateOf(st)]["$init"]
+	var initFn *Func
+	if initT != nil {
+		initFn = f.c.instantiate(initT, substOf(st), nil, e.Pos)
+		if len(initFn.Sig.Params) > 0 {
+			return refuse("'%s' cannot be copied: its 'init' takes parameters, and a copy has no value to pass them; construct a new '%s' instead (D164)", st.Name, st.Name)
+		}
+	}
+	inside := f.insideType(st)
+	given := make([]ast.Expr, len(st.Fields))
+	ok := true
+	for _, a := range e.Args {
+		name := ""
+		switch n, isName := a.Value.(*ast.NameExpr); {
+		case a.Name != nil:
+			name = a.Name.Name
+		case isName && len(n.TypeArgs) == 0 && hasField(st, n.Name):
+			name = n.Name // a pun (D28)
+		default:
+			f.errorf(a.Value.Span(), "'copy' takes the fields it changes by name, e.g. '%s.copy(%s: %s)' (D164)", srcText(callee.X), firstNameable(st, inside, f.module), srcText(a.Value))
+			ok = false
+			continue
+		}
+		i := -1
+		for j, fld := range st.Fields {
+			if fld.Name == name {
+				i = j
+			}
+		}
+		switch {
+		case i < 0:
+			f.errorf(a.Value.Span(), "'%s' has no field '%s' for 'copy' to change", st.Name, name)
+			ok = false
+		case given[i] != nil:
+			f.errorf(a.Value.Span(), "'copy' changes field '%s' twice", name)
+			ok = false
+		case st.Fields[i].Init:
+			f.errorf(a.Value.Span(), "field '%s' is assigned by the 'init' block of '%s', which a copy runs again; it cannot be named (D164)", name, st.Name)
+			ok = false
+		case st.Fields[i].Private && !inside || !fieldVisible(st.Fields[i].Pub, st.Fields[i].Internal, st.Module, f.module):
+			f.errorf(a.Value.Span(), "field '%s' of '%s' is not visible here, so 'copy' cannot change it; it keeps its value (D164)", name, st.Name)
+			ok = false
+		default:
+			given[i] = a.Value
+		}
+	}
+	if !ok {
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	f.c.refCopy(callee.Name.Pos, st, copyable(st, inside, f.module))
+	from := f.newTemp(st)
+	lit := &StructLit{exprBase{st}, st, make([]Expr, len(st.Fields))}
+	for i, fld := range st.Fields {
+		switch {
+		case given[i] != nil:
+			lit.Fields[i] = f.checkExprTo(given[i], fld.Type)
+		case fld.Init:
+			lit.Fields[i] = &Zero{exprBase{fld.Type}} // bound by `init`, never read before
+		default:
+			lit.Fields[i] = &FieldGet{exprBase{fld.Type}, ref(from), i, fld.Name}
+		}
+	}
+	var result Expr = lit
+	if initFn != nil {
+		result = f.runInit(st, initFn, lit, nil, e.Pos)
+	}
+	return &Let{exprBase{st}, from, recv, result}
+}
+
+// copyable lists the fields of st a `copy` from here may change: not one
+// `init` assigns, nor one the caller cannot see.
+func copyable(st *types.Struct, inside bool, from *Module) []string {
+	var names []string
+	for _, fld := range st.Fields {
+		if !fld.Init && !(fld.Private && !inside) && fieldVisible(fld.Pub, fld.Internal, st.Module, from) {
+			names = append(names, fld.Name)
+		}
+	}
+	return names
+}
+
+// firstNameable is the first field of st a `copy` from here may change, for
+// an example in a message.
+func firstNameable(st *types.Struct, inside bool, from *Module) string {
+	if names := copyable(st, inside, from); len(names) > 0 {
+		return names[0]
+	}
+	return "field"
+}
+
+// generatesCopy reports whether `copy` on st is the generated one (D164): a
+// hand-written `copy` replaces it (D58's rule for derived methods), and a
+// field named `copy` means there is none.
+func (f *fnCtx) generatesCopy(st *types.Struct) bool {
+	if hasField(st, "copy") {
+		return false
+	}
+	t, _, why := f.findMethod(st, "copy")
+	return t == nil && why == ""
 }
 
 // variantWanted reports a construction whose expected type is the variant
@@ -1002,16 +1141,52 @@ func (f *fnCtx) punFields(st *types.Struct, args []ast.Arg) ([]ast.Arg, bool) {
 			out[i].Name = &ident
 			continue
 		}
+		if p := f.soleParam(st); p != "" && len(args) == 1 {
+			// no position: nothing in the source is the field's label, so the
+			// index records no reference to it (a rename leaves the call be)
+			out[i].Name = &ast.Ident{Name: p}
+			continue
+		}
 		ok = false
 		if i < len(st.Fields) {
 			fld := st.Fields[i].Name
 			fix := fixReplace("Name the field", source.Span{File: a.Value.Span().File, Start: a.Value.Span().Start, End: a.Value.Span().Start}, fld+": ")
-			f.c.errorFix(a.Value.Span(), fix, "construct '%s' by field name: '%s: %s'; a bare name is accepted only for a variable named like the field (D28)", st.Name, fld, srcText(a.Value))
+			f.c.errorFix(a.Value.Span(), fix, "construct '%s' by field name: '%s: %s'; a bare argument is accepted only for a variable named like the field (D28), or alone when the constructor takes one parameter (D163)", st.Name, fld, srcText(a.Value))
 		} else {
 			f.errorf(a.Value.Span(), "construct '%s' by field name (D28)", st.Name)
 		}
 	}
 	return out, ok
+}
+
+// soleParam names the one parameter a construction of st takes from this
+// call site, when it takes exactly one (D163): a field the call may supply —
+// not one the `init` block assigns, nor one with a default this caller
+// cannot set (M5, D142) — or a parameter of `init` (D73). Such a
+// constructor has no order a reorder could change, so its argument may be
+// positional. "" when there are none or several, and for an `extern struct`
+// (a C layout is constructed by name, always).
+func (f *fnCtx) soleParam(st *types.Struct) string {
+	if st.Extern {
+		return ""
+	}
+	inside := f.insideType(st)
+	var names []string
+	for _, fld := range st.Fields {
+		if fld.Init || fld.HasDefault && (fld.Private && !inside || !fieldVisible(fld.Pub, fld.Internal, st.Module, f.module)) {
+			continue
+		}
+		names = append(names, fld.Name)
+	}
+	if initT := f.c.methods[templateOf(st)]["$init"]; initT != nil && initT.Sig != nil {
+		for _, p := range initT.Sig.Params {
+			names = append(names, p.Name)
+		}
+	}
+	if len(names) != 1 {
+		return ""
+	}
+	return names[0]
 }
 
 func hasField(st *types.Struct, name string) bool {
@@ -1147,6 +1322,9 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			return bad()
 		}
 		return f.toString(recv, e.Pos)
+	}
+	if st, isStruct := rt.(*types.Struct); isStruct && name == "copy" && f.generatesCopy(st) {
+		return f.copyStruct(recv, st, callee, typeArgs, e)
 	}
 	if lt, isList := rt.(*types.List); isList && name == "filterIs" {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)

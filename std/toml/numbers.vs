@@ -157,7 +157,7 @@ fun readNumber(word: string): Data throws NumberProblem {
     }
   }
   if (body.isEmpty() || !body.byteAt(0).isAsciiDigit()) throw Unreadable()
-  if (body.indexOf(".") >= 0 || body.indexOf("e") >= 0 || body.indexOf("E") >= 0) {
+  if (body.contains(".") || body.contains("e") || body.contains("E")) {
     return Real(value: parseFloat(word) ?: throw Unreadable())
   }
   val digits = withoutUnderscores(body) ?: throw Unreadable()

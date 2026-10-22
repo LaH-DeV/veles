@@ -94,16 +94,16 @@ struct Notes {
   /// MutableList — a handle — so it changes through its methods while the
   /// field itself stays bare, D22/D25.)
   fun remove(id: i64): bool {
-    val at = this.items.indexOfFirst(x => x.id == id)
-    if (at >= 0) this.items.removeAt(at)
-    at >= 0
+    val at = this.items.indexOfFirst(x => x.id == id) ?: return false
+    this.items.removeAt(at)
+    true
   }
 
   /// Replaces the text of a note; false when there is none.
   fun update(id: i64, text: string): bool {
-    val at = this.items.indexOfFirst(x => x.id == id)
-    if (at >= 0) this.items.set(at, Note(id, text))
-    at >= 0
+    val at = this.items.indexOfFirst(x => x.id == id) ?: return false
+    this.items.set(at, Note(id, text))
+    true
   }
 }
 

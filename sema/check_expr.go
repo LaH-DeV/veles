@@ -1241,6 +1241,48 @@ func isLiteralExpr(e ast.Expr) bool {
 	return false
 }
 
+// indexFamily are the searches that answered -1 for "absent" until D165
+// made them answer `i64?`.
+var indexFamily = map[string]bool{"indexOf": true, "indexOfFirst": true, "lastIndexOf": true, "binarySearch": true, "binarySearchBy": true, "binarySearchWith": true}
+
+// indexSentinel refuses the comparisons that tested the old `-1` answer of
+// the index-of family (D165) — `i >= 0`, `< 0`, `== -1`, `!= -1` on a call
+// of it, l being that call checked — with the fix that tests for null.
+// Before D165 they compiled; now `>= 0` compares a nullable, and `== -1`
+// would compile and always be false. nil when e is not one of them.
+func (f *fnCtx) indexSentinel(e *ast.BinaryExpr, op BinOp, l Expr) Expr {
+	c, isCall := e.L.(*ast.CallExpr)
+	if !isCall {
+		return nil
+	}
+	m, isMember := c.Fun.(*ast.MemberExpr)
+	if !isMember || !indexFamily[m.Name.Name] {
+		return nil
+	}
+	n, isNullable := l.Type().(*types.Nullable)
+	if !isNullable || !types.Identical(n.Elem, types.TI64) {
+		return nil
+	}
+	k, isConst := intConst(e.R)
+	var test string
+	switch {
+	case isConst && k == 0 && op == OpGe, isConst && k == -1 && op == OpNe:
+		test = "!= null"
+	case isConst && k == 0 && op == OpLt, isConst && k == -1 && op == OpEq:
+		test = "== null"
+	default:
+		return nil
+	}
+	fixed := srcText(e.L) + " " + test
+	hint := ""
+	if m.Name.Name == "indexOf" {
+		hint = ", or 'contains' when the index is not needed"
+	}
+	fix := fixReplace("Test for null", e.Pos, fixed)
+	f.c.errorFix(e.Pos, fix, "'%s' answers null when nothing is found, never -1 (D165): write '%s'%s", m.Name.Name, fixed, hint)
+	return &BoolConst{exprBase{types.TBool}, false}
+}
+
 func (f *fnCtx) binaryExpr(e *ast.BinaryExpr, want types.Type) Expr {
 	op := BinOpFromToken(e.Op)
 	switch op {
@@ -1277,6 +1319,9 @@ func (f *fnCtx) binaryExpr(e *ast.BinaryExpr, want types.Type) Expr {
 		l = f.checkOperandFor(e.L, r.Type())
 	} else {
 		l = f.checkExpr(e.L, want)
+		if x := f.indexSentinel(e, op, l); x != nil {
+			return x
+		}
 		if rawPointer(l.Type()) != nil {
 			return f.rawPointerBinary(op, l, e.R, e.Pos)
 		}
@@ -1438,6 +1483,9 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 	} else {
 		l = f.checkExpr(e.L, nil)
 		l = f.immutableView(l)
+		if x := f.indexSentinel(e, op, l); x != nil {
+			return x
+		}
 		if isLiteralExpr(e.R) {
 			r = f.checkOperandFor(e.R, l.Type())
 		} else if _, listR := e.R.(*ast.ListLit); listR && isArrayOrNullableArray(l.Type()) {

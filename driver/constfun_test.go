@@ -19,7 +19,7 @@ func TestConstFunMatchesRunTime(t *testing.T) {
 	}
 	for _, release := range []bool{false, true} {
 		out, code := runTestFiles(t, map[string]string{"fns.vs": constFunSrc, "cf.test.vs": constFunTests}, Options{Release: release})
-		if code != 0 || !strings.Contains(out, "28 passed") {
+		if code != 0 || !strings.Contains(out, "29 passed") {
 			t.Fatalf("release=%v: exit %d, output:\n%s", release, code, out)
 		}
 	}
@@ -222,6 +222,25 @@ const fun structs(): List<i64> {
   [a.x.toI64(), b.x.toI64(), c.x.toI64(), (xs.at(0) ?: a).y.toI64(), (xs.at(1) ?: a).y.toI64(), t.0.x.toI64(), u.0.x.toI64()].toList()
 }
 const STRUCTS: List<i64> = structs()
+
+struct Area {
+  w: i64
+  h: i64
+  area: i64
+  init {
+    this.area = this.w * this.h
+  }
+}
+
+// D164: a copy keeps the fields it does not name and runs init again
+const fun copies(): List<i64> {
+  val a = P(x: 1, y: 2)
+  val b = a.copy(y: 20)
+  val r = Area(w: 2, h: 3)
+  val wide = r.copy(w: 10)
+  [b.x, b.y, a.y, r.area, wide.area, wide.h]
+}
+const COPIES: List<i64> = copies()
 
 const fun flow(): List<i64> {
   val out: MutableList<i64> = []
@@ -538,6 +557,10 @@ test "std: list, range and set helpers" {
 }
 test "std: Duration" {
   expect(DURATIONS == durations())
+}
+test "copy: named fields changed, init run again" {
+  expect(COPIES == copies())
+  expect(COPIES == [1, 20, 2, 6, 30, 3])
 }
 test "std: hex, base64, utf8" {
   expect(CODECS == codecs())

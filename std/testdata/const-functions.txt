@@ -77,9 +77,9 @@ prelude/duration.vs: public static const fun seconds(n: i64): Duration
 prelude/duration.vs: static const fun parse(s: string): Duration?
 prelude/list.vs: const fun next(): T?
 prelude/list.vs: public const fun atOrDefault(i: i64, d: T): T
-prelude/list.vs: public const fun binarySearch(x: T): i64
-prelude/list.vs: public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64
-prelude/list.vs: public const fun binarySearchWith(compare: fun(T): Ordering): i64
+prelude/list.vs: public const fun binarySearch(x: T): i64?
+prelude/list.vs: public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64?
+prelude/list.vs: public const fun binarySearchWith(compare: fun(T): Ordering): i64?
 prelude/list.vs: public const fun chunked(n: i64): List<List<T>>
 prelude/list.vs: public const fun chunked(n: i64): List<List<T>>
 prelude/list.vs: public const fun concat(other: List<T>): List<T>
@@ -93,7 +93,7 @@ prelude/list.vs: public const fun enumerate(): List<(i64, T)>
 prelude/list.vs: public const fun fill(x: T)
 prelude/list.vs: public const fun flatMap<U, E>(f: fun(T): List<U> suspends throws E): List<U> throws E
 prelude/list.vs: public const fun incrementAt(i: i64)
-prelude/list.vs: public const fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64 throws E
+prelude/list.vs: public const fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64? throws E
 prelude/list.vs: public const fun indices(): Range<i64>
 prelude/list.vs: public const fun insert(i: i64, x: T)
 prelude/list.vs: public const fun isEmpty(): bool
@@ -139,8 +139,8 @@ prelude/number.vs: public const fun toString(radix: i64 = 10): string
 prelude/number.vs: public const fun toString(radix: i64 = 10): string
 prelude/string.vs: public const fun capitalize(): string
 prelude/string.vs: public const fun containsByte(b: u8): bool
-prelude/string.vs: public const fun indexOf(part: string, from: i64 = 0): i64
-prelude/string.vs: public const fun lastIndexOf(part: string): i64
+prelude/string.vs: public const fun indexOf(part: string, from: i64 = 0): i64?
+prelude/string.vs: public const fun lastIndexOf(part: string): i64?
 prelude/string.vs: public const fun lines(): List<string>
 prelude/string.vs: public const fun padEnd(width: i64, pad: string = " "): string
 prelude/string.vs: public const fun padStart(width: i64, pad: string = " "): string

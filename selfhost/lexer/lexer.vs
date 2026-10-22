@@ -490,7 +490,7 @@ struct Lexer {
         inClass && b == '[' && this.peekByte(1) == ':' => {
           // [:alpha:] inside a class
           val end = this.src.indexOf(":]", this.pos + 2)
-          if (end >= 0 && !this.hasLineBreak(this.pos, end)) {
+          if (end != null && !this.hasLineBreak(this.pos, end)) {
             this.pos = end + 2
             continue
           }

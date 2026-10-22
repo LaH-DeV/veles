@@ -30,8 +30,13 @@ Point(x: 3, y: -4) 7 Point(x: 4, y: -3) true
 - Construction uses the field names: `Point(x: 3, y: -4)`. Order does
   not matter and nothing can be forgotten. A variable named like the
   field can stand alone: `Point(x, y)` is `Point(x: x, y: y)` (and
-  writing `x: x` is a warning with a fix). Nothing else may be passed
-  bare — `Point(3, -4)` is an error.
+  writing `x: x` is a warning with a fix). A constructor that takes one
+  parameter has no order to get wrong, so it takes it positionally too:
+  `Meters(5)`, `throw UsageError("no input")`, `Mutex(Notes())` (D163) —
+  a field with a default counts as a parameter, one the caller cannot see
+  does not. Otherwise nothing else may be passed bare: `Point(3, -4)` is
+  an error, and so is `Meters(5)` once `Meters` grows a second field, with
+  a fix that writes the name.
 - Methods live in the struct body and refer to the receiver as `this`
   — or by leaving it off: inside a method a bare name that is a field or a
   method of the type means `this.name` (D158), after locals and
@@ -220,6 +225,54 @@ Output:
 Counter(n: 1) Counter(n: 2)
 ```
 
+### A copy with some fields changed: `copy`
+
+Since a bare field never changes, a changed value is a new one. Every
+struct, error and sealed variant has a generated `copy` that names only
+what changes (D164):
+
+```veles
+use io
+
+struct Point { x: i64; y: i64 }
+
+struct Rect {
+  w: i64
+  h: i64
+  area: i64
+  init {
+    this.area = this.w * this.h
+  }
+}
+
+fun main() {
+  val p = Point(x: 1, y: 2)
+  val q = p.copy(x: 5)
+  val wide = Rect(w: 2, h: 3).copy(w: 10)
+  io.println("$p $q ${wide.area}")
+}
+```
+
+Output:
+```text
+Point(x: 1, y: 2) Point(x: 5, y: 2) 30
+```
+
+- The fields are named, always — even one: `p.copy(5)` would not say what
+  changes. Every field not named keeps this value's.
+- The copy is built like a construction, so `init` runs again: `area` is
+  recomputed, and a field `init` assigns cannot be named. A type whose
+  `init` takes parameters has no `copy` (it has no values to pass them);
+  construct a new one instead.
+- Only what the call site may see can be named; a private field keeps its
+  value.
+- It is refused where a copy would duplicate something that must be
+  unique: a value holding a running task (D111), and a `Closeable` bound
+  by `with` (D100). An `extern union` has none either: its fields share
+  one place, so naming one says nothing about the others.
+- A hand-written `fun copy` replaces the generated one; a field named
+  `copy` means there is none, with a warning at the field.
+
 ### If you know classes from another language
 
 A struct is where a Kotlin, TypeScript or Java programmer would reach
@@ -230,7 +283,8 @@ for a class, so the differences are the things to unlearn:
 | Assignment | copies a *reference*; two names, one object | copies the *value*; two names, two structs (D7) |
 | Sharing one instance | the default | explicit: a pointer `*T` (`&x`, [Sharing with pointers](#sharing-with-pointers) below), or a reference type such as `MutableList` |
 | Inheritance | `class Dog : Animal` | none. Shared behaviour is a trait (chapter 8); a closed family is a `sealed trait` with variant structs (chapter 9) |
-| Constructor | written by hand | implicit, by field name: `Point(x: 1, y: 2)`; `static fun` for anything with logic |
+| Constructor | written by hand | implicit, by field name: `Point(x: 1, y: 2)`, or positional when it takes one parameter: `Meters(5)`; `static fun` for anything with logic |
+| Copy with changes | `data class` `copy(...)` (Kotlin), spread (TS) | generated: `p.copy(x: 5)` |
 | Mutation | any method may assign fields | only the fields declared `var`; a bare field never changes (D22) |
 | Equality, printing, hashing | `equals`/`hashCode`/`toString` by hand (or `data class`) | structural by default; replaced with the operator traits |
 | Interfaces | `implements I` | `implement I for T` — see chapter 8 |

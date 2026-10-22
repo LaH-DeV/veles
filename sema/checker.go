@@ -1530,6 +1530,9 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 			continue
 		}
 		seen[f.Name.Name] = true
+		if f.Name.Name == "copy" {
+			c.warnf(f.Name.Pos, "a field named 'copy' takes the place of the generated 'copy' method, so '%s' has none (D164); rename the field to keep it", d.Name.Name)
+		}
 		fattrs := c.checkFieldAttrs(f)
 		env.errorPos = d.Error // an error's field may hold a cause: a union (D45)
 		ft := c.resolveType(env, f.Type)

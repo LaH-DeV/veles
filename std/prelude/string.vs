@@ -33,18 +33,23 @@ extend string {
     this.substring(lo, hi) ?: panic("slice: both bounds are in range and on character edges")
   }
 
-  /// Byte index of the first occurrence of `part` at or after `from`, or -1.
-  public const fun indexOf(part: string, from: i64 = 0): i64 => unsafe {
-    // SAFETY: a read-only search inside both strings' lengths; `from` is clamped
-    // by the runtime
-    veles_string_find(this, part, from)
+  /// Byte index of the first occurrence of `part` at or after `from`, or
+  /// null when there is none (D165).
+  public const fun indexOf(part: string, from: i64 = 0): i64? {
+    val at = unsafe {
+      // SAFETY: a read-only search inside both strings' lengths; `from` is
+      // clamped by the runtime, which answers -1 when `part` is absent
+      veles_string_find(this, part, from)
+    }
+    if (at < 0) null else at
   }
 
-  /// Byte index of the last occurrence of `part`, or -1.
-  public const fun lastIndexOf(part: string): i64 {
-    var last: i64 = -1
+  /// Byte index of the last occurrence of `part`, or null when there is
+  /// none (D165).
+  public const fun lastIndexOf(part: string): i64? {
+    var last: i64? = null
     var at = this.indexOf(part)
-    loop (at >= 0) {
+    loop (at != null) {
       last = at
       at = this.indexOf(part, from: at + 1)
     }
@@ -83,8 +88,7 @@ extend string {
   /// not occur: `"key=a=b".splitOnce("=")` is `("key", "a=b")`. An empty
   /// `sep` splits before the first character: `("", text)`.
   public const fun splitOnce(sep: string): (string, string)? {
-    val at = this.indexOf(sep)
-    if (at < 0) return null
+    val at = this.indexOf(sep) ?: return null
     val before = this.substring(0, at) ?: panic("splitOnce: indexOf found sep inside the text")
     val after = this.substring(at + sep.len(), this.len()) ?: panic("splitOnce: indexOf found sep inside the text")
     (before, after)

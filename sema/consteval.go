@@ -288,6 +288,10 @@ func (ev *constEval) expr(e Expr) ConstVal {
 		return &CUnit{}
 	case *NullConst:
 		return &CNull{e.Type().(*types.Nullable)}
+	case *Zero:
+		// a field the `init` block assigns before anything reads it (D23):
+		// a placeholder its assignment replaces
+		return &CUnit{}
 	case *VarRef:
 		return ev.varRef(e)
 	case *Binary:

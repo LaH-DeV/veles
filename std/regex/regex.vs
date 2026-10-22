@@ -213,13 +213,13 @@ fun expand(m: Match, template: string): string {
     val b = template.byteAt(i)
     // what follows a `$`; 0 where this byte is no `$` or ends the template
     val after: u8 = if (b == '$' && i + 1 < template.len()) template.byteAt(i + 1) else 0
-    val close = if (after == '{') template.indexOf("}", i + 2) else -1
+    val close = if (after == '{') template.indexOf("}", i + 2) else null
     when {
       after == '$'         => {
         out.appendByte('$')
         i += 2
       }
-      close >= 0           => {
+      close != null        => {
         out.append(referenced(m, template.slice(i + 2, close)))
         i = close + 1
       }
@@ -277,7 +277,7 @@ public const fun validate(pattern: string, flags: string): string {
 }
 
 const fun flagsOf(flags: string): Flags =>
-  Flags(ignoreCase: flags.indexOf("i") >= 0, multiLine: flags.indexOf("m") >= 0, dotAll: flags.indexOf("s") >= 0, extended: flags.indexOf("x") >= 0, unicode: flags.indexOf("u") >= 0)
+  Flags(ignoreCase: flags.contains("i"), multiLine: flags.contains("m"), dotAll: flags.contains("s"), extended: flags.contains("x"), unicode: flags.contains("u"))
 
 /// Literals already compiled, by flags and pattern: `/…/` in a loop compiles
 /// once, not on every pass.
@@ -294,7 +294,7 @@ public fun literal(pattern: string, flags: string): Regex {
   val key = flags + "/" + pattern
   val known = literals.withLock(l => l.entries.get(key))
   if (known != null) return known
-  val made = Regex.compile(pattern, ignoreCase: flags.indexOf("i") >= 0, multiLine: flags.indexOf("m") >= 0, dotAll: flags.indexOf("s") >= 0, extended: flags.indexOf("x") >= 0, unicode: flags.indexOf("u") >= 0) catch (e) {
+  val made = Regex.compile(pattern, ignoreCase: flags.contains("i"), multiLine: flags.contains("m"), dotAll: flags.contains("s"), extended: flags.contains("x"), unicode: flags.contains("u")) catch (e) {
     panic("regex literal /$pattern/$flags: ${e.message}")
   }
   literals.withLock(l => l.entries.set(key, made))

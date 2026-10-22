@@ -310,7 +310,7 @@ struct Row {
 
 fun main() {
   val sorted = [10, 20, 20, 30]
-  // the first of the two 20s, and -1 for a value that is not there
+  // the first of the two 20s, and null for a value that is not there
   io.println("${sorted.binarySearch(20)} ${sorted.binarySearch(25)}")
   // where 20 begins and where it ends: it occurs 3 - 1 = 2 times
   io.println("${sorted.lowerBound(20)} ${sorted.upperBound(20)}")
@@ -324,10 +324,10 @@ fun main() {
 
 Output:
 ```text
-1 -1
+1 null
 1 3
 3
-1 -1
+1 null
 ```
 
 None of them checks that the list is sorted, because checking is the linear

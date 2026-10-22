@@ -355,10 +355,15 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type, sc *scope) {
 					add(fld.Name.Name, ciField, tt.String()+"."+fld.Name.Name+": "+ast.TypeString(fld.Type))
 				}
 			}
+			hasCopy := false
 			for _, mth := range d.Methods {
+				hasCopy = hasCopy || mth.Name.Name == "copy"
 				if !mth.Static && sc.allows(d.Name.Name, ownerMod, mth.Pub, mth.Private) {
 					add(mth.Name.Name, ciMethod, tt.Name+"."+mth.Name.Name+funSignature(mth))
 				}
+			}
+			if detail := copyDetail(tt, d, hasCopy, func(f *ast.Field) bool { return sc.allows(d.Name.Name, ownerMod, f.Pub, f.Private) }); detail != "" {
+				add("copy", ciMethod, detail)
 			}
 			if d.Variant != nil {
 				s.addTraitMethods(add, a, typeHeadName(d.Variant))
@@ -510,6 +515,34 @@ func typeHeads(t types.Type) map[string]bool {
 		}
 	}
 	return heads
+}
+
+// copyDetail is the completion detail of the generated `copy` (D164) on a
+// value of type st declared by d — `Point.copy(x: i64 = this.x, …): Point`,
+// the fields the cursor may change — or "" when st has none: an extern
+// union, a hand-written `copy` or a field named so, an `init` with
+// parameters (refused).
+func copyDetail(st *types.Struct, d *ast.StructDecl, hasCopy bool, allows func(*ast.Field) bool) string {
+	if hasCopy || d.Union || len(d.InitParams) > 0 {
+		return ""
+	}
+	var params []string
+	for _, fld := range d.Fields {
+		if fld.Name.Name == "copy" {
+			return ""
+		}
+		var ft *types.Field
+		for _, t := range st.Fields {
+			if t.Name == fld.Name.Name {
+				ft = t
+			}
+		}
+		if ft == nil || ft.Init || !allows(fld) {
+			continue
+		}
+		params = append(params, ft.Name+": "+ft.Type.String()+" = this."+ft.Name)
+	}
+	return st.String() + ".copy(" + strings.Join(params, ", ") + "): " + st.String()
 }
 
 func (s *Server) addTraitMethods(add adder, a *analysis, traitName string) {

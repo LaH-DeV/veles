@@ -485,7 +485,7 @@ opens them. Both kinds are called the same way.
 | `chars()` | `List<string>`, one string per code point |
 | `isEmpty()` | `bool` |
 | `startsWith(s)`, `endsWith(s)`, `contains(s)` | `bool` |
-| `indexOf(part, from: 0)`, `lastIndexOf(part)` | `i64` byte index, −1 if absent |
+| `indexOf(part, from: 0)`, `lastIndexOf(part)` | `i64?` byte index, null if absent (D165) |
 | `substring(from, to)` | `string?` — byte offsets; null if a boundary splits a character |
 | `byteAt(i)`, `bytes()` | `u8` (panics out of range), `List<u8>` |
 | `byteAtUnchecked(i)` | `u8`; only in `unsafe`, checked in a debug build only (D114) |
@@ -544,7 +544,7 @@ out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the s
 | `indices()` | `0..<len()`; in `loop (i in xs.indices())` each `xs.at(i)` is a `T` |
 | `atOrDefault(i, d)` | `T`; `at(i) ?: d` |
 | `len()`, `isEmpty()`, `lastIndex()` | `lastIndex` is `len() - 1`: −1 when empty |
-| `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64` (−1 if absent), `i64` |
+| `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64?` (null if absent, D165), `i64` |
 | `first()`, `last()`, `min()`, `max()` | `T?`; `min`/`max` need `Comparable` elements |
 | `take(n)`, `drop(n)`, `slice(from, to)` | new `List`, bounds clamped; on an immutable `List` a window onto the same storage, no copy (`toList()` detaches it), on a `MutableList` a copy (D196) |
 | `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)` | eager; return `List`. These and `any`, `all`, `find`, `count`, `indexOfFirst`, `mapNotNull`, `partition` are prelude Veles generic over what the function does: they throw what it throws (`xs.map(a => try parse(a))` is a `Result` until `try`) and suspend only when it suspends (D116) — `xs.map(x => fetch(x))` waits for each in turn |
@@ -555,7 +555,7 @@ out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the s
 | `enumerate()` | `List<(i64, T)>`: each element with its index, eager; `xs.iter().enumerate()` is the lazy form |
 | `sorted()`, `sortedDescending()`, `sortedBy(key)`, `sortedByDescending(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
 | `sortedWith(compare)`, `minWith(compare)`, `maxWith(compare)` | any order: `compare(a, b)` negative when `a` comes first; sorts are stable, O(n log n) |
-| `binarySearch(x)`, `binarySearchWith(compare)`, `binarySearchBy(key, target)` | `i64` index of the **first** match, −1 if absent, in O(log n). The list must already be in order; nothing checks, and a list that is not gives a wrong answer, never a panic. `compare(element)` says where the element sits relative to what is wanted |
+| `binarySearch(x)`, `binarySearchWith(compare)`, `binarySearchBy(key, target)` | `i64?` index of the **first** match, null if absent (D165), in O(log n). The list must already be in order; nothing checks, and a list that is not gives a wrong answer, never a panic. `compare(element)` says where the element sits relative to what is wanted |
 | `lowerBound(x)`, `upperBound(x)`, `partitionPoint(pred)` | `i64` insertion points: first index not less than `x`, first greater than `x`, and the general form — the first index where `pred` stops holding. `upperBound − lowerBound` is how many times `x` occurs |
 | `minBy(key)`, `maxBy(key)`, `distinctBy(key)` | `T?`, `T?`, `List<T>`; by a `Comparable` (or, for `distinctBy`, hashable) key |
 | `sum()` | `List<i64>` and `List<f64>` only |

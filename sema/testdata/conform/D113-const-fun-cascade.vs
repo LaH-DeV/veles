@@ -2,7 +2,7 @@
 // mistake is; the constant that calls it fails silently with it (it once
 // added "this (*sema.UnitConst) is not a constant expression").
 const fun digit(c: string): i64 {
-  val n = "0123456789".indexOf(c) ?: -1 // error: '?:' needs a nullable left operand, found 'i64'
+  val n = "0123456789".len() ?: -1 // error: '?:' needs a nullable left operand, found 'i64'
   n
 }
 

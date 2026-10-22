@@ -168,7 +168,9 @@ fun durations() throws EncodeError | DecodeError {
     loop (d in ds) {
       val text = try json.encode(Job(name: "x", timeout: d), o)
       val back = try json.decode<Job>(text, o)
-      line += " ${text.substring(text.indexOf("\"timeout\":") + 10, text.len() - 1) ?: "?"}${if (back.timeout == d) "" else " (read back as ${back.timeout})"}"
+      val at = text.indexOf("\"timeout\":")
+      val shown = if (at == null) "?" else text.substring(at + 10, text.len() - 1) ?: "?"
+      line += " $shown${if (back.timeout == d) "" else " (read back as ${back.timeout})"}"
     }
     println(line)
   }

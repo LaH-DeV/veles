@@ -667,8 +667,7 @@ constant, and lists the calls that led to the panic, innermost first:
 ```veles
 // fragment
 const fun digit(c: string): i64 {
-  val n = "0123456789".indexOf(c)
-  if (n < 0) panic("'$c' is not a digit")
+  val n = "0123456789".indexOf(c) ?: panic("'$c' is not a digit")
   n
 }
 
@@ -682,10 +681,10 @@ const PORT: i64 = parsePort("80a0")
 ```
 
 ```text
-app\main.vs:13:19: error: panic in a constant: 'a' is not a digit
-  at app\main.vs:3:14
-  in const fun 'digit', called at app\main.vs:9:49
-  in const fun 'parsePort', called at app\main.vs:13:19
+app\main.vs:12:19: error: panic in a constant: 'a' is not a digit
+  at app\main.vs:2:38
+  in const fun 'digit', called at app\main.vs:8:49
+  in const fun 'parsePort', called at app\main.vs:12:19
   const PORT: i64 = parsePort("80a0")
                     ^^^^^^^^^^^^^^^^^
 ```

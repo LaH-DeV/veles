@@ -73,7 +73,7 @@ var builtinDocs = []BuiltinDoc{
 	{"List", "first", "(): T?", "The first element, or `null` when empty."},
 	{"List", "last", "(): T?", "The last element, or `null` when empty."},
 	{"List", "contains", "(x: T): bool", "True when some element equals `x`."},
-	{"List", "indexOf", "(x: T): i64", "Index of the first element equal to `x`, or -1."},
+	{"List", "indexOf", "(x: T): i64?", "Index of the first element equal to `x`, or null when there is none (D165)."},
 	{"List", "filterIs", "<V>(): List<V>", "On a list of a sealed type: the elements that are the variant `V`, typed as `V` — `shapes.filterIs<Circle>()`. What `filter(s => s is Circle)` cannot promise, the type argument does."},
 	{"List", "sorted", "(): List<T>", "A sorted copy, stable, O(n log n) (elements must be numbers, strings, tuples of those, or `Comparable`)."},
 	{"List", "sortedBy", "<K>(key: fun(T): K): List<T>", "A copy sorted by `key(x)`; a tuple key sorts on several fields: `sortedBy(e => (-e.size, e.name))`."},
