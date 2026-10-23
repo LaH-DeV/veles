@@ -646,3 +646,16 @@ func TestSealedTraitShapeFirst(t *testing.T) {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// D166: labels in tuple types and literals print as written; a literal
+// broken over lines keeps its breaks like an argument list; a labelled
+// one-element tuple needs no trailing comma.
+func TestLabelledTupleRoundTrips(t *testing.T) {
+	src := "fun divide(a: i64, b: i64): (quotient: i64, remainder: i64) => (quotient: a / b, remainder: a % b)\n\n" +
+		"fun one(): (only: i64) => (only: 1)\n\n" +
+		"fun f(): List<(key: string, value: i64)> {\n  val e = (\n    key: \"a\",\n    value: 1,\n  )\n  [e]\n}\n"
+	out := checkRoundTrip(t, "labels.vs", src)
+	if out != src {
+		t.Errorf("labelled tuples changed:\n%s\n--- want ---\n%s", out, src)
+	}
+}

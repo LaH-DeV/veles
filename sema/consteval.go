@@ -1278,11 +1278,28 @@ func (ev *constEval) text(v ConstVal, t types.Type) string {
 	case *CNull:
 		return "null"
 	case *CSome:
+		if n, ok := types.Unaliased(t, false).(*types.Nullable); ok {
+			return ev.text(v.V, n.Elem)
+		}
 		return ev.text(v.V, v.T.Elem)
 	case *CTuple:
-		return join("(", ")", len(v.Elems), func(i int) string { return ev.text(v.Elems[i], v.T.Elems[i]) })
+		// the labels are the static type's, as at run time (D166)
+		tt, _ := types.Unaliased(t, false).(*types.Tuple)
+		if tt == nil || len(tt.Elems) != len(v.Elems) {
+			tt = v.T
+		}
+		return join("(", ")", len(v.Elems), func(i int) string {
+			if tt.Labels != nil {
+				return tt.Labels[i] + ": " + ev.text(v.Elems[i], tt.Elems[i])
+			}
+			return ev.text(v.Elems[i], tt.Elems[i])
+		})
 	case *CList:
-		return join("[", "]", len(v.Elems), func(i int) string { return ev.text(v.Elems[i], v.T.Elem) })
+		elem := v.T.Elem
+		if lt, ok := types.Unaliased(t, false).(*types.List); ok {
+			elem = lt.Elem
+		}
+		return join("[", "]", len(v.Elems), func(i int) string { return ev.text(v.Elems[i], elem) })
 	case *CArray:
 		return join("[", "]", len(v.Elems), func(i int) string { return ev.text(v.Elems[i], v.T.Elem) })
 	case *CSet:

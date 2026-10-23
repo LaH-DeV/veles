@@ -23,7 +23,7 @@ var stackOps = map[string][]int{
 	"list.len": {0}, "list.get": {0}, "list.ref": {0}, "list.refUnchecked": {0},
 	"list.push": {0}, "list.pop": {0}, "list.clear": {0}, "list.reserve": {0},
 	"list.copy": {0}, "list.slice": {0}, "list.touch": {0}, "list.mods": {0}, "list.checkMods": {0},
-	"list.joinText": {0}, "list.appendText": {0}, "list.sortedNative": {0}, "list.toArray": {0}, "list.rawData": {0},
+	"list.joinText": {0}, "list.appendText": {0}, "list.move": {0}, "list.sortedNative": {0}, "list.toArray": {0}, "list.rawData": {0},
 	"list.addAll":   {0, 1},
 	"list.isFrozen": {0}, "map.isFrozen": {0},
 	"map.len": {0}, "map.get": {0}, "map.ref": {0}, "map.refOrPanic": {0}, "map.contains": {0},

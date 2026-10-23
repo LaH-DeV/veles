@@ -65,7 +65,7 @@ func (f *fnCtx) coalesceOf(l ast.Expr, r ast.Expr, h *ast.Handler, pos source.Sp
 		f.checkFallbackLoosely(r)
 		return bad()
 	}
-	okT := rs.TypeArgs[0]
+	okT := okType(lv, rs)
 	tmp := f.newTemp(lt)
 	okV, errV := rs.Variants[0], rs.Variants[1]
 	l2 := lv

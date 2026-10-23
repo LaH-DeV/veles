@@ -65,6 +65,9 @@ func golden(t *testing.T, dir string, release bool, irFile, outFile string, clan
 	if len(diags.Items) > 0 || prog == nil {
 		t.Fatalf("a fixture must check without diagnostics:\n%s", diags.Render())
 	}
+	// the debuginfo fixture shows what a debug build adds (plan S8); the
+	// others leave it out, so their IR reads without it
+	prog.DebugInfo = !release && filepath.Base(dir) == "debuginfo"
 	compare(t, filepath.Join(dir, irFile), ModuleIR(llvm.Generate(prog), "main"))
 
 	if clangErr != nil {
@@ -166,6 +169,53 @@ func ModuleIR(ir, module string) string {
 		for _, ref := range order {
 			b.WriteString(renamed[ref] + " = " + strDefs[ref] + "\n")
 		}
+	}
+	return debugMetadata(b.String(), lines)
+}
+
+var (
+	mdRef  = regexp.MustCompile(`!([0-9]+)\b`)
+	mdDef  = regexp.MustCompile(`^!([0-9]+) = (.*)$`)
+	mdPath = regexp.MustCompile(`directory: "[^"]*"`)
+)
+
+// debugMetadata renumbers the debug metadata the kept text refers to (plan
+// S8) in order of first use, appends the definitions it reaches, and hides
+// the directory a file was compiled in: the same fixture gives the same
+// text on every machine.
+func debugMetadata(text string, all []string) string {
+	defs := map[string]string{}
+	for _, l := range all {
+		if m := mdDef.FindStringSubmatch(l); m != nil {
+			defs[m[1]] = m[2]
+		}
+	}
+	if len(defs) == 0 {
+		return text
+	}
+	renamed := map[string]string{}
+	var order []string
+	rename := func(s string) string {
+		return mdRef.ReplaceAllStringFunc(s, func(ref string) string {
+			n := ref[1:]
+			if _, ok := defs[n]; !ok {
+				return ref
+			}
+			if r, ok := renamed[n]; ok {
+				return r
+			}
+			r := "!" + strconv.Itoa(len(order))
+			renamed[n] = r
+			order = append(order, n)
+			return r
+		})
+	}
+	text = rename(text)
+	var b strings.Builder
+	b.WriteString(text)
+	b.WriteString("\n")
+	for i := 0; i < len(order); i++ { // a definition may name more nodes
+		b.WriteString(renamed[order[i]] + " = " + mdPath.ReplaceAllString(rename(defs[order[i]]), `directory: "<dir>"`) + "\n")
 	}
 	return b.String()
 }

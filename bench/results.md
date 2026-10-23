@@ -508,3 +508,64 @@ Build time, `veles build --timings` (`-O0 -g`, runtime objects cached), three ru
 Wall time of `go test -count=1 ./docs ./examples`: 59 s before, 32 s after (docs 57 → 29 s,
 examples 45 → 25 s). In the full `go test ./...` on Windows, `driver` went from 586 s
 (2026-10-22) to 325 s.
+
+## 2026-10-23 02:31 — go1.23.2, windows/amd64 (HEAD f1461d8, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| awaitall | 50000 | 44.77ms | 62.89ms | 0.7× |
+| awaitscope | 50000 | 41.66ms | 62.78ms | 0.7× |
+
+New (F19): `awaitall` joins two inline launches with `awaitAll`, `awaitscope` the
+same pairs in a `scope` with two handles. Four runs: 40.6–44.8 ms against
+41.0–41.7 ms — the same cost; Go's two goroutines and a WaitGroup 63 ms.
+
+## 2026-10-23 03:04 — go1.23.2, windows/amd64 (HEAD f1461d8, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| parse | 155 | 90.94ms | 54.91ms | 1.7× |
+
+New (plan S7): `parse` is the self-hosted lexer and parser (`selfhost --bench-parse std`)
+against the Go front end over std's 155 files. It started at 164 ms (3.0×); three changes
+brought it to 85–91 ms (1.5–1.7×): `byteAt` compiled inline instead of a runtime call
+(150 ms; also `lexer` 85 → 53 ms), the allocator no longer clears memory that is still
+zero from the OS (130 ms; most benchmarks gain a little), and the self-hosted `Span`
+holds its file behind a pointer instead of a copy per node (84 ms). The rest of the gap
+is mostly the size of a sealed value: `ast.Expr` is an inline union of 180 bytes,
+`Decl` 348 — a question about D12 put to the user.
+
+## 2026-10-23 03:40 — go1.23.2, windows/amd64 (HEAD f1461d8, plus the working tree)
+
+The whole suite after `byteAt` inline and the allocator change (before the `Span` change, so
+`parse` reads 135 ms here). Against the 00:13 run: lexer 85 → 53 ms, adapters 57 → 48, emit
+82 → 67, strings 74 → 54, sort 60 → 39, gunzip 91 → 73, spawn 50 → 37; the rest within noise
+(`gcpause`'s longest pause read 2.17 ms once, 1.22–1.29 ms on three reruns).
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| adapters | 24000000 | 47.66ms | 31.34ms | 1.5× |
+| ast | 861841 | 36.25ms | 38.44ms | 0.9× |
+| awaitall | 50000 | 40.3ms | 61.09ms | 0.7× |
+| awaitscope | 50000 | 40.78ms | 61.22ms | 0.7× |
+| channels | 200000 | 5.13ms | 11.8ms | 0.4× |
+| emit | 1000000 | 66.87ms | 54.35ms | 1.2× |
+| emptycoll | 2000000 | 20.56ms | 16.68ms | 1.2× |
+| gcpause | 20000000 | 412.45ms | 378.69ms | 1.1× |
+| gunzip | 16777232 | 73.04ms | 57.84ms | 1.3× |
+| gzip | 2097154 | 129.29ms | 116.52ms | 1.1× |
+| httphello | 16000 | 191.65ms | 427.8ms | 0.4× |
+| idle | 100000 | 86.45ms | 339.93ms | 0.3× |
+| intern | 1000000 | 48.77ms | 36ms | 1.4× |
+| json | 40000 | 46.5ms | 53.76ms | 0.9× |
+| lexer | 2100000 | 52.72ms | 80.92ms | 0.7× |
+| maps | 2000000 | 64.18ms | 76.31ms | 0.8× |
+| parallel | 64 | 4.46ms | 12.83ms | 0.3× |
+| parse | 155 | 134.93ms | 73.8ms | 1.8× |
+| pipes | 1600000 | 23.88ms | 71.3ms | 0.3× |
+| sha256 | 16 | 57.77ms | 7.4ms | 7.8× |
+| sort | 900000 | 38.82ms | 50.45ms | 0.8× |
+| spawn | 100000 | 37.04ms | 33.41ms | 1.1× |
+| strings | 1000000 | 53.57ms | 49.44ms | 1.1× |
+| suscall | 10000000 | 118.57ms | 5.87ms | 20.2× |
+| trees | 14592688 | 171.71ms | 305.08ms | 0.6× |

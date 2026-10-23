@@ -73,9 +73,12 @@ type ResolvedType struct {
 }
 
 // TupleType is `(A, B)`. The empty tuple `()` is the unit type.
+// `(key: K, value: V)` labels every element (D166); Labels is nil when none
+// is labelled.
 type TupleType struct {
-	Elems []Type
-	Pos   source.Span
+	Elems  []Type
+	Labels []Ident
+	Pos    source.Span
 }
 
 // FunType is `fun(A, B): R suspends throws E` (D40), or `sendable fun(...)`:
@@ -957,9 +960,12 @@ type LambdaExpr struct {
 	Pos    source.Span
 }
 
+// TupleExpr is `(a, b)`; `(key: k, value: v)` labels every element (D166),
+// Labels nil when none is labelled.
 type TupleExpr struct {
-	Elems []Expr
-	Pos   source.Span
+	Elems  []Expr
+	Labels []Ident
+	Pos    source.Span
 }
 
 // ListLit is `[a, b]`; `mut [a, b]` asks for a MutableList (D25 sugar).

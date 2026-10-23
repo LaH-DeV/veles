@@ -41,7 +41,7 @@ fun main() {
     }
   }
   io.println("lines that are not log lines: $skipped")
-  loop ((part, count) in errors.entries().sortedBy(e => e.0)) {
+  loop ((part, count) in errors.entries().sortedBy(e => e.key)) {
     io.println("errors in $part: $count")
   }
   io.println("slowest: ${slowest}ms")

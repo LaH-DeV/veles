@@ -220,7 +220,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 			if l.retType == nil {
 				l.retType = body.Value.Type()
 			}
-			body.Stmts = append(body.Stmts, &Return{Value: body.Value})
+			body.Stmts = append(body.Stmts, &Return{Value: body.Value, Pos: body.ValuePos})
 			body.Value = nil
 		} else if l.retType == nil {
 			if types.IsNever(body.Type) && l.inferredRet != nil {
@@ -233,6 +233,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 		}
 	} else {
 		var x Expr
+		exprBodySpan := e.Body.Span()
 		if l.retType != nil {
 			x = l.checkExprTo(e.Body, l.retType)
 		} else {
@@ -243,9 +244,9 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 			}
 		}
 		if types.IsUnit(l.retType) {
-			body = &Block{Stmts: []Stmt{&ExprStmt{X: x}}, Type: types.TUnit}
+			body = &Block{Stmts: []Stmt{&ExprStmt{X: x, Pos: exprBodySpan}}, Type: types.TUnit}
 		} else {
-			body = &Block{Stmts: []Stmt{&Return{Value: x}}, Type: types.TNever}
+			body = &Block{Stmts: []Stmt{&Return{Value: x, Pos: exprBodySpan}}, Type: types.TNever}
 		}
 	}
 	if tupleAdapt {

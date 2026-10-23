@@ -20,7 +20,7 @@ public trait Iterator {
   fun filter(f: fun(Item): bool): FilterIter<This>
   fun take(n: i64): TakeIter<This>
   fun skip(n: i64): SkipIter<This>
-  fun enumerate(): EnumerateIter<This>        // yields (i64, Item)
+  fun enumerate(): EnumerateIter<This>        // yields (index: i64, value: Item)
   fun zip<J: Iterator>(other: J): ZipIter<This, J>   // yields (Item, J.Item)
   // up to `workers` calls of f under way, results in order as asked for;
   // holds tasks: a loop over it (or a `with`) owns them (D156)
@@ -491,7 +491,7 @@ opens them. Both kinds are called the same way.
 | `byteAtUnchecked(i)` | `u8`; only in `unsafe`, checked in a debug build only (D114) |
 | `trim()`, `trimStart()`, `trimEnd()` | ASCII whitespace removed |
 | `split(sep)`, `lines()` | `List<string>`; `lines` drops `\r` and a final empty line |
-| `splitOnce(sep)` | `(string, string)?`: the text before and after the first `sep`, or `null` when it does not occur — `val (k, v) = line.splitOnce("=") ?: return` |
+| `splitOnce(sep)` | `(before: string, after: string)?`: the text before and after the first `sep`, or `null` when it does not occur — `val (k, v) = line.splitOnce("=") ?: return` |
 | `replace(old, new)`, `repeat(n)` | `string` |
 | `toUpper()`, `toLower()` | ASCII letters only |
 | `padStart(width, pad: " ")`, `padEnd(width, pad: " ")` | `string` |
@@ -552,7 +552,7 @@ out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the s
 | `filterIs<V>()`, `filterNotNull()` | on a list of a sealed type: the elements of variant `V` as `List<V>`; on `List<T?>`: the present ones as `List<T>` |
 | `any(p)`, `all(p)`, `find(p)` | |
 | `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()` | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>` |
-| `enumerate()` | `List<(i64, T)>`: each element with its index, eager; `xs.iter().enumerate()` is the lazy form |
+| `enumerate()` | `List<(index: i64, value: T)>`: each element with its index, eager; `xs.iter().enumerate()` is the lazy form |
 | `sorted()`, `sortedDescending()`, `sortedBy(key)`, `sortedByDescending(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
 | `sortedWith(compare)`, `minWith(compare)`, `maxWith(compare)` | any order: `compare(a, b)` negative when `a` comes first; sorts are stable, O(n log n) |
 | `binarySearch(x)`, `binarySearchWith(compare)`, `binarySearchBy(key, target)` | `i64?` index of the **first** match, null if absent (D165), in O(log n). The list must already be in order; nothing checks, and a list that is not gives a wrong answer, never a panic. `compare(element)` says where the element sits relative to what is wanted |
@@ -595,7 +595,7 @@ one the compiler can run.
 | `getOrDefault(k, d)` | `V`: `get(k) ?: d`. A copy of the value. Where a key must be there, say why: `m.get(k) ?: panic("…")` |
 | `ref(k)` | `(*V)?`: a pointer to the stored value (`MutableMap` only): `m.ref(k)?.bump()`, `m.ref(k)?.n += 1`; `loop ((k, &v) in m)` visits every value by reference |
 | `containsKey(k)`, `len()`, `isEmpty()` | |
-| `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(K, V)>` in insertion order |
+| `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(key: K, value: V)>` in insertion order |
 | `toMap()`, `toMutable()` | copies |
 | `set(k, v)`, `remove(k): bool`, `clear()`, `reserve(n)` | `MutableMap` only; after `reserve(n)` inserting up to `n` entries never grows or rehashes (D105) |
 | `forEach((k, v) => ...)`, `mapValues(v => ...)`, `filter((k, v) => ...)` | iterate over the entries as they were when the call starts; new `Map`. Prelude Veles: they throw and suspend as the function does (D116) |

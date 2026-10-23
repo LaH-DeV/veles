@@ -110,18 +110,12 @@ fun newChecks(): Mutex<MutableList<Check>> {
 
 // every check, concurrently, each in a task of its own that cannot fail the
 // others: the outcome of each, in order
-fun runAll(checks: List<Check>): List<string?> suspends {
-  val outcomes: MutableList<string?> = []
-  scope {
-    val tasks: MutableList<Task<string?>> = []
-    loop (c in checks) {
-      tasks.push(async probe(c))
-    }
-    loop (t in tasks) {
-      outcomes.push(await t)
-    }
+fun runAll(checks: List<Check>): List<string?> suspends => scope {
+  val tasks: MutableList<Task<string?>> = []
+  loop (c in checks) {
+    tasks.push(async probe(c))
   }
-  outcomes
+  awaitAll(tasks)
 }
 
 // one check behind the same boundary a handler has: a panic is a failure

@@ -17,6 +17,13 @@ import (
 type gen struct {
 	prog *sema.Program
 
+	// debug information (debug.go, plan S8): nil when the build wants none;
+	// dbgSP is the subprogram of the function being emitted (-1: none) and
+	// dbgLoc the `!dbg` its next instruction carries
+	dbg    *debugInfo
+	dbgSP  int
+	dbgLoc string
+
 	// in a coroutine's body: a temporary's life starts where it is made
 	// (alloca), so the frame keeps only what lives across a suspension
 	markLifetimes bool
@@ -130,6 +137,13 @@ func Generate(prog *sema.Program) string {
 		consts:        map[sema.ConstVal]string{},
 		emptyShared:   map[string]string{},
 	}
+	g.dbgSP = -1
+	if prog.DebugInfo {
+		g.dbg = newDebugInfo()
+		if prog.Main != nil && prog.Main.Span.IsValid() {
+			g.dbg.file(prog.Main.Span.File) // the compile unit is the program's main file
+		}
+	}
 	g.typeDecls[strType] = "{ ptr, i64 }"
 	g.typeOrder = append(g.typeOrder, strType)
 
@@ -192,7 +206,14 @@ func Generate(prog *sema.Program) string {
 	sb.WriteString(out)
 	sb.WriteString(helpers)
 	sb.WriteString(g.referencedHeld(out + helpers))
-	return pruneModule(sb.String())
+	if g.dbg == nil {
+		return pruneModule(sb.String())
+	}
+	sb.WriteString("declare void @llvm.dbg.declare(metadata, metadata, metadata)\n")
+	ir := pruneModule(sb.String())
+	var md strings.Builder
+	g.dbg.write(&md)
+	return ir + md.String()
 }
 
 var declRe = regexp.MustCompile(`declare [^@]+@([A-Za-z0-9_.]+)[(]`)
@@ -251,6 +272,7 @@ declare i64 @veles_i64_format(ptr, i64)
 declare i64 @veles_u64_format(ptr, i64)
 declare void @veles_string_concat_n(ptr, ptr, i64)
 declare void @veles_list_append_bytes(ptr, ptr, i64)
+declare void @veles_list_move(ptr, i64, i64, i64)
 declare void @veles_string_join(ptr, ptr, ptr, i64)
 declare void @veles_list_sort_native(ptr, i32)
 declare void @veles_f64_to_string(ptr, double)
@@ -449,6 +471,7 @@ func (g *gen) emit(format string, args ...any) {
 	}
 	g.body.WriteString("  ")
 	fmt.Fprintf(&g.body, format, args...)
+	g.body.WriteString(g.dbgLoc)
 	g.body.WriteString("\n")
 }
 
@@ -574,6 +597,7 @@ func (g *gen) where(span source.Span) string {
 
 func (g *gen) resetFn(fn *sema.Func) {
 	g.fn = fn
+	g.dbgSP, g.dbgLoc = -1, ""
 	g.body.Reset()
 	g.allocas.Reset()
 	g.tmp = 0
@@ -711,6 +735,7 @@ func cArgExt(t types.Type) string {
 func (g *gen) function(fn *sema.Func) {
 	source.SetWhere("generating code for", fn.Display, fn.Span)
 	g.resetFn(fn)
+	g.debugFunction(fn)
 	if fn.Sig.Effects.Throws {
 		g.fnResult = g.prog.ResultType(fn.Sig.Ret, fn.Sig.Effects.Error)
 	}
@@ -773,6 +798,16 @@ func (g *gen) function(fn *sema.Func) {
 	if fn.CallerLoc {
 		params = append(params, strType+" %callerloc") // D88: the site this call was made from
 	}
+	if g.dbgSP >= 0 {
+		first := 1
+		if fn.Receiver != nil {
+			g.debugParam(fn.Receiver, 1)
+			first = 2
+		}
+		for i, p := range fn.Params {
+			g.debugParam(p, i+first)
+		}
+	}
 	if fn.Suspends {
 		g.coroPrologue()
 		g.markLifetimes = true
@@ -808,7 +843,7 @@ func (g *gen) function(fn *sema.Func) {
 		// something calls it, since every plain call uses `.plain`
 		out = &held
 	}
-	fmt.Fprintf(out, "define %s @%s(%s)%s {\nentry:\n", g.retLL(fn), fn.Name, strings.Join(params, ", "), attrs)
+	fmt.Fprintf(out, "define %s @%s(%s)%s%s {\nentry:\n", g.retLL(fn), fn.Name, strings.Join(params, ", "), attrs, g.debugDefine())
 	out.WriteString(g.allocas.String())
 	for _, p := range prologue {
 		out.WriteString(p + "\n")
@@ -874,7 +909,11 @@ func (g *gen) declareVar(v *sema.Var) string {
 	if v.AddrTaken && !v.IsGlobal && !v.Captured {
 		cell := g.gcAlloc(v.Type)
 		g.emit("store ptr %s, ptr %s", cell, st)
+		g.debugVar(v, st, 0, true)
 		return cell
+	}
+	if !v.IsGlobal && !v.Captured {
+		g.debugVar(v, st, 0, false)
 	}
 	return st
 }
@@ -890,6 +929,9 @@ func (g *gen) block(b *sema.Block) string {
 		}
 	}
 	if b.Value != nil {
+		if g.dbgSP >= 0 {
+			g.debugAt(b.ValuePos)
+		}
 		return g.expr(b.Value)
 	}
 	return zeroOf(b.Type)
@@ -900,6 +942,9 @@ func zeroOf(t types.Type) string {
 }
 
 func (g *gen) stmt(s sema.Stmt) {
+	if g.dbgSP >= 0 {
+		g.debugAt(stmtPos(s))
+	}
 	switch s := s.(type) {
 	case *sema.Block:
 		g.block(s)

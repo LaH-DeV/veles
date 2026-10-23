@@ -10,14 +10,14 @@ entry:
   %a16 = alloca %str
   %a19 = alloca %str
   %a25 = alloca [21 x i8]
-  %a34 = alloca [21 x i8]
-  %a41 = alloca %str
-  %a42 = alloca [15 x %str]
-  %a64 = alloca %str
-  %a76 = alloca %str
-  %a80 = alloca %str
-  %a81 = alloca [7 x %str]
-  %a94 = alloca %S.std.prelude.StringBuilder
+  %a36 = alloca [21 x i8]
+  %a43 = alloca %str
+  %a44 = alloca [15 x %str]
+  %a66 = alloca %str
+  %a78 = alloca %str
+  %a82 = alloca %str
+  %a83 = alloca [7 x %str]
+  %a96 = alloca %S.std.prelude.StringBuilder
   store %str { ptr @.str.1, i64 5 }, ptr %a1
   store i64 42, ptr %a2
   store double 0x4004000000000000, ptr %a3
@@ -47,125 +47,132 @@ entry:
   %t29 = load %str, ptr %a1
   %t30 = extractvalue %str %t29, 0
   %t31 = extractvalue %str %t29, 1
-  %t32 = call i8 @veles_string_byte_at(ptr %t30, i64 %t31, i64 0)
-  %t33 = zext i8 %t32 to i64
-  %t35 = call i64 @veles_u64_format(ptr %a34, i64 %t33)
-  %t36 = insertvalue %str undef, ptr %a34, 0
-  %t37 = insertvalue %str %t36, i64 %t35, 1
-  %t38 = extractvalue %str { ptr @.str.4, i64 21 }, 0
-  %t39 = extractvalue %str { ptr @.str.4, i64 21 }, 1
-  call void @veles_call_push(ptr %t38)
-  %t40 = call %str @v_std.prelude.extend.string.toUpper(ptr %a1)
+  %t32 = icmp ult i64 0, %t31
+  br i1 %t32, label %byte.ok.1, label %byte.bad.2, !prof !{!"branch_weights", i32 2000, i32 1}
+byte.bad.2:
+  call i8 @veles_string_byte_at(ptr %t30, i64 %t31, i64 0)
+  unreachable
+byte.ok.1:
+  %t33 = getelementptr inbounds i8, ptr %t30, i64 0
+  %t34 = load i8, ptr %t33
+  %t35 = zext i8 %t34 to i64
+  %t37 = call i64 @veles_u64_format(ptr %a36, i64 %t35)
+  %t38 = insertvalue %str undef, ptr %a36, 0
+  %t39 = insertvalue %str %t38, i64 %t37, 1
+  %t40 = extractvalue %str { ptr @.str.4, i64 21 }, 0
+  %t41 = extractvalue %str { ptr @.str.4, i64 21 }, 1
+  call void @veles_call_push(ptr %t40)
+  %t42 = call %str @v_std.prelude.extend.string.toUpper(ptr %a1)
   call void @veles_call_pop()
-  %t43 = getelementptr [15 x %str], ptr %a42, i64 0, i64 0
-  store %str %t9, ptr %t43
-  %t44 = getelementptr [15 x %str], ptr %a42, i64 0, i64 1
-  store %str { ptr @.str.5, i64 1 }, ptr %t44
-  %t45 = getelementptr [15 x %str], ptr %a42, i64 0, i64 2
-  store %str %t14, ptr %t45
-  %t46 = getelementptr [15 x %str], ptr %a42, i64 0, i64 3
+  %t45 = getelementptr [15 x %str], ptr %a44, i64 0, i64 0
+  store %str %t9, ptr %t45
+  %t46 = getelementptr [15 x %str], ptr %a44, i64 0, i64 1
   store %str { ptr @.str.5, i64 1 }, ptr %t46
-  %t47 = getelementptr [15 x %str], ptr %a42, i64 0, i64 4
-  store %str %t17, ptr %t47
-  %t48 = getelementptr [15 x %str], ptr %a42, i64 0, i64 5
+  %t47 = getelementptr [15 x %str], ptr %a44, i64 0, i64 2
+  store %str %t14, ptr %t47
+  %t48 = getelementptr [15 x %str], ptr %a44, i64 0, i64 3
   store %str { ptr @.str.5, i64 1 }, ptr %t48
-  %t49 = getelementptr [15 x %str], ptr %a42, i64 0, i64 6
-  store %str %t20, ptr %t49
-  %t50 = getelementptr [15 x %str], ptr %a42, i64 0, i64 7
+  %t49 = getelementptr [15 x %str], ptr %a44, i64 0, i64 4
+  store %str %t17, ptr %t49
+  %t50 = getelementptr [15 x %str], ptr %a44, i64 0, i64 5
   store %str { ptr @.str.5, i64 1 }, ptr %t50
-  %t51 = getelementptr [15 x %str], ptr %a42, i64 0, i64 8
-  store %str %t22, ptr %t51
-  %t52 = getelementptr [15 x %str], ptr %a42, i64 0, i64 9
+  %t51 = getelementptr [15 x %str], ptr %a44, i64 0, i64 6
+  store %str %t20, ptr %t51
+  %t52 = getelementptr [15 x %str], ptr %a44, i64 0, i64 7
   store %str { ptr @.str.5, i64 1 }, ptr %t52
-  %t53 = getelementptr [15 x %str], ptr %a42, i64 0, i64 10
-  store %str %t28, ptr %t53
-  %t54 = getelementptr [15 x %str], ptr %a42, i64 0, i64 11
+  %t53 = getelementptr [15 x %str], ptr %a44, i64 0, i64 8
+  store %str %t22, ptr %t53
+  %t54 = getelementptr [15 x %str], ptr %a44, i64 0, i64 9
   store %str { ptr @.str.5, i64 1 }, ptr %t54
-  %t55 = getelementptr [15 x %str], ptr %a42, i64 0, i64 12
-  store %str %t37, ptr %t55
-  %t56 = getelementptr [15 x %str], ptr %a42, i64 0, i64 13
+  %t55 = getelementptr [15 x %str], ptr %a44, i64 0, i64 10
+  store %str %t28, ptr %t55
+  %t56 = getelementptr [15 x %str], ptr %a44, i64 0, i64 11
   store %str { ptr @.str.5, i64 1 }, ptr %t56
-  %t57 = getelementptr [15 x %str], ptr %a42, i64 0, i64 14
-  store %str %t40, ptr %t57
-  call void @veles_string_concat_n(ptr %a41, ptr %a42, i64 15)
-  %t58 = load %str, ptr %a41
-  %t59 = extractvalue %str { ptr @.str.6, i64 20 }, 0
-  %t60 = extractvalue %str { ptr @.str.6, i64 20 }, 1
-  call void @veles_call_push(ptr %t59)
-  call void @v_std.io.println(%str %t58)
-  call void @veles_call_pop()
-  %t61 = extractvalue %str { ptr @.str.7, i64 18 }, 0
-  %t62 = extractvalue %str { ptr @.str.7, i64 18 }, 1
+  %t57 = getelementptr [15 x %str], ptr %a44, i64 0, i64 12
+  store %str %t39, ptr %t57
+  %t58 = getelementptr [15 x %str], ptr %a44, i64 0, i64 13
+  store %str { ptr @.str.5, i64 1 }, ptr %t58
+  %t59 = getelementptr [15 x %str], ptr %a44, i64 0, i64 14
+  store %str %t42, ptr %t59
+  call void @veles_string_concat_n(ptr %a43, ptr %a44, i64 15)
+  %t60 = load %str, ptr %a43
+  %t61 = extractvalue %str { ptr @.str.6, i64 20 }, 0
+  %t62 = extractvalue %str { ptr @.str.6, i64 20 }, 1
   call void @veles_call_push(ptr %t61)
-  %t63 = call %str @v_std.prelude.extend.string.trim(ptr %a8)
+  call void @v_std.io.println(%str %t60)
   call void @veles_call_pop()
-  store %str %t63, ptr %a64
-  %t65 = extractvalue %str { ptr @.str.8, i64 19 }, 0
-  %t66 = extractvalue %str { ptr @.str.8, i64 19 }, 1
-  call void @veles_call_push(ptr %t65)
-  %t67 = call ptr @v_std.prelude.extend.string.split(ptr %a64, %str { ptr @.str.9, i64 1 })
+  %t63 = extractvalue %str { ptr @.str.7, i64 18 }, 0
+  %t64 = extractvalue %str { ptr @.str.7, i64 18 }, 1
+  call void @veles_call_push(ptr %t63)
+  %t65 = call %str @v_std.prelude.extend.string.trim(ptr %a8)
   call void @veles_call_pop()
-  %t68 = call %str @show.List_string_(ptr %t67)
-  %t69 = extractvalue %str { ptr @.str.10, i64 21 }, 0
-  %t70 = extractvalue %str { ptr @.str.10, i64 21 }, 1
-  call void @veles_call_push(ptr %t69)
-  %t71 = call %str @v_std.prelude.extend.string.replace(ptr %a1, %str { ptr @.str.11, i64 1 }, %str { ptr @.str.12, i64 1 })
+  store %str %t65, ptr %a66
+  %t67 = extractvalue %str { ptr @.str.8, i64 19 }, 0
+  %t68 = extractvalue %str { ptr @.str.8, i64 19 }, 1
+  call void @veles_call_push(ptr %t67)
+  %t69 = call ptr @v_std.prelude.extend.string.split(ptr %a66, %str { ptr @.str.9, i64 1 })
   call void @veles_call_pop()
-  %t72 = extractvalue %str { ptr @.str.13, i64 21 }, 0
-  %t73 = extractvalue %str { ptr @.str.13, i64 21 }, 1
-  call void @veles_call_push(ptr %t72)
-  %t74 = call { i1, i64 } @v_std.prelude.extend.string.indexOf(ptr %a1, %str { ptr @.str.14, i64 1 }, i64 0)
+  %t70 = call %str @show.List_string_(ptr %t69)
+  %t71 = extractvalue %str { ptr @.str.10, i64 21 }, 0
+  %t72 = extractvalue %str { ptr @.str.10, i64 21 }, 1
+  call void @veles_call_push(ptr %t71)
+  %t73 = call %str @v_std.prelude.extend.string.replace(ptr %a1, %str { ptr @.str.11, i64 1 }, %str { ptr @.str.12, i64 1 })
   call void @veles_call_pop()
-  %t75 = call %str @show.T_i64_N({ i1, i64 } %t74)
-  store %str { ptr @.str.15, i64 2 }, ptr %a76
-  %t77 = extractvalue %str { ptr @.str.16, i64 20 }, 0
-  %t78 = extractvalue %str { ptr @.str.16, i64 20 }, 1
-  call void @veles_call_push(ptr %t77)
-  %t79 = call %str @v_std.prelude.extend.string.repeat(ptr %a76, i64 3)
+  %t74 = extractvalue %str { ptr @.str.13, i64 21 }, 0
+  %t75 = extractvalue %str { ptr @.str.13, i64 21 }, 1
+  call void @veles_call_push(ptr %t74)
+  %t76 = call { i1, i64 } @v_std.prelude.extend.string.indexOf(ptr %a1, %str { ptr @.str.14, i64 1 }, i64 0)
   call void @veles_call_pop()
-  %t82 = getelementptr [7 x %str], ptr %a81, i64 0, i64 0
-  store %str %t68, ptr %t82
-  %t83 = getelementptr [7 x %str], ptr %a81, i64 0, i64 1
-  store %str { ptr @.str.5, i64 1 }, ptr %t83
-  %t84 = getelementptr [7 x %str], ptr %a81, i64 0, i64 2
-  store %str %t71, ptr %t84
-  %t85 = getelementptr [7 x %str], ptr %a81, i64 0, i64 3
+  %t77 = call %str @show.T_i64_N({ i1, i64 } %t76)
+  store %str { ptr @.str.15, i64 2 }, ptr %a78
+  %t79 = extractvalue %str { ptr @.str.16, i64 20 }, 0
+  %t80 = extractvalue %str { ptr @.str.16, i64 20 }, 1
+  call void @veles_call_push(ptr %t79)
+  %t81 = call %str @v_std.prelude.extend.string.repeat(ptr %a78, i64 3)
+  call void @veles_call_pop()
+  %t84 = getelementptr [7 x %str], ptr %a83, i64 0, i64 0
+  store %str %t70, ptr %t84
+  %t85 = getelementptr [7 x %str], ptr %a83, i64 0, i64 1
   store %str { ptr @.str.5, i64 1 }, ptr %t85
-  %t86 = getelementptr [7 x %str], ptr %a81, i64 0, i64 4
-  store %str %t75, ptr %t86
-  %t87 = getelementptr [7 x %str], ptr %a81, i64 0, i64 5
+  %t86 = getelementptr [7 x %str], ptr %a83, i64 0, i64 2
+  store %str %t73, ptr %t86
+  %t87 = getelementptr [7 x %str], ptr %a83, i64 0, i64 3
   store %str { ptr @.str.5, i64 1 }, ptr %t87
-  %t88 = getelementptr [7 x %str], ptr %a81, i64 0, i64 6
-  store %str %t79, ptr %t88
-  call void @veles_string_concat_n_shared(ptr %a80, ptr %a81, i64 7)
-  %t89 = load %str, ptr %a80
-  %t90 = extractvalue %str { ptr @.str.17, i64 20 }, 0
-  %t91 = extractvalue %str { ptr @.str.17, i64 20 }, 1
-  call void @veles_call_push(ptr %t90)
-  call void @v_std.io.println(%str %t89)
+  %t88 = getelementptr [7 x %str], ptr %a83, i64 0, i64 4
+  store %str %t77, ptr %t88
+  %t89 = getelementptr [7 x %str], ptr %a83, i64 0, i64 5
+  store %str { ptr @.str.5, i64 1 }, ptr %t89
+  %t90 = getelementptr [7 x %str], ptr %a83, i64 0, i64 6
+  store %str %t81, ptr %t90
+  call void @veles_string_concat_n_shared(ptr %a82, ptr %a83, i64 7)
+  %t91 = load %str, ptr %a82
+  %t92 = extractvalue %str { ptr @.str.17, i64 20 }, 0
+  %t93 = extractvalue %str { ptr @.str.17, i64 20 }, 1
+  call void @veles_call_push(ptr %t92)
+  call void @v_std.io.println(%str %t91)
   call void @veles_call_pop()
-  %t92 = call ptr @veles_list_new(ptr @adesc.u8, i64 0)
-  %t93 = insertvalue %S.std.prelude.StringBuilder undef, ptr %t92, 0
-  store %S.std.prelude.StringBuilder %t93, ptr %a94
-  %t95 = extractvalue %str { ptr @.str.18, i64 19 }, 0
-  %t96 = extractvalue %str { ptr @.str.18, i64 19 }, 1
-  call void @veles_call_push(ptr %t95)
-  call void @v_std.prelude.StringBuilder.append(ptr %a94, %str { ptr @.str.19, i64 1 })
-  call void @veles_call_pop()
-  %t97 = extractvalue %str { ptr @.str.20, i64 23 }, 0
-  %t98 = extractvalue %str { ptr @.str.20, i64 23 }, 1
+  %t94 = call ptr @veles_list_new(ptr @adesc.u8, i64 0)
+  %t95 = insertvalue %S.std.prelude.StringBuilder undef, ptr %t94, 0
+  store %S.std.prelude.StringBuilder %t95, ptr %a96
+  %t97 = extractvalue %str { ptr @.str.18, i64 19 }, 0
+  %t98 = extractvalue %str { ptr @.str.18, i64 19 }, 1
   call void @veles_call_push(ptr %t97)
-  call void @v_std.prelude.StringBuilder.appendByte(ptr %a94, i8 121)
+  call void @v_std.prelude.StringBuilder.append(ptr %a96, %str { ptr @.str.19, i64 1 })
   call void @veles_call_pop()
-  %t99 = extractvalue %str { ptr @.str.21, i64 22 }, 0
-  %t100 = extractvalue %str { ptr @.str.21, i64 22 }, 1
+  %t99 = extractvalue %str { ptr @.str.20, i64 23 }, 0
+  %t100 = extractvalue %str { ptr @.str.20, i64 23 }, 1
   call void @veles_call_push(ptr %t99)
-  %t101 = call %str @v_std.prelude.StringBuilder.toString(ptr %a94)
+  call void @v_std.prelude.StringBuilder.appendByte(ptr %a96, i8 121)
   call void @veles_call_pop()
-  %t102 = extractvalue %str { ptr @.str.22, i64 20 }, 0
-  %t103 = extractvalue %str { ptr @.str.22, i64 20 }, 1
-  call void @veles_call_push(ptr %t102)
-  call void @v_std.io.println(%str %t101)
+  %t101 = extractvalue %str { ptr @.str.21, i64 22 }, 0
+  %t102 = extractvalue %str { ptr @.str.21, i64 22 }, 1
+  call void @veles_call_push(ptr %t101)
+  %t103 = call %str @v_std.prelude.StringBuilder.toString(ptr %a96)
+  call void @veles_call_pop()
+  %t104 = extractvalue %str { ptr @.str.22, i64 20 }, 0
+  %t105 = extractvalue %str { ptr @.str.22, i64 20 }, 1
+  call void @veles_call_push(ptr %t104)
+  call void @v_std.io.println(%str %t103)
   call void @veles_call_pop()
   ret void
 }

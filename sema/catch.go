@@ -190,7 +190,7 @@ func (f *fnCtx) catchExpr(e *ast.CatchExpr, want types.Type) Expr {
 // handler, on `Ok` the payload is the value.
 func (f *fnCtx) catchTry(x Expr, rs *types.Sealed) Expr {
 	fr := f.catching
-	okT, errT := rs.TypeArgs[0], rs.TypeArgs[1]
+	okT, errT := okType(x, rs), rs.TypeArgs[1]
 	fr.add(errT)
 	r := f.newTemp(rs)
 	okV, errV := rs.Variants[0], rs.Variants[1]

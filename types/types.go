@@ -171,7 +171,11 @@ func (n *Nullable) String() string {
 
 type Tuple struct {
 	Elems []Type
-	Alias string
+	// Labels names every element or is nil (D166). Labels are for reading
+	// and for display: Identical and Key ignore them, so a labelled tuple has
+	// the layout, equality and generic instance of the unlabelled one.
+	Labels []string
+	Alias  string
 }
 
 func (t *Tuple) String() string {
@@ -181,8 +185,185 @@ func (t *Tuple) String() string {
 	parts := make([]string, len(t.Elems))
 	for i, e := range t.Elems {
 		parts[i] = e.String()
+		if t.Labels != nil {
+			parts[i] = t.Labels[i] + ": " + parts[i]
+		}
 	}
 	return "(" + strings.Join(parts, ", ") + ")"
+}
+
+// Label returns the index of the element labelled name, or -1.
+func (t *Tuple) Label(name string) int {
+	for i, l := range t.Labels {
+		if l == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// LabelsDiffer reports whether a value of type have would change meaning as
+// a want (D166): somewhere both are tuples labelled differently — the
+// tuples themselves or ones inside them, element by element, in the same
+// position. An unlabelled side converts freely either way.
+func LabelsDiffer(have, want Type) bool {
+	switch w := want.(type) {
+	case *Tuple:
+		h, ok := have.(*Tuple)
+		if !ok || len(h.Elems) != len(w.Elems) {
+			return false
+		}
+		if h.Labels != nil && w.Labels != nil {
+			for i := range h.Labels {
+				if h.Labels[i] != w.Labels[i] {
+					return true
+				}
+			}
+		}
+		for i := range h.Elems {
+			if LabelsDiffer(h.Elems[i], w.Elems[i]) {
+				return true
+			}
+		}
+	case *Nullable:
+		if h, ok := have.(*Nullable); ok {
+			return LabelsDiffer(h.Elem, w.Elem)
+		}
+		return LabelsDiffer(have, w.Elem)
+	case *List:
+		h, ok := have.(*List)
+		return ok && LabelsDiffer(h.Elem, w.Elem)
+	case *Array:
+		h, ok := have.(*Array)
+		return ok && LabelsDiffer(h.Elem, w.Elem)
+	case *Set:
+		h, ok := have.(*Set)
+		return ok && LabelsDiffer(h.Elem, w.Elem)
+	case *Map:
+		h, ok := have.(*Map)
+		return ok && (LabelsDiffer(h.Key, w.Key) || LabelsDiffer(h.Value, w.Value))
+	case *Channel:
+		h, ok := have.(*Channel)
+		return ok && LabelsDiffer(h.Elem, w.Elem)
+	case *Task:
+		h, ok := have.(*Task)
+		return ok && LabelsDiffer(h.Result, w.Result)
+	case *Range:
+		h, ok := have.(*Range)
+		return ok && LabelsDiffer(h.Elem, w.Elem)
+	case *Func:
+		h, ok := have.(*Func)
+		if !ok || len(h.Params) != len(w.Params) {
+			return false
+		}
+		for i := range h.Params {
+			if LabelsDiffer(w.Params[i].Type, h.Params[i].Type) {
+				return true
+			}
+		}
+		return h.Ret != nil && w.Ret != nil && LabelsDiffer(h.Ret, w.Ret)
+	}
+	return false
+}
+
+// HasLabels reports whether a labelled tuple appears anywhere in t.
+func HasLabels(t Type) bool {
+	switch t := t.(type) {
+	case *Tuple:
+		if t.Labels != nil {
+			return true
+		}
+		for _, e := range t.Elems {
+			if HasLabels(e) {
+				return true
+			}
+		}
+	case *Nullable:
+		return HasLabels(t.Elem)
+	case *Pointer:
+		return HasLabels(t.Elem)
+	case *List:
+		return HasLabels(t.Elem)
+	case *Array:
+		return HasLabels(t.Elem)
+	case *Set:
+		return HasLabels(t.Elem)
+	case *Map:
+		return HasLabels(t.Key) || HasLabels(t.Value)
+	case *Channel:
+		return HasLabels(t.Elem)
+	case *Task:
+		return HasLabels(t.Result)
+	case *Range:
+		return HasLabels(t.Elem)
+	case *Func:
+		for _, p := range t.Params {
+			if HasLabels(p.Type) {
+				return true
+			}
+		}
+		return t.Ret != nil && HasLabels(t.Ret)
+	}
+	return false
+}
+
+// StripLabels returns t without tuple labels anywhere in it. A generic
+// instance is shared by every labelling of its type arguments (D166), so
+// what it holds is unlabelled: which labels it shows cannot depend on the
+// order the instances were asked for in.
+func StripLabels(t Type) Type {
+	if !HasLabels(t) {
+		return t
+	}
+	switch t := t.(type) {
+	case *Tuple:
+		out := make([]Type, len(t.Elems))
+		for i, e := range t.Elems {
+			out[i] = StripLabels(e)
+		}
+		return &Tuple{Elems: out, Alias: t.Alias}
+	case *Nullable:
+		return &Nullable{Elem: StripLabels(t.Elem), Alias: t.Alias}
+	case *Pointer:
+		return &Pointer{Elem: StripLabels(t.Elem), Raw: t.Raw, Alias: t.Alias}
+	case *List:
+		return &List{Elem: StripLabels(t.Elem), Mutable: t.Mutable, Alias: t.Alias}
+	case *Array:
+		return &Array{Elem: StripLabels(t.Elem), Len: t.Len, Alias: t.Alias}
+	case *Set:
+		return &Set{Elem: StripLabels(t.Elem), Mutable: t.Mutable, Alias: t.Alias}
+	case *Map:
+		return &Map{Key: StripLabels(t.Key), Value: StripLabels(t.Value), Mutable: t.Mutable, Alias: t.Alias}
+	case *Channel:
+		return &Channel{Elem: StripLabels(t.Elem), Alias: t.Alias}
+	case *Task:
+		c := *t
+		c.Result = StripLabels(t.Result)
+		return &c
+	case *Range:
+		return &Range{Elem: StripLabels(t.Elem), Alias: t.Alias}
+	case *Func:
+		c := *t
+		c.Params = make([]Param, len(t.Params))
+		for i, p := range t.Params {
+			p.Type = StripLabels(p.Type)
+			c.Params[i] = p
+		}
+		if t.Ret != nil {
+			c.Ret = StripLabels(t.Ret)
+		}
+		return &c
+	}
+	return t
+}
+
+// LabelKey is Key with tuple labels: two types with the same LabelKey
+// display the same (codegen's `"$t"` helpers are cached by it).
+func LabelKey(t Type) string {
+	if !HasLabels(t) {
+		return Key(t)
+	}
+	return Key(t) + "~" + Unaliased(t, true).String()
 }
 
 // Range is the type of `lo..hi` / `lo..<hi` (D29).
@@ -766,7 +947,7 @@ func (h *Hooks) Subst(t Type, m map[*TypeParam]Type) Type {
 		for i, e := range t.Elems {
 			out[i] = h.Subst(e, m)
 		}
-		return &Tuple{Elems: out}
+		return &Tuple{Elems: out, Labels: t.Labels}
 	case *Range:
 		return &Range{Elem: h.Subst(t.Elem, m)}
 	case *List:
@@ -1195,7 +1376,7 @@ func Unaliased(t Type, deep bool) Type {
 		for i, e := range t.Elems {
 			out[i] = Unaliased(e, true)
 		}
-		return &Tuple{Elems: out}
+		return &Tuple{Elems: out, Labels: t.Labels}
 	case *Range:
 		return &Range{Elem: Unaliased(t.Elem, true)}
 	case *List:

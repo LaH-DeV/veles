@@ -816,6 +816,16 @@ static inline void list_writable(veles_list *l) {
     if (l->flags & LIST_FROZEN) frozen_panic("list");
 }
 
+/* veles_list_move moves count elements from index `from` to index `to`, the
+ * ranges overlapping as memmove allows: std's insert and removeAt, which
+ * check that both lie inside the list. A change of order (D102). */
+void veles_list_move(veles_list *l, int64_t from, int64_t to, int64_t count) {
+    list_writable(l);
+    if (count <= 0 || from == to) return;
+    memmove(l->data + to * l->elem, l->data + from * l->elem, (size_t)(count * l->elem));
+    l->mods++;
+}
+
 /* a write through an element place (set, an element assignment) */
 void veles_list_write_check(veles_list *l) {
     list_writable(l);

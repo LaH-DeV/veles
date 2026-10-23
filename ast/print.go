@@ -522,6 +522,9 @@ func (p *printer) typ(t Type) {
 			if i > 0 {
 				p.w(", ")
 			}
+			if t.Labels != nil {
+				p.w(t.Labels[i].Name + ": ")
+			}
 			p.typ(e)
 		}
 		p.w(")")
@@ -906,8 +909,11 @@ func (p *printer) expr(e Expr) {
 		p.w(")")
 	case *TupleExpr:
 		p.w("(tuple")
-		for _, el := range e.Elems {
+		for i, el := range e.Elems {
 			p.w(" ")
+			if e.Labels != nil {
+				p.w(e.Labels[i].Name + ": ")
+			}
 			p.expr(el)
 		}
 		p.w(")")

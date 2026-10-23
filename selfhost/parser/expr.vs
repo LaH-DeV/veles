@@ -470,11 +470,52 @@ extend Parser {
         Kind.RParen, Kind.RBracket, Kind.RBrace => {
           depth -= 1
           if (depth == 0) {
-            val after = this.peek(i + 1).kind
-            return after in [Kind.FatArrow, Kind.Colon]
+            return when (this.peek(i + 1).kind) {
+              Kind.FatArrow => true
+              Kind.Colon    => this.returnTypeThenArrow(i + 2)
+              else          => false
+            }
           }
         }
         Kind.EOF => return false
+        else => { }
+      }
+      i += 1
+    }
+  }
+
+  // whether the tokens from peek(i) are a type followed by `=>`: `(x): i64 =>
+  // …` is a lambda, while the key of a map literal, `[(1, 2): "a"]`, is
+  // followed by a value no type contains — a literal, a `,` or closing
+  // bracket outside any brackets of its own, or a `:` after anything but a
+  // function type's parameters (`[(1, 2): (y: i64): i64 => y]` has a lambda
+  // as its value)
+  fun returnTypeThenArrow(from: i64): bool {
+    var depth: i64 = 0
+    var angles: i64 = 0
+    // the outermost group is a `fun(…)`'s parameters
+    var funOpen = false
+    var funClosed = false
+    var i = from
+    loop {
+      when (this.peek(i).kind) {
+        Kind.FatArrow => if (depth == 0 && angles == 0) return true
+        Kind.Colon => if (depth == 0 && (this.peek(i - 1).kind != Kind.RParen || !funClosed)) return false
+        Kind.LParen, Kind.LBracket => {
+          if (depth == 0) funOpen = this.peek(i - 1).kind == Kind.KwFun
+          depth += 1
+        }
+        Kind.RParen, Kind.RBracket => {
+          if (depth == 0) return false
+          depth -= 1
+          if (depth == 0) funClosed = funOpen
+        }
+        Kind.Lt => angles += 1
+        Kind.Gt => angles -= 1
+        Kind.Shr => angles -= 2
+        Kind.Comma => if (depth == 0 && angles <= 0) return false
+        Kind.Int => if (angles <= 0) return false  // `Array<u8, 4>` holds one
+        Kind.Float, Kind.String, Kind.Char, Kind.Regex, Kind.LBrace, Kind.RBrace, Kind.Semi, Kind.EOF => return false
         else => { }
       }
       i += 1
@@ -544,15 +585,22 @@ extend Parser {
     this.next()  // (
     if (this.accept(Kind.RParen)) return ast.TupleExpr(pos: this.spanFrom(start))  // unit
     val elems: MutableList<ast.Expr> = []
+    val labels: MutableList<ast.Ident> = []
+    var missing: Span? = null
     var trailingComma = false
     loop (!this.atAny(Kind.RParen, Kind.EOF)) {
+      if (val label = this.tupleLabel()) labels.push(label) else if (missing == null) missing = this.span()
       elems.push(this.parseExpr())
       trailingComma = this.accept(Kind.Comma)
       if (!trailingComma) break
     }
     this.expect(Kind.RParen)
+    if (!labels.isEmpty()) {
+      return ast.TupleExpr(elems: elems.toList(), labels: this.tupleLabels(labels, missing), pos: this.spanFrom(start))
+    }
     val [only] = elems else return ast.TupleExpr(elems: elems.toList(), pos: this.spanFrom(start))
     if (trailingComma) return ast.TupleExpr(elems: elems.toList(), pos: this.spanFrom(start))
+    this.parens.push(ast.exprSpan(only))
     // parentheses end a `?.` chain (D70)
     when (only) {
       is ast.MemberExpr => {

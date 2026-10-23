@@ -145,6 +145,11 @@ func (c *cloner) fixTupleType(n *TupleType) {
 		}
 		n.Elems = s1
 	}
+	if n.Labels != nil {
+		s1 := make([]Ident, len(n.Labels))
+		copy(s1, n.Labels)
+		n.Labels = s1
+	}
 }
 
 func (c *cloner) cloneFunType(x *FunType) *FunType {
@@ -1736,6 +1741,11 @@ func (c *cloner) fixTupleExpr(n *TupleExpr) {
 			s1[i1] = c.cloneExpr(s1[i1])
 		}
 		n.Elems = s1
+	}
+	if n.Labels != nil {
+		s1 := make([]Ident, len(n.Labels))
+		copy(s1, n.Labels)
+		n.Labels = s1
 	}
 }
 

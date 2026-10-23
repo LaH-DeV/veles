@@ -480,6 +480,76 @@ and both can be replaced per call — `sortedBy(key)`, `sortedWith(compare)`,
 `distinctBy(key)`. [Chapter 8](08-traits-and-generics.md#comparing-values)
 lays out the whole picture.
 
+## Tuples
+
+A tuple groups a fixed number of values, each of its own type: `(i64,
+string)`. Its elements are read by position — `t.0`, `t.1` — and, when
+its type labels them, by name (D166):
+
+```veles
+use io
+
+fun divide(a: i64, b: i64): (quotient: i64, remainder: i64) => (a / b, a % b)
+
+fun main() {
+  val r = divide(17, 5)
+  io.println("${r.quotient} rest ${r.remainder}, or ${r.0} rest ${r.1}")
+  io.println("$r")
+  val (q, rest) = divide(9, 4)                         // destructuring is positional
+  val plain: (i64, i64) = r                            // labels come off freely
+  val again: (quotient: i64, remainder: i64) = plain   // and go back on
+  io.println("$q $rest $plain ${again.quotient} ${plain == r}")
+
+  val stock = ["apples": 3, "pears": 7]
+  if (val most = stock.entries().sortedBy(e => -e.value).first()) {
+    io.println("most: ${most.key} (${most.value})")
+  }
+  loop (e in ["a", "b"].enumerate()) io.println("${e.index} ${e.value}")
+  if (val setting = "port=8080".splitOnce("=")) io.println("${setting.before} is ${setting.after}")
+}
+```
+
+Output:
+```text
+3 rest 2, or 3 rest 2
+(quotient: 3, remainder: 2)
+2 1 (3, 2) 3 true
+most: pears (7)
+0 a
+1 b
+port is 8080
+```
+
+- A tuple type labels **every element or none**: `(key: K, value: V)`. A
+  literal may be labelled the same way, `(key: "a", value: 1)`, or left
+  unlabelled where the expected type gives the labels — as `divide`'s body
+  does.
+- Labels are for reading. A labelled tuple has the same layout, `==`,
+  hashing and ordering as the unlabelled one, and a generic function
+  compiles once for both; destructuring stays positional
+  (`val (q, rest) = …`, `(k, v) => …`, `loop ((k, v) in m)`).
+- An unlabelled tuple converts to a labelled one and back. Two **different**
+  label lists do not: `(x: 1, y: 2)` where a `(y: i64, x: i64)` is
+  expected is an error, because the elements would silently swap meaning.
+  The fix drops the value's labels when the positions are what you meant.
+- `"$t"` prints the labels: `(quotient: 3, remainder: 2)`.
+- std labels its results where a name helps: `Map.entries()` gives
+  `(key: K, value: V)`, `enumerate()` gives `(index: i64, value: T)`,
+  `splitOnce` gives `(before: string, after: string)?`. `zip`, `gather`
+  and `awaitAll` stay unlabelled.
+
+**Tuple or struct?** A labelled tuple is for a short-lived grouping: a
+function's several results, an entry, a row on its way to being printed. As
+soon as the grouping has behaviour, an invariant, documentation per field,
+or a wire form (tuples are never `Codable`), make it a struct (chapter 5).
+
+One limit: a generic **type** of your own shares one instance among every
+labelling of its arguments and keeps none, so writing
+`Box<(lo: i64, hi: i64)>` is an error that says so — write
+`Box<(i64, i64)>`, or make the pair a struct. Functions and the built-in
+collections are not affected: `entries().sortedBy(…)` still gives labelled
+entries, and `List<(key: K, value: V)>` keeps its labels.
+
 ## Maps
 
 A `Map<K, V>` keeps its entries in **insertion order** — iteration is
@@ -770,5 +840,6 @@ Output:
 | membership tests, no duplicates | `Set<T>` / `MutableSet<T>` |
 | a queue, a sliding window, a stack shared by reference | `Deque<T>` |
 | the smallest (or largest) element next | `PriorityQueue<T>` |
+| a few values together for a moment (several results, an entry) | a tuple, labelled: `(min: i64, max: i64)` |
 
 Next: [Structs and methods](05-structs-and-methods.md).

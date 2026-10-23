@@ -335,6 +335,7 @@ func (c *Checker) checkBody(fn *Func) {
 	if t.Decl.ExprBody != nil {
 		f.pushScope()
 		var body *Block
+		exprBodySpan := t.Decl.ExprBody.Span()
 		if f.retType == nil {
 			// `fun f(...) => expr` with no declared type: infer it (§4).
 			x := f.checkExpr(t.Decl.ExprBody, nil)
@@ -345,9 +346,9 @@ func (c *Checker) checkBody(fn *Func) {
 			fn.Sig.Ret = rt
 			f.retType = rt
 			if types.IsUnit(rt) {
-				body = &Block{Stmts: []Stmt{&ExprStmt{X: x}}, Type: types.TUnit}
+				body = &Block{Stmts: []Stmt{&ExprStmt{X: x, Pos: exprBodySpan}}, Type: types.TUnit}
 			} else {
-				body = &Block{Stmts: []Stmt{&Return{Value: x}}, Type: types.TNever}
+				body = &Block{Stmts: []Stmt{&Return{Value: x, Pos: exprBodySpan}}, Type: types.TNever}
 			}
 			f.popScope()
 			fn.Body = body
@@ -359,10 +360,10 @@ func (c *Checker) checkBody(fn *Func) {
 			if !types.IsUnit(x.Type()) && !types.IsNever(x.Type()) {
 				f.errorf(t.Decl.ExprBody.Span(), "function '%s' returns nothing but its body has type '%s'; add a return type", t.Name, x.Type())
 			}
-			body.Stmts = append(body.Stmts, &ExprStmt{X: x})
+			body.Stmts = append(body.Stmts, &ExprStmt{X: x, Pos: exprBodySpan})
 		} else {
 			x := f.checkExprTo(t.Decl.ExprBody, f.retType)
-			body = &Block{Stmts: []Stmt{&Return{Value: x}}, Type: types.TNever}
+			body = &Block{Stmts: []Stmt{&Return{Value: x, Pos: exprBodySpan}}, Type: types.TNever}
 		}
 		f.popScope()
 		fn.Body = body
@@ -370,7 +371,7 @@ func (c *Checker) checkBody(fn *Func) {
 		body := f.checkBlock(t.Decl.Body, f.retType, !types.IsUnit(f.retType))
 		f.lintImplicitReturn(t.Decl.Body, body.Value, false)
 		if body.Value != nil {
-			body.Stmts = append(body.Stmts, &Return{Value: body.Value})
+			body.Stmts = append(body.Stmts, &Return{Value: body.Value, Pos: body.ValuePos})
 			body.Value = nil
 		} else if !types.IsUnit(f.retType) && !types.IsNever(body.Type) {
 			f.errorf(t.Decl.Body.Pos, "missing return: function '%s' must return a value of type '%s'", t.Name, f.retType)
@@ -549,7 +550,7 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 						// a function or lambda body ending in a call with no value
 						// (`io.println(...)`): "missing return" says what
 						// is wrong where "expected 'i64', found '()'" does not
-						out.Stmts = append(out.Stmts, &ExprStmt{X: x})
+						out.Stmts = append(out.Stmts, &ExprStmt{X: x, Pos: es.X.Span()})
 						continue
 					}
 					x = f.coerce(x, expected, es.X.Span())
@@ -557,10 +558,11 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 					x = f.checkExpr(es.X, nil)
 				}
 				if types.IsNever(x.Type()) {
-					out.Stmts = append(out.Stmts, &ExprStmt{X: x})
+					out.Stmts = append(out.Stmts, &ExprStmt{X: x, Pos: es.X.Span()})
 					out.Type = types.TNever
 				} else {
 					out.Value = x
+					out.ValuePos = es.X.Span()
 					out.Type = x.Type()
 				}
 				continue
@@ -583,6 +585,49 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 // checkStmt lowers one statement; term reports whether control cannot
 // continue past it.
 func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
+	stmts, term = f.checkStmtAt(s)
+	for _, st := range stmts {
+		stampPos(st, s.Span())
+	}
+	return stmts, term
+}
+
+// stampPos gives a statement the position of the source statement it was
+// lowered from, unless it has one: the line a debugger stops at (plan S8).
+func stampPos(st Stmt, sp source.Span) {
+	switch st := st.(type) {
+	case *VarDecl:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *Assign:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *ExprStmt:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *Return:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *Loop:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *Break:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *Continue:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	}
+}
+
+func (f *fnCtx) checkStmtAt(s ast.Stmt) (stmts []Stmt, term bool) {
 	switch s := s.(type) {
 	case *ast.StaticAssert:
 		f.staticAssert(s)
@@ -1335,7 +1380,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			atLast := &Binary{exprBase{types.TBool}, OpAnd, incl(), &Binary{exprBase{types.TBool}, OpEq, ref(idx), ref(hi), s.Pos}, s.Pos}
 			step := &Assign{Target: ref(idx), Value: &Binary{exprBase{it.Elem}, OpWrapAdd, ref(idx), &IntConst{exprBase{it.Elem}, 1, false}, s.Pos}}
 			stop := &Assign{Target: ref(done), Value: &BoolConst{exprBase{types.TBool}, true}}
-			lp.Post = []Stmt{&ExprStmt{&If{exprBase{types.TUnit}, atLast, &Block{Stmts: []Stmt{stop}, Type: types.TUnit}, &Block{Stmts: []Stmt{step}, Type: types.TUnit}}}}
+			lp.Post = []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, atLast, &Block{Stmts: []Stmt{stop}, Type: types.TUnit}, &Block{Stmts: []Stmt{step}, Type: types.TUnit}}}}
 			v, parts := f.bindLoopVar(s.Var, it.Elem)
 			if s.Var.Name != nil {
 				f.rangeLoopFacts(s, v)

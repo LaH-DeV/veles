@@ -86,6 +86,7 @@ order: **B26** (D174 annotations, decided 2026-10-18, before C9), **B19** (D157,
 **B22** (D166), the F19 migration left in checklist §11, then **S6–S8** (finish the front
 end, its speed, debug info), **C9** (`std/cli`, before the driver is ported), then
 **S9–S12**. Track P (D159–D162) runs beside S from P1. Checklist §9 is empty again.
+_(2026-10-23: B26, B19, B21, B22 and the F19 migration are done; next are S6–S8.)_
 
 ---
 
@@ -119,7 +120,7 @@ end, its speed, debug info), **C9** (`std/cli`, before the driver is ported), th
 | B19 | **D157: a `Result` or task handle cannot be interpolated** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                                                   | sema: the error (family `results-and-errors`) in `"$x"`, `"${e}"` and template-literal values when the type is a `Result` (a throwing call without `try` included) or `Task`, with the `try` fix (applied by `--fix` where the function may throw) and the `??` fix; conformance `D157-interpolation.vs` (a call, a `Result` local, a `Task`, inside a template literal, `r.toString()` and `"${r.ok}"` accepted); the tree fixed where it trips (any hit is a bug found); docs chapter 7, the errors reference, cheat sheet. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | B20 | **Done 2026-10-17** (progress log). **D158: bare names reach the receiver's members** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                        | sema: the lookup order of the entry (locals, members of `this`, module, prelude) in methods, `init`, `implement`/`extend` bodies and trait defaults, with D5 narrowing and D22's `var` rule unchanged; statics reach static members only, with the error naming `static`; the shadowing warning (family `this`); lambdas capture `this`; conformance `D158-*` (each rule, a parameter shadowing a field, narrowing through a bare field, a sendable lambda naming a member, `executor` state unchanged); LSP hover, rename and references over both spellings; formatter round trip; docs chapter 5, cheat sheet, errors reference. Whether a lint prefers one spelling and whether std/`selfhost/` migrate are asked when it lands (checklist §11). Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | B21 | **Done 2026-10-23** (progress log; `copy` with `init` parameters and on an `extern union` decided the same day — refused, D164 addendum; the `throw X(message: …)` migration left to the user in checklist §11 "B21 left open"). **D163–D165: positional one-parameter constructors, `copy`, `i64?` from the index-of family** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                | **D163**: sema accepts one positional argument where the constructor has exactly one parameter (fields with defaults and `init` parameters counted), the "add a name" error and fix when a type grows; the tree migrated where it reads better (`throw X(message: …)` sites by `--fix`, as the user chooses when built); conformance `D163-*`. **D164**: `copy` generated per struct/error/variant (generic too), named arguments defaulting to the receiver's fields, `init` run, visibility as construction, refusals (D111, `with`-bound), a hand-written `copy` wins, a field named `copy` warned; `const fun` evaluable; conformance `D164-*`, a run test, hover/completion signature. **D165**: the seven functions return `i64?`; the D62 fact; the migration error and fix for `>= 0`/`< 0`/`== -1`/`!= -1`; std, examples, selfhost, bench, docs migrated; `veles-bench` on `sort`/`strings` no slower. Docs chapters 4–5, cheat sheet, references. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| B22 | **D166: labelled tuples** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                                                                                    | parser/AST/formatter: labels in tuple types and literals (all or none; mixed a syntax error); checker: `.label` access, unlabelled ↔ labelled conversion, the different-labels error with its fix, labels in hover/errors; codegen unchanged (same layout and instances — a golden shows it); `"$t"` prints labels; std: `Map.entries()`, `enumerate()`, `splitOnce` labelled, `.0`/`.1` sites in std/examples/selfhost moved to labels where clearer; the self-hosted parser reads the new syntax (G-gates over a corpus file using it); conformance `D166-*`; docs chapters 3–4 with the tuple-vs-struct guideline, cheat sheet. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| B22 | **Done 2026-10-23** (progress log; labels in the type arguments of a generic struct or sealed type are refused, not kept — checklist §11 "B22 left open"). **D166: labelled tuples** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                                                                                    | parser/AST/formatter: labels in tuple types and literals (all or none; mixed a syntax error); checker: `.label` access, unlabelled ↔ labelled conversion, the different-labels error with its fix, labels in hover/errors; codegen unchanged (same layout and instances — a golden shows it); `"$t"` prints labels; std: `Map.entries()`, `enumerate()`, `splitOnce` labelled, `.0`/`.1` sites in std/examples/selfhost moved to labels where clearer; the self-hosted parser reads the new syntax (G-gates over a corpus file using it); conformance `D166-*`; docs chapters 3–4 with the tuple-vs-struct guideline, cheat sheet. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | B23 | **Done 2026-10-16.** **D168: racing computations** (decided 2026-10-15)                                                                                                                                                                                                                                                                                                                                                                                           | parser (Go and `selfhost/`, G-gates): `async` arms, bare arms, `src as name =>`; the removed `val x = src =>` / `val r = await h =>` / `val _ = src =>` keep parsing with an error naming the fix (`sema/removed.go`); checker: arm kinds, bare-arm and `as` rules (none on sleep/send/wait/changed), race type as the join, `async` placement extended to race arms, effects (arms' errors join the function's `throws`), `awaitFirst` built-in (n ≥ 2, inline `async` only, the errors of the entry); lowering: async arms launched in arm order into a race-owned group, losers cancelled and joined before the winning body; formatter aligns `as`/`=>`; hover on async arms; std (`http`, prelude `iter`), examples, docs (chapter 12, cheat sheet, `veles-idioms-and-apis.md`) migrated; tests: winner/loser timing (no wait for the loser), loser `with` cleanup ran, first-finished error thrown, handle arms not cancelled, under 1/2/4/8 threads; conformance `D168-*`. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | B24 | **Done 2026-10-16.** **D169: `race` as a block, `select` with arms, `async { }`** (decided 2026-10-16)                                                                                                                                                                                                                                                                                                                                                            | parser (Go and `selfhost/`, G-gates): `select {` contextual, `race { body }`, `async { body }`; the old `race` with arms, `as` arms, bare arms and `awaitFirst` error with fixes; checker: race contestants (launches into the race's group, one type, none → error/panic, one → warning), select = the D168 arm checker without bare/`as`, async block = a started sendable lambda (captures, `return`, break/continue refused); lowering: race over a run-time list of tasks (`veles_race_new(n)`), losers cancelled and joined; formatter, dump, hover; std, examples, docs, tests migrated; conformance `D169-*`; driver test on 1/2/4/8 threads. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | B26 | **Built 2026-10-18 except what checklist §11 lists** (progress log; `T.annotated<A>()` and the pair form of `inline loop` the same day). **D174: user-defined annotations** (decided 2026-10-18; large — the mechanism first, before C9)                                                                                                                                                                                                                          | (1) parser/AST/formatter (Go and `selfhost/`, G-gates): `annotation Name(params) on targets [for Traits]`, `@Name(args)` resolved as a type (imports, qualified, D142 visibility); sema: target check, constant arguments, the reader-clause warning, lowercase names reserved, "attribute" renamed "annotation" in the diagnostics, `ast` and docs; (2) reflection: `T.fields` / `Self.fields` as a constant description (name, type, doc comment, default, annotations; enum members and variants too), `f.attr<A>()`, `f has A`, readable from `const fun` (results stored read-only) and `inline loop (f in Self.fields)` in trait default bodies with typed `get`/`set` by field; errors inside an unrolled body name the field and its type; (3) hover shows values, `veles doc` lists annotations, the LSP completes them; (4) conformance `D174-*`, a driver test of a small library (a `Validate` trait and an `Args`-like table) used from another package; docs chapter 14 (written for readers who dislike annotations: data only), cheat sheet, errors reference. Then C9 on top; the Go `Codable` derive and its `@key`/`@skip`/`@required`/`@tag` move to `std/codec` later (checklist §11). Windows and WSL green                                                                                                                                                                                                           |
@@ -214,9 +215,9 @@ steps first; the sizes are today's Go: `sema` 35 000 lines, `codegen/llvm` 9 000
 
 | #    | Task                                                                                                                                                                                                                                                                                                               | Acceptance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S6   | **Finish E4**: P6 `Layout`, a dump that prints every span, files that are not valid UTF-8                                                                                                                                                                                                                          | G2 compares spans; the `Layout` of every corpus file agrees with Go's; the lexer reads bytes (`fs.readBytes`), so the fuzz findings and the non-UTF-8 files join the corpus; checklist §8b ticked                                                                                                                                                                                                                                                                                                                                                                             |
-| S7   | **Front-end speed, as a finding about the language** (3 MB of std: Veles 1.3 s, Go 0.55 s)                                                                                                                                                                                                                         | profile (`bench/parse` added: the self-hosted parser over std), fix what is the compiler's or the runtime's (not the port's), record in `bench/results.md`; target ≤ 1.3× Go. The port is not rewritten to allocate less (self-host plan §5)                                                                                                                                                                                                                                                                                                                                  |
-| S8   | **Debug info**: LLVM `!dbg` line tables and locals in debug builds (DWARF on Linux, CodeView on Windows)                                                                                                                                                                                                           | `gdb`/`lldb` and the VS Code C++ debugger stop at a Veles `file:line`, step, and show locals of scalar and struct types in a probe; a codegen golden; docs chapter 13. A compiler written in Veles needs a debugger                                                                                                                                                                                                                                                                                                                                                           |
+| S6   | **Built 2026-10-23 except non-UTF-8 input** (progress log; that part waits for a decision, checklist §11). **Finish E4**: P6 `Layout`, a dump that prints every span, files that are not valid UTF-8                                                                                                                                                                                                                          | G2 compares spans; the `Layout` of every corpus file agrees with Go's; the lexer reads bytes (`fs.readBytes`), so the fuzz findings and the non-UTF-8 files join the corpus; checklist §8b ticked                                                                                                                                                                                                                                                                                                                                                                             |
+| S7   | **In progress 2026-10-23: `bench/parse` added, 3.0× → 1.5–1.7× Go** (progress log); the rest waits on the D12 question in checklist §11. **Front-end speed, as a finding about the language** (3 MB of std: Veles 1.3 s, Go 0.55 s)                                                                                                                                                                                                                         | profile (`bench/parse` added: the self-hosted parser over std), fix what is the compiler's or the runtime's (not the port's), record in `bench/results.md`; target ≤ 1.3× Go. The port is not rewritten to allocate less (self-host plan §5)                                                                                                                                                                                                                                                                                                                                  |
+| S8   | **Built 2026-10-23** (progress log; DWARF on Windows too — the target is `windows-gnu`; what is left: checklist §11). **Debug info**: LLVM `!dbg` line tables and locals in debug builds (DWARF on Linux, CodeView on Windows)                                                                                                                                                                                                           | `gdb`/`lldb` and the VS Code C++ debugger stop at a Veles `file:line`, step, and show locals of scalar and struct types in a probe; a codegen golden; docs chapter 13. A compiler written in Veles needs a debugger                                                                                                                                                                                                                                                                                                                                                           |
 | S9   | **The formatter in Veles** (`selfhost/format`), the next slice with a free oracle                                                                                                                                                                                                                                  | needs S6's `Layout`; `veles fmt --stdout` byte-identical with the Veles formatter over the whole corpus (gate G5); the Veles sources stay idiomatic (self-host plan §11)                                                                                                                                                                                                                                                                                                                                                                                                      |
 | S10  | **First cut built 2026-10-19** (progress log; what is left: checklist §11). **Oracles for `sema`**: stable text dumps of each phase                                                                                                                                                                                | `veles check --dump=names                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | types  | hir`(resolution, every expression's type, the lowered HIR) deterministic across runs and platforms, golden-tested; this is what a Veles`sema`is gated against, phase by phase, as the parser was against`veles parse` |
 | S11  | **Written 2026-10-19: `veles-selfhost-sema-plan.md`** (phases R0–R9, gates, costs, four questions Q-S1–Q-S4 for `veles-decide`). **`veles-selfhost-sema-plan.md`** — the cut and the phases of the checker port                                                                                                    | the order (resolver → types → declarations → bodies → effects → lowering → `const fun` evaluator), each phase's gate over S10's dumps, what the language must offer first (the Q32–Q43 answers that apply), a size and time estimate measured from S6–S9                                                                                                                                                                                                                                                                                                                      |
@@ -421,8 +422,8 @@ on Linux).
     every test, the sanitized examples and a soak under `VELES_GC_THRESHOLD`/`VELES_GC_POISON`
     clean on Windows and Linux; `veles_gc_collect()` stays a full collection (the tests and
     bench/idle read exact counts after it).
-19. ~~**F19**~~ **Built 2026-10-13** (all five parts; the migration of std/examples and the new
-    bench are not done — see the progress log and checklist §11).
+19. ~~**F19**~~ **Built 2026-10-13** (all five parts); the migration of std/examples/docs and
+    the `awaitall`/`awaitscope` benches done 2026-10-23 (progress log).
     **F19 concurrency with less ceremony (D156; decided 2026-10-13).** In this order,
     each its own green step: (a) `scope` as an expression and the error for a placed scope that
     starts nothing; (b) `val h = async f()` in any block with the must-await check (sema: a
@@ -465,6 +466,204 @@ on Linux).
 ## Progress log
 
 Older entries: `archive/progress-log-2026-09.md`.
+
+### 2026-10-23 — S8: debug information
+
+A debug build now carries DWARF (`codegen/llvm/debug.go`), so gdb and an
+editor's debugger work on Veles source. The checker gives every lowered
+statement the position it was written at (`Pos` on the HIR statements,
+`ValuePos` for a block's last expression, set once where an AST statement
+is lowered and on the returns made from expression bodies); codegen opens a
+`DISubprogram` per function, attaches the current statement's
+`DILocation` to every instruction it emits (`emit` appends it), and
+declares locals and parameters with `llvm.dbg.declare` and a type: base
+types for numbers and `bool`, a `string` as `{data, len}` (gdb prints the
+text), a struct with its fields at `StructPlan`'s offsets, a pointer to its
+target; other types by name and size. Helpers and the entry point carry
+none. The driver asks for it when the build is not `--release`
+(`Program.DebugInfo`); the goldens leave it out except
+`codegen/llvm/golden/debuginfo`, whose metadata `ModuleIR` renumbers by
+first use with the directory hidden.
+
+Windows is `x86_64-w64-windows-gnu`, whose gdb (MSYS2) and VS Code's
+C/C++ extension in gdb mode read DWARF, so CodeView was not needed.
+
+**Found on the way.** The "Debug Info Version" flag makes clang verify the
+module, which the driver otherwise skips (`-disable-llvm-verifier`); every
+async program failed: `llvm.coro.end` was declared with the token argument
+clang 18 added, which clang 17 rejects. It is the two-argument form now,
+which clang 18 upgrades (checked on both); goldens regenerated. Every debug
+build is now verified by LLVM as a side effect.
+
+Tests: `driver/debuginfo_test.go` runs gdb in batch mode over a program —
+a breakpoint by line and by function name, arguments, `next` onto a block's
+last expression, locals (a struct, a string's text, numbers), and a
+suspending function after its `sleep` on another thread; it skips without
+gdb (`VELES_GDB` names one off PATH). Green on Windows (MSYS2 gdb 15) and
+Linux (gdb 15.1, unpacked without `sudo`). Docs: chapter 13 "Stepping
+through a program: a debugger".
+
+Left (checklist §11): a local that lives across a suspension loses its
+description when LLVM moves it into the coroutine frame; contents of
+lists, maps, sets, nullables, sealed values and closures; std's embedded
+files cannot be shown; lldb on macOS not run; no line information in
+`--release` builds.
+
+### 2026-10-23 — S7: the self-hosted front end's speed, first pass
+
+**Measured first.** `bench/parse` times the self-hosted lexer and parser
+over std's 155 files against the Go front end (`selfhost --bench-parse
+std`; the runner's `programs` table builds `selfhost/` for it). Start: 164
+ms against 55 ms, 3.0×. Lexing alone was 88 ms (Go 40), parsing 76 (Go 15).
+Profiled on Linux with `perf` (no `sudo` needed: the packages unpacked into
+the home directory) and LLVM's IR-level entry counts through a `VELES_CLANG`
+wrapper.
+
+**Fixed, all the compiler's or the runtime's.**
+- `s.byteAt(i)` was a call into the C runtime — 16 M calls over std. It is
+  now a compare and a load, the runtime called only to panic: 150 ms;
+  `bench/lexer` 85 → 53 ms.
+- Every allocation cleared its slot, though a span comes from the OS
+  zeroed and a large one goes back when its object dies: growing a big list
+  touched each page twice. A span now knows up to where its slots have
+  never held an object (`virgin`) and clears only below: 130 ms; most of
+  the suite gains a little (table in `bench/results.md`).
+- `MutableList.insert` and `removeAt` shifted element by element through
+  `at`/`set`; they are one `memmove` now (`listMove`, a std-only builtin
+  the constant evaluator runs too). No visible change here — the parser
+  inserts rarely — but no longer O(n) calls of a generic `set`.
+
+**Fixed in the port, as its plan said to.** The self-host plan's §5 named
+"span arithmetic" as a risk: a `Span` holding its `File` by value is a copy
+per node. It did: a span was 64 bytes and an `ast.Expr` 380. `Span.file` is
+now `(*File)?` (24 bytes, the null niche), which took the parse to 84–91 ms,
+1.5–1.7× Go. `std/lint` keeps the by-value file — rules run in the
+constant evaluator, which builds spans that way (the generator says so).
+
+**Left, and why.** An `ast.Expr` is still a 180-byte inline union and a
+`Decl` 348 — D12 lays a sealed value out inline, sized for its largest
+variant, so every node returned or boxed moves that much; Go's interface is
+16 bytes. Changing that changes D12's promise of no allocation, so it is
+the user's (checklist §11). The target of ≤ 1.3× Go is not reached.
+
+### 2026-10-23 — S6: the span gate and P6 `Layout`
+
+**Every span compared.** G2 compares `ast.Dump`'s text, which carries no
+span. `selfhost/spans_test.go` adds a gate over the whole corpus (970
+files): each side lists `Node.field start end` for every span-typed field
+of every node, sorted, each once (the Go parser shares some nodes), and the
+lists must be equal. The Go side walks the tree by reflection; the Veles
+side by `selfhost/ast/spans.vs`, generated from `selfhost/ast/ast.vs`
+(`go test ./selfhost -run SpanWalker -update`; the test fails when it is
+stale), run by `selfhost --spans`. Two nodes are named apart (`File` is
+`SourceFile`, `SelfExpr` `ThisExpr`) and one field (`AnnotationInfo.For` is
+`readers`). Found by it: the Veles `ExecutorDecl` kept no span of its
+arguments (`argsPos`, which the Go formatter reads) — added, and
+`std/lint/ast.vs` regenerated.
+
+**P6 `Layout`.** `parseFileLayout` returns the tree, the comments and the
+spans of parenthesised expressions, as `parser.ParseFileLayout` does — the
+input a formatter written in Veles needs (plan S9). `selfhost --layout`
+prints them; `TestP6Layout` compares with Go over the corpus. Green.
+
+**Not done: files that are not valid UTF-8.** None is in the repository;
+one fuzz finding of ten is. A Veles `string` is always UTF-8 and
+`fs.readFile` refuses such a file, while the Go lexer reads the bytes and
+reports a character or a string literal it cannot decode — and accepts an
+invalid byte in a comment. Matching it means either a byte-level `File` in
+the self-hosted front end, or both compilers refusing a non-UTF-8 file up
+front; the second changes what the compiler accepts, so it is the user's
+(checklist §11).
+
+### 2026-10-23 — F19's migration: scopes that only launched and awaited
+
+The `scope` blocks whose only job was to start named tasks and await them
+now use D156's shapes: `std/net`'s stream test, `std/otel`'s child-span test
+and `examples/streams` hold a `val server = async …` in the function's own
+block; `http.Health`'s `runAll` is `scope { …; awaitAll(tasks) }` as the
+function's value; `examples/httpclient` fetches its three pages with one
+`awaitAll`. Left as they are on purpose: scopes of unnamed children (the
+scope is what joins them), scopes that cancel a handle (`serve`'s
+`serving.cancel()`, `examples/cancel`), fan-outs over a loop, the
+`TaskLocal` test (its `await async` is the point), and chapter 12's first
+example, which introduces `scope` before the sections on the lighter forms.
+`concurrency-explained.md` no longer says a task can only start in a
+`scope`: its first program has no scope, the JavaScript table maps
+`Promise.all` to `awaitAll`, and "nothing floats away" names both owners.
+
+New benches `awaitall` (two inline launches joined by `awaitAll`) and
+`awaitscope` (the same pairs in a `scope` with two handles), one Go
+reference (two goroutines and a `WaitGroup` per pair). Windows, default
+threads, four runs: 40.6–44.8 ms against 41.0–41.7 ms — the same cost; Go
+63 ms. Recorded in `bench/results.md`.
+
+### 2026-10-23 — B22: labelled tuples (D166)
+
+**Syntax.** A tuple type or literal labels every element or none
+(`(quotient: i64, remainder: i64)`, `(key: k, value: v)`); mixed labels and
+a repeated label are syntax errors. `ast.TupleType`/`TupleExpr` carry
+`Labels` (nil when unlabelled; `ast.Clone` regenerated); `veles parse`
+prints them; the formatter lays a labelled literal out like named arguments
+(a broken one keeps its breaks); a labelled one-element tuple needs no
+trailing comma. The self-hosted AST, parser and printer do the same
+(G-gates green; `std/lint/ast.vs` regenerated).
+
+**Checking.** `types.Tuple.Labels` is for reading and display: `Identical`
+and `Key` ignore it, so layout, `==`, hashing, ordering and the generic
+instance are the unlabelled tuple's. `t.label` reads an element (`t.0`
+still does); an unlabelled literal takes the expected type's labels.
+`types.LabelsDiffer` finds two different label lists in the same position —
+at the top or inside lists, maps, sets, nullables, tasks, channels and
+function types — and `coerce`/`assignableTo` refuse it (family
+type-mismatch, both types named); at the top the fix drops the value's
+labels (deletes them from a literal, rebuilds a name as `(p.0, p.1)`). A
+function instance holds no labels (`types.StripLabels` on its type
+arguments, so what it shows cannot depend on which caller came first); the
+call gives its caller the labels back by substituting the template's result
+type with the caller's bindings, so `entries().sortedBy(…).first()` is a
+labelled entry. The `Result` instance of a throwing call is shared too, so
+the HIR `Call` keeps the labelled success type (`Ok`), which `try`, `??`,
+`catch` and `?!` read (`okType`). Generic struct and sealed instances hold
+none either; writing labels in a generic type's arguments
+(`Box<(lo: i64, hi: i64)>`) is refused with the unlabelled spelling, rather
+than dropped where `box.value.lo` would then fail (checklist §11).
+
+**Text and constants.** `"$t"` prints `(quotient: 3, remainder: 1)`:
+codegen's display helpers are cached by `types.LabelKey`. The constant
+evaluator prints a tuple, an optional and a list by the static type, as run
+time does (a case in `driver/constfun_test.go`, debug and release).
+
+**std.** `Map.entries()` gives `(key: K, value: V)`, `List.enumerate()` and
+`Iterator.enumerate()` `(index: i64, value: T)`, `splitOnce`
+`(before: string, after: string)?`. Moved to labels: `examples/dedup`,
+`todo` (its rows are `(number: i64, task: Task)`), `json`, `regex`, `fuzz`,
+`session`, `std/http/cookie.test.vs`, docs chapter 12. Regenerated:
+`examples/maps/expected.txt` (entries print their labels),
+`std/testdata/const-functions.txt`.
+
+**Tooling.** Hover shows the labels (they are in the type's text);
+completion after `t.` offers each label beside its position.
+
+**Found on the way, fixed.** (1) A tuple key in a map literal,
+`[(1, 2): "a"]`, was read as a lambda's parameters (`(…):` was taken for a
+return type): `looksLikeLambda` now requires a type and `=>` after the
+colon, in both parsers. (2) `implement Codable` on a struct with a tuple
+field said "no method 'encode' on type '(string, i64)'"; the derive now
+names the field and says a tuple has no wire form (a list, set or map of
+tuples too).
+
+Tests: conformance `D166-labelled-tuples`, `-syntax`,
+`-generic-type-labels`, `-tuples-not-codable`; `sema/labelled_tuple_test.go`
+(both fixes compile; one instance serves three labellings);
+`parser/tuple_test.go` (labels, their errors, tuple keys vs lambdas);
+`format` `TestLabelledTupleRoundTrips`; `lsp/tuple_test.go`; codegen golden
+`labels` (the labelled and unlabelled `divmod` compile to the same body, one
+`swap` instance, labels only in the text helper). Docs: chapter 3 "Several
+results", chapter 4 "Tuples" with the tuple-vs-struct guideline, cheat
+sheet, stdlib and errors references. `go build`, `go vet` clean; staticcheck
+reports only its three earlier unused symbols. `go test ./...` green on
+Windows and on Linux (WSL) — the first full runs since B19 and B21, which
+were therefore verified on both here too.
 
 ### 2026-10-23 — B21: one-parameter constructors, `copy`, `i64?` index-of
 

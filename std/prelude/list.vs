@@ -47,9 +47,9 @@ extend<T> List<T> {
   }
 
   /// Each element with its index: `["a", "b"].enumerate()` is
-  /// `[(0, "a"), (1, "b")]`. Eager, like `map`; `xs.iter().enumerate()` is
-  /// the lazy form.
-  public const fun enumerate(): List<(i64, T)> {
+  /// `[(index: 0, value: "a"), (index: 1, value: "b")]`. Eager, like `map`;
+  /// `xs.iter().enumerate()` is the lazy form.
+  public const fun enumerate(): List<(index: i64, value: T)> {
     var out: MutableList<(i64, T)> = []
     var i: i64 = 0
     loop (x in this) {
@@ -466,11 +466,7 @@ extend<T> MutableList<T> {
   public const fun insert(i: i64, x: T) {
     if (i < 0 || i > this.len()) panic("insert: index $i out of bounds for list of length ${this.len()}")
     this.push(x)
-    var j = this.len() - 1
-    loop (j > i) {
-      this.set(j, this.at(j - 1) ?: panic("insert: i < j < len"))
-      j -= 1
-    }
+    listMove(this, i, i + 1, this.len() - 1 - i)  // one memmove, not an element at a time
     this.set(i, x)
   }
 
@@ -478,9 +474,7 @@ extend<T> MutableList<T> {
   @caller_location
   public const fun removeAt(i: i64): T {
     val removed = this.at(i) ?: panic("removeAt: index $i out of bounds for list of length ${this.len()}")
-    loop (j in i..<(this.len() - 1)) {
-      this.set(j, this.at(j + 1) ?: panic("removeAt: j + 1 < len"))
-    }
+    listMove(this, i + 1, i, this.len() - 1 - i)
     this.pop()
     removed
   }

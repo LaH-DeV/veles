@@ -41,7 +41,52 @@ func payloadField(t types.Type) *types.Field {
 // checkExprTo checks e and converts it to want, reporting a mismatch.
 func (f *fnCtx) checkExprTo(e ast.Expr, want types.Type) Expr {
 	x := f.checkExpr(e, want)
+	if want != nil && types.LabelsDiffer(x.Type(), want) {
+		f.labelsDiffer(e, x.Type(), want, e.Span())
+		return x
+	}
 	return f.coerce(x, want, e.Span())
+}
+
+// labelsDiffer reports a tuple given where one with other labels is
+// expected (D166): `(x: 1, y: 2)` as a `(y: i64, x: i64)` would swap what
+// the elements mean. The fix drops the value's labels, keeping positions —
+// for a labelled literal by deleting them, for a name by rebuilding it
+// unlabelled. e is nil where no syntax is at hand.
+func (f *fnCtx) labelsDiffer(e ast.Expr, have, want types.Type, span source.Span) {
+	ht, hok := have.(*types.Tuple)
+	if _, wok := want.(*types.Tuple); !hok || !wok {
+		f.errorf(span, "type mismatch: expected '%s', found '%s'; the labels of the tuples inside differ, and converting would change what the elements mean — convert the elements one by one (D166)", want, have)
+		return
+	}
+	var fix *source.Fix
+	unlabelled := func(name string) string {
+		parts := make([]string, len(ht.Elems))
+		for i := range parts {
+			parts[i] = name + "." + strconv.Itoa(i)
+		}
+		return "(" + strings.Join(parts, ", ") + ")"
+	}
+	plain := unlabelled("v")
+	src := span.File
+	switch e := e.(type) {
+	case *ast.TupleExpr:
+		if e.Labels != nil && src != nil {
+			fix = &source.Fix{Title: "Drop the labels of the tuple"}
+			parts := make([]string, len(e.Elems))
+			for i, el := range e.Elems {
+				fix.Edits = append(fix.Edits, source.TextEdit{Span: source.Span{File: src, Start: e.Labels[i].Pos.Start, End: el.Span().Start}})
+				parts[i] = src.Content[el.Span().Start:el.Span().End]
+			}
+			plain = "(" + strings.Join(parts, ", ") + ")"
+		}
+	case *ast.NameExpr:
+		if e.TypeArgs == nil {
+			plain = unlabelled(e.Name)
+			fix = fixReplace("Rebuild the tuple without labels", span, plain)
+		}
+	}
+	f.c.errorFix(span, fix, "type mismatch: expected '%s', found '%s'; the labels differ — drop them to keep the positions ('%s'), or reorder the elements (D166)", want, have, plain)
 }
 
 // coerce converts x to want using the implicit conversions the spec allows:
@@ -50,6 +95,10 @@ func (f *fnCtx) checkExprTo(e ast.Expr, want types.Type) Expr {
 func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 	have := x.Type()
 	if want == nil || types.IsInvalid(want) || types.IsInvalid(have) {
+		return x
+	}
+	if types.LabelsDiffer(have, want) {
+		f.labelsDiffer(nil, have, want, span)
 		return x
 	}
 	if types.Identical(have, want) || types.IsNever(have) {
@@ -166,6 +215,9 @@ func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 
 // assignableTo reports whether a value of type have could be coerced to want.
 func (f *fnCtx) assignableTo(have, want types.Type) bool {
+	if types.LabelsDiffer(have, want) {
+		return false
+	}
 	if types.Identical(have, want) || types.IsNever(have) || types.IsInvalid(have) || types.IsInvalid(want) {
 		return true
 	}
@@ -359,6 +411,13 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 			}
 			lit.Elems = append(lit.Elems, x)
 			tt.Elems = append(tt.Elems, x.Type())
+		}
+		// an unlabelled literal takes the labels the expected type gives (D166)
+		for _, l := range e.Labels {
+			tt.Labels = append(tt.Labels, l.Name)
+		}
+		if want, ok := want.(*types.Tuple); ok && e.Labels == nil && len(want.Elems) == len(tt.Elems) {
+			tt.Labels = want.Labels
 		}
 		lit.T = tt
 		return lit
@@ -906,8 +965,15 @@ func (f *fnCtx) fieldOf(x Expr, name ast.Ident, span source.Span) Expr {
 		return &FieldGet{exprBase{fld.Type}, x, fld.Index, fld.Name}
 	case *types.Tuple:
 		idx, err := strconv.Atoi(name.Name)
-		if err != nil || idx < 0 || idx >= len(tt.Elems) {
-			f.errorf(name.Pos, "tuple of %d elements has no element '%s'", len(tt.Elems), name.Name)
+		if err != nil {
+			idx = tt.Label(name.Name) // `t.key` (D166)
+		}
+		if idx < 0 || idx >= len(tt.Elems) {
+			if tt.Labels != nil {
+				f.errorf(name.Pos, "tuple '%s' has no element '%s'; its labels are '%s'", tt, name.Name, strings.Join(tt.Labels, "', '"))
+			} else {
+				f.errorf(name.Pos, "tuple of %d elements has no element '%s'", len(tt.Elems), name.Name)
+			}
 			return bad()
 		}
 		return &TupleGet{exprBase{tt.Elems[idx]}, x, idx}
@@ -1620,7 +1686,7 @@ func (f *fnCtx) orFailExpr(e *ast.OrFailExpr) Expr {
 		okT, isNullable = t.Elem, true
 	case *types.Sealed:
 		if isResultType(t) {
-			okT = t.TypeArgs[0]
+			okT = okType(l, t)
 		}
 	}
 	if okT == nil {
@@ -2003,7 +2069,7 @@ func (f *fnCtx) tryOn(x Expr, pos source.Span) Expr {
 		}
 		return bad()
 	}
-	okT, errT := rs.TypeArgs[0], rs.TypeArgs[1]
+	okT, errT := okType(x, rs), rs.TypeArgs[1]
 	if types.IsNever(errT) {
 		// nothing can be propagated: `try` just unwraps (a `throws E` callee
 		// whose E is Never in this instance still returns a Result)

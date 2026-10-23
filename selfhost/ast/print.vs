@@ -493,7 +493,11 @@ struct Printer {
       }
       is TupleType      => {
         this.write("(")
-        this.typeList(t.elems)
+        loop ((i, elem) in t.elems.enumerate()) {
+          if (i > 0) this.write(", ")
+          if (val label = t.labels.at(i)) this.write("${label.name}: ")
+          this.typ(elem)
+        }
         this.write(")")
       }
       is FunType        => {
@@ -796,7 +800,15 @@ struct Printer {
         this.expr(*e.body)
         this.write(")")
       }
-      is TupleExpr      => this.list("(tuple", e.elems)
+      is TupleExpr      => {
+        this.write("(tuple")
+        loop ((i, elem) in e.elems.enumerate()) {
+          this.write(" ")
+          if (val label = e.labels.at(i)) this.write("${label.name}: ")
+          this.expr(elem)
+        }
+        this.write(")")
+      }
       is ListLit        => this.list(if (e.isMut) "(mut-list" else "(list", e.elems)
       is MapLit         => {
         this.write(if (e.isMut) "(mut-map" else "(map")

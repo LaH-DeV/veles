@@ -48,12 +48,10 @@ fun download(name: string): string {
 }
 
 fun main() {
-  scope {
-    val a = async download("a.txt")
-    val b = async download("b.txt")
-    val c = async download("c.txt")
-    io.println("${await a} | ${await b} | ${await c}")
-  }
+  val a = async download("a.txt")
+  val b = async download("b.txt")
+  val c = async download("c.txt")
+  io.println("${await a} | ${await b} | ${await c}")
 }
 ```
 
@@ -62,9 +60,10 @@ Output:
 contents of a.txt | contents of b.txt | contents of c.txt
 ```
 
-Same answer, a third of the time. Three new words did it: `scope`,
-`async` and `await`. The rest of this page is what they mean and what
-happens underneath.
+Same answer, a third of the time. Two new words did it: `async` starts a
+download and goes on without waiting for it, and `await` collects its
+answer — the compiler checks that every answer is collected. The rest of
+this page is what they mean and what happens underneath.
 
 ## The words, in plain language
 
@@ -169,16 +168,19 @@ task handle.
 | `async function f() { ... }` | `fun f() { ... }` — the compiler infers it |
 | `const p = f()` (starts running) | `val t = async f()` |
 | `await p` | `await t` |
-| `await Promise.all([a, b])` | `await a`, `await b` inside one `scope` — or `gather` |
+| `await Promise.all([a, b])` | `awaitAll(a, b)` — and the first failure cancels the rest; `gather` keeps every outcome |
 | `Promise.race([a(), b()])` | `race { async a(); async b() }` — and the loser is cancelled, which JavaScript cannot do; `select { ... }` waits on tasks, channels and timers at once |
 | `setTimeout(fn, 100)` | `await sleep(Duration.millis(100))` in a task |
-| an unawaited promise that fails silently | impossible: every task belongs to a `scope` |
+| an unawaited promise that fails silently | impossible: a handle must be awaited, and a `scope` waits for every task started in it |
 
 **3. Nothing floats away.** In JavaScript you can start a promise and
-forget it; if it fails, nobody may notice. In Veles a task can only be
-started inside a `scope`, and the scope waits for all of its tasks. If
-one fails, the scope cancels the others and passes the error up. There
-are no orphan tasks — this is called **structured concurrency**.
+forget it; if it fails, nobody may notice. In Veles every task has an
+owner that waits for it. A handle like `a` above must be awaited before
+its block ends — the compiler checks every path — and a task started
+without a name, like the dishes in the kitchen, belongs to a `scope`,
+which waits for all of its tasks. If one fails, the others are cancelled
+and the error passes up. There are no orphan tasks — this is called
+**structured concurrency**.
 
 ## What happens when — the whole life of a task
 
@@ -351,9 +353,11 @@ certain.)
 marker on functions. `async` is only used to *start* a task.
 
 **"Can I start a task and let it run in the background forever?"** Not
-outside a `scope`. Put the scope where the background work should end
-— often around the body of `main`. That way a program never exits while
-a task is half-done, and a failing task is never silently ignored.
+without an owner. Start it in a `scope` placed where the background work
+should end — often around the body of `main` — or with
+`with worker = async f()`, which cancels it when its block ends. That
+way a program never exits while a task is half-done, and a failing task
+is never silently ignored.
 
 **"Is this like Go?"** Close. Both run many cheap tasks on a few threads
 and move work between threads when one runs out. Go's goroutines have
@@ -381,7 +385,8 @@ failure on to the code around the scope. See "Fail fast" in
   that may wait into one. You never write it.
 - **`await`** = "I am waiting; give my thread to someone else." The only
   place a task lets go of its thread.
-- **`scope`** = the task's home. Nothing started in it outlives it.
+- **`scope`** = the home of tasks started without a name. Nothing started
+  in it outlives it; a named handle (`val a = async f()`) must be awaited.
 - **Sharing** = hand tasks unchangeable values; for changing state use
   a result, a `Channel`, an `Atomic` or a `Mutex`. The compiler refuses
   the rest.

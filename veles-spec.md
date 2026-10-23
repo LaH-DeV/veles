@@ -6684,6 +6684,9 @@ convention, but a `-1` used as an index is a bug no checker sees).
 
 Q35 (user, recommended of 3, after asking to see "all of the use cases and
 pros and cons" — `veles-direction-2026-10-14.md` §4 Q35). Amends D37.
+_(Built 2026-10-23, plan B22. An implementation limit, open to the user:
+labels written in a generic struct's or sealed type's type arguments are
+refused rather than kept — checklist §11 "B22 left open".)_
 
 ```veles
 fun divide(a: i64, b: i64): (quotient: i64, remainder: i64) => (a / b, a % b)

@@ -1434,6 +1434,17 @@ func (p *printer) typ(t ast.Type) {
 		p.typ(t.Elem)
 	case *ast.TupleType:
 		p.w("(")
+		if t.Labels != nil {
+			for i, e := range t.Elems {
+				if i > 0 {
+					p.w(", ")
+				}
+				p.w(t.Labels[i].Name + ": ")
+				p.typ(e)
+			}
+			p.w(")")
+			return
+		}
 		p.typeList(t.Elems)
 		if len(t.Elems) == 1 {
 			p.w(",")
@@ -1935,6 +1946,17 @@ func (p *printer) exprInner(e ast.Expr) {
 	case *ast.LambdaExpr:
 		p.lambda(e)
 	case *ast.TupleExpr:
+		if e.Labels != nil {
+			// laid out like named arguments: `(key: k, value: v)` (D166)
+			args := make([]ast.Arg, len(e.Elems))
+			for i, el := range e.Elems {
+				args[i] = ast.Arg{Name: &e.Labels[i], Value: el}
+			}
+			p.w("(")
+			p.args(args, e.Pos)
+			p.w(")")
+			return
+		}
 		p.w("(")
 		p.oneTuple = len(e.Elems) == 1
 		p.exprList(e.Elems, e.Pos, "(")

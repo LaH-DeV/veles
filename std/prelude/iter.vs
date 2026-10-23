@@ -262,8 +262,8 @@ public struct EnumerateIter<I: Iterator> {
   var index: i64
 
   implement Iterator {
-    type Item = (i64, I.Item)
-    fun next(): (i64, I.Item)? {
+    type Item = (index: i64, value: I.Item)
+    fun next(): (index: i64, value: I.Item)? {
       val v = this.inner.next()
       if (v == null) return null
       val i = this.index

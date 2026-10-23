@@ -46,7 +46,7 @@ struct File {
 /// A half-open byte range in a file; one without a file is the compiler's
 /// own (`<builtin>`).
 struct Span {
-  file:  File?
+  file:  (*File)?  // shared by every span of the file: a pointer, not a copy per node (self-host plan §5)
   start: i64
   end:   i64
 

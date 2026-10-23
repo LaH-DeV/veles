@@ -555,7 +555,7 @@ coro.cleanup:
   %coro.freed = call ptr @llvm.coro.free(token %coro.id, ptr %coro.hdl)
   br label %coro.suspend
 coro.suspend:
-  %coro.ended = call i1 @llvm.coro.end(ptr %coro.hdl, i1 false, token none)
+  %coro.ended = call i1 @llvm.coro.end(ptr %coro.hdl, i1 false)
   ret ptr %coro.hdl
 }
 
@@ -925,7 +925,7 @@ coro.cleanup:
   %coro.freed = call ptr @llvm.coro.free(token %coro.id, ptr %coro.hdl)
   br label %coro.suspend
 coro.suspend:
-  %coro.ended = call i1 @llvm.coro.end(ptr %coro.hdl, i1 false, token none)
+  %coro.ended = call i1 @llvm.coro.end(ptr %coro.hdl, i1 false)
   ret ptr %coro.hdl
 }
 
@@ -1025,7 +1025,7 @@ coro.cleanup:
   %coro.freed = call ptr @llvm.coro.free(token %coro.id, ptr %coro.hdl)
   br label %coro.suspend
 coro.suspend:
-  %coro.ended = call i1 @llvm.coro.end(ptr %coro.hdl, i1 false, token none)
+  %coro.ended = call i1 @llvm.coro.end(ptr %coro.hdl, i1 false)
   ret ptr %coro.hdl
 }
 

@@ -506,7 +506,7 @@ fun main() {
       done.push(await results.recv() ?: break)
     }
     // which worker took which job is up to the scheduler
-    val jobsDone = done.map(line => line.splitOnce(" did ")?.1 ?: "?")
+    val jobsDone = done.map(line => line.splitOnce(" did ")?.after ?: "?")
     io.println("${done.len()} results, jobs ${jobsDone.sorted()}")
   }
 }

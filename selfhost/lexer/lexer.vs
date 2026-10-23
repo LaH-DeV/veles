@@ -26,7 +26,7 @@ struct Scan {
 /// Scans a whole file. Problems go into `diags`, and a character that
 /// belongs to no token becomes an Illegal one, so parsing can go on.
 fun tokenize(file: File, diags: *Diagnostics): Scan {
-  var lexer = Lexer(file, src: file.content, diags)
+  var lexer = Lexer(file: &file, src: file.content, diags)
   lexer.run()
   lexer.attachDocs()
   Scan(tokens: lexer.tokens.toList(), moduleDoc: lexer.moduleDoc(), comments: lexer.comments.toList())
@@ -37,7 +37,7 @@ fun tokenize(file: File, diags: *Diagnostics): Scan {
 fun tokenizeRange(file: File, start: i64, end: i64, diags: *Diagnostics): List<Token> {
   // the cut is where a `${` or a `}` is, so not inside a character
   val src = file.content.substring(0, end) ?: panic("tokenizeRange: $end is not at a character's edge")
-  var lexer = Lexer(file, src, diags, pos: start)
+  var lexer = Lexer(file: &file, src, diags, pos: start)
   lexer.run()
   lexer.tokens.toList()
 }
@@ -105,7 +105,7 @@ fun dropSuffix(text: string, suffix: string): string =>
   if (text.endsWith(suffix)) text.substring(0, text.len() - suffix.len()) ?: text else text
 
 struct Lexer {
-  file:     File
+  file:     *File
   src:      string
   diags:    *Diagnostics
   var pos:  i64 = 0

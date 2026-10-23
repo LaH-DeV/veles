@@ -380,7 +380,11 @@ extend Parser {
     this.next()  // executor
     var d: ast.ExecutorDecl = ast.ExecutorDecl(doc: head.doc, pub: head.pub, isInternal: head.isInternal)
     d.name = this.ident()
-    if (this.at(Kind.LParen)) d.args = this.parseArgs()
+    if (this.at(Kind.LParen)) {
+      val argStart = this.span()
+      d.args = this.parseArgs()
+      d.argsPos = this.spanFrom(argStart)
+    }
     if (this.at(Kind.LBrace)) {
       this.next()
       d.hasBody = true

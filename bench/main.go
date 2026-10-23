@@ -34,6 +34,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +68,10 @@ func main() {
 
 	dirs, err := filepath.Glob(filepath.Join(root, "bench", "*", "main.vs"))
 	must(err)
+	for name := range programs {
+		dirs = append(dirs, filepath.Join(root, "bench", name, "main.vs"))
+	}
+	sort.Strings(dirs)
 	var results []result
 	failed := false
 	for _, main := range dirs {
@@ -82,8 +87,14 @@ func main() {
 			continue
 		}
 		bin := filepath.Join(tmp, name+exe())
+		var args []string
+		if p, ok := programs[name]; ok {
+			dir, args = filepath.Join(root, p.dir), p.args
+		}
 		run(root, veles, "build", dir, "-o", bin, "--release")
-		out, err := exec.Command(bin).Output()
+		cmd := exec.Command(bin, args...)
+		cmd.Dir = root
+		out, err := cmd.Output()
 		must(err)
 		r := parse(name, out)
 		goSetup = 0
@@ -587,6 +598,8 @@ var references = map[string]func() string{
 		}
 		return strconv.FormatInt(sum, 10)
 	},
+	"awaitall":   awaitPairs,
+	"awaitscope": awaitPairs,
 	"spawn": func() string {
 		square := func(i int64) int64 {
 			var acc int64
@@ -721,3 +734,26 @@ func suscallLeaf(i int64) int64 {
 func suscallMiddle(i int64) int64 { return suscallLeaf(i) + 1 }
 
 func suscallTop(i int64) int64 { return suscallMiddle(i) + 1 }
+
+// awaitPairs is the reference of `awaitall` and `awaitscope`: 50 000 pairs
+// of goroutines, each pair joined before the next starts.
+func awaitPairs() string {
+	work := func(i int64) int64 {
+		var acc int64
+		for k := int64(0); k < 50; k++ {
+			acc += (i + k) % 7
+		}
+		return acc
+	}
+	var sum int64
+	for i := int64(0); i < 50000; i++ {
+		var a, b int64
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); a = work(i) }()
+		go func() { defer wg.Done(); b = work(i + 1) }()
+		wg.Wait()
+		sum += a + b
+	}
+	return strconv.FormatInt(sum, 10)
+}

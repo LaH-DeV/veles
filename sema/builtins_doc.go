@@ -114,7 +114,7 @@ var builtinDocs = []BuiltinDoc{
 	{"Map", "containsKey", "(key: K): bool", "True when `key` has an entry."},
 	{"Map", "keys", "(): List<K>", "The keys."},
 	{"Map", "values", "(): List<V>", "The values."},
-	{"Map", "entries", "(): List<(K, V)>", "The entries as `(key, value)` tuples."},
+	{"Map", "entries", "(): List<(key: K, value: V)>", "The entries as labelled tuples, `(key: k, value: v)` (D166)."},
 	{"Map", "toMap", "(): Map<K, V>", "An immutable copy."},
 	{"Map", "toMutable", "(): MutableMap<K, V>", "A mutable copy."},
 	{"MutableMap", "set", "(key: K, value: V)", "Inserts or replaces the entry for `key`."},

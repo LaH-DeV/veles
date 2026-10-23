@@ -111,6 +111,20 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			}
 			return &Builtin{exprBase{types.TUnit}, "list.touch", []Expr{xs}, e.Pos}
 		}
+		if callee.Name == "listMove" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 4 {
+			// std-only: count elements moved within a list in one memmove
+			// (insert, removeAt) — the caller checks both ranges are inside
+			xs := f.checkExpr(e.Args[0].Value, nil)
+			if lt, ok := xs.Type().(*types.List); !ok || !lt.Mutable {
+				f.errorf(e.Pos, "listMove takes a MutableList")
+				return bad()
+			}
+			args := []Expr{xs}
+			for _, a := range e.Args[1:] {
+				args = append(args, f.checkExprTo(a.Value, types.TI64))
+			}
+			return &Builtin{exprBase{types.TUnit}, "list.move", args, e.Pos}
+		}
 		if callee.Name == "listAppendText" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
 			// std-only: a string's bytes onto a MutableList<u8> in one copy
 			// (StringBuilder.append), not a list of them pushed one by one
@@ -697,10 +711,30 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 	}
 	callArgs = append(callArgs, extra...) // C's variadic arguments, promoted (D123)
 	rt := fn.Sig.Ret
+	if len(m) > 0 {
+		// the instance holds no labels (D166): `entries().sortedBy(…)` is
+		// still a list of `(key: K, value: V)` to its caller
+		if lab := f.c.hooks.Subst(t.Sig.Ret, m); types.HasLabels(lab) && types.Identical(lab, rt) {
+			rt = lab
+		}
+	}
+	var okT types.Type
 	if fn.Sig.Effects.Throws {
+		if types.HasLabels(rt) {
+			okT = rt
+		}
 		rt = f.c.ResultType(fn.Sig.Ret, fn.Sig.Effects.Error)
 	}
-	return &Call{exprBase: exprBase{rt}, Fn: fn, Args: callArgs, Span: span}
+	return &Call{exprBase: exprBase{rt}, Fn: fn, Args: callArgs, Span: span, Ok: okT}
+}
+
+// okType is the success type of a Result value x of type rs: the payload's,
+// with the labels a throwing call's caller sees (D166).
+func okType(x Expr, rs *types.Sealed) types.Type {
+	if c, ok := x.(*Call); ok && c.Ok != nil {
+		return c.Ok
+	}
+	return rs.TypeArgs[0]
 }
 
 // defaultArg evaluates a parameter's default expression in the callee's

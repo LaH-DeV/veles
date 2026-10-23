@@ -47,10 +47,12 @@ sealed trait Type {
     var isRaw: bool = false
     var pos:   Span = Span.none()
   }
-  /// `(A, B)`; `()` is the unit type.
+  /// `(A, B)`; `()` is the unit type. `(key: K, value: V)` labels every
+  /// element (D166); `labels` is empty when none is labelled.
   struct TupleType {
-    var elems: List<Type> = []
-    var pos:   Span = Span.none()
+    var elems:  List<Type> = []
+    var labels: List<Ident> = []
+    var pos:    Span = Span.none()
   }
   /// `fun(A, B): R suspends throws E` (D40), `sendable fun(…)` (D35),
   /// `extern fun(…)` (a C function pointer, D69).
@@ -193,6 +195,7 @@ sealed trait Decl {
     var isInternal: bool = false
     var name:       Ident = Ident()
     var args:       List<Arg> = []
+    var argsPos:    Span = Span.none()  // the parenthesised arguments; none without them
     var state:      List<ValDecl> = []
     var funs:       List<FunDecl> = []
     var hasBody:    bool = false
@@ -644,9 +647,12 @@ sealed trait Expr {
     var body:   *Expr  // a BlockExpr for `{ … }`
     var pos:    Span = Span.none()
   }
+  /// `(a, b)`; `(key: k, value: v)` labels every element (D166), `labels`
+  /// empty when none is labelled.
   struct TupleExpr {
-    var elems: List<Expr> = []
-    var pos:   Span = Span.none()
+    var elems:  List<Expr> = []
+    var labels: List<Ident> = []
+    var pos:    Span = Span.none()
   }
   /// `[a, b]`, `mut [a, b]` (D25).
   struct ListLit {

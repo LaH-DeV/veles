@@ -26,6 +26,9 @@ type Program struct {
 	// (D4); nil when main does not throw.
 	MainReport *Func
 	Release    bool
+	// DebugInfo asks codegen for line tables and local variables (plan S8):
+	// the driver sets it for a debug build.
+	DebugInfo bool
 	// Root is the package root: panic locations are printed relative to it (D64).
 	Root string
 	// PanicType is the prelude Panic struct (D52).
@@ -201,24 +204,30 @@ type Block struct {
 	// Value is the trailing expression when the block is used as a value.
 	Value Expr
 	Type  types.Type // type of Value, or unit
+	// ValuePos is where Value is written: a debugger steps onto it (plan S8)
+	ValuePos source.Span
 }
 
 type VarDecl struct {
 	Var  *Var
 	Init Expr // may be nil for `var x: T`
+	Pos  source.Span
 }
 
 type Assign struct {
 	Target Expr // an lvalue expression
 	Value  Expr
+	Pos    source.Span
 }
 
 type ExprStmt struct {
-	X Expr
+	X   Expr
+	Pos source.Span
 }
 
 type Return struct {
 	Value Expr // nil for unit
+	Pos   source.Span
 }
 
 type Loop struct {
@@ -228,6 +237,7 @@ type Loop struct {
 	// Post runs at the end of every iteration and on `continue`.
 	Post []Stmt
 	ID   int
+	Pos  source.Span
 
 	hasBreak    bool
 	hasContinue bool
@@ -235,10 +245,12 @@ type Loop struct {
 
 type Break struct {
 	Loop *Loop
+	Pos  source.Span
 }
 
 type Continue struct {
 	Loop *Loop
+	Pos  source.Span
 }
 
 func (*Block) hirStmt()    {}
@@ -321,6 +333,9 @@ type Call struct {
 	RecvSpan source.Span // the method name at the call
 	RecvType types.Type  // the receiver's type
 	RecvExpr ast.Expr    // the receiver as written, for fixes
+	// Ok: a throwing call's success type with the caller's tuple labels,
+	// which the Result instance does not keep (D166); nil when it has none
+	Ok types.Type
 	// InitMissing: a call on `this` inside an `init` block while these
 	// owned fields (by index) are not yet assigned; the receiver pass
 	// checks the method does not read them (D28).

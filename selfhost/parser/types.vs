@@ -64,15 +64,45 @@ extend Parser {
   fun parseTupleType(start: Span): ast.Type {
     this.next()  // (
     val elems: MutableList<ast.Type> = []
+    val labels: MutableList<ast.Ident> = []
+    var missing: Span? = null
     var trailingComma = false
     loop (!this.atAny(Kind.RParen, Kind.EOF)) {
+      if (val label = this.tupleLabel()) labels.push(label) else if (missing == null) missing = this.span()
       elems.push(this.parseType())
       trailingComma = this.accept(Kind.Comma)
       if (!trailingComma) break
     }
     this.expect(Kind.RParen)
-    val [only] = elems else return ast.TupleType(elems: elems.toList(), pos: this.spanFrom(start))
-    if (trailingComma) ast.TupleType(elems: elems.toList(), pos: this.spanFrom(start)) else only
+    val tuple = ast.TupleType(elems: elems.toList(), labels: this.tupleLabels(labels.toList(), missing), pos: this.spanFrom(start))
+    if (!labels.isEmpty()) return tuple
+    val [only] = elems else return tuple
+    if (trailingComma) tuple else only
+  }
+
+  // `name:` before a tuple element (D166), taken when it is there
+  fun tupleLabel(): ast.Ident? {
+    if (!this.at(Kind.Ident) || this.peek(1).kind != Kind.Colon) return null
+    val name = this.next()
+    this.next()  // :
+    ast.Ident(name: name.text, pos: name.span)
+  }
+
+  // the labels of a tuple: every element's or none (D166); `missing` is the
+  // first element without one
+  fun tupleLabels(labels: List<ast.Ident>, missing: Span?): List<ast.Ident> {
+    if (labels.isEmpty()) return []
+    if (val at = missing) {
+      this.errorAt(at, "a tuple labels every element or none: this element has no label (D166)")
+      return []
+    }
+    loop ((i, label) in labels.enumerate()) {
+      if (labels.take(i).any(earlier => earlier.name == label.name)) {
+        this.errorAt(label.pos, "label '${label.name}' is used twice in one tuple (D166)")
+        return []
+      }
+    }
+    labels
   }
 
   // `.Item` after base, the cursor on the dot

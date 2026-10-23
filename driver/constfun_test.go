@@ -19,7 +19,7 @@ func TestConstFunMatchesRunTime(t *testing.T) {
 	}
 	for _, release := range []bool{false, true} {
 		out, code := runTestFiles(t, map[string]string{"fns.vs": constFunSrc, "cf.test.vs": constFunTests}, Options{Release: release})
-		if code != 0 || !strings.Contains(out, "29 passed") {
+		if code != 0 || !strings.Contains(out, "30 passed") {
 			t.Fatalf("release=%v: exit %d, output:\n%s", release, code, out)
 		}
 	}
@@ -241,6 +241,16 @@ const fun copies(): List<i64> {
   [b.x, b.y, a.y, r.area, wide.area, wide.h]
 }
 const COPIES: List<i64> = copies()
+
+// D166: a label reads an element, and the text of a tuple, an optional one
+// and a list of them shows the labels of the static type
+const fun labelled(): string {
+  val r: (quotient: i64, remainder: i64) = (7 / 2, 7 % 2)
+  val plain: (i64, i64) = r
+  val setting = "k=v".splitOnce("=")
+  "$r ${r.remainder} $plain ${["a": 1].entries()} ${["x"].enumerate()} $setting ${setting?.after}"
+}
+const LABELLED: string = labelled()
 
 const fun flow(): List<i64> {
   val out: MutableList<i64> = []
@@ -561,6 +571,10 @@ test "std: Duration" {
 test "copy: named fields changed, init run again" {
   expect(COPIES == copies())
   expect(COPIES == [1, 20, 2, 6, 30, 3])
+}
+test "labelled tuples: read by label, printed with labels" {
+  expect(LABELLED == labelled())
+  expect(LABELLED == "(quotient: 3, remainder: 1) 1 (3, 1) [(key: a, value: 1)] [(index: 0, value: x)] (before: k, after: v) v")
 }
 test "std: hex, base64, utf8" {
   expect(CODECS == codecs())

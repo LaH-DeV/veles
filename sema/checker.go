@@ -1373,6 +1373,11 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		}
 		for i, a := range t.Args {
 			args = append(args, c.resolveTypeArg(env, a, i < len(params) && params[i].Const))
+			if _, generic := sym.Type.(*types.Trait); !generic && types.HasLabels(args[i]) {
+				// one instance serves every labelling and keeps none (D166):
+				// `box.value.lo` would not find the label written here
+				c.errorf(a.Span(), "'%s' keeps no tuple labels in its type arguments — one instance serves every labelling (D166); write '%s', or make the tuple a struct", pathString(t.Path), types.StripLabels(args[i]))
+			}
 		}
 		switch st := sym.Type.(type) {
 		case *types.Struct:
@@ -1403,6 +1408,9 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		tt := &types.Tuple{}
 		for _, e := range t.Elems {
 			tt.Elems = append(tt.Elems, c.resolveType(env, e))
+		}
+		for _, l := range t.Labels {
+			tt.Labels = append(tt.Labels, l.Name)
 		}
 		return tt
 	case *ast.FunType:
@@ -2512,6 +2520,22 @@ func typeMangle(t types.Type) string {
 // ---------------------------------------------------------------------------
 // generic instantiation
 
+// stripLabels returns args without tuple labels, the slice itself when none
+// has any.
+func stripLabels(args []types.Type) []types.Type {
+	for i, a := range args {
+		if types.HasLabels(a) {
+			out := make([]types.Type, len(args))
+			copy(out, args[:i])
+			for j := i; j < len(args); j++ {
+				out[j] = types.StripLabels(args[j])
+			}
+			return out
+		}
+	}
+	return args
+}
+
 func argsKey(args []types.Type) string {
 	parts := make([]string, len(args))
 	for i, a := range args {
@@ -2524,6 +2548,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 	c.resolveStruct(tmpl)
 	c.checkTypeArgBounds(tmpl.Name, tmpl.TypeParams, args, span)
 	c.checkSecretArg(tmpl, args, span)
+	args = stripLabels(args) // shared by every labelling (D166), as instances of functions are
 	key := argsKey(args)
 	if inst, ok := tmpl.Instances[key]; ok {
 		return inst
@@ -2547,6 +2572,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 
 func (c *Checker) instantiateSealed(tmpl *types.Sealed, args []types.Type, span source.Span) *types.Sealed {
 	c.checkTypeArgBounds(tmpl.Name, tmpl.TypeParams, args, span)
+	args = stripLabels(args)
 	key := argsKey(args)
 	if inst, ok := tmpl.Instances[key]; ok {
 		return inst
@@ -2923,14 +2949,16 @@ func modIndex(p *Package, m *Module) int {
 // the given type arguments. ownerSubst maps the owner struct's parameters.
 func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]types.Type, typeArgs []types.Type, span source.Span) *Func {
 	c.resolveSignature(t)
+	// one instance serves every labelling of its type arguments (D166), so
+	// it holds none; a call's result takes the caller's back (relabel)
 	m := map[*types.TypeParam]types.Type{}
 	for k, v := range ownerSubst {
-		m[k] = v
+		m[k] = types.StripLabels(v)
 	}
 	var keyParts []string
 	for i, tp := range t.TypeParams {
 		if i < len(typeArgs) {
-			m[tp] = typeArgs[i]
+			m[tp] = types.StripLabels(typeArgs[i])
 			keyParts = append(keyParts, types.Key(typeArgs[i]))
 		}
 	}

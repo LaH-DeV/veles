@@ -85,9 +85,10 @@ extend string {
   }
 
   /// The text before and after the first `sep`, or `null` when `sep` does
-  /// not occur: `"key=a=b".splitOnce("=")` is `("key", "a=b")`. An empty
-  /// `sep` splits before the first character: `("", text)`.
-  public const fun splitOnce(sep: string): (string, string)? {
+  /// not occur: `"key=a=b".splitOnce("=")` is
+  /// `(before: "key", after: "a=b")`. An empty `sep` splits before the first
+  /// character: `(before: "", after: text)`.
+  public const fun splitOnce(sep: string): (before: string, after: string)? {
     val at = this.indexOf(sep) ?: return null
     val before = this.substring(0, at) ?: panic("splitOnce: indexOf found sep inside the text")
     val after = this.substring(at + sep.len(), this.len()) ?: panic("splitOnce: indexOf found sep inside the text")

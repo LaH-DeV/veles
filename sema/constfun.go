@@ -82,7 +82,7 @@ var constBuiltins = map[string]bool{
 	"string.contains": true, "string.split": true, "string.toInt": true,
 	"list.len": true, "list.get": true, "list.ref": true, "list.push": true, "list.pop": true,
 	"list.clear": true, "list.copy": true, "list.addAll": true, "list.slice": true, "list.reserve": true,
-	"list.touch": true, "list.mods": true, "list.checkMods": true, "list.appendText": true,
+	"list.touch": true, "list.mods": true, "list.checkMods": true, "list.appendText": true, "list.move": true,
 	"list.joinText": true, "list.decodeUtf8": true, "list.decodeUtf8Range": true,
 	"list.toArray": true, "array.toList": true, "list.sortedNative": true,
 	"map.len": true, "map.get": true, "map.contains": true, "map.set": true, "map.remove": true,
@@ -503,6 +503,14 @@ func (ev *constEval) builtinMore(e *Builtin) (ConstVal, bool) {
 	case "list.mods", "map.mods":
 		ev.expr(e.Args[0])
 		return i64v(0), true
+	case "list.move":
+		// as veles_list_move: memmove within the list, the ranges checked by std
+		l := ev.mutList(e)
+		from, to, n := ev.intArg(e, 1).Int64(), ev.intArg(e, 2).Int64(), ev.intArg(e, 3).Int64()
+		if n > 0 {
+			copy(l.Elems[to:to+n], l.Elems[from:from+n])
+		}
+		return &CUnit{}, true
 	case "list.appendText":
 		l := ev.mutList(e)
 		s := ev.str(e, 1)

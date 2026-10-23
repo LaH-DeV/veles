@@ -30,6 +30,9 @@ statements on one line without a newline between them. Statements end at
 the end of a line; a line that ends in an operator, a `,` or an open
 bracket continues on the next one.
 
+A tuple labels every element or none, each label once (D166): `(x: 1, 2)`
+and `(x: 1, x: 2)` are syntax errors.
+
 ### removed-syntax
 
 **A spelling that Veles used to have, or that another language has.**
@@ -90,6 +93,13 @@ drop one of the imports or rename one.
 A method called as a field (`xs.len`) or a field called as a method
 (`p.x()`) is told which it is. Hover shows everything a type has, and
 completion after the `.` lists it.
+
+A tuple is read by position (`t.0`) or, when its type labels the elements,
+by label: `tuple '(quotient: i64, remainder: i64)' has no element 'rest';
+its labels are 'quotient', 'remainder'` (D166). A generic type keeps no
+labels in its type arguments, so `box.value.lo` on a `Box<(lo: i64, hi:
+i64)>` is refused where `Box` is written; read `box.value.0`, or make the
+pair a struct.
 
 ### modules
 
@@ -200,6 +210,18 @@ for no particular reason — use `i64` unless the width matters.
 
 A named function passed where a `suspends` or `throws` function type is
 wanted: pass a lambda that calls it, `(x) => f(x)` (D40).
+
+#### `type mismatch: expected '(y: i64, x: i64)', found '(x: i64, y: i64)'; the labels differ`
+
+A labelled tuple where a tuple with other labels is expected (D166).
+Unlabelled tuples convert to labelled ones and back, but between two label
+lists the elements would silently change meaning — here `x` would be read
+as `y`. When the positions are what you meant, drop the value's labels:
+the fix deletes them from a literal (`(x: 1, y: 2)` → `(1, 2)`) or
+rebuilds a variable unlabelled (`(p.0, p.1)`). When the names are what you
+meant, reorder the elements. The same mismatch inside a list or a map
+(`List<(a: i64, b: i64)>` as a `List<(b: i64, a: i64)>`) has no fix:
+convert the elements with `map`.
 
 ### inference
 

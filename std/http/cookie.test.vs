@@ -55,7 +55,7 @@ test "any text survives writing and reading" {
   val texts = ["héllo wörld; a=b, \"q\"", "", "line\r\nbreak", "100%", "日本語", "+plus+"]
   loop (text in texts) {
     val line = setCookieLine(Cookie(name: "k", value: text))
-    val sent = line.splitOnce(";")?.0 ?: ""
+    val sent = line.splitOnce(";")?.before ?: ""
     expect(parseCookies(sent).get("k") == text)
   }
 }

@@ -1106,9 +1106,10 @@ S6–S12 (2026-10-14).
       spellings are syntax errors there, files using one are outside the gates
       and `TestRemovedSpellings` covers them; the port rewritten as idiomatic
       Veles (self-host plan §11) (2026-10-08)
-- [ ] P6 `Layout` (comments and parenthesised spans, for the formatter) and a
-      dump that prints every span (`ast.Dump` prints none, so G2 does not check
-      spans), files that are not valid UTF-8 in the corpus (§11)
+- [x] P6 `Layout` (comments and parenthesised spans, for the formatter) and a
+      dump that prints every span — `TestP6Layout` and the span gate
+      `TestP6Spans` over the corpus (2026-10-23)
+- [ ] Files that are not valid UTF-8 in the corpus (a decision first, §11)
 
 ---
 
@@ -1357,11 +1358,11 @@ Every new public std API (http cookies/forms/client, `std/log`,
 
 ## 11. Known limitations to revisit
 
-- [ ] **B19 / D157 verification follow-up (implemented 2026-10-22).**
+- **B19 / D157 (implemented 2026-10-22; verified on Windows and Linux with
+      the B22 runs, 2026-10-23; staticcheck reports nothing new).**
       Result and task interpolation is rejected in strings, format specs and
       template values; explicit `Result.toString()` remains available. Checker,
       CLI repair/debug/release, LSP and migrated examples/docs are covered.
-      Windows/Linux reruns and staticcheck remain unverified on this Mac.
       The specified generic limit remains: a parameter declared `T` can be
       interpolated when instantiated as a Result; direct parameter coverage
       pins this exception, not a generic-effect or wrapper analysis.
@@ -1546,15 +1547,65 @@ Every new public std API (http cookies/forms/client, `std/log`,
 - **Linux (WSL)** was not run for the 2026-10-17 change (D170, B17, B20); run
   `wsl -d Ubuntu -- bash …/internal/wsl-test.sh`.
 
-- **Decided 2026-10-14, not built yet (D157 was built 2026-10-22, with verification follow-up above; D158 was built 2026-10-17, see below; D163–D165 were built 2026-10-23, see "B21 left open" below):** D158 (bare names reach the receiver's members; left to the user when
+- **Decided 2026-10-14, not built yet (D157 was built 2026-10-22, with verification follow-up above; D158 was built 2026-10-17, see below; D163–D165 were built 2026-10-23, see "B21 left open" below; D166 was built 2026-10-23, see "B22 left open" below):** D158 (bare names reach the receiver's members; left to the user when
   built: a lint preferring one spelling, and whether std/`selfhost/` migrate to bare names),
   D159 (`std/bluetooth`; needs plan P1 and P5 first; the names of its surface are confirmed
   when P7 is built; peripheral role, pairing, classic RFCOMM and a binary derive are later
   decisions), D160 (per-target files, `build.target`; plan P1), D161 (`std/sys/<os>`, the
   platform modules; plan P2–P9, each module's names asked when built), D162 (`veles
-bindgen`; plan P10; `.winmd` input later), D166
-  (labelled tuples; plan B22), D167 (`std/cli`; plan C9; its attribute and function names
-  confirmed when built).
+bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribute and
+  function names confirmed when built).
+- [ ] **S8 debug info (built 2026-10-23), what is left.** (1) A local of a
+  suspending function that lives across a suspension prints nothing once
+  LLVM's coroutine split moves it into the frame (its `dbg.declare` is not
+  carried over; `driver/debuginfo_test.go` keeps such locals in a plain
+  function for that reason). (2) Lists, maps, sets, nullables, sealed
+  values and closures are named and sized only; a gdb pretty-printer or
+  DWARF members would show their contents. (3) std's files are embedded,
+  so a debugger cannot show their text (writing them to a cache directory
+  would). (4) lldb on macOS was not run. (5) `--release` builds carry no
+  line information (`-g` without `!dbg`). (6) Function types in the
+  subprograms are empty (`!DISubroutineType(types: !{})`).
+- [ ] **Large sealed values (plan S7, open 2026-10-23; a decision about
+  D12).** A sealed value is an inline tagged union sized for its largest
+  variant (D12), so a compiler's tree pays for its biggest node everywhere:
+  in `selfhost/` an `ast.Expr` is 180 bytes, a `Stmt` 260, a `Decl` 348 —
+  copied on every return and boxed at full size behind every `*Expr` — where
+  Go's interface is 16 bytes. The self-hosted parser is 1.5–1.7× Go after
+  the S7 fixes; the target is 1.3×. Options: keep D12 and let large trees
+  box variants by hand (`*CallExpr`); box a sealed value behind the scenes
+  when its largest variant passes a size (value semantics kept: the box is
+  never written after it is made); or a declaration-site choice. The
+  user's.
+- [ ] **Source files that are not valid UTF-8 (plan S6, open 2026-10-23; a
+  decision).** The Go lexer reads the bytes: an undecodable byte is
+  "unexpected character U+FFFD" in code, "invalid UTF-8 in string literal"
+  in a string, and accepted silently in a comment. The self-hosted front end
+  cannot read such a file (`fs.readFile` refuses it; a Veles `string` is
+  UTF-8), so it and the one non-UTF-8 fuzz finding stay outside the gates.
+  Options: (a) a byte-level `File` in `selfhost/source` and lexer, matching
+  Go's messages; (b) both compilers refuse a non-UTF-8 file up front with one
+  diagnostic at the first bad byte — simpler for every tool, but a program
+  with a stray byte in a comment stops compiling. The user's to choose.
+- [ ] **B22 left open (D166 built 2026-10-23).** (1) **Labels in a generic
+  type's arguments are refused, not kept** (`Box<(lo: i64, hi: i64)>` is an
+  error naming `Box<(i64, i64)>`): one struct or sealed instance serves every
+  labelling and holds none, because codegen, derived operations and several
+  checker tables key instances by identity. Keeping them needs instances per
+  labelling that are `Identical` to each other and emitted once by `Key`.
+  Built-in collections (`List`, `Map`, …), function results and a throwing
+  call's success type keep labels; a `Result` value that is not a direct call
+  (a `Result<(a: …), E>` local, `when (r) { is Ok => … }`) shows its payload
+  unlabelled. The spec says labels do not change the generic instance; it
+  does not say whether a written label may be refused — the user's to
+  confirm or lift. (2) A `loop (e in m)` over a map, and `loop ((k, v) in m)`'s
+  element, stay `(K, V)`: D166 labels `entries()` only. (3) `[(1, 2): x => x]`
+  — a tuple key whose value is a one-parameter lambda without parentheses —
+  still reads as a lambda `(1, 2): x => …` (the return-type scan sees `x =>`);
+  write `(x) => x`. (4) Not done: rename/references of a label (the label is
+  not a declaration the index knows), hover on the label in `t.key` (not
+  built or checked), and moving the selfhost's const tables (`range.1 < r`) to labels.
+  Windows and Linux (WSL) green.
 - [ ] **B21 left open (D163–D165 built 2026-10-23).** One choice that is the
   user's: D163's migration of the tree's `throw X(message: …)` sites "by
   `--fix`, as the user chooses when built" — it needs a lint that offers the
@@ -1563,13 +1614,13 @@ bindgen`; plan P10; `.winmd` input later), D166
   on a type whose `init` takes parameters and on an `extern union`: decided
   2026-10-23, refused — D164 addendum v0.105.)
 - **Found by the direction review (2026-10-14, `veles-direction-2026-10-14.md`), open:**
-  `implement Codable` on a struct with a tuple field fails with "no method 'encode' on type
-  '(string, i64)'" pointed at the `implement` line — it should name the field and say tuples
-  are not `Codable` (decision-free diagnostic fix); no debug info — a debugger cannot step Veles source (plan S8); no per-target
+  ~~`implement Codable` on a struct with a tuple field fails with "no method 'encode'"~~
+  (fixed with B22, 2026-10-23: the derive names the field); ~~no debug info~~ (S8 built 2026-10-23: gdb steps Veles source; what is left above); no per-target
   code in Veles, every OS difference is in `runtime/c` (D160); `std/net` has no UDP,
   multicast, Unix-domain sockets or lookup API, and there is no file watching, memory-mapped
   file, terminal control, serial, HID, USB or Bluetooth module (D161, plan track P); the
-  self-hosted parser is 2.4× slower than Go's on std (plan S7); `veles fmt` spreads a
+  self-hosted parser is 1.5–1.7× slower than Go's on std after S7's first pass (2026-10-23;
+  was 3.0× by `bench/parse`, see "Large sealed values" above); `veles fmt` spreads a
   one-call `unsafe { f() }` over three lines (73 sites in std; plan B18).
 - **D168/D169 (decided 2026-10-15/16, built 2026-10-16, plan B23/B24); left out:** a
   first-_success_ race (errors ignored unless every contestant fails — the user: "`race try`

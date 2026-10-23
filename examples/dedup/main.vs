@@ -112,11 +112,11 @@ fun run(args: List<string>) throws UsageError | IoError {
     groups.getOrPut(Fingerprint(size: h.size, hash: h.hash), () => []).push(h.file)
   }
   val dupes = groups.entries()
-    .filter(e => e.1.len() > 1)
+    .filter(e => e.value.len() > 1)
     .sortedWith((a, b) => {
-      if (a.0.size != b.0.size) return b.0.size.compareTo(a.0.size)  // largest first
-      val first = a.1.first() ?: panic("dedup: a group of duplicates has at least two files")
-      first.compareTo(b.1.first() ?: panic("dedup: a group of duplicates has at least two files"))
+      if (a.key.size != b.key.size) return b.key.size.compareTo(a.key.size)  // largest first
+      val first = a.value.first() ?: panic("dedup: a group of duplicates has at least two files")
+      first.compareTo(b.value.first() ?: panic("dedup: a group of duplicates has at least two files"))
     })
 
   var wasted = 0

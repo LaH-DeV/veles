@@ -315,6 +315,9 @@ func (s *Server) addMembers(add adder, a *analysis, t types.Type, sc *scope) {
 		return
 	case *types.Tuple:
 		for i, e := range tt.Elems {
+			if tt.Labels != nil {
+				add(tt.Labels[i], ciField, e.String()) // D166
+			}
 			add(strconv.Itoa(i), ciField, e.String())
 		}
 		return

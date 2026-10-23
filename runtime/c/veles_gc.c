@@ -80,6 +80,7 @@ typedef struct veles_span {
     uint8_t *used;     /* per object: allocated */
     size_t free_hint;  /* every slot below it is in use (slots are freed only by a sweep) */
     size_t nused;      /* slots in use, so a full span is skipped without a scan */
+    size_t virgin;     /* no slot from here on has held an object: its memory still reads as zeros */
     struct veles_span *next; /* in size class list */
     void *owner;       /* the thread allocating from it, or NULL (D66) */
     struct veles_arena *arena; /* where it was carved from, and its first piece there */
@@ -457,7 +458,12 @@ static void *alloc_in_span(veles_span *s, veles_desc *desc) {
             s->nused++;
             s->free_hint = i + 1;
             char *obj = s->start + i * s->objsize;
-            memset(obj, 0, s->objsize);
+            /* a span comes from the OS zeroed (new_span) and a large one
+             * goes back when its object dies: only a slot that held an
+             * object before needs clearing — a big list's growth no longer
+             * touches every page twice (plan S7) */
+            if (i < s->virgin) memset(obj, 0, s->objsize);
+            else s->virgin = i + 1;
             *(veles_desc **)obj = desc;
             /* Published last, so a marker that finds the slot used finds it
              * whole (the helpers may mark while the program runs, F18 c).

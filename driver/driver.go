@@ -163,6 +163,7 @@ func Run(opts Options) int {
 		prog.FailOnSkip = opts.FailOnSkip
 	}
 
+	prog.DebugInfo = !opts.Release // a debugger stops at Veles lines (plan S8)
 	ir := llvm.Generate(prog)
 	clk.lap("codegen", size(len(ir))+" of LLVM IR")
 

@@ -260,10 +260,10 @@ func (f *fnCtx) traceHelperCall(sym *Symbol, call Expr, e *ast.CallExpr) Expr {
 	}
 	prev := f.newTemp(types.TI64)
 	enter := &Builtin{exprBase{types.TI64}, "test.enter", nil, span}
-	leave := &ExprStmt{&Builtin{exprBase{types.TUnit}, "test.leave", []Expr{ref(prev)}, span}}
+	leave := &ExprStmt{X: &Builtin{exprBase{types.TUnit}, "test.leave", []Expr{ref(prev)}, span}}
 	var body Expr
 	if types.Identical(t, types.TUnit) {
-		body = &BlockExpr{exprBase{types.TUnit}, &Block{Stmts: []Stmt{&ExprStmt{call}, leave}, Type: types.TUnit}}
+		body = &BlockExpr{exprBase{types.TUnit}, &Block{Stmts: []Stmt{&ExprStmt{X: call}, leave}, Type: types.TUnit}}
 	} else {
 		r := f.newTemp(t)
 		body = &Let{exprBase{t}, r, call, &BlockExpr{exprBase{t}, &Block{Stmts: []Stmt{leave}, Value: ref(r), Type: t}}}

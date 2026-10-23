@@ -1947,6 +1947,11 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		}
 		g.emit("%s = call ptr @%s(ptr %s, i64 %s, i64 %s)", v, fn, l, from, to)
 		return v
+	case "list.move":
+		l := g.expr(e.Args[0])
+		from, to, n := g.expr(e.Args[1]), g.expr(e.Args[2]), g.expr(e.Args[3])
+		g.emit("call void @veles_list_move(ptr %s, i64 %s, i64 %s, i64 %s)", l, from, to, n)
+		return "zeroinitializer"
 	case "list.touch":
 		// an order change made through `set` (sort, swap): D102 counts it
 		g.bumpMods(g.expr(e.Args[0]))
@@ -2069,11 +2074,22 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		"atomicAdd", "atomicSub", "atomicAnd", "atomicOr", "atomicXor":
 		return g.atomic(e)
 	case "string.byteAt":
+		// inline: a compare and a load, the runtime only to panic — a lexer
+		// reads every byte this way (plan S7: 16 M calls over std)
 		s := g.expr(e.Args[0])
 		i := g.expr(e.Args[1])
 		sp, sl := g.strPtrLen(s)
-		v := g.newTmp()
-		g.emit("%s = call i8 @veles_string_byte_at(ptr %s, i64 %s, i64 %s)", v, sp, sl, i)
+		ok := g.newTmp()
+		g.emit("%s = icmp ult i64 %s, %s", ok, i, sl)
+		inL, outL := g.newLabel("byte.ok"), g.newLabel("byte.bad")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s, !prof !{!\"branch_weights\", i32 2000, i32 1}", ok, inL, outL)
+		g.placeLabel(outL)
+		g.emit("call i8 @veles_string_byte_at(ptr %s, i64 %s, i64 %s)", sp, sl, i) // panics: out of bounds
+		g.emitTerm("unreachable")
+		g.placeLabel(inL)
+		p, v := g.newTmp(), g.newTmp()
+		g.emit("%s = getelementptr inbounds i8, ptr %s, i64 %s", p, sp, i)
+		g.emit("%s = load i8, ptr %s", v, p)
 		return v
 	case "secret.of":
 		// D112: a copy of the text or bytes in storage the collector wipes

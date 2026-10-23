@@ -19,7 +19,7 @@ declare i64 @llvm.coro.size.i64()
 declare ptr @llvm.coro.begin(token, ptr)
 declare i8 @llvm.coro.suspend(token, i1)
 declare ptr @llvm.coro.free(token, ptr)
-declare i1 @llvm.coro.end(ptr, i1, token)
+declare i1 @llvm.coro.end(ptr, i1)
 declare ptr @veles_task_new()
 declare void @veles_task_started(ptr, ptr)
 declare void @veles_task_finish(ptr, ptr, i64, i64)
@@ -242,7 +242,10 @@ func (g *gen) coroEpilogue() {
 	g.emit("%%coro.freed = call ptr @llvm.coro.free(token %s, ptr %s)", c.id, c.hdl)
 	g.emitTerm("br label %%%s", c.suspendL)
 	g.placeLabel(c.suspendL)
-	g.emit("%%coro.ended = call i1 @llvm.coro.end(ptr %s, i1 false, token none)", c.hdl)
+	// the two-argument form: clang 17 accepts only it, and clang 18 on
+	// upgrade it to the one with a token (found when debug info made clang
+	// verify the module)
+	g.emit("%%coro.ended = call i1 @llvm.coro.end(ptr %s, i1 false)", c.hdl)
 	g.emitTerm("ret ptr %s", c.hdl)
 }
 

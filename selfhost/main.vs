@@ -9,20 +9,24 @@
 //   selfhost --tokens FILE      every token, comment and diagnostic of the scan (P1, gate G1)
 //   selfhost --quote FILE       every line quoted as the tree printer quotes a string (P3)
 //   selfhost --parse FILE       the tree as `veles parse` prints it, then every diagnostic (P5, gates G2, G3)
+//   selfhost --spans FILE       every span of the tree, sorted, each once (P6, the span gate)
+//   selfhost --layout FILE      the comments and parenthesised spans the formatter reads (P6)
 //   selfhost --toml FILE        a TOML file as the manifest reader sees it, or its error (sema plan R1)
 //   selfhost --manifest FILE    a veles.toml as the manifest reader makes it, or its error (R1)
 //   selfhost --lints            the registry of lints: name, default level, documentation (R1)
+//   selfhost --bench-parse DIR  every .vs file under DIR parsed, timed: `BENCH parse files ns declarations` (plan S7)
 use fs
 use io
 use os
-use ast { dump }
+use time
+use ast { dump, spans }
 use lexer { kindText, tokenize }
-use parser { parseFile }
+use parser { parseFile, parseFileLayout }
 use source { Diagnostics, File, Span }
 use text { quote }
 
 fun usage(): Never {
-  io.eprintln("usage: selfhost --positions|--lines|--render|--tokens|--quote|--parse|--toml|--manifest FILE")
+  io.eprintln("usage: selfhost --positions|--lines|--render|--tokens|--quote|--parse|--spans|--layout|--toml|--manifest FILE")
   os.exit(2)
 }
 
@@ -51,7 +55,7 @@ fun render(file: File): string {
   var offset: i64 = 0
   var k: i64 = 0
   loop (offset <= file.content.len()) {
-    val span = Span(file, start: offset, end: offset + k % 5)
+    val span = Span(file: &file, start: offset, end: offset + k % 5)
     if (k % 2 == 0) diags.errorAt(span, "probe $k") else diags.warnAt(span, "probe $k")
     offset += 37
     k += 1
@@ -109,6 +113,41 @@ fun parse(file: File): string {
   out.toString()
 }
 
+// every span of the tree, sorted, each once (P6, the span gate)
+fun spanLines(file: File): string {
+  val diags = Diagnostics()
+  val lines = spans(parseFile(file, &diags)).distinct().sorted()
+  val out = StringBuilder()
+  loop (line in lines) out.appendLine(line)
+  out.toString()
+}
+
+// the formatter's input besides the tree: every comment, then every
+// parenthesised expression's span, sorted, each once (P6)
+fun layout(file: File): string {
+  val diags = Diagnostics()
+  val parsed = parseFileLayout(file, &diags)
+  val out = StringBuilder()
+  loop (c in parsed.comments) out.appendLine("comment ${c.span.start} ${c.span.end} ${escaped(c.text)}")
+  loop (line in parsed.parens.map(span => "paren ${span.start} ${span.end}").distinct().sorted()) out.appendLine(line)
+  out.toString()
+}
+
+// plan S7's `bench/parse`: every `.vs` file under dir read first, then all of
+// them lexed and parsed, timed; the checksum is the declarations found
+fun benchParse(dir: string) throws IoError {
+  val paths = (try fs.walk(dir)).filter(path => path.endsWith(".vs"))
+  val files: MutableList<File> = []
+  loop (path in paths) files.push(File.of(path, try fs.readFile(path)))
+  val watch = time.Stopwatch.start()
+  var decls: i64 = 0
+  loop (file in files) {
+    val diags = Diagnostics()
+    decls += parseFile(file, &diags).decls.len()
+  }
+  io.println("BENCH parse ${files.len()} ${watch.elapsed().toNanos()} $decls")
+}
+
 // every line quoted as the tree printer quotes a string (P3)
 fun quoteLines(file: File): string {
   val out = StringBuilder()
@@ -122,6 +161,10 @@ fun main() throws IoError {
     return
   }
   val [mode, path] = os.args() else usage()
+  if (mode == "--bench-parse") {
+    try benchParse(path)
+    return
+  }
   val file = File.of(path, try fs.readFile(path))
   val text = when (mode) {
     "--positions" => positions(file)
@@ -130,6 +173,8 @@ fun main() throws IoError {
     "--tokens"    => tokens(file)
     "--quote"     => quoteLines(file)
     "--parse"     => parse(file)
+    "--spans"     => spanLines(file)
+    "--layout"    => layout(file)
     "--toml"      => tomlDump(file.content)
     "--manifest"  => manifestDump(path, file.content)
     else          => usage()

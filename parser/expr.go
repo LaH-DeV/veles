@@ -530,13 +530,70 @@ func (p *Parser) looksLikeLambda() bool {
 		case lexer.RParen, lexer.RBracket, lexer.RBrace:
 			depth--
 			if depth == 0 {
-				after := p.peek(i + 1).Kind
-				return after == lexer.FatArrow || after == lexer.Colon
+				switch p.peek(i + 1).Kind {
+				case lexer.FatArrow:
+					return true
+				case lexer.Colon:
+					return p.returnTypeThenArrow(i + 2)
+				}
+				return false
 			}
 		case lexer.EOF:
 			return false
 		}
 		i++
+	}
+}
+
+// returnTypeThenArrow reports whether the tokens from peek(i) are a type
+// followed by `=>`: `(x): i64 => …` is a lambda, while the key of a map
+// literal, `[(1, 2): "a"]`, is followed by a value no type contains — a
+// literal, a `,` or closing bracket outside any brackets of its own, or a
+// `:` after anything but a function type's parameters (`[(1, 2): (y: i64):
+// i64 => y]` has a lambda as its value).
+func (p *Parser) returnTypeThenArrow(i int) bool {
+	depth, angles := 0, 0
+	funOpen, funClosed := false, false // the outermost group is a `fun(…)`'s parameters
+	for ; ; i++ {
+		switch p.peek(i).Kind {
+		case lexer.FatArrow:
+			if depth == 0 && angles == 0 {
+				return true
+			}
+		case lexer.Colon:
+			if depth == 0 && (p.peek(i-1).Kind != lexer.RParen || !funClosed) {
+				return false
+			}
+		case lexer.LParen, lexer.LBracket:
+			if depth == 0 {
+				funOpen = p.peek(i-1).Kind == lexer.KwFun
+			}
+			depth++
+		case lexer.RParen, lexer.RBracket:
+			if depth == 0 {
+				return false
+			}
+			depth--
+			if depth == 0 {
+				funClosed = funOpen
+			}
+		case lexer.Lt:
+			angles++
+		case lexer.Gt:
+			angles--
+		case lexer.Shr:
+			angles -= 2
+		case lexer.Comma:
+			if depth == 0 && angles <= 0 {
+				return false
+			}
+		case lexer.Int:
+			if angles <= 0 { // `Array<u8, 4>` holds one
+				return false
+			}
+		case lexer.Float, lexer.String, lexer.Char, lexer.Regex, lexer.LBrace, lexer.RBrace, lexer.Semi, lexer.EOF:
+			return false
+		}
 	}
 }
 
@@ -619,8 +676,10 @@ func (p *Parser) parseParenOrTuple() ast.Expr {
 		return &ast.TupleExpr{Pos: p.spanFrom(start)} // unit
 	}
 	var elems []ast.Expr
+	var labels tupleLabels
 	trailing := false
 	for !p.at(lexer.RParen, lexer.EOF) {
+		labels.add(p, len(elems))
 		elems = append(elems, p.parseExpr())
 		trailing = false
 		if !p.accept(lexer.Comma) {
@@ -629,6 +688,9 @@ func (p *Parser) parseParenOrTuple() ast.Expr {
 		trailing = true
 	}
 	p.expect(lexer.RParen)
+	if labels.names != nil {
+		return &ast.TupleExpr{Elems: elems, Labels: labels.done(p, len(elems)), Pos: p.spanFrom(start)}
+	}
 	if len(elems) == 1 && !trailing {
 		if p.parens != nil {
 			sp := elems[0].Span()
