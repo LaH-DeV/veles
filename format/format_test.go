@@ -142,6 +142,9 @@ func TestCorpus(t *testing.T) {
 // exercises loosely: spacing, parentheses, comments, blank lines.
 func TestStyle(t *testing.T) {
 	cases := []struct{ name, in, want string }{
+		{"receiver blocks go after the call (D207)",
+			"fun f(s: *S) {\n  s.apply({ port = 1 })\n  configure(s,   {\n    port = 2\n  })\n  val t = \"x\".edit {trim();  toLower()}\n  measure() { work() }\n  val g: fun on S(i64): bool = (n) => n > 0\n}\n",
+			"fun f(s: *S) {\n  s.apply { port = 1 }\n  configure(s) {\n    port = 2\n  }\n  val t = \"x\".edit { trim(); toLower() }\n  measure { work() }\n  val g: fun on S(i64): bool = (n) => n > 0\n}\n"},
 		{"regex literals stay verbatim",
 			"fun f(s: string):bool{val r=/(a b)\\d+ [/] \\//imx\nreturn r.test(s)||/x/.test(s)}\n",
 			"fun f(s: string): bool {\n  val r = /(a b)\\d+ [/] \\//imx\n  return r.test(s) || /x/.test(s)\n}\n"},

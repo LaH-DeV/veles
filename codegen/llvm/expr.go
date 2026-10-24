@@ -1814,6 +1814,35 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		sp, sl := g.strPtrLen(g.expr(e.Args[1]))
 		g.emit("call void @veles_list_append_bytes(ptr %s, ptr %s, i64 %s)", l, sp, sl)
 		return "zeroinitializer"
+	case "list.trimText":
+		g.emit("call void @veles_bytes_trim(ptr %s)", g.expr(e.Args[0]))
+		return "zeroinitializer"
+	case "list.asciiCase":
+		l := g.expr(e.Args[0])
+		upper := g.expr(e.Args[1])
+		g.emit("call void @veles_bytes_ascii_case(ptr %s, i1 %s)", l, upper)
+		return "zeroinitializer"
+	case "list.replaceText":
+		l := g.expr(e.Args[0])
+		op, ol := g.strPtrLen(g.expr(e.Args[1]))
+		rp, rl := g.strPtrLen(g.expr(e.Args[2]))
+		g.emit("call void @veles_bytes_replace(ptr %s, ptr %s, i64 %s, ptr %s, i64 %s)", l, op, ol, rp, rl)
+		return "zeroinitializer"
+	case "list.insertText":
+		l := g.expr(e.Args[0])
+		at := g.expr(e.Args[1])
+		sp, sl := g.strPtrLen(g.expr(e.Args[2]))
+		g.emit("call void @veles_bytes_insert(ptr %s, i64 %s, ptr %s, i64 %s)", l, at, sp, sl)
+		return "zeroinitializer"
+	case "list.takeText":
+		l := g.expr(e.Args[0])
+		out := g.alloca(strType)
+		g.emit("store %s zeroinitializer, ptr %s", strType, out)
+		ok := g.newTmp()
+		g.emit("%s = call i1 @veles_bytes_take_text(ptr %s, ptr %s)", ok, out, l)
+		val := g.newTmp()
+		g.emit("%s = load %s, ptr %s", val, strType, out)
+		return g.makeNullableT(e.Type().(*types.Nullable), ok, val)
 	case "list.get":
 		if _, ok := e.Args[0].Type().(*types.Array); ok {
 			p := g.arrayElemPtr(e.Args[0], g.expr(e.Args[1]), false, e.Span)

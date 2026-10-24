@@ -17,12 +17,15 @@ import (
 type Checker struct {
 	paramState   map[paramKey]int8 // which parameters a function keeps (escape.go, D188)
 	receiverFacts map[*ast.FunDecl]*methodFacts // what a method does with `this` (move_method.go, D201)
+	testRunnable  map[*Func]bool                // which tests and helpers the compiler can run (compile_tests.go, D208)
 	ladderSeen   map[*ast.IfExpr]bool // the links of an else-if chain whose head was looked at (lint_style.go)
 	namedImports []namedImport // every bound name of a braced import (D85)
 	rounds       int           // inference rounds run so far (D45), for the effects dump
 	arrayUses    []arrayUse    // inline arrays to size-check (D121)
 	pkg          *Package
 	bareDone     map[*ast.FunDecl]bool // the methods whose bare member names are resolved (D158)
+	blockDone    map[*ast.LambdaExpr]bool // the receiver blocks whose bare member names are resolved (D207)
+	onCalls      []onCall                  // variables given to a function on a receiver: heap or stack, settled by the receiver pass (D207)
 	diags        *source.Diagnostics
 	// roundDiags collects diagnostics of the current inference round; only
 	// the final round's are kept (D45 fixpoint).
@@ -252,6 +255,9 @@ func checkCollectObserved(pkg *Package, diags *source.Diagnostics, release bool,
 		c.inferSuspension(prog)
 		c.checkHeldRegions(prog)
 		c.indexInferred(prog)
+		if c.testMode && !c.roundDiags.HasErrors() {
+			c.runTestsInCompiler(prog) // D208: the tests the compiler can run, run there too
+		}
 	}
 	diags.Items = append(diags.Items, c.applyLintLevels(c.roundDiags.Items)...)
 	c.dropSyntheticRefs()
@@ -1392,6 +1398,14 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		return tt
 	case *ast.FunType:
 		ft := &types.Func{Ret: c.resolveType(env, t.Ret), Sendable: t.Sendable, C: t.C}
+		if t.On != nil {
+			// D207: the receiver goes first, as a pointer to its place (D22)
+			if t.C {
+				c.errorf(t.Pos, "a C function pointer has no receiver; write 'extern fun(*T, ...)' (D69, D207)")
+			}
+			ft.On = true
+			ft.Params = append(ft.Params, types.Param{Name: "this", Type: &types.Pointer{Elem: c.resolveType(env, t.On)}})
+		}
 		for _, p := range t.Params {
 			ft.Params = append(ft.Params, types.Param{Type: c.resolveType(env, p)})
 		}

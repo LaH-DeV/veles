@@ -163,6 +163,7 @@ func (c *cloner) cloneFunType(x *FunType) *FunType {
 }
 
 func (c *cloner) fixFunType(n *FunType) {
+	n.On = c.cloneType(n.On)
 	if n.Params != nil {
 		s1 := make([]Type, len(n.Params))
 		copy(s1, n.Params)

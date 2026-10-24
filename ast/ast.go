@@ -82,8 +82,10 @@ type TupleType struct {
 }
 
 // FunType is `fun(A, B): R suspends throws E` (D40), or `sendable fun(...)`:
-// a function value that may cross a task boundary (D35).
+// a function value that may cross a task boundary (D35). `fun on T(A): R`
+// is one whose `this` is a T (D207); On is nil for any other.
 type FunType struct {
+	On       Type
 	Params   []Type
 	Ret      Type // nil means unit
 	Effects  Effects
@@ -817,8 +819,14 @@ type NullLit struct {
 	Pos source.Span
 }
 
+// SelfExpr is `this`. The checker writes the two flags: Implicit on the
+// `this` it puts before a bare member name (D158), Outer on such a `this`
+// inside blocks that run on a receiver (D207): how many of them to step out
+// of to the receiver that has the member (0: the innermost).
 type SelfExpr struct {
-	Pos source.Span
+	Implicit bool
+	Outer    int
+	Pos      source.Span
 }
 
 // FieldDefaultExpr is the default of field `Index` of struct `Struct` (a
@@ -899,7 +907,10 @@ type CallExpr struct {
 	// Block: written `async { body }` (D169) — Fun is a lambda of no
 	// parameters whose body is that block, Async is set, there are no Args
 	Block bool
-	Pos   source.Span
+	// Trailing: the last argument is a block written after the call,
+	// `x.apply { … }`, `configure(&s) { … }` (D207)
+	Trailing bool
+	Pos      source.Span
 }
 
 type UnaryExpr struct {
@@ -965,7 +976,10 @@ type LambdaExpr struct {
 	Params []Param
 	Ret    Type
 	Body   Expr // a BlockExpr for `{ ... }` bodies
-	Pos    source.Span
+	// Bare: written `{ ... }` alone, with no parameters and no `=>` — a
+	// block that runs on a receiver, where a `fun on T()` goes (D207)
+	Bare bool
+	Pos  source.Span
 }
 
 // TupleExpr is `(a, b)`; `(key: k, value: v)` labels every element (D166),

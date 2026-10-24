@@ -244,6 +244,74 @@ The same nesting works in `val`/`var` bindings and loop heads
 starts to pile up — `e.0.0` — that is usually the moment to name the
 tuple as a struct instead.
 
+## Receiver blocks
+
+A _receiver function_, `fun on T()`, is a function whose `this` is a `T`:
+inside it the members of the `T` are reached bare, as in a method. A
+_receiver block_ `{ … }` is one, written where one is expected — and a block
+on the same line right after a call is the call's last argument (D207):
+
+```veles
+use io
+
+struct Server {
+  var host: string = "localhost"
+  var port: i64 = 80
+}
+
+fun buildString(body: fun on StringBuilder()): string {
+  val builder = StringBuilder()
+  body(builder)
+  builder.toString()
+}
+
+fun main() {
+  var server = Server()
+  server.apply { port = 8080 }               // changed in place
+  val local = Server().apply { host = "127.0.0.1" }
+  val slug = "  Hello Big World ".edit {    // a changed copy: one copy, in a StringBuilder
+    trim()
+    toLower()
+    replace(" ", "-")
+  }
+  val text = buildString { append("a"); append("b") }
+  io.println("${server.port} ${local.host} $slug $text")
+}
+```
+
+Output:
+
+```text
+8080 127.0.0.1 hello-big-world ab
+```
+
+Two functions on every type take a receiver block:
+
+- **`apply`** runs it on the value where it is held — a `var`, a `var`
+  field, what a pointer points at, a temporary (the builder style above),
+  a mutable collection — and gives the value back. On a `val` it is an
+  error whose fix writes `edit`: nothing is copied by surprise.
+- **`edit`** gives a changed copy and leaves the value alone, with one copy
+  at most. The block runs on a `StringBuilder` for a string (with in-place
+  `trim`, `toLower`, `toUpper`, `replace`, `insert`, `append`), on the
+  mutable form of a `List`, `Map` or `Set` (frozen back into the immutable
+  one without a second copy), or on a copy of any other value.
+
+A block written after `apply` or `edit` is compiled in place, as part of
+the function it is written in: no closure is made, and `server.apply { port
+= 8080 }` costs what `server.port = 8080` does. So a `try` in it reaches
+that function, as anywhere else in it; `return`, and a `break` or
+`continue` that would leave the block, are errors — the block runs to its
+end. Nothing is allocated but `edit`'s copy, and the variable the block
+works on moves to the heap only when the block keeps its `this` (in a
+closure that outlives it).
+
+A block has no parameters; a `fun on T(A)` is written `(a) => { … }`,
+`this` still the `T`. Where a plain `fun()` is expected a block is a
+function with no receiver: `measure { work() }`. A block passed to a
+function of your own (`buildString { … }` above) is an ordinary function
+value.
+
 ## Iterators
 
 `loop (x in xs)` works on anything that implements `Iterable`, which

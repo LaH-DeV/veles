@@ -34,14 +34,22 @@ prelude/ascii.vs: public const fun isAsciiSpace(): bool
 prelude/ascii.vs: public const fun isAsciiUpper(): bool
 prelude/ascii.vs: public const fun toAsciiLower(): u8
 prelude/ascii.vs: public const fun toAsciiUpper(): u8
+prelude/builder.vs: const fun builderText(builder: StringBuilder): string
+prelude/builder.vs: const fun takeText(): string
+prelude/builder.vs: const fun textBuilder(text: string): StringBuilder
 prelude/builder.vs: public const fun append(s: string)
 prelude/builder.vs: public const fun appendByte(b: u8)
 prelude/builder.vs: public const fun appendLine(s: string = "")
 prelude/builder.vs: public const fun clear()
+prelude/builder.vs: public const fun insert(at: i64, text: string)
 prelude/builder.vs: public const fun isEmpty(): bool
 prelude/builder.vs: public const fun len(): i64
+prelude/builder.vs: public const fun replace(old: string, new: string)
 prelude/builder.vs: public const fun reserve(n: i64)
+prelude/builder.vs: public const fun toLower()
 prelude/builder.vs: public const fun toString(): string
+prelude/builder.vs: public const fun toUpper()
+prelude/builder.vs: public const fun trim()
 prelude/case.vs: const fun capitalised(word: string): string
 prelude/case.vs: const fun caseFolded(name: string): string
 prelude/case.vs: const fun caseIndex(names: List<string>, text: string, case: Case): i64?

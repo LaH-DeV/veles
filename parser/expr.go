@@ -229,6 +229,27 @@ func (p *Parser) parsePostfix() ast.Expr {
 		case lexer.LParen:
 			args := p.parseArgs()
 			x = &ast.CallExpr{Fun: x, Args: args, Pos: p.spanFrom(start)}
+		case lexer.LBrace:
+			// `x.apply { … }`, `configure(&s) { … }`: a block on the same
+			// line after a call or a name is the call's last argument, a
+			// receiver block (D207)
+			if p.noLambda > 0 {
+				return x
+			}
+			call, ok := x.(*ast.CallExpr)
+			switch {
+			case ok && !call.Block && !call.Trailing:
+			case isTrailingCallee(x):
+				call = &ast.CallExpr{Fun: x}
+			default:
+				return x
+			}
+			bs := p.span()
+			body := p.parseBlock()
+			call.Args = append(call.Args, ast.Arg{Value: &ast.LambdaExpr{Body: &ast.BlockExpr{Block: body}, Bare: true, Pos: p.spanFrom(bs)}})
+			call.Trailing = true
+			call.Pos = p.spanFrom(start)
+			x = call
 		case lexer.String:
 			// `tag"text ${x}"` (D129): a string right after a name, no space
 			if !isTemplateTag(x) {
@@ -435,6 +456,13 @@ func (p *Parser) parsePrimary() ast.Expr {
 		return p.parseParenOrTuple()
 	case lexer.LBracket:
 		return p.parseCollectionLit()
+	case lexer.LBrace:
+		// `x.apply({ port = 8080 })`: a block where a `fun on T()` goes, its
+		// receiver the `this` of the body (D207)
+		if p.noLambda == 0 {
+			body := p.parseBlock()
+			return &ast.LambdaExpr{Body: &ast.BlockExpr{Block: body}, Bare: true, Pos: p.spanFrom(start)}
+		}
 	case lexer.KwMut:
 		// `mut [1, 2]` / `mut ["k": v]` / `mut [:]`: a mutable collection
 		// literal without spelling the MutableList/MutableMap annotation.
@@ -1035,4 +1063,15 @@ func (p *Parser) missingVal() bool {
 	at := source.Span{File: name.Span.File, Start: name.Span.Start, End: name.Span.Start}
 	p.diags.Items[len(p.diags.Items)-1].Fix = &source.Fix{Title: "Insert 'val '", Edits: []source.TextEdit{{Span: at, NewText: "val "}}}
 	return true
+}
+
+// isTrailingCallee reports whether a block may follow x as its trailing
+// argument without parentheses (D207): a name, `x.name`, or one with type
+// arguments.
+func isTrailingCallee(x ast.Expr) bool {
+	switch x.(type) {
+	case *ast.NameExpr, *ast.MemberExpr:
+		return true
+	}
+	return false
 }

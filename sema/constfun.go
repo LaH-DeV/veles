@@ -1,6 +1,7 @@
 package sema
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
 	"sort"
@@ -77,16 +78,17 @@ func (ev *constEval) callIndirect(e *CallIndirect) ConstVal {
 // outside (tasks, I/O, raw memory, atomics, the test runner) or the layout of
 // memory.
 var constBuiltins = map[string]bool{
+	"test.fail": true, "test.stop": true, "test.skip": true, "test.enter": true, "test.leave": true, // a test the compiler runs (D208)
 	"string.len": true, "string.byteAt": true, "string.substring": true, "string.bytes": true,
 	"string.chars": true, "string.charCount": true, "string.startsWith": true, "string.startsWithAt": true, "string.endsWith": true,
 	"string.contains": true, "string.split": true, "string.toInt": true, "string.asciiCase": true, "string.replace": true,
 	"list.len": true, "list.get": true, "list.ref": true, "list.push": true, "list.pop": true,
 	"list.clear": true, "list.copy": true, "list.addAll": true, "list.slice": true, "list.reserve": true,
-	"list.touch": true, "list.mods": true, "list.checkMods": true, "list.appendText": true, "list.move": true,
+	"list.touch": true, "list.mods": true, "list.checkMods": true, "list.appendText": true, "list.move": true, "list.trimText": true, "list.asciiCase": true, "list.replaceText": true, "list.insertText": true, "list.takeText": true,
 	"list.joinText": true, "list.decodeUtf8": true, "list.decodeUtf8Range": true,
 	"list.toArray": true, "array.toList": true, "list.sortedNative": true,
 	"map.len": true, "map.get": true, "map.contains": true, "map.set": true, "map.remove": true,
-	"map.clear": true, "map.reserve": true, "map.copy": true, "map.keys": true, "map.values": true,
+	"map.clear": true, "map.reserve": true, "map.copy": true, "list.freeze": true, "map.freeze": true, "map.keys": true, "map.values": true,
 	"map.entries": true, "map.mods": true, "map.checkMods": true,
 	"set.new": true, "set.add": true,
 	"num.toChecked": true, "panic": true,
@@ -97,7 +99,7 @@ var constBuiltins = map[string]bool{
 // the `init` block of a struct, which building the struct runs (D28) and which
 // is held to the same rules.
 func runsInCompiler(fn *Func) bool {
-	return fn.Const || fn.tmpl != nil && fn.tmpl.Name == "$init"
+	return fn.Const || fn.compilerRunnable || fn.tmpl != nil && fn.tmpl.Name == "$init"
 }
 
 // constExterns are the runtime's own entry points the evaluator runs in Go,
@@ -235,8 +237,11 @@ func (ev *constEval) call(e *Call) ConstVal {
 	}
 	if !runsInCompiler(fn) {
 		if fn.tmpl != nil && fn.tmpl.TestCode {
-			// a test helper runs with the tests, and cannot be a const fun
-			ev.errorf(e.Span, "a constant cannot call '%s': it is a test helper, which runs with the tests; move it to a module file as a 'const fun' (D113, D78)", fn.Display)
+			// a test helper the compiler can run is called like a const fun
+			// (D208); one it cannot run says why not
+			if !ev.c.compilerCanRun(fn) {
+				ev.errorf(e.Span, "a constant cannot call '%s': it is a test helper the compiler cannot run — it does I/O, starts a task, throws, or calls a function that is not a 'const fun' (D113, D208)", fn.Display)
+			}
 		} else {
 			ev.errorf(e.Span, "a constant cannot call '%s': it is not a 'const fun'; mark it 'const fun' if the compiler can run it, or compute the value at run time with 'val' (D113)", fn.Display)
 		}
@@ -264,7 +269,7 @@ func (ev *constEval) invokeWith(fn *Func, args []ConstVal, at source.Span, f *CF
 	if fn.Body == nil || ev.c.constChecking[fn] {
 		ev.errorf(at, "'%s' is called by a constant while its own body is still being checked; a constant it reads depends on it (D113)", fn.Display)
 	}
-	if !lambda && !ev.c.validateConstFun(fn) {
+	if !lambda && !fn.compilerRunnable && !ev.c.validateConstFun(fn) { // a test or helper the compiler can run was decided by compilerCanRun (D208)
 		if why, ok := ev.c.constFunWhy[fn]; ok {
 			ev.errorf(at, "'%s' cannot run in the compiler with these type arguments: %s", fn.Display, why)
 		}
@@ -377,7 +382,32 @@ func isBoundary(s string, i int) bool {
 func (ev *constEval) builtinMore(e *Builtin) (ConstVal, bool) {
 	switch e.Op {
 	case "panic":
+		if ev.testing != nil {
+			ev.testFail(e.Span, "in the compiler: panicked: "+ev.str(e, 0))
+			panic(testStopped{})
+		}
 		ev.errorf(e.Span, "panic in a constant: %s", ev.str(e, 0))
+	case "test.fail", "test.stop", "test.skip", "test.enter", "test.leave":
+		// a test running in the compiler (D208), recorded as the runtime does
+		if ev.testing == nil {
+			ev.errorf(e.Span, "%s is not a constant expression (D113)", describeNode(e))
+		}
+		switch e.Op {
+		case "test.enter":
+			return i64v(0), true
+		case "test.leave":
+			return &CUnit{}, true
+		case "test.skip":
+			if len(ev.testing.fails) == 0 && !ev.testing.skipped {
+				ev.testing.skipped, ev.testing.skipWhy = true, ev.str(e, 0)
+			}
+			panic(testStopped{})
+		}
+		ev.testFail(e.Span, ev.str(e, 0))
+		if e.Op == "test.stop" {
+			panic(testStopped{})
+		}
+		return &CUnit{}, true
 	case "string.byteAt":
 		s, i := ev.str(e, 0), ev.intArg(e, 1)
 		if i.Sign() < 0 || i.Cmp(big.NewInt(int64(len(s)))) >= 0 {
@@ -448,7 +478,11 @@ func (ev *constEval) builtinMore(e *Builtin) (ConstVal, bool) {
 		}
 		return &CString{string(s)}, true
 	case "string.replace":
-		return &CString{strings.ReplaceAll(ev.str(e, 0), ev.str(e, 1), ev.str(e, 2))}, true
+		out := strings.ReplaceAll(ev.str(e, 0), ev.str(e, 1), ev.str(e, 2))
+		if SkewReplaceForTest {
+			out += "?" // a wrong compile-time answer, for the test of D208's disagreement report
+		}
+		return &CString{out}, true
 	case "string.split":
 		s, sep := ev.str(e, 0), ev.str(e, 1)
 		out := &CList{T: e.Type().(*types.List)}
@@ -543,6 +577,47 @@ func (ev *constEval) builtinMore(e *Builtin) (ConstVal, bool) {
 			l.Elems = append(l.Elems, &CInt{types.TU8, big.NewInt(int64(s[i]))})
 		}
 		return &CUnit{}, true
+	case "list.trimText", "list.asciiCase", "list.replaceText", "list.insertText":
+		// as veles_bytes_*: StringBuilder's in-place edits (D207)
+		l := ev.mutList(e)
+		buf := make([]byte, len(l.Elems))
+		for i, x := range l.Elems {
+			buf[i] = byte(x.(*CInt).V.Uint64())
+		}
+		switch e.Op {
+		case "list.trimText":
+			buf = bytes.TrimFunc(buf, func(r rune) bool { return r == ' ' || r >= 9 && r <= 13 })
+		case "list.asciiCase":
+			upper := ev.expr(e.Args[1]).(*CBool).V
+			for i, c := range buf {
+				if upper && c >= 'a' && c <= 'z' || !upper && c >= 'A' && c <= 'Z' {
+					buf[i] = c ^ 0x20
+				}
+			}
+		case "list.replaceText":
+			if old := ev.str(e, 1); old != "" {
+				buf = bytes.ReplaceAll(buf, []byte(old), []byte(ev.str(e, 2)))
+			}
+		case "list.insertText":
+			at := int(ev.intArg(e, 1).Int64())
+			buf = append(buf[:at:at], append([]byte(ev.str(e, 2)), buf[at:]...)...)
+		}
+		l.Elems = l.Elems[:0]
+		for _, c := range buf {
+			l.Elems = append(l.Elems, &CInt{types.TU8, big.NewInt(int64(c))})
+		}
+		return &CUnit{}, true
+	case "list.takeText":
+		src := ev.elems(e, ev.expr(e.Args[0]))
+		buf := make([]byte, len(src))
+		for i, x := range src {
+			buf[i] = byte(x.(*CInt).V.Uint64())
+		}
+		nt := e.Type().(*types.Nullable)
+		if !utf8.Valid(buf) {
+			return &CNull{nt}, true
+		}
+		return &CSome{nt, &CString{string(buf)}}, true
 	case "list.joinText":
 		src := ev.elems(e, ev.expr(e.Args[0]))
 		sep := ev.str(e, 1)
@@ -579,13 +654,18 @@ func (ev *constEval) builtinMore(e *Builtin) (ConstVal, bool) {
 		})
 		return out, true
 	case "list.toArray":
+		// `xs.toArray<N>()`: the array, or null when xs has not N elements
 		src := ev.elems(e, ev.expr(e.Args[0]))
-		at := e.Type().(*types.Array)
+		nt := e.Type().(*types.Nullable)
+		at := nt.Elem.(*types.Array)
+		if n, ok := at.N(); !ok || n != int64(len(src)) {
+			return &CNull{nt}, true
+		}
 		out := &CArray{T: at, Elems: make([]ConstVal, len(src))}
 		for i, x := range src {
 			out.Elems[i] = copyVal(x)
 		}
-		return out, true
+		return &CSome{nt, out}, true
 	case "array.toList":
 		src := ev.elems(e, ev.expr(e.Args[0]))
 		out := &CList{T: e.Type().(*types.List), Elems: make([]ConstVal, len(src))}
@@ -626,6 +706,18 @@ func (ev *constEval) builtinMore(e *Builtin) (ConstVal, bool) {
 		ev.expr(e.Args[0])
 		ev.expr(e.Args[1])
 		return &CUnit{}, true
+	case "list.freeze":
+		// the List over the same elements; a later write through the old
+		// name, which panics in a program, is not modelled here (D188)
+		l := ev.mutList(e)
+		return &CList{T: e.Type().(*types.List), Elems: l.Elems[:len(l.Elems):len(l.Elems)]}, true
+	case "map.freeze":
+		switch m := ev.expr(e.Args[0]).(type) {
+		case *CMap:
+			return &CMap{T: e.Type().(*types.Map), Keys: m.Keys[:len(m.Keys):len(m.Keys)], Vals: m.Vals[:len(m.Vals):len(m.Vals)]}, true
+		case *CSet:
+			return &CSet{T: e.Type().(*types.Set), Elems: m.Elems[:len(m.Elems):len(m.Elems)]}, true
+		}
 	case "map.copy":
 		switch m := ev.expr(e.Args[0]).(type) {
 		case *CMap:

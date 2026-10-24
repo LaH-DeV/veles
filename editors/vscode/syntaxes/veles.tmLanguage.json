@@ -81,7 +81,7 @@
       "patterns": [
         {
           "comment": "fun name(",
-          "match": "\\b(public\\s+|private\\s+|internal\\s+)?(override\\s+)?(unsafe\\s+)?(static\\s+)?(fun)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(public\\s+|private\\s+|internal\\s+)?(override\\s+)?(unsafe\\s+)?(static\\s+)?(fun)\\s+(?!on\\s+[A-Za-z(])([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.modifier.veles" },
             "2": { "name": "storage.modifier.veles" },
@@ -215,6 +215,7 @@
         { "name": "keyword.control.conditional.veles", "match": "\\b(if|else|when|is)\\b" },
         { "comment": "inline loop (f in T.fields) { } (contextual: only directly before `loop`, D174)", "name": "keyword.control.loop.veles", "match": "(?<![.\\w])inline\\b(?=\\s+loop\\b)" },
         { "comment": "indirect struct / inline struct / indirect sealed trait: where a variant is stored (contextual, D198)", "name": "storage.modifier.veles", "match": "(?<![.\\w])(indirect|inline)\\b(?=\\s+(struct|sealed)\\b)" },
+        { "comment": "fun on T(A): R, a receiver function type (contextual: only directly after `fun`, D207)", "match": "\\b(fun)\\s+(on)\\b(?=\\s+[A-Za-z(])", "captures": { "1": { "name": "storage.type.function.veles" }, "2": { "name": "keyword.other.on.veles" } } },
         { "name": "keyword.control.loop.veles", "match": "\\b(loop|break|continue|in)\\b" },
         { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|do|catch|with)\\b" },
         { "name": "keyword.control.concurrency.veles", "match": "\\b(async|await|scope|gather|race)\\b" },

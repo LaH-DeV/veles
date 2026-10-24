@@ -234,6 +234,24 @@ extend Parser {
         this.next()
         return x
       }
+      Kind.LBrace            => {
+        // `x.apply { … }`, `configure(&s) { … }`: a block on the same line
+        // after a call or a name is the call's last argument (D207)
+        if (this.noLambda > 0) return null
+        var call: ast.CallExpr = when (x) {
+          is ast.CallExpr   => if (x.block || x.trailing) return null else x
+          is ast.NameExpr   => ast.CallExpr(callee: &x)
+          is ast.MemberExpr => ast.CallExpr(callee: &x)
+          else              => return null
+        }
+        val blockStart = this.span()
+        val body = this.parseBlock()
+        val lambda: ast.Expr = ast.LambdaExpr(body: &ast.BlockExpr(block: body), bare: true, pos: this.spanFrom(blockStart))
+        call.args = call.args.edit { push(ast.Arg(value: &lambda)) }
+        call.trailing = true
+        call.pos = this.spanFrom(start)
+        return call
+      }
       Kind.LBracket          => {
         this.next()
         val index = this.parseExpr()
@@ -372,6 +390,13 @@ extend Parser {
         return this.parseParenOrTuple()
       }
       Kind.LBracket => return this.parseCollectionLit()
+      Kind.LBrace => {
+        // `{ … }` alone: a receiver block, or a plain `fun()` (D207)
+        if (this.noLambda == 0) {
+          val body = this.parseBlock()
+          return ast.LambdaExpr(body: &ast.BlockExpr(block: body), bare: true, pos: this.spanFrom(start))
+        }
+      }
       Kind.KwMut => {
         // `mut [1, 2]`, `mut ["k": v]`, `mut [:]`
         this.next()

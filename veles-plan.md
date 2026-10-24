@@ -480,7 +480,22 @@ on Linux).
 
 Older entries: `archive/progress-log-2026-09.md`.
 
-### 2026-10-24 — C12: tests that can run in the compiler run there too (D208) — decided
+### 2026-10-24 — C12: tests that can run in the compiler run there too (D208) — built
+
+`sema/compile_tests.go`: `compilerCanRun` decides a test or helper (the
+`const fun` rules, quietly, memoized; a test is declared throwing, so its
+body decides); after the last round of `veles test`'s check the checker runs
+each such test in the evaluator, whose `test.fail`/`stop`/`skip` record
+instead of erroring and whose panics and stops become failure lines like the
+runtime's; over the step budget a test runs in the program only. The runner
+prints `ok (also in the compiler)`, or fails a test the compiler failed and
+the program passed ("FAILED in the compiler only …"), or adds "in the
+compiler it passed" under a program failure. `@SkipIf(helper())` evaluates
+a runnable helper; one that is not says why. `VELES_COMPILER_TESTS=why`
+explains a refusal. 24 of the prelude's tests now run both ways and agree.
+Tests: `TestTestsRunInTheCompiler` (both ways, program only, a helper in
+`@SkipIf`, a disagreement through `sema.SkewReplaceForTest`),
+`TestConstantCallsTestHelper`. Docs: chapter 14, cheat sheet.
 
 Acceptance: the checker decides per test (and per `test fun`) whether the
 compiler can run it — the `const fun` rules, inferred, no keyword;
@@ -493,7 +508,38 @@ purpose through an evaluator hook, a test that cannot run in the compiler,
 a helper in `@SkipIf`); std's const helpers exercised both ways by their
 existing tests; docs (chapter 14, errors reference).
 
+### 2026-10-24 — C11: receiver blocks (D207) — built
+
+`fun on T(A): R` in both parsers, the formatter, types (`types.Func.On`:
+the first parameter is a pointer to the receiver's place); `{ … }` alone
+and trailing after a call or a name (`ast.LambdaExpr.Bare`,
+`ast.CallExpr.Trailing`), the formatter writing the trailing form and
+keeping a one-line block on one line; a receiver block checked with `this`
+its first parameter and bare members resolved against it
+(`resolveBlockMembers`, `SelfExpr.Implicit/Outer` for an enclosing
+method's members); `sema/apply_edit.go`: `apply`/`edit` on every type,
+the literal block inlined (`fnCtx.recvStack`), `return`/leaving jumps
+refused, the heap decision deferred to the receiver pass
+(`settleOnCalls`); `StringBuilder.trim/toLower/toUpper/replace/insert` on
+new runtime functions (`veles_bytes_*`) with evaluator twins; the edited
+string taken from the builder's bytes without a copy. Measured
+(`--release`, 20M calls): `p.apply { x += i; y -= 1 }` 0.33 ns per call,
+the same as the two assignments (a closure was ~25 ns);
+`text.edit { trim(); toLower(); replace(" ", "-") }` ~400 ns, as the
+chain `trim().toLower().replace(…)` on a 32-byte string. Tests:
+`D207-receiver-blocks.vs`, `std/prelude/builder.test.vs` (9 tests, all
+also in the compiler), `parser/receiver_test.go`, a formatter case, the
+self-hosted front end byte-identical on all of it. Docs: chapter 10
+"Receiver blocks", cheat sheet, errors reference, hover for `on`,
+`apply`, `edit`; the editor grammar colours `fun on`. Left: checklist §11.
+
 ### 2026-10-24 — C11: blocks on a receiver (D207) — decided, after C10
+
+Amended the same day (D207 addendum): receiver blocks are passed trailing,
+`x.apply { … }`, `configure(&s) { … }`, `measure { … }` (a same-line `{`
+after a call or method name, filling a last `fun on T()` or `fun()`), in
+both parsers; the formatter writes the trailing form; docs say "receiver
+block" / "receiver function".
 
 Acceptance: the type `fun on T(...): R` in both parsers, the formatter,
 hover; a `{ … }` lambda (or `(a) => { … }`) checked with `this` the

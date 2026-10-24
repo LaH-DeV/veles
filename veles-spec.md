@@ -8285,6 +8285,51 @@ trailing blocks (the user: none); Kotlin's whole set `let`/`run`/`also` (they
 overlap a plain lambda); `apply` copying a `val` (the same as `edit`, by
 surprise).
 
+**Amended 2026-10-24: trailing receiver blocks.** The user, on seeing
+`x.apply({ … })`: "The syntax could be `apply { ... }` (and gets `this` from
+the type) … it is important that the dev experience is good and performance
+is great." Of the options, all recommended:
+
+```veles
+server.apply { port = 8080 }
+val text = buildString { append("a"); append("b") }
+configure(&server) { port = 443 }
+measure { work() }                         // a block for a plain fun() too
+```
+
+- **The name.** `{ … }` whose `this` is a value is a **receiver block**; its
+  type `fun on T()` is a **receiver function**.
+- ~~**No trailing blocks**~~ — superseded: a `{` on the **same line** right
+  after a call's `)` or a method name is the call's last argument. The
+  parameter it fills takes no parameters: a `fun on T()` (the block's `this`
+  is the receiver) or a plain `fun()` (a block with no receiver). On the next
+  line a `{` starts a statement, as before. `x.apply({ … })` stays valid; the
+  formatter writes the trailing form.
+- **Parameters.** A block has none; a `fun on T(A)` is written
+  `(a) => { … }`, `this` still bound. Kotlin's `{ a -> … }` rejected (it
+  brings back `->`, D33).
+- **`apply` and `edit`** stay two names: in place, and one copy.
+
+Rejected: keeping only `x.apply({ … })`; trailing blocks for receiver
+functions only; `copy { … }` for `edit`.
+
+**Built 2026-10-24 (plan C11).** A receiver function's `this` is a pointer
+to the place it runs on, as a method's (D22); calling one, `body(x)`, passes
+the place of `x` (a copy for a temporary; a global `val` refused). A block
+written after `apply` or `edit` is checked and compiled **in place**, in
+the function it is written in — no closure — so `server.apply { port = 8080
+}` costs what the assignment does (measured: 0.33 ns per call, as the
+assignment; ~25 ns as a closure). It follows that a `try` in it reaches
+that function, while `return`, and a `break`/`continue` that would leave the
+block, are refused (the block runs to its end); a receiver function *value*
+given to `apply`/`edit` may not throw. In a block, a bare name is the
+innermost receiver's member that has it, then an enclosing receiver's (a
+method's), as for locals. The variable the block works on stays on the
+stack unless the block keeps its `this` (decided after every body is
+checked). `edit` on a string runs on a `StringBuilder` whose bytes become
+the string without a copy (`list.takeText`); `StringBuilder` gained
+`trim`, `toLower`, `toUpper`, `replace`, `insert`.
+
 ### D208 — A test that can run in the compiler runs there too (v0.111; amends D78)
 
 The user, 2026-10-24: "we should be able to test `const fun`s etc no? maybe
@@ -8315,6 +8360,11 @@ test "slug lowercases and joins words" {     // nothing in it needs the program:
 
 Rejected: a `const test` keyword (the user chose no new syntax); tests in
 the compiler only (the two engines never compared); helpers only.
+
+Built 2026-10-24 (plan C12). A test over the step limit runs in the program
+only; a test that uses `try`, or one under a suite's `skip`/`skipIf` gate,
+does not run in the compiler yet (checklist §11).
+
 ### I1 — generators: investigated, not decided
 
 The user (2026-10-20): "investigate problem further, give a lot of different examples from other languages and how could we benefit from each viable approach". `veles-research-generators.md` compares hand-written iterators, `yield` functions, sequence builders, internal iteration (Go's range-over-func), fibers, tasks with channels and lazy data, on four programs. Open.

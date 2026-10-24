@@ -49,6 +49,7 @@ var builtinFamilies = []struct{ family, header, doc string }{
 	{"float", "struct f64", "Floating-point numbers (`f64`, `f32`). Every method is a single machine instruction."},
 	{"int", "struct i64", "Integers (`i8`..`i64`, `u8`..`u64`). Arithmetic panics on overflow in debug builds."},
 	{"enum", "struct Enum", "Every `enum E : i64 { A = 1, B }` (D57): a closed set of named values of one integer type. `E.A` names a member, `x.value` reads its number."},
+	{"any", "extend<T> T", "Every value, whatever its type, unless the type has a method of the same name (D207)."},
 }
 
 var builtinDocs = []BuiltinDoc{
@@ -204,6 +205,8 @@ var builtinDocs = []BuiltinDoc{
 	{"int", "swapBytes", "(): i64", "The bytes in reverse order — between big- and little-endian; the identity on 8-bit types (D104)."},
 	{"int", "reverseBits", "(): i64", "The bits in reverse order: the lowest becomes the highest (D104)."},
 
+	{"any", "apply", "(block: fun on T()): T", "A receiver block run on this value in place — a `var`, a `var` field, what a pointer points at, a temporary: `server.apply { port = 8080 }` — and gives it back; inside the block its members are reached bare. A string, `List`, `Map` or `Set` gets its edited copy (as `edit`). On a `val` it is an error: use `edit` (D207)."},
+	{"any", "edit", "(block: fun on T()): T", "A changed copy, with one copy at most: the block runs on a `StringBuilder` of a string (`name.edit { trim(); toLower() }`), the mutable form of a `List`, `Map` or `Set` (frozen back without a second copy), or a copy of any other value. The value itself does not change (D207)."},
 	{"enum", "toString", "(): string", "The member's name as written in the declaration: `Ordering.Less.toString() == \"Less\"`; interpolation uses it too."},
 	{"enum", "compareTo", "(other: This): Ordering", "The order of the two values' numbers; `<` and `sorted()` use it."},
 	{"enum", "values", "(): List<This>", "Every member in declaration order."},
@@ -324,6 +327,9 @@ func lookupBuiltinDoc(family, name string) *BuiltinDoc {
 	}
 	if base := strings.TrimPrefix(family, "Mutable"); base != family {
 		return lookupBuiltinDoc(base, name)
+	}
+	if family != "any" && (name == "apply" || name == "edit") {
+		return lookupBuiltinDoc("any", name) // on every type (D207)
 	}
 	return nil
 }

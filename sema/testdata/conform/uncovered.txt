@@ -44,6 +44,7 @@
 "index %s is out of range for a constant list of length %d (D113)"  # defensive (D113): every indexed read of a constant table the checker lowers is either 'at', answered at compile time, or guarded by its own length test
 "invalid float literal"  # the parser refuses the form first
 "listAppendText takes a MutableList<u8> and a string"  # std-internal intrinsic: only std calls it, and std calls it right
+"%s takes a MutableList<u8>"  # std-internal intrinsics (StringBuilder's text edits, D207): only std calls them, and std calls them right
 "listDecodeUtf8Range takes a List<u8> and two positions"  # std-internal intrinsic: only std calls it, and std calls it right
 "listRawData takes a list"  # std-internal intrinsic: only std calls it, and std calls it right
 "listMove takes a MutableList"  # std-internal intrinsic: only std calls it, and std calls it right

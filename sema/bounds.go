@@ -96,7 +96,7 @@ func (f *fnCtx) indexBelow(arg ast.Expr, n int64) bool {
 func (f *fnCtx) boundsList(e ast.Expr) (*Var, *types.List) {
 	v := varOf(e, f)
 	if _, isSelf := e.(*ast.SelfExpr); isSelf {
-		v = f.selfRef() // `this.len()` in an `extend List`
+		v = f.selfFor(e.(*ast.SelfExpr)) // `this.len()` in an `extend List`
 	}
 	if v == nil || v.AddrTaken || v.Captured {
 		return nil, nil

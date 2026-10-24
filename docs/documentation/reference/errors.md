@@ -702,6 +702,33 @@ reads `'name' means Type.name here`.
 A `static fun` has no receiver, so an instance field or method is not
 reachable bare. Take the value as a parameter, or make the function a method.
 
+#### `a block '{ … }' alone is a function where one is expected (D207)`
+
+A block written alone, `{ … }`, is a function of no parameters, and it takes
+its meaning from where it goes: where a `fun on T()` is expected it is a
+_receiver block_, whose `this` is the T (`server.apply { port = 8080 }`);
+where a `fun()` is expected it is a plain function (`measure { work() }`).
+With nothing expected — `val f = { … }` — say which with a type:
+`val f: fun() = { … }`.
+
+#### `this block takes no parameters, but a 'fun(i64)' is expected (D207)`
+
+A block never has parameters. A function that takes some is written
+`(a) => { … }` — also where a `fun on T(A)` is expected, with `this` still
+the T.
+
+#### `'apply' changes 'x' in place, and 'x' is a 'val' (D207)`
+
+`apply` runs its block on the value where it is held, so the place must be
+the caller's to change: a `var`, a `var` field, what a pointer points at, or
+a temporary. On a `val` use `edit`, which gives a changed copy:
+`val changed = x.edit { … }`. The fix rewrites the call.
+
+#### `'x' is a global 'val' … a function on it may change it (D207)`
+
+A `fun on T` gets a pointer to its receiver, so it can change it; a global
+`val` is a constant every task shares. Copy it into a `var` first.
+
 ### declarations
 
 **How a declaration is written, and where.** `duplicate field 'x'`,

@@ -55,8 +55,10 @@ public sealed trait Type {
     public var pos:    Span = Span.none()
   }
   /// `fun(A, B): R suspends throws E` (D40), `sendable fun(…)` (D35),
-  /// `extern fun(…)` (a C function pointer, D69).
+  /// `extern fun(…)` (a C function pointer, D69); `fun on T(A): R`, whose
+  /// `this` is a T (D207).
   struct FunType {
+    public var on:       (*Type)? = null
     public var params:   List<Type> = []
     public var ret:      (*Type)? = null  // null: unit
     public var effects:  Effects = Effects()
@@ -599,7 +601,9 @@ public sealed trait Expr {
     // written `async { body }` (D169): the callee is a lambda of no
     // parameters whose body is that block
     public var block: bool = false
-    public var pos:   Span = Span.none()
+    // the last argument is a block written after the call (D207)
+    public var trailing: bool = false
+    public var pos:      Span = Span.none()
   }
   struct UnaryExpr {
     public var op:  Kind = Kind.Minus  // Minus, Bang, Amp, Star, Tilde
@@ -650,7 +654,9 @@ public sealed trait Expr {
     public var params: List<Param> = []
     public var ret:    (*Type)? = null
     public var body:   *Expr  // a BlockExpr for `{ … }`
-    public var pos:    Span = Span.none()
+    // written `{ … }` alone: a receiver block, or a plain `fun()` (D207)
+    public var bare: bool = false
+    public var pos:  Span = Span.none()
   }
   /// `(a, b)`; `(key: k, value: v)` labels every element (D166), `labels`
   /// empty when none is labelled.

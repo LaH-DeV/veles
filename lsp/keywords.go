@@ -106,6 +106,8 @@ var contextualDocs = map[string][]contextualDoc{
 	"on": {
 		{keywordDoc{"Where an annotation may stand: `field`, `struct`, `fun`, `trait`, `enum`, `enumMember`, `variant`, `test`, `suite` (D174). Anywhere else it is an error naming these.", "annotation Positional on field for Args", "14-attributes-and-testing.md#annotations-of-your-own"},
 			inAnnotationDecl},
+		{keywordDoc{"`fun on T(A): R` is a receiver function: its `this` is a T, whose members its body reaches bare. A receiver block `{ … }` is one where one is expected, and a block on the same line after a call is its last argument: `server.apply { port = 8080 }` (D207).", "fun buildString(body: fun on StringBuilder()): string {\n  val builder = StringBuilder()\n  body(builder)\n  builder.toString()\n}\n\nval text = buildString { append(\"a\"); append(\"b\") }", "10-closures-and-iterators.md#receiver-blocks"},
+			func(toks []lexer.Token, i int) bool { return i > 0 && toks[i-1].Kind == lexer.KwFun }},
 	},
 	"extend": {
 		{keywordDoc{"Adds functions to a type the package declares, or (as extension functions, D173) to any type for the modules that import them.", "extend string with fun shout(): string => this.toUpper()", "05-structs-and-methods.md#methods-outside-the-body-extend"},

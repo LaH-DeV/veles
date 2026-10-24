@@ -253,8 +253,13 @@ func (p *Parser) dblColon() {
 }
 
 // parseFunType parses the rest of a function type after `fun`:
-// `(A, B): R suspends throws E`.
+// `(A, B): R suspends throws E`, or `on T(A, B): R` for a function whose
+// `this` is a T (D207; `on` is a word only here).
 func (p *Parser) parseFunType(ft *ast.FunType, start source.Span) {
+	if p.at(lexer.Ident) && p.cur().Text == "on" {
+		p.next()
+		ft.On = p.parseType()
+	}
 	if _, ok := p.expect(lexer.LParen); ok {
 		for !p.at(lexer.RParen, lexer.EOF) {
 			ft.Params = append(ft.Params, p.parseType())

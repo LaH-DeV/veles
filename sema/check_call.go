@@ -139,6 +139,19 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			}
 			return &Builtin{exprBase{types.TUnit}, "list.appendText", []Expr{xs, s}, e.Pos}
 		}
+		if op, ok := textListOps[callee.Name]; ok && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == len(op.args)+1 {
+			// std-only: StringBuilder's in-place text edits (D207)
+			xs := f.checkExpr(e.Args[0].Value, nil)
+			if lt, ok := xs.Type().(*types.List); !ok || !lt.Mutable || !types.Identical(lt.Elem, types.TU8) {
+				f.errorf(e.Pos, "%s takes a MutableList<u8>", callee.Name)
+				return bad()
+			}
+			args := []Expr{xs}
+			for i, t := range op.args {
+				args = append(args, f.checkExprTo(e.Args[i+1].Value, t))
+			}
+			return &Builtin{exprBase{op.ret}, op.op, args, e.Pos}
+		}
 		if callee.Name == "stringAsciiCase" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
 			// std-only: toLower/toUpper in one pass and one copy
 			s := f.checkExprTo(e.Args[0].Value, types.TString)
@@ -1598,6 +1611,12 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			return &Call{exprBase: exprBase{cmp.Sig.Ret}, Fn: cmp, Args: []Expr{recvArg(cmp, recv), other}}
 		}
 	}
+	if (name == "apply" || name == "edit") && len(typeArgs) == 0 && !types.IsInvalid(rt) {
+		if _, nullable := rt.(*types.Nullable); !nullable {
+			f.c.refBuiltin(callee.Name.Pos, rt, name)
+			return f.applyEdit(recv, callee, e) // D207: on any type without its own
+		}
+	}
 	switch tt := rt.(type) {
 	case *types.Nullable:
 		f.errorf(callee.Pos, "value of type '%s' may be null; use '?.' or check for null first (D5)", tt)
@@ -2094,9 +2113,22 @@ func (f *fnCtx) callValue(fnv Expr, ft *types.Func, args []ast.Arg, span source.
 		return bad()
 	}
 	var vals []Expr
+	var spill *Var // a receiver that is not a place, run on a copy
+	var spilled Expr
 	for i, a := range args {
 		if a.Name != nil {
 			f.errorf(a.Name.Pos, "named arguments apply only to direct calls of named functions, not function values (D28)")
+		}
+		if i == 0 && ft.On {
+			// D207: the receiver goes as a pointer to its place, as a
+			// method's (D22); the callee is not known, so it may keep it
+			x := f.checkExprTo(a.Value, ft.Params[0].Type.(*types.Pointer).Elem)
+			arg, tmp := f.receiverPlace(x, a.Value, fnv)
+			if tmp != nil {
+				spill, spilled = tmp, x
+			}
+			vals = append(vals, arg)
+			continue
 		}
 		vals = append(vals, f.checkExprTo(a.Value, ft.Params[i].Type))
 	}
@@ -2107,7 +2139,34 @@ func (f *fnCtx) callValue(fnv Expr, ft *types.Func, args []ast.Arg, span source.
 	if ft.Effects.Suspends {
 		f.refuseHeldSuspension(span, "this call")
 	}
-	return &CallIndirect{exprBase{rt}, fnv, vals}
+	call := &CallIndirect{exprBase{rt}, fnv, vals}
+	if spill != nil {
+		return &Let{exprBase{rt}, spill, spilled, call}
+	}
+	return call
+}
+
+// receiverPlace is the pointer the function fnv on a receiver gets (D207):
+// the address of x when it is a place, or of a fresh copy (tmp, non-nil)
+// when x is a value of its own. The variable moves to the heap unless fnv
+// provably does not keep the pointer (settleOnCalls).
+func (f *fnCtx) receiverPlace(x Expr, src ast.Expr, fnv Expr) (arg Expr, tmp *Var) {
+	pt := &types.Pointer{Elem: x.Type()}
+	if isPlaceExpr(x) && !inPacked(x) {
+		root := rootVar(x)
+		if root == nil {
+			return &AddrOf{exprBase{pt}, x}, nil // behind a pointer
+		}
+		if root.IsGlobal && !root.Mutable {
+			f.errorf(src.Span(), "'%s' is a global 'val', a constant every task shares; a function on it may change it — copy it first: 'var copy = %s' (D207)", root.Name, root.Name)
+		}
+		f.c.onCalls = append(f.c.onCalls, onCall{v: root, block: fnv})
+		f.invalidateVarPaths(root)
+		return &AddrOf{exprBase{pt}, x}, nil
+	}
+	tmp = f.newTemp(x.Type())
+	f.c.onCalls = append(f.c.onCalls, onCall{v: tmp, block: fnv})
+	return &AddrOf{exprBase{pt}, ref(tmp)}, tmp
 }
 
 // funcValue turns a named, non-generic function into a value; it captures
@@ -2675,4 +2734,19 @@ func (f *fnCtx) unmetThrough(t types.Type, trait *types.Trait) (types.Type, *typ
 		}
 	}
 	return nil, nil, ""
+}
+
+// textListOps are the std-only functions behind StringBuilder's in-place
+// text edits and `edit` on a string (D207): the list of bytes first, then
+// these arguments.
+var textListOps = map[string]struct {
+	op   string
+	args []types.Type
+	ret  types.Type
+}{
+	"listTrimText":    {"list.trimText", nil, types.TUnit},
+	"listAsciiCase":   {"list.asciiCase", []types.Type{types.TBool}, types.TUnit},
+	"listReplaceText": {"list.replaceText", []types.Type{types.TString, types.TString}, types.TUnit},
+	"listInsertText":  {"list.insertText", []types.Type{types.TI64, types.TString}, types.TUnit},
+	"listTakeText":    {"list.takeText", nil, &types.Nullable{Elem: types.TString}},
 }

@@ -506,7 +506,12 @@ struct Printer {
       is FunType        => {
         if (t.sendable) this.write("sendable ")
         if (t.c) this.write("extern ")
-        this.write("fun(")
+        this.write("fun")
+        if (val on = t.on) {
+          this.write(" on ")
+          this.typ(*on)
+        }
+        this.write("(")
         this.typeList(t.params)
         this.write(")")
         if (val ret = t.ret) {
@@ -781,6 +786,12 @@ struct Printer {
       }
       is RangeExpr      => this.rangeExpr(e)
       is LambdaExpr     => {
+        if (e.bare) {
+          this.write("(block-lambda ")
+          this.expr(*e.body)
+          this.write(")")
+          return
+        }
         this.write("(lambda (")
         loop ((i, param) in e.params.enumerate()) {
           if (i > 0) this.write(", ")

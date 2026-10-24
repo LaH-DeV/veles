@@ -83,6 +83,15 @@ type Func struct {
 	Skipped  bool
 	SkipWhy  string
 	Gates    []*Func
+	// CompilerRan: the checker ran this test in the compiler too (D208);
+	// CompilerFails is what it recorded there (failure lines, empty when it
+	// passed) and CompilerSkipped whether it skipped itself.
+	CompilerRan     bool
+	CompilerSkipped bool
+	CompilerFails   string
+	// compilerRunnable: a test helper the compiler can run (D208), which a
+	// constant may therefore call
+	compilerRunnable bool
 	Sig      *types.Func
 	Params   []*Var // excludes the receiver
 	Receiver *Var   // `this` for methods, always a pointer to the receiver's place (D22 v0.30)

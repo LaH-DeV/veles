@@ -460,21 +460,30 @@ type Func struct {
 	C bool
 	// CVariadic: a C function taking variadic arguments after Params (D123)
 	CVariadic bool
-	Alias     string
+	// On: `fun on T(A): R` (D207) — Params[0] is the receiver, a pointer to
+	// the place the function runs on (as a method's, D22), shown as `on T`
+	On    bool
+	Alias string
 }
 
 func (f *Func) String() string {
 	if f.Alias != "" {
 		return f.Alias
 	}
-	parts := make([]string, len(f.Params))
-	for i, p := range f.Params {
+	params := f.Params
+	on := ""
+	if f.On && len(params) > 0 {
+		on = " on " + params[0].Type.(*Pointer).Elem.String()
+		params = params[1:]
+	}
+	parts := make([]string, len(params))
+	for i, p := range params {
 		parts[i] = p.Type.String()
 	}
 	if f.CVariadic {
 		parts = append(parts, "...")
 	}
-	s := "fun(" + strings.Join(parts, ", ") + ")"
+	s := "fun" + on + "(" + strings.Join(parts, ", ") + ")"
 	if f.Sendable {
 		s = "sendable " + s
 	}
@@ -896,7 +905,7 @@ func Identical(a, b Type) bool {
 				return false
 			}
 		}
-		if a.Effects.Suspends != b.Effects.Suspends || a.Effects.Throws != b.Effects.Throws || a.Sendable != b.Sendable || a.C != b.C || a.CVariadic != b.CVariadic {
+		if a.Effects.Suspends != b.Effects.Suspends || a.Effects.Throws != b.Effects.Throws || a.Sendable != b.Sendable || a.C != b.C || a.CVariadic != b.CVariadic || a.On != b.On {
 			return false
 		}
 		if a.Effects.Throws && !Identical(a.Effects.Error, b.Effects.Error) {
@@ -988,7 +997,7 @@ func (h *Hooks) Subst(t Type, m map[*TypeParam]Type) Type {
 		}
 		return &Task{Result: r}
 	case *Func:
-		out := &Func{Ret: h.Subst(t.Ret, m), Effects: t.Effects, Sendable: t.Sendable, C: t.C, CVariadic: t.CVariadic}
+		out := &Func{Ret: h.Subst(t.Ret, m), Effects: t.Effects, Sendable: t.Sendable, C: t.C, CVariadic: t.CVariadic, On: t.On}
 		out.Effects.Error = h.Subst(t.Effects.Error, m)
 		if out.Effects.Throws && out.Effects.Error != nil && IsNever(out.Effects.Error) {
 			// `throws E` with E bound to nothing: the function cannot fail,
@@ -1142,6 +1151,9 @@ func Key(t Type) string {
 		s := "fun(" + keys(ps) + "):" + Key(t.Ret)
 		if t.CVariadic {
 			s = "..." + s
+		}
+		if t.On {
+			s = "on " + s
 		}
 		if t.Sendable {
 			s = "sendable " + s

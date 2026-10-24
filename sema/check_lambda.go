@@ -2,6 +2,7 @@ package sema
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/types"
@@ -50,6 +51,9 @@ func (f *fnCtx) localVar(v *Var) *Var {
 // selfRef returns the receiver variable (a pointer to the receiver's
 // place, D22), capturing it inside lambdas.
 func (f *fnCtx) selfRef() *Var {
+	if n := len(f.recvStack); n > 0 {
+		return f.recvStack[n-1] // inside a receiver block checked in place (D207)
+	}
 	if f.selfVar != nil {
 		return f.selfVar
 	}
@@ -76,6 +80,34 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 		// `async { }` (D169): the block is a task's body — it may suspend,
 		// its value and error are inferred
 		expected = &types.Func{Sendable: true, Effects: types.Effects{Suspends: true}}
+	}
+	// D207: where a `fun on T(A)` goes, the lambda runs on a T — its `this`
+	// is the hidden first parameter, a pointer to the place, as a method's
+	var onPtr types.Type
+	if expected != nil && expected.On && len(expected.Params) > 0 {
+		onPtr = expected.Params[0].Type
+		rest := *expected
+		rest.Params = expected.Params[1:]
+		rest.On = false
+		expected = &rest
+	}
+	if e.Bare {
+		switch {
+		case onPtr == nil && expected == nil && f.inLooseArgs():
+			return bad() // the call is already reported
+		case expected == nil:
+			f.errorf(e.Pos, "a block '{ … }' alone is a function where one is expected — a 'fun on T()' (a receiver block) or a 'fun()'; here nothing says which: give it a type, 'val f: fun() = { … }' (D207)")
+			return bad()
+		case len(expected.Params) > 0:
+			shown := expected.String()
+			if onPtr != nil {
+				shown = wantOn(onPtr, expected)
+			}
+			f.errorf(e.Pos, "this block takes no parameters, but a '%s' is expected, which passes %d; write '(%s) => { … }' (D207)", shown, len(expected.Params), lambdaParamNames(len(expected.Params)))
+			return bad()
+		}
+		// a block where a `fun()` goes is a function of no parameters and
+		// no receiver: `measure { work() }` (D207)
 	}
 	// D37: a lambda with N parameters adapts to an expected single tuple
 	// parameter of arity N.
@@ -190,6 +222,17 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 			fn.Sig.Params = append(fn.Sig.Params, types.Param{Name: p.Name.Name, Type: pt})
 		}
 		l.paramInit = patternInit
+	}
+	if onPtr != nil {
+		self := l.newVar("this", onPtr, true, e.Pos)
+		self.IsSelf = true
+		self.IsParam = true
+		fn.Params = append([]*Var{self}, fn.Params...)
+		fn.Sig.Params = append([]types.Param{{Name: "this", Type: onPtr}}, fn.Sig.Params...)
+		fn.Sig.On = true
+		l.selfVar = self
+		l.onBlock = true
+		l.resolveBlockMembers(e, onPtr)
 	}
 
 	// return type and effects
@@ -316,4 +359,21 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	fn.checked = true
 	f.c.funcs = append(f.c.funcs, fn)
 	return &Closure{exprBase{fn.Sig}, fn, l.captureList}
+}
+
+// wantOn shows a receiver function type with its receiver put back.
+func wantOn(onPtr types.Type, rest *types.Func) string {
+	full := *rest
+	full.Params = append([]types.Param{{Name: "this", Type: onPtr}}, rest.Params...)
+	full.On = true
+	return full.String()
+}
+
+// lambdaParamNames is "a, b" for a lambda of n parameters, for a fix.
+func lambdaParamNames(n int) string {
+	names := make([]string, n)
+	for i := range names {
+		names[i] = string(rune('a' + i%26))
+	}
+	return strings.Join(names, ", ")
 }

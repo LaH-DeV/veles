@@ -1371,6 +1371,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-24 | Enums as text (user, on `std/build`'s `osNamed`: "built-in parsables (from any casing - configurable) and formatting it into strings out of the box") | **`Case` in the prelude (replacing `codec.KeyStyle`); `E.parse(text, case: Case = AsWritten)` exact by default, `Case.Any` forgiving; `e.toString(case:)`; every enum implements `Enumerated`, whose `parse`/`toString(case:)` an enum may override; names colliding under `Case.Any` refused, D205** (user: built in "but the default should be exact"; `case: Case.Any` and "trait methods only" recommended). Rejected: a forgiving default; `ignoreCase:`; a per-member spelling; an opt-in `@Text`. |
 | 2026-10-24 | Checks such as `build.target.os == build.Os.Windows` (user: "the code quality is not good") | **Every enum member gives a generated predicate, `os.isWindows()`, not overridable, D206** (user: "isMember() on enums", recommended). Rejected: `build.target.isWindows` only; Swift's `.Windows`; hand-written predicates. |
 | 2026-10-24 | Editing a value in several steps with one copy (user, on `this.trim().toLower().replace(…)`: "maybe we could have a mechanism that would 'open edit' …"; then "more of a Kotlin apply") | **Receiver function types `fun on T(): R`; a block `{ … }` takes that type where one is expected; no trailing blocks (`x.apply({ … })`); std `apply` (in place, on what the caller owns; a `val` refused with a fix to `edit`) and `edit` (an edited copy of an immutable value: string, List, Map, Set, structs; one copy), D207** (user, recommended for the type, the functions and `val`; no trailing blocks over the recommended). Rejected: `T.() -> R`; trailing blocks; `let`/`run`/`also`; `apply` copying a `val`. The same day, decision-free: `toLower`/`toUpper`/`replace` copy once (or not at all). |
+| 2026-10-24 | Trailing receiver blocks (user: "The syntax could be `apply { ... }` … it is important that the dev experience is good and performance is great") | **D207 amended: `{ … }` whose `this` is a value is a _receiver block_ (type: a _receiver function_); a same-line `{` after a call or method name is its last argument, filling a `fun on T()` or a plain `fun()`; a block has no parameters (`(a) => { … }` for `fun on T(A)`); `apply` and `edit` stay two names** (user, recommended of 4 on each). Rejected: only `x.apply({ … })`; trailing blocks for receiver functions only; `{ a -> … }`; `copy { … }` for `edit`. |
 | 2026-10-24 | Testing in the compiler (user: "we should be able to test `const fun`s etc no? maybe we should allow tests to run in the compiler?") | **Automatic: a test whose body the compiler can run runs there too, under `veles test`; test helpers likewise (so `@SkipIf(helper())` works); the report marks it and a one-sided failure names the side, D208** (user, over the recommended `const test` keyword). Rejected: `const test`; the compiler only; helpers only. |
 
 ## 11. Known limitations to revisit
@@ -1622,6 +1623,37 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
   `std/cli` rather than at the user's field (a "required by" note at the
   use site would be a general improvement). (9) D160's per-OS files
   (`_windows.vs`, …) are plan P1, not built. (10) macOS was not run.
+- [ ] **D207 (built 2026-10-24, plan C11), what is left.** (1) A block
+  passed to a function of one's own (`buildString { … }`) is a closure, not
+  inlined: there is no `inline fun`, so captures cost an allocation there.
+  (2) `return` in a block given to `apply`/`edit` is refused; Kotlin returns
+  from the enclosing function — a decision if wanted. (3) A receiver
+  function value is called `body(x)`; `x.body()` is not offered (a
+  spelling decision). (4) Inside `edit` on a string the receiver is a
+  `StringBuilder`: it has the in-place edits and `len`/`isEmpty`, not yet
+  the read-only string methods (`contains`, `startsWith`, …). (5) In a
+  generic function, a block's bare names are resolved against the receiver
+  type of the first instance checked. (6) `edit` on a struct copies it
+  shallowly, as `copy()` does: a mutable collection in a field is shared
+  with the original. (7) Inside an argument list that already failed, a
+  block is not checked (its errors appear once the call is fixed). (8) A
+  method calling `this.apply { … }` makes its callers' receivers escape
+  (heap) whatever the block does — the receiver pass sees a pointer into
+  `this` handed out. (9) Not measured on Linux.
+- [ ] **Intermittent on Linux (found 2026-10-24): `driver TestExecutors`
+  panics "deadlock: every task is blocked"** in case 12 (a task waiting for
+  a `Thread`) or 13 (`runBlocking`), about 1 run in 10 under `-count`;
+  reproduced at the committed HEAD with none of the day's changes, so it
+  predates D207/D208. Not diagnosed.
+- [ ] **D208 (built 2026-10-24, plan C12), what is left.** (1) The report
+  for "the program failed, the compiler passed" is built but not pinned by a
+  test (there is no hook to make the runtime wrong). (2) A test that uses
+  `try` does not run in the compiler (a `const fun` cannot throw yet, D113),
+  nor does a test under a suite's `skip`/`skipIf` gate. (3) Each test has
+  the whole constant step budget; a suite of slow tests the compiler can
+  run makes `veles test` slower by that much — not measured. (4) Helper
+  call sites inside a failing compile-time run are not listed under the
+  failure as the runtime lists them.
 - [ ] **D199 (built 2026-10-24, plan S17), what is left.** (1) The gate
   modes that print a file's text (`--lines`, `--render`, `--quote`) skip a
   file that is not UTF-8: a Veles string cannot hold its bytes. (2) The

@@ -163,10 +163,11 @@ fun spansOfTupleType(node: TupleType, out: MutableList<string>) {
 }
 
 fun spansOfFunType(node: FunType, out: MutableList<string>) {
-  loop (x1 in node.params) {
-    spansOfType(x1, out)
+  if (val x1 = node.on) spansOfType(*x1, out)
+  loop (x2 in node.params) {
+    spansOfType(x2, out)
   }
-  if (val x3 = node.ret) spansOfType(*x3, out)
+  if (val x4 = node.ret) spansOfType(*x4, out)
   spansOfEffects(node.effects, out)
   out.push("FunType.pos ${node.pos.start} ${node.pos.end}")
 }

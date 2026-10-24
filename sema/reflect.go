@@ -698,6 +698,10 @@ func (f *fnCtx) inlineJump(span source.Span, what string) bool {
 		f.errorf(span, "'%s' cannot leave an inline loop: it is unrolled while compiling, one copy of the body per field (D174)", what)
 		return true
 	}
+	if n := len(f.blockLoops); n > 0 && len(f.loops) <= f.blockLoops[n-1] {
+		f.errorf(span, "'%s' cannot leave a receiver block: the block runs to its end; a loop inside it may use '%s' (D207)", what, what)
+		return true
+	}
 	return false
 }
 

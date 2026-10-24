@@ -114,6 +114,9 @@ type constEval struct {
 
 	steps, budget int64
 	stack         []constFrame // the `const fun`s being run, outermost first
+	// testing is set while a test runs in the compiler (D208): failures are
+	// its record, not the compiler's errors
+	testing *testRun
 }
 
 // constFrame is one call in the chain a compile-time failure reports.
@@ -175,6 +178,15 @@ func (ev *constEval) errorf(span source.Span, format string, args ...any) {
 	if ev.quiet {
 		panic(constFailed{})
 	}
+	if ev.testing != nil {
+		// a test running in the compiler (D208): what would stop the program
+		// stops the test, as a failure of the compiler's run
+		if span.File == nil && len(ev.stack) > 0 {
+			span = ev.stack[len(ev.stack)-1].at
+		}
+		ev.testFail(span, "in the compiler: "+fmt.Sprintf(format, args...))
+		panic(testStopped{})
+	}
 	if len(ev.stack) == 0 {
 		if span.File == nil {
 			span = ev.at
@@ -214,6 +226,10 @@ func (ev *constEval) errorf(span source.Span, format string, args ...any) {
 func (ev *constEval) tick() {
 	ev.steps++
 	if ev.steps > ev.budget {
+		if ev.testing != nil {
+			ev.testing.outOfSteps = true // too long for the compiler: it runs in the program only
+			panic(testStopped{})
+		}
 		what := "this constant"
 		if ev.name != "" {
 			what = "the constant '" + ev.name + "'"

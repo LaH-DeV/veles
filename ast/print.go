@@ -544,7 +544,12 @@ func (p *printer) typ(t Type) {
 		if t.C {
 			p.w("extern ")
 		}
-		p.w("fun(")
+		p.w("fun")
+		if t.On != nil {
+			p.w(" on ")
+			p.typ(t.On)
+		}
+		p.w("(")
 		for i, e := range t.Params {
 			if i > 0 {
 				p.w(", ")
@@ -893,6 +898,12 @@ func (p *printer) expr(e Expr) {
 		p.expr(e.Hi)
 		p.w(")")
 	case *LambdaExpr:
+		if e.Bare {
+			p.w("(block-lambda ")
+			p.expr(e.Body)
+			p.w(")")
+			break
+		}
 		p.w("(lambda (")
 		for i, prm := range e.Params {
 			if i > 0 {

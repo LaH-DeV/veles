@@ -93,6 +93,9 @@ type fnCtx struct {
 	captureList []*Var        // outer variables in environment order
 	paramInit   []Stmt        // lambda: statements destructuring tuple-pattern parameters
 	isLambda    bool
+	onBlock     bool // a lambda that runs on a receiver: `this` is its first parameter (D207)
+	recvStack   []*Var // the `this` of each receiver block being checked in place, innermost last (D207)
+	blockLoops  []int  // len(loops) where each of those blocks began: a jump may not leave one
 	pending     []Stmt            // statements hoisted by adapter lowering
 	boundPlace  map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
 	scopes      []*ScopeBlock
@@ -804,6 +807,10 @@ func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 		f.errorf(s.Pos, "'return' outside of a function: a global's value is its initializer; move the code into a function")
 		return nil
 	}
+	if len(f.blockLoops) > 0 {
+		f.errorf(s.Pos, "'return' cannot leave a receiver block given to 'apply' or 'edit': the block runs to its end, and the call gives back the value; return after it (D207)")
+		return nil
+	}
 	if s.Value != nil {
 		f.checkReturnEscape(s.Value)
 		f.allowHeld(s.Value, heldReturn) // D111: returned straight to the caller
@@ -1081,7 +1088,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		f.errorf(e.Pos, "'%s' is not assignable: only a variable, a field or what a pointer points at can be", e.Name)
 		return nil, nil
 	case *ast.SelfExpr:
-		self := f.selfRef()
+		self := f.selfFor(e)
 		if self == nil {
 			f.errorf(e.Pos, "'this' is only inside a method; a function outside a type takes the value as a parameter")
 			return nil, nil

@@ -107,6 +107,10 @@ fun each(xs: List<i64>, f: fun(i64): () suspends)  // a `suspends` parameter: th
 val f = x => x * 2                                  // lambda; (a, b) => ..., (x: i64) => ..., _ => ... ignores its argument
 val g = () => { var n = 0; n }                      // block body
 val h = (a: i64) => (b: i64) => a + b               // curried
+fun build(body: fun on StringBuilder()): string     // a receiver function: `this` is a StringBuilder (D207)
+server.apply { port = 8080 }                        // a receiver block, trailing: changes server in place
+val slug = name.edit { trim(); toLower() }          // a changed copy (one copy); `val` + apply is an error
+measure { work() }                                  // a block where a plain fun() goes
 ```
 
 Lambdas capture by reference (D37). Last expression of a block is its
@@ -399,5 +403,5 @@ veles check <dir>      veles test <dir> [--filter text] [--timeout 10m] [--fail-
 veles parse <file>     veles lsp     (editor server)
 veles fmt <paths>      [--check | --stdout]   format in place; [format] in veles.toml: indent = 2 | "tab", max_blank_lines = 1, imports = "lines" | "merged", trailing_commas = "multiline" | "never", line_endings = "lf" | "crlf" | "auto"
 veles lint --list      the lints; [lint] in veles.toml: name = "allow" | "warn" | "deny", max_width = 120 (for long_line, off by default); a dependency's rule: dep.rule = "warn" (rules are `lint.Rule`s, chapter 11)
-VELES_CLANG=<path>     VELES_GC_TRACE=1     VELES_GC_MIN_HEAP=<size>     VELES_GC_GOAL=<%>     VELES_GC_MARKERS=<n>     VELES_GC_CONCURRENT=0|1|all     VELES_THREADS=<n>     VELES_WATCHDOG=<s> (dump every task if still running)
+VELES_CLANG=<path>     VELES_GC_TRACE=1     VELES_GC_MIN_HEAP=<size>     VELES_GC_GOAL=<%>     VELES_COMPILER_TESTS=why (veles test)     VELES_GC_MARKERS=<n>     VELES_GC_CONCURRENT=0|1|all     VELES_THREADS=<n>     VELES_WATCHDOG=<s> (dump every task if still running)
 ```

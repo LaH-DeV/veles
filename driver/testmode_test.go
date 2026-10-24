@@ -221,9 +221,9 @@ suite "errors" {
 `,
 	}
 	out, code := runTestFiles(t, files, Options{})
-	want := "test adds ... ok\n" +
+	want := "test adds ... ok (also in the compiler)\n" +
 		"config\n" +
-		"  test reads a config ... ok\n" +
+		"  test reads a config ... ok (also in the compiler)\n" +
 		"  errors\n" +
 		"    test empty input ... FAILED\n" +
 		"      config.test.vs:7:5: todo\n" +
@@ -255,7 +255,7 @@ func TestTestRunner(t *testing.T) {
 	out, code := runTests(t, testModeSrc, Options{Filter: "in"})
 	want := "test failing ... FAILED: Mismatch(expected: 1, actual: 2)\n" +
 		"test panicking ... FAILED: panic: boom\n  at main.vs:13:21 in panicking\n" +
-		"test after the spin ... ok\n" +
+		"test after the spin ... ok (also in the compiler)\n" +
 		"\n1 passed, 2 failed: failing, panicking; 2 filtered out\n"
 	if out != want || code != 1 {
 		t.Fatalf("exit %d, output:\n%s", code, out)
@@ -573,17 +573,17 @@ suite "open" {
 }
 `
 	out, code := runTests(t, src, Options{})
-	want := "test passes ... ok\n" +
+	want := "test passes ... ok (also in the compiler)\n" +
 		"test skips at run time ... skipped: no tool here\n" +
 		"test skipIf holds ... skipped: always\n" +
-		"test skipIf does not hold ... ok\n" +
+		"test skipIf does not hold ... ok (also in the compiler)\n" +
 		"test a failure before the skip stays ... FAILED\n" +
 		"  main.vs:22:3: expect(1 == 2)\n" +
 		"      left:  1\n" +
 		"      right: 2\n" +
 		"test annotated ... skipped: not ready\n" +
 		"test conditional ... skipped: too slow here\n" +
-		"test condition false ... ok\n" +
+		"test condition false ... ok (also in the compiler)\n" +
 		"test through a helper ... skipped: helper says no\n" +
 		"test through a lambda ... skipped: in a lambda\n" +
 		"gated\n" +

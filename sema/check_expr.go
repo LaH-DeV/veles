@@ -350,7 +350,7 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 				f.errorf(e.Pos, "'this' is used before 'init' has assigned '%s'; assign every field without a default first, or read the fields one by one (D28)", strings.Join(missing, "', '"))
 			}
 		}
-		self := f.selfRef()
+		self := f.selfFor(e)
 		if self == nil {
 			if f.fn != nil && f.fn.tmpl != nil && f.fn.tmpl.Decl.Static {
 				f.errorf(e.Pos, "'this' is not available in a static function; it has no receiver (D23)")
@@ -2217,7 +2217,7 @@ func (f *fnCtx) placeOf(e ast.Expr) (place, bool) {
 	case *ast.SelfExpr:
 		// the receiver is a pointer to its place (D22); a method call on
 		// `this` drops the facts about its `var` fields (invalidateVarPaths)
-		if self := f.selfRef(); self != nil {
+		if self := f.selfFor(e); self != nil {
 			return pv(self), true
 		}
 	case *ast.MemberExpr:

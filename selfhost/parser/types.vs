@@ -207,9 +207,14 @@ extend Parser {
     ast.ErrorUnionType(members, pos: this.spanFrom(start))
   }
 
-  // after `fun`: `(A, B): R suspends throws E`
+  // after `fun`: `(A, B): R suspends throws E`, or `on T(A, B): R` (D207;
+  // `on` is a word only here)
   fun parseFunType(shape: ast.FunType, start: Span): ast.FunType {
     var ft = shape
+    if (this.at(Kind.Ident) && this.cur().text == "on") {
+      this.next()
+      ft.on = &this.parseType()
+    }
     if (this.expect(Kind.LParen)) {
       val params: MutableList<ast.Type> = []
       loop (!this.atAny(Kind.RParen, Kind.EOF)) {

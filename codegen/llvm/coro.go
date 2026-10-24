@@ -1342,6 +1342,9 @@ func (g *gen) testRunner() {
 	}
 	var fail func(text string)
 	okMsg := g.stringConst("ok\n")
+	// passed reports a test the program passed; for one the compiler ran too
+	// (D208) it says so, or reports the compiler's failure: the two disagree
+	var passed func()
 	// what the test's expect/require/fail calls recorded (D78): how many,
 	// whether one ended the test, and the report lines
 	depth := 0 // the running test's suite depth: its report lines are indented to it
@@ -1368,8 +1371,7 @@ func (g *gen) testRunner() {
 		fail(g.concat(g.stringConst("FAILED\n"), text))
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(passL)
-		say(okMsg)
-		bump(passes)
+		passed()
 		g.emitTerm("br label %%%s", doneL)
 	}
 	// every test is queued first, each with its own record bound around its
@@ -1530,8 +1532,27 @@ func (g *gen) testRunner() {
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(notSkL)
 		name := t.Display
+		indent := strings.Repeat("  ", depth)
+		compilerPassed := t.CompilerRan && t.CompilerFails == "" && !t.CompilerSkipped
+		passed = func() {
+			switch {
+			case compilerPassed:
+				say(g.stringConst("ok (also in the compiler)\n"))
+				bump(passes)
+			case t.CompilerRan && t.CompilerFails != "":
+				// the program passed, the compiler did not: one of the two
+				// engines is wrong
+				fail(g.stringConst("FAILED in the compiler only: the program passed, so the compiler and the program disagree\n" + indentLines(t.CompilerFails, indent)))
+			default:
+				say(okMsg)
+				bump(passes)
+			}
+		}
 		fail = func(text string) {
 			say(text)
+			if compilerPassed {
+				say(g.stringConst(indent + "  in the compiler it passed: the compiler and the program disagree\n"))
+			}
 			bump(failures)
 			names := g.newTmp()
 			g.emit("%s = load %s, ptr %s", names, strType, failedNames)
@@ -1744,4 +1765,19 @@ func (g *gen) runtimeConfig() {
 	if g.prog.GCMinHeap > 0 || g.prog.GCGoal > 0 {
 		g.emit("call void @veles_runtime_gc(i64 %d, i64 %d)", g.prog.GCMinHeap, g.prog.GCGoal)
 	}
+}
+
+// indentLines puts indent before every line of text (a test's failure lines
+// under its suite headings).
+func indentLines(text, indent string) string {
+	if indent == "" {
+		return text
+	}
+	lines := strings.SplitAfter(text, "\n")
+	for i, l := range lines {
+		if l != "" {
+			lines[i] = indent + l
+		}
+	}
+	return strings.Join(lines, "")
 }
