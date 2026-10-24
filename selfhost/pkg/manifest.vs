@@ -23,8 +23,8 @@ struct Manifest {
   var native:    NativeLibraries = NativeLibraries()
   var policy:    Policy = Policy()
   var registry:  RegistrySettings = RegistrySettings()
-  /// The default pool's thread count; null for one per core.
-  var threads: i64? = null
+  /// `[runtime]`: the default pool and the collector (D143, D200).
+  var runtime:   RuntimeSettings = RuntimeSettings()
 
   /// The path dependencies, by name.
   fun paths(): Map<string, string> {
@@ -82,7 +82,7 @@ fun manifestSchema(): Schema<Manifest> => Schema(
       manifest.registry = try readRegistry(section)
     }),
     tableSetting("runtime", "how the program runs", (section, manifest) => {
-      manifest.threads = try readRuntime(section)
+      manifest.runtime = try readRuntime(section)
     }),
   ],
   fallback: (file, entry, manifest) => {

@@ -5,11 +5,12 @@ v0.34; **refreshed against v0.49 on 2026-09-29 (plan S1)** — what changed is
 in §8, and the capability audit for the *whole* compiler is §9 (plan S3).
 This is a sequencing document with gates, not a schedule.
 
-> **Status 2026-10-14.** P0–P5 done 2026-10-08: gates P0, G1, G2, G3 and G4 are green
-> (`go test ./selfhost`), and the port was rewritten as idiomatic Veles (§11). Open: P6
-> (`Layout`), a dump with spans (G2 does not compare spans yet) and files that are not
-> valid UTF-8 — plan S6. What comes after the front end (speed, debug info, the
-> formatter, oracles for `sema`) is plan track S, S7–S12.
+> **Status 2026-10-23.** P0–P5 done 2026-10-08: gates P0, G1, G2, G3 and G4 are green
+> (`go test ./selfhost`), and the port was rewritten as idiomatic Veles (§11). P6 done
+> 2026-10-23: `parseFileLayout` and gate `TestP6Layout`, and a span gate
+> (`TestP6Spans`) that compares every span of every node. Open: files that are not
+> valid UTF-8, which wait for a decision (checklist §11). What comes after the front
+> end (speed, debug info, the formatter, oracles for `sema`) is plan track S, S7–S12.
 
 `archive/veles-build-plan.md` puts self-hosting at Stage 5 in one line. This file
 is that line expanded for the front end only — and argues that the front

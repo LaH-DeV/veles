@@ -22,7 +22,7 @@ fun text(size: i64): List<u8> {
 
 fun main() {
   val data = text(2097152).toList()
-  val (packed, elapsed) = time.Stopwatch.measure(() => compress.gzip(data, 6))
+  val (packed, elapsed) = time.measure(() => compress.gzip(data, 6))
   val took = elapsed.toNanos()
   val back = compress.gunzip(packed) ?? []
   var sum: i64 = 0

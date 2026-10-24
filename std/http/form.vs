@@ -59,7 +59,7 @@ public struct Fields {
 
 /// A `T` read from `fields`: `decodeFields<Signup>(fields)`. Every problem is
 /// reported together, each at its field's name.
-fun decodeFields<T: Decodable>(fields: Fields, keys: codec.KeyStyle): T throws DecodeError {
+fun decodeFields<T: Decodable>(fields: Fields, keys: Case): T throws DecodeError {
   val dec = FormDecoder.of(fields, keys)
   val value = try T.decode(dec)
   try codec.finish(dec, value)
@@ -93,9 +93,9 @@ public struct FormDecoder {
   private names:    List<string>
   private state:    *FormState
   private recorded: codec.Problems = codec.Problems()
-  private keyStyle: codec.KeyStyle = codec.KeyStyle.AsWritten
+  private keyStyle: Case = Case.AsWritten
 
-  public static fun of(fields: Fields, keys: codec.KeyStyle = codec.KeyStyle.AsWritten): FormDecoder =>
+  public static fun of(fields: Fields, keys: Case = Case.AsWritten): FormDecoder =>
     FormDecoder(fields, names: fields.names(), state: &FormState(), keyStyle: keys)
 
   // Where the decoder is: the member being read, or, between members and
@@ -128,7 +128,7 @@ public struct FormDecoder {
 
   implement codec.Decoder {
     fun format(): string => "form"
-    override fun keys(): codec.KeyStyle => this.keyStyle
+    override fun keys(): Case => this.keyStyle
 
     fun peek(): codec.Kind throws DecodeError {
       val s = this.state

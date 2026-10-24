@@ -135,51 +135,11 @@ public enum DurationStyle {
   Millis
 }
 
-/// How an encoder spells the keys it is given: as written, `snake_case`,
-/// `camelCase` or `UPPER_SNAKE` (the environment's). A policy for a whole API,
-/// never an attribute on a type.
-public enum KeyStyle {
-  AsWritten
-  SnakeCase
-  CamelCase
-  UpperSnake
-}
-
-/// `name` spelled in `style`: `passwordHash` → `password_hash` → `passwordHash`.
-public fun styleKey(name: string, style: KeyStyle): string => when (style) {
-  KeyStyle.AsWritten  => name
-  KeyStyle.UpperSnake => styleKey(name, KeyStyle.SnakeCase).toUpper()
-  KeyStyle.SnakeCase  => {
-    val out = StringBuilder()
-    loop (i in 0..<name.len()) {
-      val b = name.byteAt(i)
-      if (b.isAsciiUpper()) {
-        if (i > 0) out.append("_")
-        out.appendByte(b.toAsciiLower())
-      } else {
-        out.appendByte(b)
-      }
-    }
-    out.toString()
-  }
-  KeyStyle.CamelCase  => {
-    val out = StringBuilder()
-    var up = false
-    loop (i in 0..<name.len()) {
-      val b = name.byteAt(i)
-      if (b == '_') {
-        up = true
-      } else if (up && b.isAsciiLower()) {
-        out.appendByte(b.toAsciiUpper())
-        up = false
-      } else {
-        out.appendByte(b)
-        up = false
-      }
-    }
-    out.toString()
-  }
-}
+/// `name` spelled in `case`, as an encoder spells the keys it is given: as
+/// written, `snake_case`, `camelCase`, `SCREAMING_SNAKE` (the environment's)
+/// — a policy for a whole API, never an attribute on a type (D205: `Case`
+/// replaced `Case`).
+public fun styleKey(name: string, style: Case): string => caseSpelled(name, style)
 
 /// What the next value in a document is, before it is read.
 public enum Kind {
@@ -205,7 +165,7 @@ public trait Encoder {
   fun enums(): EnumStyle => EnumStyle.Name
   /// How field names are spelled as keys; derived code applies it to a
   /// field's own name, never to a `@key` the author wrote.
-  fun keys(): KeyStyle => KeyStyle.AsWritten
+  fun keys(): Case => Case.AsWritten
   fun beginObject() throws EncodeError
   fun key(name: string) throws EncodeError
   fun endObject() throws EncodeError
@@ -229,7 +189,7 @@ public trait Decoder {
   fun format(): string
   fun durations(): DurationStyle => DurationStyle.Seconds
   fun enums(): EnumStyle => EnumStyle.Name
-  fun keys(): KeyStyle => KeyStyle.AsWritten
+  fun keys(): Case => Case.AsWritten
   /// What comes next, without consuming it.
   fun peek(): Kind throws DecodeError
   fun beginObject() throws DecodeError
@@ -275,7 +235,7 @@ public trait Decodable {
   /// of them are required, and their defaults. `implement Decodable` derives
   /// it; written by hand, a type that does not override it is one `Opaque`
   /// value, read as it is.
-  static fun schema(format: string, keys: KeyStyle): Schema => Schema.opaque()
+  static fun schema(format: string, keys: Case): Schema => Schema.opaque()
 }
 
 /// Both directions: the one line a DTO writes.
@@ -283,7 +243,7 @@ public trait Codable : Encodable + Decodable
 
 /// The path of a member `key` under `base`.
 public fun childPath(base: string, key: string): string {
-  val plain = !key.isEmpty() && key.indexOf(".") < 0 && key.indexOf("[") < 0 && key.indexOf("]") < 0 && key.indexOf("\"") < 0
+  val plain = !key.isEmpty() && !key.contains(".") && !key.contains("[") && !key.contains("]") && !key.contains("\"")
   when {
     plain && base.isEmpty() => key
     plain                   => "$base.$key"
@@ -402,7 +362,7 @@ public struct Schema {
 
 /// A field's default as the text a source holds it as, for `describe`: what
 /// `decode` would be given to produce it. `null` when it has no text form.
-public fun defaultText<T: Encodable>(value: T, format: string, keys: KeyStyle): string? {
+public fun defaultText<T: Encodable>(value: T, format: string, keys: Case): string? {
   val encoder = ValueEncoder.of(format: format, enums: EnumStyle.Name, keys: keys, durations: DurationStyle.Text)
   value.encode(encoder) catch (e) {
     return null
@@ -469,59 +429,59 @@ fun intSchema(what: string): Schema => Schema.leaf(SchemaKind.Int, what)
 
 implement Decodable for i8 {
   static fun decode(from: Decoder): i8 throws DecodeError => try narrowI64(from, -128, 127).wrapI8()
-  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from -128 to 127")
+  override static fun schema(format: string, keys: Case): Schema => intSchema("an integer from -128 to 127")
 }
 implement Decodable for i16 {
   static fun decode(from: Decoder): i16 throws DecodeError => try narrowI64(from, -32768, 32767).wrapI16()
-  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from -32768 to 32767")
+  override static fun schema(format: string, keys: Case): Schema => intSchema("an integer from -32768 to 32767")
 }
 implement Decodable for i32 {
   static fun decode(from: Decoder): i32 throws DecodeError => try narrowI64(from, -2147483648, 2147483647).wrapI32()
-  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from -2147483648 to 2147483647")
+  override static fun schema(format: string, keys: Case): Schema => intSchema("an integer from -2147483648 to 2147483647")
 }
 implement Decodable for i64 {
   static fun decode(from: Decoder): i64 throws DecodeError => try from.readI64()
-  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer")
+  override static fun schema(format: string, keys: Case): Schema => intSchema("an integer")
 }
 implement Decodable for isize {
   static fun decode(from: Decoder): isize throws DecodeError => try from.readI64().toIsize()
-  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer")
+  override static fun schema(format: string, keys: Case): Schema => intSchema("an integer")
 }
 implement Decodable for u8 {
   static fun decode(from: Decoder): u8 throws DecodeError => try narrowU64(from, 255).wrapU8()
-  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from 0 to 255")
+  override static fun schema(format: string, keys: Case): Schema => intSchema("an integer from 0 to 255")
 }
 implement Decodable for u16 {
   static fun decode(from: Decoder): u16 throws DecodeError => try narrowU64(from, 65535).wrapU16()
-  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from 0 to 65535")
+  override static fun schema(format: string, keys: Case): Schema => intSchema("an integer from 0 to 65535")
 }
 implement Decodable for u32 {
   static fun decode(from: Decoder): u32 throws DecodeError => try narrowU64(from, 4294967295).wrapU32()
-  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("an integer from 0 to 4294967295")
+  override static fun schema(format: string, keys: Case): Schema => intSchema("an integer from 0 to 4294967295")
 }
 implement Decodable for u64 {
   static fun decode(from: Decoder): u64 throws DecodeError => try from.readU64()
-  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("a non-negative integer")
+  override static fun schema(format: string, keys: Case): Schema => intSchema("a non-negative integer")
 }
 implement Decodable for usize {
   static fun decode(from: Decoder): usize throws DecodeError => try from.readU64().toUsize()
-  override static fun schema(format: string, keys: KeyStyle): Schema => intSchema("a non-negative integer")
+  override static fun schema(format: string, keys: Case): Schema => intSchema("a non-negative integer")
 }
 implement Decodable for f32 {
   static fun decode(from: Decoder): f32 throws DecodeError => try from.readF64().toF32()
-  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.leaf(SchemaKind.Float, "a number")
+  override static fun schema(format: string, keys: Case): Schema => Schema.leaf(SchemaKind.Float, "a number")
 }
 implement Decodable for f64 {
   static fun decode(from: Decoder): f64 throws DecodeError => try from.readF64()
-  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.leaf(SchemaKind.Float, "a number")
+  override static fun schema(format: string, keys: Case): Schema => Schema.leaf(SchemaKind.Float, "a number")
 }
 implement Decodable for bool {
   static fun decode(from: Decoder): bool throws DecodeError => try from.readBool()
-  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.leaf(SchemaKind.Bool, "true or false")
+  override static fun schema(format: string, keys: Case): Schema => Schema.leaf(SchemaKind.Bool, "true or false")
 }
 implement Decodable for string {
   static fun decode(from: Decoder): string throws DecodeError => try from.readString()
-  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.leaf(SchemaKind.Text, "text")
+  override static fun schema(format: string, keys: Case): Schema => Schema.leaf(SchemaKind.Text, "text")
 }
 
 /// An integer that must fit a narrower type: out of range is a problem.
@@ -556,7 +516,7 @@ implement<T: Decodable> Decodable for T? {
     }
     try T.decode(from)
   }
-  override static fun schema(format: string, keys: KeyStyle): Schema => T.schema(format, keys)
+  override static fun schema(format: string, keys: Case): Schema => T.schema(format, keys)
 }
 
 implement<T: Encodable> Encodable for List<T> {
@@ -571,7 +531,7 @@ implement<T: Encodable> Encodable for MutableList<T> {
 }
 implement<T: Decodable> Decodable for List<T> {
   static fun decode(from: Decoder): List<T> throws DecodeError => try MutableList<T>.decode(from).toList()
-  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.list(T.schema(format, keys))
+  override static fun schema(format: string, keys: Case): Schema => Schema.list(T.schema(format, keys))
 }
 implement<T: Decodable> Decodable for MutableList<T> {
   static fun decode(from: Decoder): MutableList<T> throws DecodeError {
@@ -581,7 +541,7 @@ implement<T: Decodable> Decodable for MutableList<T> {
     try from.endList()
     out
   }
-  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.list(T.schema(format, keys))
+  override static fun schema(format: string, keys: Case): Schema => Schema.list(T.schema(format, keys))
 }
 
 // An array travels as a list; reading one needs exactly N elements (D121).
@@ -600,7 +560,7 @@ implement<T: Decodable, const N: i64> Decodable for Array<T, N> {
     from.problem("expected $N elements, found ${items.len()}")
     throw DecodeError(problems: from.problems())
   }
-  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.list(T.schema(format, keys))
+  override static fun schema(format: string, keys: Case): Schema => Schema.list(T.schema(format, keys))
 }
 
 implement<V: Encodable> Encodable for Map<string, V> {
@@ -618,7 +578,7 @@ implement<V: Encodable> Encodable for MutableMap<string, V> {
 }
 implement<V: Decodable> Decodable for Map<string, V> {
   static fun decode(from: Decoder): Map<string, V> throws DecodeError => try MutableMap<string, V>.decode(from).toMap()
-  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.unsupported("a Map")
+  override static fun schema(format: string, keys: Case): Schema => Schema.unsupported("a Map")
 }
 implement<V: Decodable> Decodable for MutableMap<string, V> {
   static fun decode(from: Decoder): MutableMap<string, V> throws DecodeError {
@@ -630,7 +590,7 @@ implement<V: Decodable> Decodable for MutableMap<string, V> {
     try from.endObject()
     out
   }
-  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.unsupported("a Map")
+  override static fun schema(format: string, keys: Case): Schema => Schema.unsupported("a Map")
 }
 
 // ---------------------------------------------------------------------------
@@ -725,7 +685,7 @@ implement Decodable for Value {
     Kind.List   => VList(items: try List<Value>.decode(from))
     Kind.Object => VObject(fields: try Map<string, Value>.decode(from))
   }
-  override static fun schema(format: string, keys: KeyStyle): Schema => Schema.unsupported("a free-form Value")
+  override static fun schema(format: string, keys: Case): Schema => Schema.unsupported("a free-form Value")
 }
 
 // ---------------------------------------------------------------------------
@@ -752,11 +712,11 @@ public struct ValueDecoder {
   private started:       bool = false
   private name:          string = "json"
   private style:         EnumStyle = EnumStyle.Name
-  private keyStyle:      KeyStyle = KeyStyle.AsWritten
+  private keyStyle:      Case = Case.AsWritten
   private durationStyle: DurationStyle = DurationStyle.Seconds
   private maxDepth:      i64 = maxRecursionDepth
 
-  public static fun of(v: Value, format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, durations: DurationStyle = DurationStyle.Seconds, maxDepth: i64 = maxRecursionDepth): ValueDecoder =>
+  public static fun of(v: Value, format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: Case = Case.AsWritten, durations: DurationStyle = DurationStyle.Seconds, maxDepth: i64 = maxRecursionDepth): ValueDecoder =>
     ValueDecoder(root: v, name: format, style: enums, keyStyle: keys, durationStyle: durations, maxDepth)
 
   /// The value about to be read.
@@ -798,7 +758,7 @@ public struct ValueDecoder {
     fun format(): string => this.name
     override fun enums(): EnumStyle => this.style
     override fun durations(): DurationStyle => this.durationStyle
-    override fun keys(): KeyStyle => this.keyStyle
+    override fun keys(): Case => this.keyStyle
 
     fun peek(): Kind throws DecodeError => when (this.current()) {
       is VNull   => Kind.Null
@@ -966,11 +926,11 @@ public struct ValueEncoder {
   private state:         *ValueEncoderState
   private name:          string = "json"
   private style:         EnumStyle = EnumStyle.Name
-  private keyStyle:      KeyStyle = KeyStyle.AsWritten
+  private keyStyle:      Case = Case.AsWritten
   private durationStyle: DurationStyle = DurationStyle.Seconds
   private maxDepth:      i64 = maxRecursionDepth
 
-  public static fun of(format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: KeyStyle = KeyStyle.AsWritten, durations: DurationStyle = DurationStyle.Seconds, maxDepth: i64 = maxRecursionDepth): ValueEncoder =>
+  public static fun of(format: string = "json", enums: EnumStyle = EnumStyle.Name, keys: Case = Case.AsWritten, durations: DurationStyle = DurationStyle.Seconds, maxDepth: i64 = maxRecursionDepth): ValueEncoder =>
     ValueEncoder(state: &ValueEncoderState(), name: format, style: enums, keyStyle: keys, durationStyle: durations, maxDepth)
 
   /// The value built, once one whole value has been written.
@@ -996,7 +956,7 @@ public struct ValueEncoder {
     fun format(): string => this.name
     override fun enums(): EnumStyle => this.style
     override fun durations(): DurationStyle => this.durationStyle
-    override fun keys(): KeyStyle => this.keyStyle
+    override fun keys(): Case => this.keyStyle
 
     fun beginObject() throws EncodeError {
       try this.checkDepth()

@@ -47,14 +47,18 @@ sealed trait Type {
     var isRaw: bool = false
     var pos:   Span = Span.none()
   }
-  /// `(A, B)`; `()` is the unit type.
+  /// `(A, B)`; `()` is the unit type. `(key: K, value: V)` labels every
+  /// element (D166); `labels` is empty when none is labelled.
   struct TupleType {
-    var elems: List<Type> = []
-    var pos:   Span = Span.none()
+    var elems:  List<Type> = []
+    var labels: List<Ident> = []
+    var pos:    Span = Span.none()
   }
   /// `fun(A, B): R suspends throws E` (D40), `sendable fun(…)` (D35),
-  /// `extern fun(…)` (a C function pointer, D69).
+  /// `extern fun(…)` (a C function pointer, D69); `fun on T(A): R`, whose
+  /// `this` is a T (D207).
   struct FunType {
+    var on:       (*Type)? = null
     var params:   List<Type> = []
     var ret:      (*Type)? = null  // null: unit
     var effects:  Effects = Effects()
@@ -132,7 +136,11 @@ sealed trait Decl {
     // `: Trait` clause may have been supplied rather than written
     var nested:         bool = false
     var impliedVariant: bool = false
-    var pos:            Span = Span.none()
+    // `indirect struct`: stored behind a pointer in its sealed value;
+    // `inline struct`: kept in the value even in a tree (D198)
+    var indirect: bool = false
+    var isInline: bool = false
+    var pos:      Span = Span.none()
   }
   /// `trait Name { type Item; fun m() }`, or `sealed trait Name`.
   struct TraitDecl {
@@ -149,6 +157,7 @@ sealed trait Decl {
     // the structs declared in the body of a sealed trait (D193); each is also
     // in the file's declarations, as the separate form would be
     var variants: List<StructDecl> = []
+    var indirect: bool = false  // `indirect sealed trait`: every variant behind a pointer (D198)
     var pos:      Span = Span.none()
   }
   /// `implement<T> Trait for Type { }`, or `extend<T> Type { }` (D23).
@@ -193,6 +202,7 @@ sealed trait Decl {
     var isInternal: bool = false
     var name:       Ident = Ident()
     var args:       List<Arg> = []
+    var argsPos:    Span = Span.none()  // the parenthesised arguments; none without them
     var state:      List<ValDecl> = []
     var funs:       List<FunDecl> = []
     var hasBody:    bool = false
@@ -591,7 +601,9 @@ sealed trait Expr {
     // written `async { body }` (D169): the callee is a lambda of no
     // parameters whose body is that block
     var block: bool = false
-    var pos:   Span = Span.none()
+    // the last argument is a block written after the call (D207)
+    var trailing: bool = false
+    var pos:      Span = Span.none()
   }
   struct UnaryExpr {
     var op:  Kind = Kind.Minus  // Minus, Bang, Amp, Star, Tilde
@@ -642,11 +654,16 @@ sealed trait Expr {
     var params: List<Param> = []
     var ret:    (*Type)? = null
     var body:   *Expr  // a BlockExpr for `{ … }`
+    // written `{ … }` alone: a receiver block, or a plain `fun()` (D207)
+    var bare:   bool = false
     var pos:    Span = Span.none()
   }
+  /// `(a, b)`; `(key: k, value: v)` labels every element (D166), `labels`
+  /// empty when none is labelled.
   struct TupleExpr {
-    var elems: List<Expr> = []
-    var pos:   Span = Span.none()
+    var elems:  List<Expr> = []
+    var labels: List<Ident> = []
+    var pos:    Span = Span.none()
   }
   /// `[a, b]`, `mut [a, b]` (D25).
   struct ListLit {

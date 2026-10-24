@@ -13,6 +13,7 @@ import (
 // into alive after the list it was cut from is gone. Run in a debug and a
 // release build.
 func TestListWindows(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// A program built with --sanitize runs to its end on Linux, threads and
+// A program built with --sanitize runs to its end on Linux and macOS, threads and
 // all. Each runtime thread gives its signal handler an alternate stack of
 // its own; AddressSanitizer unmaps the one it installed when a thread ends,
 // so the runtime must put that one back first — when it did not, every
@@ -17,8 +17,8 @@ import (
 // deallocate", 2026-10-02), and -sanitize runs reported nothing else.
 // Always on where the sanitizer runtimes come with clang.
 func TestSanitizedProgramEndsCleanly(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("the sanitizer runtimes come with clang on Linux only")
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("the sanitizer runtimes come with clang on Linux and macOS")
 	}
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)

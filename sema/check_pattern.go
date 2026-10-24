@@ -11,6 +11,9 @@ import (
 
 // whenExpr lowers `when` to a Match (D13).
 func (f *fnCtx) whenExpr(e *ast.WhenExpr, want types.Type) Expr {
+	if out, ok := f.staticWhen(e, want); ok {
+		return out // arms the field handle's constants decide (D203)
+	}
 	asValue := want != nil && !types.IsUnit(want)
 	inferValue := want == nil
 	m := &Match{Span: e.Pos}

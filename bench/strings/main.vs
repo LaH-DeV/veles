@@ -3,7 +3,7 @@ use io { println }
 use time
 
 fun main() {
-  val (check, elapsed) = time.Stopwatch.measure(() => {
+  val (check, elapsed) = time.measure(() => {
     var check: i64 = 0
     loop (_ in 0..<5) {
       val sb = StringBuilder()

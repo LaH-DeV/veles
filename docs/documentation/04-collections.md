@@ -58,13 +58,18 @@ Output:
   hands it over without a copy (D63). "Nobody else" still holds while you
   hand the list to a function that only reads or fills it (it does not
   store it, return it or capture it), and for a field of a struct you
-  built in the same function and kept to yourself (D188):
+  built in the same function and kept to yourself (D188) — also when you
+  call its methods, as long as they only fill and read the field and keep
+  neither it nor the struct, and none that reads the field runs after the
+  move (D201):
 
 ```veles
 use io
 
 struct Report {
   lines: MutableList<string> = []
+
+  fun add(line: string) { this.lines.push(line) }
 }
 
 fun addLines(out: MutableList<string>, n: i64) {
@@ -78,8 +83,8 @@ fun report(n: i64): List<string> {
 }
 
 fun summary(): List<string> {
-  val r = Report()
-  r.lines.push("a")
+  var r = Report()
+  r.add("a")        // a method that only fills the field
   r.lines.push("b")
   r.lines  // a field of a struct built here
 }
@@ -95,7 +100,8 @@ Output:
 ```
 
   Where the compiler cannot show that (the list is a parameter, or goes
-  through a method, a closure or a function that keeps it), the error says
+  through a method, a closure or a function that keeps it, or a method that
+  reads it runs after the move), the error says
   so and `.toList()` is the copy. A `.toList()` on a list that is not used
   afterwards is a warning (`redundant_copy`) with a fix: the move needs no
   copy. The editor marks every move with an inlay hint after the
@@ -276,7 +282,7 @@ fun main() {
   io.println("${xs.any(x => x > 7)} ${xs.all(x => x > 0)} ${xs.find(x => x > 4) ?: 0} ${xs.indexOf(8)}")
   io.println("${xs.first() ?: 0} ${xs.last() ?: 0} ${xs.join(", ")}")
   xs.forEach(x => io.print("$x "))
-  io.println("")
+  io.println("done")
 }
 ```
 
@@ -286,7 +292,7 @@ Output:
 [1, 3, 5, 8] [8, 5, 3, 1] [1, 8, 3, 5]
 true true 5 2
 5 1 5, 3, 8, 1
-5 3 8 1 
+5 3 8 1 done
 ```
 
 `x => x * 2` is a lambda; [chapter 10](10-closures-and-iterators.md)
@@ -310,7 +316,7 @@ struct Row {
 
 fun main() {
   val sorted = [10, 20, 20, 30]
-  // the first of the two 20s, and -1 for a value that is not there
+  // the first of the two 20s, and null for a value that is not there
   io.println("${sorted.binarySearch(20)} ${sorted.binarySearch(25)}")
   // where 20 begins and where it ends: it occurs 3 - 1 = 2 times
   io.println("${sorted.lowerBound(20)} ${sorted.upperBound(20)}")
@@ -324,10 +330,10 @@ fun main() {
 
 Output:
 ```text
-1 -1
+1 null
 1 3
 3
-1 -1
+1 null
 ```
 
 None of them checks that the list is sorted, because checking is the linear
@@ -479,6 +485,76 @@ perfect null
 and both can be replaced per call — `sortedBy(key)`, `sortedWith(compare)`,
 `distinctBy(key)`. [Chapter 8](08-traits-and-generics.md#comparing-values)
 lays out the whole picture.
+
+## Tuples
+
+A tuple groups a fixed number of values, each of its own type: `(i64,
+string)`. Its elements are read by position — `t.0`, `t.1` — and, when
+its type labels them, by name (D166):
+
+```veles
+use io
+
+fun divide(a: i64, b: i64): (quotient: i64, remainder: i64) => (a / b, a % b)
+
+fun main() {
+  val r = divide(17, 5)
+  io.println("${r.quotient} rest ${r.remainder}, or ${r.0} rest ${r.1}")
+  io.println("$r")
+  val (q, rest) = divide(9, 4)                         // destructuring is positional
+  val plain: (i64, i64) = r                            // labels come off freely
+  val again: (quotient: i64, remainder: i64) = plain   // and go back on
+  io.println("$q $rest $plain ${again.quotient} ${plain == r}")
+
+  val stock = ["apples": 3, "pears": 7]
+  if (val most = stock.entries().sortedBy(e => -e.value).first()) {
+    io.println("most: ${most.key} (${most.value})")
+  }
+  loop (e in ["a", "b"].enumerate()) io.println("${e.index} ${e.value}")
+  if (val setting = "port=8080".splitOnce("=")) io.println("${setting.before} is ${setting.after}")
+}
+```
+
+Output:
+```text
+3 rest 2, or 3 rest 2
+(quotient: 3, remainder: 2)
+2 1 (3, 2) 3 true
+most: pears (7)
+0 a
+1 b
+port is 8080
+```
+
+- A tuple type labels **every element or none**: `(key: K, value: V)`. A
+  literal may be labelled the same way, `(key: "a", value: 1)`, or left
+  unlabelled where the expected type gives the labels — as `divide`'s body
+  does.
+- Labels are for reading. A labelled tuple has the same layout, `==`,
+  hashing and ordering as the unlabelled one, and a generic function
+  compiles once for both; destructuring stays positional
+  (`val (q, rest) = …`, `(k, v) => …`, `loop ((k, v) in m)`).
+- An unlabelled tuple converts to a labelled one and back. Two **different**
+  label lists do not: `(x: 1, y: 2)` where a `(y: i64, x: i64)` is
+  expected is an error, because the elements would silently swap meaning.
+  The fix drops the value's labels when the positions are what you meant.
+- `"$t"` prints the labels: `(quotient: 3, remainder: 2)`.
+- std labels its results where a name helps: `Map.entries()` gives
+  `(key: K, value: V)`, `enumerate()` gives `(index: i64, value: T)`,
+  `splitOnce` gives `(before: string, after: string)?`. `zip`, `gather`
+  and `awaitAll` stay unlabelled.
+
+**Tuple or struct?** A labelled tuple is for a short-lived grouping: a
+function's several results, an entry, a row on its way to being printed. As
+soon as the grouping has behaviour, an invariant, documentation per field,
+or a wire form (tuples are never `Codable`), make it a struct (chapter 5).
+
+One limit: a generic **type** of your own shares one instance among every
+labelling of its arguments and keeps none, so writing
+`Box<(lo: i64, hi: i64)>` is an error that says so — write
+`Box<(i64, i64)>`, or make the pair a struct. Functions and the built-in
+collections are not affected: `entries().sortedBy(…)` still gives labelled
+entries, and `List<(key: K, value: V)>` keeps its labels.
 
 ## Maps
 
@@ -770,5 +846,6 @@ Output:
 | membership tests, no duplicates | `Set<T>` / `MutableSet<T>` |
 | a queue, a sliding window, a stack shared by reference | `Deque<T>` |
 | the smallest (or largest) element next | `PriorityQueue<T>` |
+| a few values together for a moment (several results, an entry) | a tuple, labelled: `(min: i64, max: i64)` |
 
 Next: [Structs and methods](05-structs-and-methods.md).

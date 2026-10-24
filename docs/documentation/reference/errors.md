@@ -30,6 +30,18 @@ statements on one line without a newline between them. Statements end at
 the end of a line; a line that ends in an operator, a `,` or an open
 bracket continues on the next one.
 
+A tuple labels every element or none, each label once (D166): `(x: 1, 2)`
+and `(x: 1, x: 2)` are syntax errors.
+
+#### `the text is not valid UTF-8 here (byte 0xE9): save the file as UTF-8`
+
+A source file is UTF-8, as in Go (D199). A byte that does not decode —
+usually a file saved as Latin-1 or Windows-1252, where `é` is the one byte
+`0xE9` — is an error wherever it stands, in a comment or a string too, and
+each such byte is reported; nothing else in the file is checked until it is
+saved as UTF-8 (every editor can: "Save with encoding" or "Reopen with
+encoding", then UTF-8). A byte-order mark at the very start is allowed.
+
 ### removed-syntax
 
 **A spelling that Veles used to have, or that another language has.**
@@ -40,6 +52,13 @@ only — use 'xs.at(i)'`, `'=' assigns; use '==' to compare`.
 The old form still parses, so the rest of the file checks, and the error
 carries the fix: the editor's quick fix, or `veles check --fix` for a
 whole package, rewrites it.
+
+`'indexOf' answers null when nothing is found, never -1 (D165)`: the
+index-of family (`indexOf`, `indexOfFirst`, `lastIndexOf`, `binarySearch`,
+`binarySearchBy`, `binarySearchWith`) answers `i64?`, so a test of the old
+`-1` — `>= 0`, `< 0`, `== -1`, `!= -1` — is refused with the fix that tests
+for null. Better still: `val i = xs.indexOf(v) ?: return`, after which
+`xs.at(i)` is a `T`, or `contains` when the index is not needed.
 
 #### `the receiver is spelled 'this'`
 
@@ -84,6 +103,13 @@ A method called as a field (`xs.len`) or a field called as a method
 (`p.x()`) is told which it is. Hover shows everything a type has, and
 completion after the `.` lists it.
 
+A tuple is read by position (`t.0`) or, when its type labels the elements,
+by label: `tuple '(quotient: i64, remainder: i64)' has no element 'rest';
+its labels are 'quotient', 'remainder'` (D166). A generic type keeps no
+labels in its type arguments, so `box.value.lo` on a `Box<(lo: i64, hi:
+i64)>` is refused where `Box` is written; read `box.value.0`, or make the
+pair a struct.
+
 ### modules
 
 **`use`, and what a module has.** `unknown module 'jsn'`, `module 'io'
@@ -110,7 +136,7 @@ both can import, or merge the two.
 The four levels (D142): `private` (the type), `internal` (the module),
 nothing (the package), `public` (other packages). Reaching an `internal`
 name from another module of the package: leave the word off to share it
-with the package. Reaching an unmarked name from another *package*: mark
+with the package. Reaching an unmarked name from another _package_: mark
 it `public` there, or have its facade export it. The same holds for
 a field, a method or a static of a type. For a standard module or a
 dependency the message says instead that the name is not part of that
@@ -194,6 +220,18 @@ for no particular reason — use `i64` unless the width matters.
 A named function passed where a `suspends` or `throws` function type is
 wanted: pass a lambda that calls it, `(x) => f(x)` (D40).
 
+#### `type mismatch: expected '(y: i64, x: i64)', found '(x: i64, y: i64)'; the labels differ`
+
+A labelled tuple where a tuple with other labels is expected (D166).
+Unlabelled tuples convert to labelled ones and back, but between two label
+lists the elements would silently change meaning — here `x` would be read
+as `y`. When the positions are what you meant, drop the value's labels:
+the fix deletes them from a literal (`(x: 1, y: 2)` → `(1, 2)`) or
+rebuilds a variable unlabelled (`(p.0, p.1)`). When the names are what you
+meant, reorder the elements. The same mismatch inside a list or a map
+(`List<(a: i64, b: i64)>` as a `List<(b: i64, a: i64)>`) has no fix:
+convert the elements with `map`.
+
 ### inference
 
 **Nothing says what the type is.** `cannot infer the element type of an
@@ -271,6 +309,20 @@ name (`unused Result 'r'`) and never read it. Decide: `try f()` if your
 function is `throws`, or `when (val r = f()) { is Ok => ...; is Err => ... }`.
 Ignoring a failure is not an option; `val _ = f()` is the deliberate
 discard. (D4)
+
+#### `cannot interpolate 'expr' of type 'Result<T, E>': its error would be lost`
+
+Printing an unhandled result would turn a failure into ordinary text.
+Use `"${try expr}"` in a throwing function, or `"${expr ?? fallback}"`
+to handle it locally. `check --fix` and the editor's preferred quick fix
+add `try` when the enclosing function may throw. Explicit
+`expr.toString()` prints the wrapper on purpose. Template values and
+formatted interpolation follow the same rule. (D157)
+
+#### `cannot interpolate task handle 'expr' of type 'Task<T>'`
+
+A handle is not its task's value. Await it first, for example
+`"${await task}"`. The task's errors belong to its owning block. (D157)
 
 #### `'try' propagates an error, but the enclosing function is not declared 'throws'`
 
@@ -517,7 +569,7 @@ combining marks and digits after the first letter (Unicode's identifier
 rules, UAX #31). A character that is none of those is reported by name,
 because it is usually invisible: a no-break space pasted from a web page,
 a zero-width space, a byte-order mark in the middle of a file. A
-*bidirectional control* (U+202A–U+202E, U+2066–U+2069) is refused in code
+_bidirectional control_ (U+202A–U+202E, U+2066–U+2069) is refused in code
 and in comments: it makes a file display in a different order from how it
 compiles (the "Trojan source" attack). Inside a string it is a warning —
 write it as `\u{202E}` so it can be seen. (D18)
@@ -527,7 +579,7 @@ write it as `\u{202E}` so it can be seen. (D18)
 Interpolation prints a value through its `Display` implementation, so
 `"$this"` inside that very `toString` is the function calling itself with
 the same argument — a stack overflow at run time. Interpolate the fields
-(`"(${this.x}, ${this.y})"`). Printing a *different* value of the type is
+(`"(${this.x}, ${this.y})"`). Printing a _different_ value of the type is
 allowed, since that recursion can end. (P7)
 
 ### mutability
@@ -615,9 +667,18 @@ Once you name one argument, name the rest: `f(1, b: 2, c: 3)` is fine,
 path`.
 
 A struct is built by naming its fields, `Point(x: 1, y: 2)`; a field with
-a default may be left out. An `init` block runs after the fields are set
-and must give every field without a default a value before it ends (D28,
-D73).
+a default may be left out. A constructor that takes one parameter also
+takes it positionally, `Meters(5)` (D163); when the type grows a second
+one, the call is this error with a fix that names the field. An `init`
+block runs after the fields are set and must give every field without a
+default a value before it ends (D28, D73).
+
+`'copy' takes the fields it changes by name`, `field 'area' is assigned by
+the 'init' block of 'Rect', which a copy runs again`, `'Worker' holds a
+running task, which a copy would duplicate`: the generated `copy` (D164)
+names what changes, cannot name what `init` assigns or what the call site
+cannot see, and is refused for task-holding types, `with`-bound resources
+and types whose `init` takes parameters.
 
 ### this
 
@@ -641,6 +702,33 @@ reads `'name' means Type.name here`.
 A `static fun` has no receiver, so an instance field or method is not
 reachable bare. Take the value as a parameter, or make the function a method.
 
+#### `a block '{ … }' alone is a function where one is expected (D207)`
+
+A block written alone, `{ … }`, is a function of no parameters, and it takes
+its meaning from where it goes: where a `fun on T()` is expected it is a
+_receiver block_, whose `this` is the T (`server.apply { port = 8080 }`);
+where a `fun()` is expected it is a plain function (`measure { work() }`).
+With nothing expected — `val f = { … }` — say which with a type:
+`val f: fun() = { … }`.
+
+#### `this block takes no parameters, but a 'fun(i64)' is expected (D207)`
+
+A block never has parameters. A function that takes some is written
+`(a) => { … }` — also where a `fun on T(A)` is expected, with `this` still
+the T.
+
+#### `'apply' changes 'x' in place, and 'x' is a 'val' (D207)`
+
+`apply` runs its block on the value where it is held, so the place must be
+the caller's to change: a `var`, a `var` field, what a pointer points at, or
+a temporary. On a `val` use `edit`, which gives a changed copy:
+`val changed = x.edit { … }`. The fix rewrites the call.
+
+#### `'x' is a global 'val' … a function on it may change it (D207)`
+
+A `fun on T` gets a pointer to its receiver, so it can change it; a global
+`val` is a constant every task shares. Copy it into a `var` first.
+
 ### declarations
 
 **How a declaration is written, and where.** `duplicate field 'x'`,
@@ -649,8 +737,8 @@ a struct, trait, impl or extend body`, `struct 'Node' has infinite size`.
 
 #### `extension 'trim' on 'string' is never called`
 
-`extend T { }` on a type your package does not own declares *extension
-functions* (D173), and an inherent method of the type always wins: the
+`extend T { }` on a type your package does not own declares _extension
+functions_ (D173), and an inherent method of the type always wins: the
 struct body's, a compiler built-in's, or a method of the same name in an
 `extend` of the type's own package. An extension with such a name is never
 reached; rename it. Also refused there: a `static fun` (write a free
@@ -660,7 +748,7 @@ extending a `Result` or an `Option`. See
 
 #### `'protected' qualifies 'var'`
 
-`protected` restricts *who may assign* a field, so it goes with `var`:
+`protected` restricts _who may assign_ a field, so it goes with `var`:
 `protected var count: i64`. A bare field is never assigned by anyone, and
 so has nothing to protect (D22).
 
@@ -684,6 +772,16 @@ variant of 'Shape'`.
 A sealed trait is a closed set of variants declared in its module (D12).
 Build a variant, and match on the variants with `when` to reach what only
 some of them have.
+
+#### `variant 'Upload' is 9 words, the others at most 1 word: mark it 'indirect'` (a warning)
+
+A sealed value is sized for its largest variant, so a type that is mostly
+small values with one large variant carries that room in every value — in
+every list and map of them too. Mark the large one `indirect struct` in the
+trait's body (the fix does it): it moves to the heap and the value shrinks
+to a tag and a pointer for it (D198). A tree — a sealed type that holds
+itself — is boxed already and never warned. Silence it in `veles.toml`
+with `[lint] large_variant = "allow"` when the size is what you want.
 
 #### `variant 'Rect' of 'Shape' does not implement 'area'`
 
@@ -779,7 +877,7 @@ the way out.
 
 A `val` task is checked to be awaited on every path, which only works
 while every use of it is an `await` in its own block (D156). Pass the
-*value* (`show(await t)`), start a task you want to cancel with `with`,
+_value_ (`show(await t)`), start a task you want to cancel with `with`,
 and keep handles you hand around in a `scope`.
 
 #### `a task is bound with 'val' (it must then be awaited) or 'with' (it is cancelled when the block ends), not 'var'`
@@ -821,7 +919,7 @@ When control passes a `scope`'s `}`, each of its tasks has finished — or,
 if the scope was left early, has been cancelled (D141). A handle kept in
 something declared before the scope (an outer `var` or list, a field), or
 returned, would outlive the task it names. Declare the list inside the
-scope, await there, and keep the *values*:
+scope, await there, and keep the _values_:
 
 ```veles
 // fragment
@@ -842,7 +940,7 @@ block (D34) — it never reaches an `await`. So the handle of a throwing
 `f` holds `f`'s value, and `await t` needs no `try` (D141; the quick fix
 removes it). To handle a child's error yourself, use `gather` (its
 handles and results keep the `Result`), or launch a function that
-*returns* a `Result` instead of throwing.
+_returns_ a `Result` instead of throwing.
 
 #### `'TestServer' holds a running task, so it must be received with 'with' where it is made`
 
@@ -1184,7 +1282,7 @@ level other than `"allow"`, `"warn"` or `"deny"` names the three.
 A dependency that names no source, two sources, a version that is not
 `major.minor.patch`, a bare `"1.4.2"` where a path is expected, or a
 `[workspace]` member that leaves the workspace each get a message saying
-what to write instead (see *The manifest in full* in chapter 11).
+what to write instead (see _The manifest in full_ in chapter 11).
 
 ### internal
 

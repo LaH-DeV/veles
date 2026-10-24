@@ -237,6 +237,7 @@ struct Printer {
         this.attrs(d.attrs)
         this.open("trait ")
         if (d.pub) this.write("public ")
+        if (d.indirect) this.write("indirect ")
         if (d.isSealed) this.write("sealed ")
         this.write(d.name.name)
         this.typeParams(d.typeParams)
@@ -317,6 +318,8 @@ struct Printer {
     })
     if (d.pub) this.write("public ")
     if (d.isExtern) this.write("extern ")
+    if (d.indirect) this.write("indirect ")
+    if (d.isInline) this.write("inline ")
     this.write(d.name.name)
     this.typeParams(d.typeParams)
     if (val variant = d.variant) {
@@ -493,13 +496,22 @@ struct Printer {
       }
       is TupleType      => {
         this.write("(")
-        this.typeList(t.elems)
+        loop ((i, elem) in t.elems.enumerate()) {
+          if (i > 0) this.write(", ")
+          if (val label = t.labels.at(i)) this.write("${label.name}: ")
+          this.typ(elem)
+        }
         this.write(")")
       }
       is FunType        => {
         if (t.sendable) this.write("sendable ")
         if (t.c) this.write("extern ")
-        this.write("fun(")
+        this.write("fun")
+        if (val on = t.on) {
+          this.write(" on ")
+          this.typ(*on)
+        }
+        this.write("(")
         this.typeList(t.params)
         this.write(")")
         if (val ret = t.ret) {
@@ -774,6 +786,12 @@ struct Printer {
       }
       is RangeExpr      => this.rangeExpr(e)
       is LambdaExpr     => {
+        if (e.bare) {
+          this.write("(block-lambda ")
+          this.expr(*e.body)
+          this.write(")")
+          return
+        }
         this.write("(lambda (")
         loop ((i, param) in e.params.enumerate()) {
           if (i > 0) this.write(", ")
@@ -796,7 +814,15 @@ struct Printer {
         this.expr(*e.body)
         this.write(")")
       }
-      is TupleExpr      => this.list("(tuple", e.elems)
+      is TupleExpr      => {
+        this.write("(tuple")
+        loop ((i, elem) in e.elems.enumerate()) {
+          this.write(" ")
+          if (val label = e.labels.at(i)) this.write("${label.name}: ")
+          this.expr(elem)
+        }
+        this.write(")")
+      }
       is ListLit        => this.list(if (e.isMut) "(mut-list" else "(list", e.elems)
       is MapLit         => {
         this.write(if (e.isMut) "(mut-map" else "(map")

@@ -44,8 +44,8 @@ fun readVersion(text: string): Version throws VersionError {
   val shown = quoted(text)
   val bare = if (text.startsWith("v")) text.slice(1, text.len()) else text
   val (core, preText) = bare.splitOnce("-") ?: (bare, "")
-  val pre: List<string> = if (bare.indexOf("-") >= 0) try readPre(preText, text) else []
-  if (core.indexOf("+") >= 0) throw VersionError(message: "$shown: build metadata ('+…') is not used in versions")
+  val pre: List<string> = if (bare.contains("-")) try readPre(preText, text) else []
+  if (core.contains("+")) throw VersionError(message: "$shown: build metadata ('+…') is not used in versions")
   val parts = core.split(".")
   if (parts.len() != 3) throw VersionError(message: "$shown is not a version: write major.minor.patch, e.g. 1.4.2")
   val numbers: MutableList<i64> = []

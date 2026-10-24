@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	rt "github.com/LaH-DeV/veles/runtime"
 )
 
 // The socket reactor (runtime/c/veles_poll.c, plan E3) under load: 300
@@ -145,15 +147,15 @@ func TestReactorManyConnections(t *testing.T) {
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
-	runReactorProgram(t, []string{"1", "2", "8"})
+	runReactorProgram(t, []string{"1", "2", "4", "8"})
 }
 
-// The portable poll() reactor, which macOS uses until kqueue (plan A7),
-// built on Linux to test it: the same program, through the backend that
+// The portable poll() reactor, built on Linux and macOS to test it:
+// the same program, through the backend that
 // interrupts a wait in progress whenever a descriptor is armed.
 func TestReactorPollFallback(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("the poll() reactor is built on Linux to test it (Windows has only its own)")
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("the poll() reactor is tested on Linux and macOS (Windows has only its own)")
 	}
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
@@ -161,6 +163,73 @@ func TestReactorPollFallback(t *testing.T) {
 	runtimeTestFlags = []string{"-DVELES_POLL_FALLBACK"}
 	defer func() { runtimeTestFlags = nil }()
 	runReactorProgram(t, []string{"1", "4"})
+}
+
+func TestReactorKqueue(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("kqueue is the macOS reactor")
+	}
+	clang, err := findClang()
+	if err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	source := rt.PollSource + `
+#ifndef VELES_POLL_KQUEUE
+#error macOS must use the kqueue backend
+#endif
+#include <assert.h>
+#include <sys/socket.h>
+
+int main(void) {
+	veles_poll_init();
+	veles_poll_event event;
+	assert(veles_poll_wait(0, &event, 1) == 0);
+	veles_poll_wake();
+	veles_poll_wake();
+	assert(veles_poll_wait(0, &event, 1) == 0);
+	assert(veles_poll_wait(0, &event, 1) == 0);
+	int sockets[2];
+	assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+	assert(veles_poll_arm(sockets[0], 1, 1) == 0);
+	assert(veles_poll_arm(sockets[0], 0, 1) == 0);
+	assert(write(sockets[1], "x", 1) == 1);
+	assert(veles_poll_wait(1000000000, &event, 1) == 1);
+	assert(event.fd == sockets[0] && event.write && !event.read);
+	assert(veles_poll_wait(0, &event, 1) == 0);
+	assert(veles_poll_arm(sockets[0], 1, 0) == 0);
+	assert(veles_poll_wait(1000000000, &event, 1) == 1);
+	assert(event.fd == sockets[0] && event.read && !event.write);
+	assert(veles_poll_wait(0, &event, 1) == 0);
+	char byte;
+	assert(read(sockets[0], &byte, 1) == 1 && byte == 'x');
+	assert(close(sockets[1]) == 0);
+	assert(veles_poll_arm(sockets[0], 1, 0) == 0);
+	assert(veles_poll_wait(1000000000, &event, 1) == 1);
+	assert(event.fd == sockets[0] && event.read);
+	assert(read(sockets[0], &byte, 1) == 0);
+	assert(veles_poll_arm(sockets[0], 1, 1) == 0);
+	veles_poll_forget(sockets[0]);
+	assert(veles_poll_wait(0, &event, 1) == 0);
+	assert(close(sockets[0]) == 0);
+	assert(veles_poll_arm(sockets[0], 1, 0) != 0);
+	return 0;
+}
+`
+	path := filepath.Join(dir, "reactor.c")
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "reactor")
+	args := append(runtimeFlags(true, *sanitize), path, "-o", exe)
+	if out, err := exec.Command(clang, args...).CombinedOutput(); err != nil {
+		t.Fatalf("compile: %v\n%s", err, out)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, exe).CombinedOutput(); err != nil {
+		t.Fatalf("run: %v\n%s", err, out)
+	}
 }
 
 // The timer heap (veles_task.c): 3000 sleepers with scattered deadlines,

@@ -116,5 +116,22 @@ $ httpd nowhere --check
 httpd: 'nowhere' is not a directory (the files to serve)
 exit=2
 $ httpd --port
-httpd: --port needs a number
+error: '--port' needs a value
+
+Usage: httpd [options] [dir]
+Run 'httpd --help' for more.
 exit=2
+$ httpd --help
+A small web server: static files and a JSON notes API.
+
+Usage: httpd [options] [dir]
+
+Arguments:
+  <dir>  The directory of files to serve. (default: public)
+
+Options:
+      --host <HOST>  The address to listen on. (default: 127.0.0.1)
+  -p, --port <PORT>  The port to listen on. (default: 8080)
+      --check        Serve on a free port, play a scripted client against it and print the exchange.
+  -h, --help         Print this help
+exit=0

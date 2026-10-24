@@ -333,7 +333,8 @@ func TestInferredThrowsAndReceiverCompletion(t *testing.T) {
 	}
 	// a binding introduced in the same (non-parsing) edit still resolves
 	got := complete(withLine("  val pt = ParseError(text: \"a\")\n  pt.\n"), 20, 5)
-	if len(got) != 2 || got[0] != "message" || got[1] != "text" {
+	// (an error has the generated `copy` too, D164)
+	if len(got) != 3 || got[0] != "copy" || got[1] != "message" || got[2] != "text" {
 		t.Errorf("new error binding mid-edit offered %v", got)
 	}
 }
@@ -608,6 +609,67 @@ func TestFormatting(t *testing.T) {
 // A lint's autofix travels as the diagnostic's `data` and comes back as a
 // quick fix from textDocument/codeAction: here, moving a top-level impl
 // into the struct's body (D23).
+func TestCodeActionInterpolation(t *testing.T) {
+	src := "use io\nerror ParseError { }\nfun parse(): i64 throws ParseError => throw ParseError()\nfun main() throws { io.println(\"${parse()}\") }\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	_, notes := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 0, "character": 0}})
+	var diagnostics []lspDiagnostic
+	for _, note := range notes {
+		var notification struct {
+			Method string `json:"method"`
+			Params struct {
+				Diagnostics []lspDiagnostic `json:"diagnostics"`
+			} `json:"params"`
+		}
+		if err := json.Unmarshal(note, &notification); err != nil {
+			t.Fatal(err)
+		}
+		if notification.Method == "textDocument/publishDiagnostics" {
+			diagnostics = notification.Params.Diagnostics
+		}
+	}
+	if len(diagnostics) != 1 || diagnostics[0].Code != "results-and-errors" || diagnostics[0].Data == nil {
+		t.Fatalf("expected one Result diagnostic with a fix: %+v", diagnostics)
+	}
+	res, _ := c.call("textDocument/codeAction", map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"range":        diagnostics[0].Range,
+		"context":      map[string]any{"diagnostics": diagnostics},
+	})
+	var actions []struct {
+		IsPreferred bool `json:"isPreferred"`
+		Edit        struct {
+			Changes map[string][]lspTextEdit `json:"changes"`
+		} `json:"edit"`
+	}
+	if err := json.Unmarshal(res, &actions); err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || !actions[0].IsPreferred {
+		t.Fatalf("expected one preferred quick fix: %s", res)
+	}
+	edits := actions[0].Edit.Changes[uri]
+	if len(edits) != 1 {
+		t.Fatalf("expected one edit: %s", res)
+	}
+	file := source.NewFile(path, src)
+	start, end := positionToOffset(file, edits[0].Range.Start), positionToOffset(file, edits[0].Range.End)
+	fixed := src[:start] + edits[0].NewText + src[end:]
+	if want := strings.Replace(src, "${parse()}", "${try (parse())}", 1); fixed != want {
+		t.Fatalf("fixed source:\n%s\nwant:\n%s", fixed, want)
+	}
+}
+
 func TestCodeActionInlineImpl(t *testing.T) {
 	src := "trait Show {\n  fun show(): string\n}\n\nstruct P {\n  x: i64\n}\n\nimplement Show for P {\n  fun show(): string => \"p\"\n}\n\nfun main() { }\n"
 	dir := t.TempDir()
@@ -943,7 +1005,7 @@ func TestCompletionVisibility(t *testing.T) {
 	}
 	// `p.` in main: no private field, method or static; no statics at all
 	got := labels(strings.Replace(base, "  //B\n", "  p.\n", 1), 23, 4)
-	for _, want := range []string{"tag", "next", "done", "rewind"} {
+	for _, want := range []string{"tag", "next", "done", "rewind", "copy"} {
 		if !got[want] {
 			t.Errorf("p. in main should offer %q: %v", want, got)
 		}
@@ -1296,7 +1358,7 @@ func TestCompletionOfPreludeHomes(t *testing.T) {
 	}
 	// `codec.V|` on line 3
 	res, _ := c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 3, "character": 16}})
-	if got := completionLabels(res); !has(got, "Value") || !has(got, "ValueEncoder") || !has(got, "KeyStyle") {
+	if got := completionLabels(res); !has(got, "Value") || !has(got, "ValueEncoder") || !has(got, "styleKey") {
 		t.Errorf("codec. offered %v", got)
 	}
 	// a bare name at the start of line 4: global names, not the machinery

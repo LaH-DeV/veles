@@ -142,6 +142,9 @@ func TestCorpus(t *testing.T) {
 // exercises loosely: spacing, parentheses, comments, blank lines.
 func TestStyle(t *testing.T) {
 	cases := []struct{ name, in, want string }{
+		{"receiver blocks go after the call (D207)",
+			"fun f(s: *S) {\n  s.apply({ port = 1 })\n  configure(s,   {\n    port = 2\n  })\n  val t = \"x\".edit {trim();  toLower()}\n  measure() { work() }\n  val g: fun on S(i64): bool = (n) => n > 0\n}\n",
+			"fun f(s: *S) {\n  s.apply { port = 1 }\n  configure(s) {\n    port = 2\n  }\n  val t = \"x\".edit { trim(); toLower() }\n  measure { work() }\n  val g: fun on S(i64): bool = (n) => n > 0\n}\n"},
 		{"regex literals stay verbatim",
 			"fun f(s: string):bool{val r=/(a b)\\d+ [/] \\//imx\nreturn r.test(s)||/x/.test(s)}\n",
 			"fun f(s: string): bool {\n  val r = /(a b)\\d+ [/] \\//imx\n  return r.test(s) || /x/.test(s)\n}\n"},
@@ -644,5 +647,27 @@ func TestSealedTraitShapeFirst(t *testing.T) {
 		"}\n"
 	if got := checkRoundTrip(t, "shape.vs", src); got != want {
 		t.Errorf("formatted:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// D166: labels in tuple types and literals print as written; a literal
+// broken over lines keeps its breaks like an argument list; a labelled
+// one-element tuple needs no trailing comma.
+func TestLabelledTupleRoundTrips(t *testing.T) {
+	src := "fun divide(a: i64, b: i64): (quotient: i64, remainder: i64) => (quotient: a / b, remainder: a % b)\n\n" +
+		"fun one(): (only: i64) => (only: 1)\n\n" +
+		"fun f(): List<(key: string, value: i64)> {\n  val e = (\n    key: \"a\",\n    value: 1,\n  )\n  [e]\n}\n"
+	out := checkRoundTrip(t, "labels.vs", src)
+	if out != src {
+		t.Errorf("labelled tuples changed:\n%s\n--- want ---\n%s", out, src)
+	}
+}
+
+// D198: `indirect` and `inline` print where they were written.
+func TestBoxedVariantWordsRoundTrip(t *testing.T) {
+	src := "indirect sealed trait Shape {\n  struct Circle {\n    r: f64\n  }\n}\n\n" +
+		"sealed trait Expr {\n  indirect struct Add {\n    a: i64\n  }\n  inline struct Hole { }\n}\n"
+	if out := checkRoundTrip(t, "boxed.vs", src); out != src {
+		t.Errorf("changed:\n%s\n--- want ---\n%s", out, src)
 	}
 }

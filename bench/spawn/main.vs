@@ -20,7 +20,7 @@ fun batch(from: i64, to: i64): i64 {
 }
 
 fun main() {
-  val (sum, elapsed) = time.Stopwatch.measure(() => {
+  val (sum, elapsed) = time.measure(() => {
     var sum: i64 = 0
     loop (b in 0..<100) sum += batch(b * 1000, (b + 1) * 1000)
     sum

@@ -228,6 +228,12 @@ func (p *printer) decl(d Decl) {
 		if d.Extern {
 			p.w("extern ")
 		}
+		if d.Indirect {
+			p.w("indirect ")
+		}
+		if d.Inline {
+			p.w("inline ")
+		}
 		p.w(d.Name.Name)
 		p.typeParams(d.TypeParams)
 		if d.Variant != nil {
@@ -309,6 +315,9 @@ func (p *printer) decl(d Decl) {
 		p.open("trait ")
 		if d.Pub {
 			p.w("public ")
+		}
+		if d.Indirect {
+			p.w("indirect ")
 		}
 		if d.Sealed {
 			p.w("sealed ")
@@ -522,6 +531,9 @@ func (p *printer) typ(t Type) {
 			if i > 0 {
 				p.w(", ")
 			}
+			if t.Labels != nil {
+				p.w(t.Labels[i].Name + ": ")
+			}
 			p.typ(e)
 		}
 		p.w(")")
@@ -532,7 +544,12 @@ func (p *printer) typ(t Type) {
 		if t.C {
 			p.w("extern ")
 		}
-		p.w("fun(")
+		p.w("fun")
+		if t.On != nil {
+			p.w(" on ")
+			p.typ(t.On)
+		}
+		p.w("(")
 		for i, e := range t.Params {
 			if i > 0 {
 				p.w(", ")
@@ -881,6 +898,12 @@ func (p *printer) expr(e Expr) {
 		p.expr(e.Hi)
 		p.w(")")
 	case *LambdaExpr:
+		if e.Bare {
+			p.w("(block-lambda ")
+			p.expr(e.Body)
+			p.w(")")
+			break
+		}
 		p.w("(lambda (")
 		for i, prm := range e.Params {
 			if i > 0 {
@@ -906,8 +929,11 @@ func (p *printer) expr(e Expr) {
 		p.w(")")
 	case *TupleExpr:
 		p.w("(tuple")
-		for _, el := range e.Elems {
+		for i, el := range e.Elems {
 			p.w(" ")
+			if e.Labels != nil {
+				p.w(e.Labels[i].Name + ": ")
+			}
 			p.expr(el)
 		}
 		p.w(")")

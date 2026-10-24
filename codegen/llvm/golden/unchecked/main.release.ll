@@ -12,12 +12,9 @@ entry:
   %t7 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t5, i32 0, i32 1
   %t8 = load i64, ptr %t7
   %t9 = load ptr, ptr %t5
-  %t10 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t5, i32 0, i32 3
+  %t10 = getelementptr inbounds [8 x i8], ptr %t9, i64 %t6
   %t11 = load i64, ptr %t10
-  %t12 = mul i64 %t11, %t6
-  %t13 = getelementptr inbounds i8, ptr %t9, i64 %t12
-  %t14 = load i64, ptr %t13
-  ret i64 %t14
+  ret i64 %t11
 }
 
 define void @v_main.put(ptr %p1, i64 %p2, i64 %p3) {
@@ -45,11 +42,8 @@ flags.done.2:
   %t12 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t7, i32 0, i32 1
   %t13 = load i64, ptr %t12
   %t14 = load ptr, ptr %t7
-  %t15 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t7, i32 0, i32 3
-  %t16 = load i64, ptr %t15
-  %t17 = mul i64 %t16, %t8
-  %t18 = getelementptr inbounds i8, ptr %t14, i64 %t17
-  store i64 %t6, ptr %t18
+  %t15 = getelementptr inbounds [8 x i8], ptr %t14, i64 %t8
+  store i64 %t6, ptr %t15
   ret void
 }
 

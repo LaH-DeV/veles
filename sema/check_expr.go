@@ -41,7 +41,52 @@ func payloadField(t types.Type) *types.Field {
 // checkExprTo checks e and converts it to want, reporting a mismatch.
 func (f *fnCtx) checkExprTo(e ast.Expr, want types.Type) Expr {
 	x := f.checkExpr(e, want)
+	if want != nil && types.LabelsDiffer(x.Type(), want) {
+		f.labelsDiffer(e, x.Type(), want, e.Span())
+		return x
+	}
 	return f.coerce(x, want, e.Span())
+}
+
+// labelsDiffer reports a tuple given where one with other labels is
+// expected (D166): `(x: 1, y: 2)` as a `(y: i64, x: i64)` would swap what
+// the elements mean. The fix drops the value's labels, keeping positions —
+// for a labelled literal by deleting them, for a name by rebuilding it
+// unlabelled. e is nil where no syntax is at hand.
+func (f *fnCtx) labelsDiffer(e ast.Expr, have, want types.Type, span source.Span) {
+	ht, hok := have.(*types.Tuple)
+	if _, wok := want.(*types.Tuple); !hok || !wok {
+		f.errorf(span, "type mismatch: expected '%s', found '%s'; the labels of the tuples inside differ, and converting would change what the elements mean — convert the elements one by one (D166)", want, have)
+		return
+	}
+	var fix *source.Fix
+	unlabelled := func(name string) string {
+		parts := make([]string, len(ht.Elems))
+		for i := range parts {
+			parts[i] = name + "." + strconv.Itoa(i)
+		}
+		return "(" + strings.Join(parts, ", ") + ")"
+	}
+	plain := unlabelled("v")
+	src := span.File
+	switch e := e.(type) {
+	case *ast.TupleExpr:
+		if e.Labels != nil && src != nil {
+			fix = &source.Fix{Title: "Drop the labels of the tuple"}
+			parts := make([]string, len(e.Elems))
+			for i, el := range e.Elems {
+				fix.Edits = append(fix.Edits, source.TextEdit{Span: source.Span{File: src, Start: e.Labels[i].Pos.Start, End: el.Span().Start}})
+				parts[i] = src.Content[el.Span().Start:el.Span().End]
+			}
+			plain = "(" + strings.Join(parts, ", ") + ")"
+		}
+	case *ast.NameExpr:
+		if e.TypeArgs == nil {
+			plain = unlabelled(e.Name)
+			fix = fixReplace("Rebuild the tuple without labels", span, plain)
+		}
+	}
+	f.c.errorFix(span, fix, "type mismatch: expected '%s', found '%s'; the labels differ — drop them to keep the positions ('%s'), or reorder the elements (D166)", want, have, plain)
 }
 
 // coerce converts x to want using the implicit conversions the spec allows:
@@ -50,6 +95,10 @@ func (f *fnCtx) checkExprTo(e ast.Expr, want types.Type) Expr {
 func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 	have := x.Type()
 	if want == nil || types.IsInvalid(want) || types.IsInvalid(have) {
+		return x
+	}
+	if types.LabelsDiffer(have, want) {
+		f.labelsDiffer(nil, have, want, span)
 		return x
 	}
 	if types.Identical(have, want) || types.IsNever(have) {
@@ -166,6 +215,9 @@ func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 
 // assignableTo reports whether a value of type have could be coerced to want.
 func (f *fnCtx) assignableTo(have, want types.Type) bool {
+	if types.LabelsDiffer(have, want) {
+		return false
+	}
 	if types.Identical(have, want) || types.IsNever(have) || types.IsInvalid(have) || types.IsInvalid(want) {
 		return true
 	}
@@ -298,7 +350,7 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 				f.errorf(e.Pos, "'this' is used before 'init' has assigned '%s'; assign every field without a default first, or read the fields one by one (D28)", strings.Join(missing, "', '"))
 			}
 		}
-		self := f.selfRef()
+		self := f.selfFor(e)
 		if self == nil {
 			if f.fn != nil && f.fn.tmpl != nil && f.fn.tmpl.Decl.Static {
 				f.errorf(e.Pos, "'this' is not available in a static function; it has no receiver (D23)")
@@ -360,6 +412,13 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 			lit.Elems = append(lit.Elems, x)
 			tt.Elems = append(tt.Elems, x.Type())
 		}
+		// an unlabelled literal takes the labels the expected type gives (D166)
+		for _, l := range e.Labels {
+			tt.Labels = append(tt.Labels, l.Name)
+		}
+		if want, ok := want.(*types.Tuple); ok && e.Labels == nil && len(want.Elems) == len(tt.Elems) {
+			tt.Labels = want.Labels
+		}
 		lit.T = tt
 		return lit
 	case *ast.ListLit:
@@ -376,7 +435,7 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		b := f.checkBlock(e.Block, want, true)
 		return &BlockExpr{exprBase{b.Type}, b}
 	case *ast.TryExpr:
-		return f.tryExpr(e)
+		return f.tryExpr(e, want)
 	case *ast.IsExpr:
 		return f.isExpr(e)
 	case *ast.ImplementsExpr:
@@ -480,6 +539,10 @@ func (f *fnCtx) stringLit(e *ast.StringLit) Expr {
 		f.lookOnly(p.Expr) // D87: interpolating only looks
 		x := f.checkExpr(p.Expr, nil)
 		f.takeLooked()
+		if !f.checkInterpolation(p.Expr, x) {
+			cat.Parts = append(cat.Parts, bad())
+			continue
+		}
 		if _, ok := p.Expr.(*ast.SelfExpr); ok && f.inOwnToString(x.Type()) {
 			f.errorf(p.Expr.Span(), "interpolating 'this' inside its own 'toString' calls the same 'toString' again, forever; interpolate the fields instead, e.g. \"(${this.x}, ${this.y})\"")
 		}
@@ -490,6 +553,31 @@ func (f *fnCtx) stringLit(e *ast.StringLit) Expr {
 		cat.Parts = append(cat.Parts, f.toString(x, p.Expr.Span()))
 	}
 	return cat
+}
+
+func (f *fnCtx) checkInterpolation(e ast.Expr, x Expr) bool {
+	if f.declaredTypeParam(e) != nil {
+		return true
+	}
+	span, text := e.Span(), srcText(e)
+	var fix *source.Fix
+	if isResultType(x.Type()) {
+		if f.throws && text != "" {
+			replacement := "try (" + text + ")"
+			if span.File != nil && span.Start > 0 && span.File.Content[span.Start-1] == '$' {
+				span.Start--
+				replacement = "${" + replacement + "}"
+			}
+			fix = fixReplace("Propagate the interpolated error with 'try'", span, replacement)
+		}
+		f.c.errorFix(e.Span(), fix, "cannot interpolate '%s' of type '%s': its error would be lost; use 'try (%s)' to propagate it or '%s ?? fallback' to handle it, or write '%s.toString()' to print the Result explicitly (D157)", text, x.Type(), text, text, text)
+		return false
+	}
+	if _, task := x.Type().(*types.Task); task {
+		f.errorf(e.Span(), "cannot interpolate task handle '%s' of type '%s': use 'await %s' to obtain its value before interpolating it (D157)", text, x.Type(), text)
+		return false
+	}
+	return true
 }
 
 // inOwnToString reports whether the function being checked is the
@@ -667,6 +755,9 @@ func narrowReaches(from, to types.Type) bool {
 }
 
 func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
+	if x, ok := f.removedKeyStyle(e); ok {
+		return x // `KeyStyle.SnakeCase` is `Case.Snake` (D205)
+	}
 	if info := f.execRef(e.X); info != nil && !e.Safe {
 		if x := f.execMember(info, e); x != nil {
 			return x // an executor's state or function (D150)
@@ -877,8 +968,15 @@ func (f *fnCtx) fieldOf(x Expr, name ast.Ident, span source.Span) Expr {
 		return &FieldGet{exprBase{fld.Type}, x, fld.Index, fld.Name}
 	case *types.Tuple:
 		idx, err := strconv.Atoi(name.Name)
-		if err != nil || idx < 0 || idx >= len(tt.Elems) {
-			f.errorf(name.Pos, "tuple of %d elements has no element '%s'", len(tt.Elems), name.Name)
+		if err != nil {
+			idx = tt.Label(name.Name) // `t.key` (D166)
+		}
+		if idx < 0 || idx >= len(tt.Elems) {
+			if tt.Labels != nil {
+				f.errorf(name.Pos, "tuple '%s' has no element '%s'; its labels are '%s'", tt, name.Name, strings.Join(tt.Labels, "', '"))
+			} else {
+				f.errorf(name.Pos, "tuple of %d elements has no element '%s'", len(tt.Elems), name.Name)
+			}
 			return bad()
 		}
 		return &TupleGet{exprBase{tt.Elems[idx]}, x, idx}
@@ -1212,6 +1310,48 @@ func isLiteralExpr(e ast.Expr) bool {
 	return false
 }
 
+// indexFamily are the searches that answered -1 for "absent" until D165
+// made them answer `i64?`.
+var indexFamily = map[string]bool{"indexOf": true, "indexOfFirst": true, "lastIndexOf": true, "binarySearch": true, "binarySearchBy": true, "binarySearchWith": true}
+
+// indexSentinel refuses the comparisons that tested the old `-1` answer of
+// the index-of family (D165) — `i >= 0`, `< 0`, `== -1`, `!= -1` on a call
+// of it, l being that call checked — with the fix that tests for null.
+// Before D165 they compiled; now `>= 0` compares a nullable, and `== -1`
+// would compile and always be false. nil when e is not one of them.
+func (f *fnCtx) indexSentinel(e *ast.BinaryExpr, op BinOp, l Expr) Expr {
+	c, isCall := e.L.(*ast.CallExpr)
+	if !isCall {
+		return nil
+	}
+	m, isMember := c.Fun.(*ast.MemberExpr)
+	if !isMember || !indexFamily[m.Name.Name] {
+		return nil
+	}
+	n, isNullable := l.Type().(*types.Nullable)
+	if !isNullable || !types.Identical(n.Elem, types.TI64) {
+		return nil
+	}
+	k, isConst := intConst(e.R)
+	var test string
+	switch {
+	case isConst && k == 0 && op == OpGe, isConst && k == -1 && op == OpNe:
+		test = "!= null"
+	case isConst && k == 0 && op == OpLt, isConst && k == -1 && op == OpEq:
+		test = "== null"
+	default:
+		return nil
+	}
+	fixed := srcText(e.L) + " " + test
+	hint := ""
+	if m.Name.Name == "indexOf" {
+		hint = ", or 'contains' when the index is not needed"
+	}
+	fix := fixReplace("Test for null", e.Pos, fixed)
+	f.c.errorFix(e.Pos, fix, "'%s' answers null when nothing is found, never -1 (D165): write '%s'%s", m.Name.Name, fixed, hint)
+	return &BoolConst{exprBase{types.TBool}, false}
+}
+
 func (f *fnCtx) binaryExpr(e *ast.BinaryExpr, want types.Type) Expr {
 	op := BinOpFromToken(e.Op)
 	switch op {
@@ -1248,6 +1388,9 @@ func (f *fnCtx) binaryExpr(e *ast.BinaryExpr, want types.Type) Expr {
 		l = f.checkOperandFor(e.L, r.Type())
 	} else {
 		l = f.checkExpr(e.L, want)
+		if x := f.indexSentinel(e, op, l); x != nil {
+			return x
+		}
 		if rawPointer(l.Type()) != nil {
 			return f.rawPointerBinary(op, l, e.R, e.Pos)
 		}
@@ -1409,6 +1552,9 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 	} else {
 		l = f.checkExpr(e.L, nil)
 		l = f.immutableView(l)
+		if x := f.indexSentinel(e, op, l); x != nil {
+			return x
+		}
 		if isLiteralExpr(e.R) {
 			r = f.checkOperandFor(e.R, l.Type())
 		} else if _, listR := e.R.(*ast.ListLit); listR && isArrayOrNullableArray(l.Type()) {
@@ -1543,7 +1689,7 @@ func (f *fnCtx) orFailExpr(e *ast.OrFailExpr) Expr {
 		okT, isNullable = t.Elem, true
 	case *types.Sealed:
 		if isResultType(t) {
-			okT = t.TypeArgs[0]
+			okT = okType(l, t)
 		}
 	}
 	if okT == nil {
@@ -1661,12 +1807,14 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 	}
 	lit := &ListLit{}
 	for _, el := range e.Elems {
-		var x Expr
-		if elem != nil {
-			x = f.checkExprTo(el, elem)
-		} else {
-			x = f.checkExpr(el, nil)
+		x := f.checkExpr(el, elem)
+		if e == f.templateValues && !f.checkInterpolation(el, x) {
+			x = bad()
+		}
+		if elem == nil {
 			elem = x.Type()
+		} else {
+			x = f.coerce(x, elem, el.Span())
 		}
 		lit.Elems = append(lit.Elems, x)
 	}
@@ -1759,11 +1907,18 @@ func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
 	return bad()
 }
 
-func (f *fnCtx) tryExpr(e *ast.TryExpr) Expr {
+func (f *fnCtx) tryExpr(e *ast.TryExpr, want types.Type) Expr {
 	if x, done := f.tryChain(e); done {
 		return x
 	}
-	x := f.checkExpr(e.X, nil)
+	// a call's type parameters may come from what the `try` is expected to
+	// give (`val n: i64 = try required(text)`): the expected type is the
+	// value's, which is what a throwing function declares as its result
+	var hint types.Type
+	if _, isCall := e.X.(*ast.CallExpr); isCall {
+		hint = want
+	}
+	x := f.checkExpr(e.X, hint)
 	return f.tryOn(x, e.Pos)
 }
 
@@ -1872,8 +2027,11 @@ func (f *fnCtx) tryLinks(x ast.Expr, pos source.Span, unwrapped *bool) Expr {
 }
 
 // hasMethod reports whether a method of that name applies to the type
-// through an extend block or a trait impl (a Result has no built-ins).
+// through a built-in, an extend block or a trait impl.
 func (f *fnCtx) hasMethod(rt types.Type, name string) bool {
+	if isResultType(rt) && name == "toString" {
+		return true
+	}
 	for _, view := range receiverViews(rt) {
 		for _, ext := range f.c.extends {
 			if _, ok := ext.Methods[name]; ok && unify(ext.Target, view, map[*types.TypeParam]types.Type{}) {
@@ -1921,7 +2079,7 @@ func (f *fnCtx) tryOn(x Expr, pos source.Span) Expr {
 		}
 		return bad()
 	}
-	okT, errT := rs.TypeArgs[0], rs.TypeArgs[1]
+	okT, errT := okType(x, rs), rs.TypeArgs[1]
 	if types.IsNever(errT) {
 		// nothing can be propagated: `try` just unwraps (a `throws E` callee
 		// whose E is Never in this instance still returns a Result)
@@ -2059,7 +2217,7 @@ func (f *fnCtx) placeOf(e ast.Expr) (place, bool) {
 	case *ast.SelfExpr:
 		// the receiver is a pointer to its place (D22); a method call on
 		// `this` drops the facts about its `var` fields (invalidateVarPaths)
-		if self := f.selfRef(); self != nil {
+		if self := f.selfFor(e); self != nil {
 			return pv(self), true
 		}
 	case *ast.MemberExpr:

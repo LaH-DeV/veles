@@ -105,6 +105,9 @@ func (g *gen) placeAs(e sema.Expr, mode placeMode) string {
 		base := g.placeAs(e.X, mode)
 		p := g.newTmp()
 		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", p, g.llType(e.X.Type()), base)
+		if v, ok := g.boxedVariant(e.X.Type(), e.Variant); ok {
+			return g.boxedPlace(p, v, mode) // the payload slot holds a pointer (D198)
+		}
 		return p
 	case *sema.FieldGet:
 		base := g.placeAs(e.X, mode)
@@ -127,13 +130,13 @@ func (g *gen) placeAs(e sema.Expr, mode placeMode) string {
 			list := g.expr(e.Args[0])
 			idx := g.expr(e.Args[1])
 			g.listGuard(list, e.Args[0].Type(), mode)
-			return g.listElemPtr(list, idx, g.where(e.Span))
+			return g.listElemPtr(list, idx, listElem(e.Args[0].Type()), g.where(e.Span))
 		}
 		if e.Op == "list.refUnchecked" {
 			list := g.expr(e.Args[0])
 			idx := g.expr(e.Args[1])
 			g.listGuard(list, e.Args[0].Type(), mode)
-			return g.listElemPtrUnchecked(list, idx, e.Span)
+			return g.listElemPtrUnchecked(list, idx, listElem(e.Args[0].Type()), e.Span)
 		}
 	}
 	// Not a place: materialise into a temporary.
@@ -1811,6 +1814,35 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		sp, sl := g.strPtrLen(g.expr(e.Args[1]))
 		g.emit("call void @veles_list_append_bytes(ptr %s, ptr %s, i64 %s)", l, sp, sl)
 		return "zeroinitializer"
+	case "list.trimText":
+		g.emit("call void @veles_bytes_trim(ptr %s)", g.expr(e.Args[0]))
+		return "zeroinitializer"
+	case "list.asciiCase":
+		l := g.expr(e.Args[0])
+		upper := g.expr(e.Args[1])
+		g.emit("call void @veles_bytes_ascii_case(ptr %s, i1 %s)", l, upper)
+		return "zeroinitializer"
+	case "list.replaceText":
+		l := g.expr(e.Args[0])
+		op, ol := g.strPtrLen(g.expr(e.Args[1]))
+		rp, rl := g.strPtrLen(g.expr(e.Args[2]))
+		g.emit("call void @veles_bytes_replace(ptr %s, ptr %s, i64 %s, ptr %s, i64 %s)", l, op, ol, rp, rl)
+		return "zeroinitializer"
+	case "list.insertText":
+		l := g.expr(e.Args[0])
+		at := g.expr(e.Args[1])
+		sp, sl := g.strPtrLen(g.expr(e.Args[2]))
+		g.emit("call void @veles_bytes_insert(ptr %s, i64 %s, ptr %s, i64 %s)", l, at, sp, sl)
+		return "zeroinitializer"
+	case "list.takeText":
+		l := g.expr(e.Args[0])
+		out := g.alloca(strType)
+		g.emit("store %s zeroinitializer, ptr %s", strType, out)
+		ok := g.newTmp()
+		g.emit("%s = call i1 @veles_bytes_take_text(ptr %s, ptr %s)", ok, out, l)
+		val := g.newTmp()
+		g.emit("%s = load %s, ptr %s", val, strType, out)
+		return g.makeNullableT(e.Type().(*types.Nullable), ok, val)
 	case "list.get":
 		if _, ok := e.Args[0].Type().(*types.Array); ok {
 			p := g.arrayElemPtr(e.Args[0], g.expr(e.Args[1]), false, e.Span)
@@ -1818,7 +1850,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		}
 		l := g.expr(e.Args[0])
 		i := g.expr(e.Args[1])
-		p := g.listElemPtr(l, i, g.where(e.Span))
+		p := g.listElemPtr(l, i, listElem(e.Args[0].Type()), g.where(e.Span))
 		return g.loadVal(e.Type(), p)
 	case "list.ref", "list.refUnchecked":
 		// as a value: the element itself (`xs.set(i, v)` and `ref`
@@ -1947,6 +1979,11 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		}
 		g.emit("%s = call ptr @%s(ptr %s, i64 %s, i64 %s)", v, fn, l, from, to)
 		return v
+	case "list.move":
+		l := g.expr(e.Args[0])
+		from, to, n := g.expr(e.Args[1]), g.expr(e.Args[2]), g.expr(e.Args[3])
+		g.emit("call void @veles_list_move(ptr %s, i64 %s, i64 %s, i64 %s)", l, from, to, n)
+		return "zeroinitializer"
 	case "list.touch":
 		// an order change made through `set` (sort, swap): D102 counts it
 		g.bumpMods(g.expr(e.Args[0]))
@@ -2007,11 +2044,77 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = call i1 @%s(ptr %s, i64 %s, ptr %s, i64 %s)", v, fn, ap, al, bp, bl)
 		return v
+	case "string.startsWithAt":
+		a := g.expr(e.Args[0])
+		b := g.expr(e.Args[1])
+		at := g.expr(e.Args[2])
+		ap, al := g.strPtrLen(a)
+		bp, bl := g.strPtrLen(b)
+		// inline (D202): a lexer tries many prefixes at each position, and
+		// most differ in the first byte — that test is a load and a compare,
+		// memcmp only for the rest. `at` is unsigned-compared, so a negative
+		// one is out of range too.
+		res := g.alloca("i1")
+		g.emit("store i1 false, ptr %s", res)
+		inside, room, fits, ok := g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = icmp ule i64 %s, %s", inside, at, al)
+		g.emit("%s = sub i64 %s, %s", room, al, at)
+		g.emit("%s = icmp ule i64 %s, %s", fits, bl, room)
+		g.emit("%s = and i1 %s, %s", ok, inside, fits)
+		check, first, rest, yes, end := g.newLabel("sw.check"), g.newLabel("sw.first"), g.newLabel("sw.rest"), g.newLabel("sw.yes"), g.newLabel("sw.end")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", ok, check, end)
+		g.placeLabel(check)
+		some := g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", some, bl)
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", some, first, yes)
+		g.placeLabel(first)
+		p, x, y, same := g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = getelementptr inbounds i8, ptr %s, i64 %s", p, ap, at)
+		g.emit("%s = load i8, ptr %s", x, p)
+		g.emit("%s = load i8, ptr %s", y, bp)
+		g.emit("%s = icmp eq i8 %s, %s", same, x, y)
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", same, rest, end)
+		g.placeLabel(rest)
+		p1, b1, n1, r, z := g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = getelementptr inbounds i8, ptr %s, i64 1", p1, p)
+		g.emit("%s = getelementptr inbounds i8, ptr %s, i64 1", b1, bp)
+		g.emit("%s = sub i64 %s, 1", n1, bl)
+		g.emit("%s = call i32 @memcmp(ptr %s, ptr %s, i64 %s)", r, p1, b1, n1)
+		g.emit("%s = icmp eq i32 %s, 0", z, r)
+		g.emit("store i1 %s, ptr %s", z, res)
+		g.emitTerm("br label %%%s", end)
+		g.placeLabel(yes)
+		g.emit("store i1 true, ptr %s", res)
+		g.placeLabel(end)
+		v := g.newTmp()
+		g.emit("%s = load i1, ptr %s", v, res)
+		return v
 	case "string.charCount":
 		s := g.expr(e.Args[0])
 		sp, sl := g.strPtrLen(s)
 		v := g.newTmp()
 		g.emit("%s = call i64 @veles_string_char_count(ptr %s, i64 %s)", v, sp, sl)
+		return v
+	case "string.asciiCase":
+		s := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(s)
+		upper := g.expr(e.Args[1])
+		out := g.alloca(strType)
+		g.emit("call void @veles_string_ascii_case(ptr %s, ptr %s, i64 %s, i1 %s)", out, sp, sl, upper)
+		v := g.newTmp()
+		g.emit("%s = load %s, ptr %s", v, strType, out)
+		return v
+	case "string.replace":
+		s := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(s)
+		old := g.expr(e.Args[1])
+		op, ol := g.strPtrLen(old)
+		repl := g.expr(e.Args[2])
+		rp, rl := g.strPtrLen(repl)
+		out := g.alloca(strType)
+		g.emit("call void @veles_string_replace(ptr %s, ptr %s, i64 %s, ptr %s, i64 %s, ptr %s, i64 %s)", out, sp, sl, op, ol, rp, rl)
+		v := g.newTmp()
+		g.emit("%s = load %s, ptr %s", v, strType, out)
 		return v
 	case "string.split":
 		s := g.expr(e.Args[0])
@@ -2069,11 +2172,22 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		"atomicAdd", "atomicSub", "atomicAnd", "atomicOr", "atomicXor":
 		return g.atomic(e)
 	case "string.byteAt":
+		// inline: a compare and a load, the runtime only to panic — a lexer
+		// reads every byte this way (plan S7: 16 M calls over std)
 		s := g.expr(e.Args[0])
 		i := g.expr(e.Args[1])
 		sp, sl := g.strPtrLen(s)
-		v := g.newTmp()
-		g.emit("%s = call i8 @veles_string_byte_at(ptr %s, i64 %s, i64 %s)", v, sp, sl, i)
+		ok := g.newTmp()
+		g.emit("%s = icmp ult i64 %s, %s", ok, i, sl)
+		inL, outL := g.newLabel("byte.ok"), g.newLabel("byte.bad")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s, !prof !{!\"branch_weights\", i32 2000, i32 1}", ok, inL, outL)
+		g.placeLabel(outL)
+		g.emit("call i8 @veles_string_byte_at(ptr %s, i64 %s, i64 %s)", sp, sl, i) // panics: out of bounds
+		g.emitTerm("unreachable")
+		g.placeLabel(inL)
+		p, v := g.newTmp(), g.newTmp()
+		g.emit("%s = getelementptr inbounds i8, ptr %s, i64 %s", p, sp, i)
+		g.emit("%s = load i8, ptr %s", v, p)
 		return v
 	case "secret.of":
 		// D112: a copy of the text or bytes in storage the collector wipes
@@ -2502,7 +2616,7 @@ func (g *gen) listLen(l string) string {
 // runtime's veles_list_index_panic with the location `where`. The address is
 // data + elem*i from the header, so no assumption about the element's
 // LLVM layout is made.
-func (g *gen) listElemPtr(l, i, where string) string {
+func (g *gen) listElemPtr(l, i string, elem types.Type, where string) string {
 	n := g.listLen(l)
 	ok := g.newTmp()
 	g.emit("%s = icmp ult i64 %s, %s", ok, i, n)
@@ -2515,6 +2629,15 @@ func (g *gen) listElemPtr(l, i, where string) string {
 	g.placeLabel(inL)
 	data := g.newTmp()
 	g.emit("%s = load ptr, ptr %s", data, l)
+	if elem != nil {
+		// the stride is the element type's size, which the list's header
+		// holds too (veles_list_new takes it from the descriptor): known
+		// here, the address is one scaled offset, and a loop's are hoisted
+		size, _ := g.layout(elem)
+		p := g.newTmp()
+		g.emit("%s = getelementptr inbounds [%d x i8], ptr %s, i64 %s", p, size, data, i)
+		return p
+	}
 	ep := g.newTmp()
 	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 3", ep, listHeader, l)
 	es := g.newTmp()
@@ -2526,12 +2649,32 @@ func (g *gen) listElemPtr(l, i, where string) string {
 	return p
 }
 
+// listElem is the element type of a list type, or nil.
+func listElem(t types.Type) types.Type {
+	for {
+		switch tt := t.(type) {
+		case *types.List:
+			return tt.Elem
+		case *types.Pointer:
+			t = tt.Elem
+		default:
+			return nil
+		}
+	}
+}
+
 // listElemPtrUnchecked is the element address for `atUnchecked` and
 // `setUnchecked` (D114): no bounds check in a release build.
-func (g *gen) listElemPtrUnchecked(l, i string, span source.Span) string {
+func (g *gen) listElemPtrUnchecked(l, i string, elem types.Type, span source.Span) string {
 	g.uncheckedIndexCheck(i, g.listLen(l), "list", span)
 	data := g.newTmp()
 	g.emit("%s = load ptr, ptr %s", data, l)
+	if elem != nil {
+		size, _ := g.layout(elem) // the stride, as listElemPtr
+		p := g.newTmp()
+		g.emit("%s = getelementptr inbounds [%d x i8], ptr %s, i64 %s", p, size, data, i)
+		return p
+	}
 	ep := g.newTmp()
 	g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 3", ep, listHeader, l)
 	es := g.newTmp()

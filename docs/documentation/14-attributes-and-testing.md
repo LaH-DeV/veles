@@ -386,6 +386,33 @@ Three flags shape a run:
   doing is not trusted to unwind cleanly); the report says how many other
   tests had not finished.
 
+### Tests that run in the compiler too
+
+A `const fun` runs in two places: in the program, and in the compiler when
+a constant needs it (chapter 2). A test whose body the compiler can run —
+it calls only `const fun`s and test helpers that could be, does no I/O,
+starts no task and uses no `try` — runs in both, and the report says so
+(D208):
+
+```text
+  test slug joins the words ... ok (also in the compiler)
+  test printing runs in the program only ... ok
+```
+
+Nothing is written to ask for it. When the two disagree — the program
+passes, the compiler does not, or the other way round — the test fails
+and the report names the side, because one of the two engines is wrong:
+
+```text
+  test slug joins the words ... FAILED in the compiler only: the program passed, so the compiler and the program disagree
+```
+
+A test that would take the compiler more than the constant step limit
+(`--const-steps`) runs in the program only. `VELES_COMPILER_TESTS=why`
+in the environment of `veles test` prints why each test that did not run in
+the compiler could not. A test helper the compiler can run may also be
+called where a constant is needed, such as `@SkipIf(helper())`.
+
 ### Helpers and test files
 
 A check used by several tests is a `test fun`: it may use the vocabulary,

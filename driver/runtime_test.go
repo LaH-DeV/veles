@@ -1396,7 +1396,7 @@ fun main() throws ThreadError | IoError | io.TooLong | Odd {
     async half(10)
     async half(3)
   }
-  io.println("  -> ${a} ${b is Err}")
+  io.println("  -> ${a.toString()} ${b is Err}")
 
   io.println("5. blocking:")
   io.println("  -> ${try blocking(() => try half(12))}")

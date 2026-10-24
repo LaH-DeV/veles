@@ -9,10 +9,10 @@ fun v_main.add: fun(i64, i64): i64
 fun v_main.main: fun()
   local p#0: Point
   local total#1: i64
-  local $tmp2#2: Range<i64>
-  local $tmp3#3: i64
-  local $tmp4#4: i64
-  local $tmp5#5: bool
+  local $tmp9#2: Range<i64>
+  local $tmp10#3: i64
+  local $tmp11#4: i64
+  local $tmp12#5: bool
   local i#6: i64
 struct Point
   x: i64

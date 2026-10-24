@@ -3,6 +3,7 @@ base64/base64.vs: const fun write(bytes: List<u8>, alphabet: string, pad: bool):
 base64/base64.vs: public const fun encode(bytes: List<u8>): string
 base64/base64.vs: public const fun encodeUrl(bytes: List<u8>): string
 base64/base64.vs: public const fun encodedLen(n: i64, pad: bool = true): i64
+cli/cli.vs: const fun kebab(name: string): string
 hex/hex.vs: const fun digit(nibble: u8, upper: bool): u8
 hex/hex.vs: const fun write(bytes: List<u8>, upper: bool): string
 hex/hex.vs: public const fun encode(bytes: List<u8>): string
@@ -33,14 +34,28 @@ prelude/ascii.vs: public const fun isAsciiSpace(): bool
 prelude/ascii.vs: public const fun isAsciiUpper(): bool
 prelude/ascii.vs: public const fun toAsciiLower(): u8
 prelude/ascii.vs: public const fun toAsciiUpper(): u8
+prelude/builder.vs: const fun builderText(builder: StringBuilder): string
+prelude/builder.vs: const fun takeText(): string
+prelude/builder.vs: const fun textBuilder(text: string): StringBuilder
 prelude/builder.vs: public const fun append(s: string)
 prelude/builder.vs: public const fun appendByte(b: u8)
 prelude/builder.vs: public const fun appendLine(s: string = "")
 prelude/builder.vs: public const fun clear()
+prelude/builder.vs: public const fun insert(at: i64, text: string)
 prelude/builder.vs: public const fun isEmpty(): bool
 prelude/builder.vs: public const fun len(): i64
+prelude/builder.vs: public const fun replace(old: string, new: string)
 prelude/builder.vs: public const fun reserve(n: i64)
+prelude/builder.vs: public const fun toLower()
 prelude/builder.vs: public const fun toString(): string
+prelude/builder.vs: public const fun toUpper()
+prelude/builder.vs: public const fun trim()
+prelude/case.vs: const fun capitalised(word: string): string
+prelude/case.vs: const fun caseFolded(name: string): string
+prelude/case.vs: const fun caseIndex(names: List<string>, text: string, case: Case): i64?
+prelude/case.vs: const fun caseSpelled(name: string, case: Case): string
+prelude/case.vs: const fun caseWords(name: string): List<string>
+prelude/case.vs: const fun enumPick<E>(values: List<E>, names: List<string>, text: string, case: Case): E?
 prelude/duration.vs: const fun compareTo(other: Duration): Ordering
 prelude/duration.vs: const fun decimal(whole: i64, frac: i64, digits: i64): string
 prelude/duration.vs: const fun dividedBy(other: i64): Duration
@@ -77,9 +92,9 @@ prelude/duration.vs: public static const fun seconds(n: i64): Duration
 prelude/duration.vs: static const fun parse(s: string): Duration?
 prelude/list.vs: const fun next(): T?
 prelude/list.vs: public const fun atOrDefault(i: i64, d: T): T
-prelude/list.vs: public const fun binarySearch(x: T): i64
-prelude/list.vs: public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64
-prelude/list.vs: public const fun binarySearchWith(compare: fun(T): Ordering): i64
+prelude/list.vs: public const fun binarySearch(x: T): i64?
+prelude/list.vs: public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64?
+prelude/list.vs: public const fun binarySearchWith(compare: fun(T): Ordering): i64?
 prelude/list.vs: public const fun chunked(n: i64): List<List<T>>
 prelude/list.vs: public const fun chunked(n: i64): List<List<T>>
 prelude/list.vs: public const fun concat(other: List<T>): List<T>
@@ -89,11 +104,11 @@ prelude/list.vs: public const fun distinct(): List<T>
 prelude/list.vs: public const fun distinctBy<K>(key: fun(T): K): List<T>
 prelude/list.vs: public const fun drop(n: i64): List<T>
 prelude/list.vs: public const fun drop(n: i64): List<T>
-prelude/list.vs: public const fun enumerate(): List<(i64, T)>
+prelude/list.vs: public const fun enumerate(): List<(index: i64, value: T)>
 prelude/list.vs: public const fun fill(x: T)
 prelude/list.vs: public const fun flatMap<U, E>(f: fun(T): List<U> suspends throws E): List<U> throws E
 prelude/list.vs: public const fun incrementAt(i: i64)
-prelude/list.vs: public const fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64 throws E
+prelude/list.vs: public const fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64? throws E
 prelude/list.vs: public const fun indices(): Range<i64>
 prelude/list.vs: public const fun insert(i: i64, x: T)
 prelude/list.vs: public const fun isEmpty(): bool
@@ -139,8 +154,8 @@ prelude/number.vs: public const fun toString(radix: i64 = 10): string
 prelude/number.vs: public const fun toString(radix: i64 = 10): string
 prelude/string.vs: public const fun capitalize(): string
 prelude/string.vs: public const fun containsByte(b: u8): bool
-prelude/string.vs: public const fun indexOf(part: string, from: i64 = 0): i64
-prelude/string.vs: public const fun lastIndexOf(part: string): i64
+prelude/string.vs: public const fun indexOf(part: string, from: i64 = 0): i64?
+prelude/string.vs: public const fun lastIndexOf(part: string): i64?
 prelude/string.vs: public const fun lines(): List<string>
 prelude/string.vs: public const fun padEnd(width: i64, pad: string = " "): string
 prelude/string.vs: public const fun padStart(width: i64, pad: string = " "): string
@@ -148,7 +163,7 @@ prelude/string.vs: public const fun repeat(n: i64): string
 prelude/string.vs: public const fun replace(old: string, new: string): string
 prelude/string.vs: public const fun slice(from: i64, to: i64): string
 prelude/string.vs: public const fun split(sep: string): List<string>
-prelude/string.vs: public const fun splitOnce(sep: string): (string, string)?
+prelude/string.vs: public const fun splitOnce(sep: string): (before: string, after: string)?
 prelude/string.vs: public const fun toLower(): string
 prelude/string.vs: public const fun toUpper(): string
 prelude/string.vs: public const fun trim(): string

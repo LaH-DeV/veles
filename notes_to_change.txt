@@ -12,14 +12,16 @@ notes, not the user's text.
 * we'll be using WSL for Linux (it is installed), and we'll be self-running it on macos (m4), but later.
    → Self-hosting readiness is track S in veles-plan.md; the two principles lead the plan.
    → WSL: Linux done 2026-09-28 (plan A1; the whole suite and the thread stress green,
-     `internal/wsl-test.sh` reruns it). macOS M4 is A7.
+   `internal/wsl-test.sh` reruns it). macOS arm64 done 2026-10-21 (A7;
+   `internal/macos-test.sh` reruns it).
 
 === Standing directions ===
 
 R3. Platforms: Windows is the test platform now; Linux next, then macOS — every runtime binding
     must work on all three. Windows text bindings (args, env, cwd, listDir, file paths) must go
     through the wide (UTF-16) APIs so non-ASCII names stay valid UTF-8 (D18).
-    → Linux x86-64 green since 2026-09-28 (plan A1). macOS not yet (A7).
+      → Linux x86-64 green since 2026-09-28 (plan A1); macOS arm64 green since
+         2026-10-21 (A7). Priority/CPU settings on macOS remain refused per D143.
 
 R5. Examples (small and mid-size) must DO something useful — real use cases, not demonstrations
     of syntax: a tool someone would run (todo CLI, log analyser, file dedup, ...).
@@ -29,6 +31,12 @@ R5. Examples (small and mid-size) must DO something useful — real use cases, n
    stable. For now examples/ is where such code lives and gets exercised.
 
 === Open ===
+
+    → 2026-10-22: The user regards most of the language/devex research as integral
+       to Veles and asked to preserve it for expansion, then investigate optional
+       first-party libraries that make Veles desirable. veles-ecosystem-research.md
+      records F01-F27, std candidates and L01-L14 library families. Research only:
+       no individual syntax/API or implementation order is approved by this note.
 
 5. I hate `Some(null)` and other Some and Ok and Err... this is rust.. WHY
    (partly: `is Ok` / `is Err` now smart-cast to the payload, so Ok/Err are rarely spelled)

@@ -68,7 +68,8 @@ type fnCtx struct {
 	callWant types.Type
 	// loopIters is the checked type of each `loop (x in iter)` head, for lints
 	// that look at the loop after it was checked (lint_count.go).
-	loopIters map[*ast.LoopStmt]types.Type
+	loopIters      map[*ast.LoopStmt]types.Type
+	templateValues *ast.ListLit
 
 	retType     types.Type // declared return type (never the Result wrapper)
 	throws      bool
@@ -92,23 +93,26 @@ type fnCtx struct {
 	captureList []*Var        // outer variables in environment order
 	paramInit   []Stmt        // lambda: statements destructuring tuple-pattern parameters
 	isLambda    bool
+	onBlock     bool // a lambda that runs on a receiver: `this` is its first parameter (D207)
+	recvStack   []*Var // the `this` of each receiver block being checked in place, innermost last (D207)
+	blockLoops  []int  // len(loops) where each of those blocks began: a jump may not leave one
 	pending     []Stmt            // statements hoisted by adapter lowering
 	boundPlace  map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
 	scopes      []*ScopeBlock
-	taskMarks   []*Var        // per open scope/gather: what its tasks count as, for D141's escape rule (resources.go)
-	held        []*HeldLock   // the `with … = m.lock()` regions around the code being checked (D107)
-	raceCall    *ast.CallExpr // the race arm's source call being checked, which an awaited prelude method lowers (D146)
-	raceTake    Expr          // that lowering's take: the arm's value once its signal is ready
+	taskMarks   []*Var         // per open scope/gather: what its tasks count as, for D141's escape rule (resources.go)
+	held        []*HeldLock    // the `with … = m.lock()` regions around the code being checked (D107)
+	raceCall    *ast.CallExpr  // the race arm's source call being checked, which an awaited prelude method lowers (D146)
+	raceTake    Expr           // that lowering's take: the arm's value once its signal is ready
 	raceAwait   *ast.AwaitExpr // the `await` a handle arm is checked as (D168): its errors speak of the arm
 	races       []*raceCtx     // the `race { }` bodies being checked, innermost last (D169, race.go)
-	lockOK      *ast.CallExpr // the `with` value being checked, where `m.lock()` is allowed
-	lockSeen    bool          // lockOK turned out to be `m.lock()`
+	lockOK      *ast.CallExpr  // the `with` value being checked, where `m.lock()` is allowed
+	lockSeen    bool           // lockOK turned out to be `m.lock()`
 	// D111: the calls that may produce a task-holding value (a `with` value,
 	// a returned value, a field of one), and the `async` field arguments of
 	// task-holding constructors, with how the value is received
-	heldOK      map[*ast.CallExpr]heldBy
-	heldAsync   map[*ast.CallExpr]heldBy
-	stmtWiths   map[*ast.WithExpr]bool // block forms made from the statement form by withRest
+	heldOK    map[*ast.CallExpr]heldBy
+	heldAsync map[*ast.CallExpr]heldBy
+	stmtWiths map[*ast.WithExpr]bool // block forms made from the statement form by withRest
 	// D156: the block forms made from `val h = async f()` by valTaskRest,
 	// the handles of those being checked (innermost last), and the
 	// expression an `await` or `awaitAll` is waiting for
@@ -116,9 +120,9 @@ type fnCtx struct {
 	awaited      []*awaitedHandle
 	awaitOperand ast.Expr
 	awaitNext    bool
-	inRaceArm   bool
-	inferThrows bool
-	inferredRet types.Type
+	inRaceArm    bool
+	inferThrows  bool
+	inferredRet  types.Type
 }
 
 type loopFrame struct {
@@ -334,6 +338,7 @@ func (c *Checker) checkBody(fn *Func) {
 	if t.Decl.ExprBody != nil {
 		f.pushScope()
 		var body *Block
+		exprBodySpan := t.Decl.ExprBody.Span()
 		if f.retType == nil {
 			// `fun f(...) => expr` with no declared type: infer it (§4).
 			x := f.checkExpr(t.Decl.ExprBody, nil)
@@ -344,9 +349,9 @@ func (c *Checker) checkBody(fn *Func) {
 			fn.Sig.Ret = rt
 			f.retType = rt
 			if types.IsUnit(rt) {
-				body = &Block{Stmts: []Stmt{&ExprStmt{X: x}}, Type: types.TUnit}
+				body = &Block{Stmts: []Stmt{&ExprStmt{X: x, Pos: exprBodySpan}}, Type: types.TUnit}
 			} else {
-				body = &Block{Stmts: []Stmt{&Return{Value: x}}, Type: types.TNever}
+				body = &Block{Stmts: []Stmt{&Return{Value: x, Pos: exprBodySpan}}, Type: types.TNever}
 			}
 			f.popScope()
 			fn.Body = body
@@ -358,10 +363,10 @@ func (c *Checker) checkBody(fn *Func) {
 			if !types.IsUnit(x.Type()) && !types.IsNever(x.Type()) {
 				f.errorf(t.Decl.ExprBody.Span(), "function '%s' returns nothing but its body has type '%s'; add a return type", t.Name, x.Type())
 			}
-			body.Stmts = append(body.Stmts, &ExprStmt{X: x})
+			body.Stmts = append(body.Stmts, &ExprStmt{X: x, Pos: exprBodySpan})
 		} else {
 			x := f.checkExprTo(t.Decl.ExprBody, f.retType)
-			body = &Block{Stmts: []Stmt{&Return{Value: x}}, Type: types.TNever}
+			body = &Block{Stmts: []Stmt{&Return{Value: x, Pos: exprBodySpan}}, Type: types.TNever}
 		}
 		f.popScope()
 		fn.Body = body
@@ -369,7 +374,7 @@ func (c *Checker) checkBody(fn *Func) {
 		body := f.checkBlock(t.Decl.Body, f.retType, !types.IsUnit(f.retType))
 		f.lintImplicitReturn(t.Decl.Body, body.Value, false)
 		if body.Value != nil {
-			body.Stmts = append(body.Stmts, &Return{Value: body.Value})
+			body.Stmts = append(body.Stmts, &Return{Value: body.Value, Pos: body.ValuePos})
 			body.Value = nil
 		} else if !types.IsUnit(f.retType) && !types.IsNever(body.Type) {
 			f.errorf(t.Decl.Body.Pos, "missing return: function '%s' must return a value of type '%s'", t.Name, f.retType)
@@ -548,7 +553,7 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 						// a function or lambda body ending in a call with no value
 						// (`io.println(...)`): "missing return" says what
 						// is wrong where "expected 'i64', found '()'" does not
-						out.Stmts = append(out.Stmts, &ExprStmt{X: x})
+						out.Stmts = append(out.Stmts, &ExprStmt{X: x, Pos: es.X.Span()})
 						continue
 					}
 					x = f.coerce(x, expected, es.X.Span())
@@ -556,10 +561,11 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 					x = f.checkExpr(es.X, nil)
 				}
 				if types.IsNever(x.Type()) {
-					out.Stmts = append(out.Stmts, &ExprStmt{X: x})
+					out.Stmts = append(out.Stmts, &ExprStmt{X: x, Pos: es.X.Span()})
 					out.Type = types.TNever
 				} else {
 					out.Value = x
+					out.ValuePos = es.X.Span()
 					out.Type = x.Type()
 				}
 				continue
@@ -582,6 +588,49 @@ func (f *fnCtx) checkBlock(b *ast.Block, expected types.Type, wantValue bool) *B
 // checkStmt lowers one statement; term reports whether control cannot
 // continue past it.
 func (f *fnCtx) checkStmt(s ast.Stmt) (stmts []Stmt, term bool) {
+	stmts, term = f.checkStmtAt(s)
+	for _, st := range stmts {
+		stampPos(st, s.Span())
+	}
+	return stmts, term
+}
+
+// stampPos gives a statement the position of the source statement it was
+// lowered from, unless it has one: the line a debugger stops at (plan S8).
+func stampPos(st Stmt, sp source.Span) {
+	switch st := st.(type) {
+	case *VarDecl:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *Assign:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *ExprStmt:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *Return:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *Loop:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *Break:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	case *Continue:
+		if !st.Pos.IsValid() {
+			st.Pos = sp
+		}
+	}
+}
+
+func (f *fnCtx) checkStmtAt(s ast.Stmt) (stmts []Stmt, term bool) {
 	switch s := s.(type) {
 	case *ast.StaticAssert:
 		f.staticAssert(s)
@@ -756,6 +805,10 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 func (f *fnCtx) checkReturn(s *ast.ReturnStmt) []Stmt {
 	if f.isGlobal {
 		f.errorf(s.Pos, "'return' outside of a function: a global's value is its initializer; move the code into a function")
+		return nil
+	}
+	if len(f.blockLoops) > 0 {
+		f.errorf(s.Pos, "'return' cannot leave a receiver block given to 'apply' or 'edit': the block runs to its end, and the call gives back the value; return after it (D207)")
 		return nil
 	}
 	if s.Value != nil {
@@ -1035,7 +1088,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		f.errorf(e.Pos, "'%s' is not assignable: only a variable, a field or what a pointer points at can be", e.Name)
 		return nil, nil
 	case *ast.SelfExpr:
-		self := f.selfRef()
+		self := f.selfFor(e)
 		if self == nil {
 			f.errorf(e.Pos, "'this' is only inside a method; a function outside a type takes the value as a parameter")
 			return nil, nil
@@ -1334,7 +1387,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			atLast := &Binary{exprBase{types.TBool}, OpAnd, incl(), &Binary{exprBase{types.TBool}, OpEq, ref(idx), ref(hi), s.Pos}, s.Pos}
 			step := &Assign{Target: ref(idx), Value: &Binary{exprBase{it.Elem}, OpWrapAdd, ref(idx), &IntConst{exprBase{it.Elem}, 1, false}, s.Pos}}
 			stop := &Assign{Target: ref(done), Value: &BoolConst{exprBase{types.TBool}, true}}
-			lp.Post = []Stmt{&ExprStmt{&If{exprBase{types.TUnit}, atLast, &Block{Stmts: []Stmt{stop}, Type: types.TUnit}, &Block{Stmts: []Stmt{step}, Type: types.TUnit}}}}
+			lp.Post = []Stmt{&ExprStmt{X: &If{exprBase{types.TUnit}, atLast, &Block{Stmts: []Stmt{stop}, Type: types.TUnit}, &Block{Stmts: []Stmt{step}, Type: types.TUnit}}}}
 			v, parts := f.bindLoopVar(s.Var, it.Elem)
 			if s.Var.Name != nil {
 				f.rangeLoopFacts(s, v)

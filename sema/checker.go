@@ -16,12 +16,16 @@ import (
 
 type Checker struct {
 	paramState   map[paramKey]int8 // which parameters a function keeps (escape.go, D188)
+	receiverFacts map[*ast.FunDecl]*methodFacts // what a method does with `this` (move_method.go, D201)
+	testRunnable  map[*Func]bool                // which tests and helpers the compiler can run (compile_tests.go, D208)
 	ladderSeen   map[*ast.IfExpr]bool // the links of an else-if chain whose head was looked at (lint_style.go)
 	namedImports []namedImport // every bound name of a braced import (D85)
 	rounds       int           // inference rounds run so far (D45), for the effects dump
 	arrayUses    []arrayUse    // inline arrays to size-check (D121)
 	pkg          *Package
 	bareDone     map[*ast.FunDecl]bool // the methods whose bare member names are resolved (D158)
+	blockDone    map[*ast.LambdaExpr]bool // the receiver blocks whose bare member names are resolved (D207)
+	onCalls      []onCall                  // variables given to a function on a receiver: heap or stack, settled by the receiver pass (D207)
 	diags        *source.Diagnostics
 	// roundDiags collects diagnostics of the current inference round; only
 	// the final round's are kept (D45 fixpoint).
@@ -75,6 +79,7 @@ type Checker struct {
 	annWrappers map[*types.Struct]*annWrapper                 // the wrapper function of each decorator annotation, once resolved (D176)
 	reflOwners  []*types.Struct                            // the structs whose fields were reflected, numbered for FieldInfo.owner (D174)
 	reflIndex   map[*types.Struct]int
+	reflMembers []types.Type // the enums and sealed families whose members were reflected, for MemberInfo.owner (D203)
 	readsAnn    map[*Func]bool // a `const fun` that reads annotations (memoized)
 	globals     map[*Global]*ast.ValDecl
 	// executors (D150): their declarations, the global holding each, and
@@ -250,6 +255,9 @@ func checkCollectObserved(pkg *Package, diags *source.Diagnostics, release bool,
 		c.inferSuspension(prog)
 		c.checkHeldRegions(prog)
 		c.indexInferred(prog)
+		if c.testMode && !c.roundDiags.HasErrors() {
+			c.runTestsInCompiler(prog) // D208: the tests the compiler can run, run there too
+		}
 	}
 	diags.Items = append(diags.Items, c.applyLintLevels(c.roundDiags.Items)...)
 	c.dropSyntheticRefs()
@@ -454,6 +462,8 @@ func (c *Checker) collect() {
 	for _, s := range c.sealeds {
 		c.resolveSealed(s)
 	}
+	c.markRecursive() // D198: which sealed types are trees, before any is laid out
+	c.lintLargeVariants()
 	c.checkLayouts()
 	for _, t := range c.traits {
 		c.resolveTrait(t)
@@ -1190,9 +1200,16 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 	case *ast.ResolvedType:
 		return t.T.(types.Type) // synthesized by the compiler (D58)
 	case *ast.NamedType:
-		if len(t.Path) == 2 && t.Path[1].Name == "Type" && len(t.Args) == 0 {
+		if len(t.Path) == 2 && (t.Path[1].Name == "Type" || t.Path[1].Name == "Inner") && len(t.Args) == 0 {
 			if ft, ok := env.handles[t.Path[0].Name]; ok {
-				return ft // `f.Type`: the type of the field an inline loop is at (D174)
+				if t.Path[1].Name == "Type" {
+					return ft // `f.Type`: the type of the field an inline loop is at (D174)
+				}
+				if inner := handleInner(ft); inner != nil {
+					return inner // `f.Inner`: the T of a T? or List<T> field (D203)
+				}
+				c.errorf(t.Path[1].Pos, "'%s.Inner' is the type inside a 'T?' or 'List<T>' field, and this one is a '%s': test '%s.isOptional' or '%s.isList' first (D203)", t.Path[0].Name, ft, t.Path[0].Name, t.Path[0].Name)
+				return types.TInvalid
 			}
 		}
 		if len(t.Path) == 1 {
@@ -1222,59 +1239,9 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 			if sym, _ := c.lookupTypeName(env, t.Path); sym != nil && sym.Kind == SymType && c.universe.LookupLocal(name) != sym {
 				name = ""
 			}
-			switch name {
-			case "List", "MutableList":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "%s takes exactly one type argument", name)
-					return types.TInvalid
-				}
-				return &types.List{Elem: c.resolveType(env, t.Args[0]), Mutable: name == "MutableList"}
-			case "Array":
-				if len(t.Args) != 2 {
-					c.errorf(t.Pos, "Array takes an element type and a length: 'Array<u8, 16>' (D121)")
-					return types.TInvalid
-				}
-				return c.arrayType(c.resolveType(env, t.Args[0]), c.resolveTypeArg(env, t.Args[1], true), t.Pos)
-			case "Range":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "Range takes exactly one type argument")
-					return types.TInvalid
-				}
-				return &types.Range{Elem: c.resolveType(env, t.Args[0])}
-			case "Option":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "Option takes exactly one type argument")
-					return types.TInvalid
-				}
-				return &types.Nullable{Elem: c.resolveType(env, t.Args[0])}
-			case "Map", "MutableMap":
-				if len(t.Args) != 2 {
-					c.errorf(t.Pos, "%s takes two type arguments", name)
-					return types.TInvalid
-				}
-				k := c.resolveType(env, t.Args[0])
-				c.checkHashable(k, t.Args[0].Span())
-				return &types.Map{Key: k, Value: c.resolveType(env, t.Args[1]), Mutable: name == "MutableMap"}
-			case "Channel":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "Channel takes one type argument")
-					return types.TInvalid
-				}
-				return &types.Channel{Elem: c.resolveType(env, t.Args[0])}
-			case "Task":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "Task takes one type argument")
-					return types.TInvalid
-				}
-				return &types.Task{Result: c.resolveType(env, t.Args[0])}
-			case "Set", "MutableSet":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "%s takes one type argument", name)
-					return types.TInvalid
-				}
-				k := c.resolveType(env, t.Args[0])
-				c.checkHashable(k, t.Args[0].Span())
-				return &types.Set{Elem: k, Mutable: name == "MutableSet"}
+			if bt := c.builtinGeneric(env, t, name); bt != nil {
+				c.refBuiltinType(t.Path[0].Pos, name, bt) // hover on `List`, `Array`, … (built in)
+				return bt
 			}
 		}
 		if tp, ok := env.tps[t.Path[0].Name]; ok && len(t.Path) > 1 {
@@ -1308,9 +1275,25 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 			}
 			return base
 		}
+		if len(t.Path) == 2 && t.Path[0].Name == "codec" && t.Path[1].Name == "KeyStyle" {
+			// D205: the type became the prelude's `Case`
+			c.errorFix(t.Pos, fixReplace("Replace with 'Case'", t.Pos, "Case"), "'KeyStyle' was replaced by 'Case' (D205): write 'Case'")
+			if ct := c.preludeType("Case"); ct != nil {
+				return ct
+			}
+			return types.TInvalid
+		}
 		sym, _ := c.lookupTypeName(env, t.Path)
 		if sym == nil && c.pathReported {
 			c.pathReported = false // the path already said what is wrong with it
+			return types.TInvalid
+		}
+		if sym == nil && t.Path[len(t.Path)-1].Name == "KeyStyle" && (len(t.Path) == 1 || len(t.Path) == 2 && t.Path[0].Name == "codec") {
+			// D205: the type became the prelude's `Case`
+			c.errorFix(t.Pos, fixReplace("Replace with 'Case'", t.Pos, "Case"), "'KeyStyle' was replaced by 'Case' (D205): write 'Case'")
+			if ct := c.preludeType("Case"); ct != nil {
+				return ct
+			}
 			return types.TInvalid
 		}
 		if sym == nil {
@@ -1373,6 +1356,11 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		}
 		for i, a := range t.Args {
 			args = append(args, c.resolveTypeArg(env, a, i < len(params) && params[i].Const))
+			if _, generic := sym.Type.(*types.Trait); !generic && types.HasLabels(args[i]) {
+				// one instance serves every labelling and keeps none (D166):
+				// `box.value.lo` would not find the label written here
+				c.errorf(a.Span(), "'%s' keeps no tuple labels in its type arguments — one instance serves every labelling (D166); write '%s', or make the tuple a struct", pathString(t.Path), types.StripLabels(args[i]))
+			}
 		}
 		switch st := sym.Type.(type) {
 		case *types.Struct:
@@ -1404,9 +1392,20 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 		for _, e := range t.Elems {
 			tt.Elems = append(tt.Elems, c.resolveType(env, e))
 		}
+		for _, l := range t.Labels {
+			tt.Labels = append(tt.Labels, l.Name)
+		}
 		return tt
 	case *ast.FunType:
 		ft := &types.Func{Ret: c.resolveType(env, t.Ret), Sendable: t.Sendable, C: t.C}
+		if t.On != nil {
+			// D207: the receiver goes first, as a pointer to its place (D22)
+			if t.C {
+				c.errorf(t.Pos, "a C function pointer has no receiver; write 'extern fun(*T, ...)' (D69, D207)")
+			}
+			ft.On = true
+			ft.Params = append(ft.Params, types.Param{Name: "this", Type: &types.Pointer{Elem: c.resolveType(env, t.On)}})
+		}
 		for _, p := range t.Params {
 			ft.Params = append(ft.Params, types.Param{Type: c.resolveType(env, p)})
 		}
@@ -1530,6 +1529,9 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 			continue
 		}
 		seen[f.Name.Name] = true
+		if f.Name.Name == "copy" {
+			c.warnf(f.Name.Pos, "a field named 'copy' takes the place of the generated 'copy' method, so '%s' has none (D164); rename the field to keep it", d.Name.Name)
+		}
 		fattrs := c.checkFieldAttrs(f)
 		env.errorPos = d.Error // an error's field may hold a cause: a union (D45)
 		ft := c.resolveType(env, f.Type)
@@ -1587,6 +1589,10 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 				s.Sealed = tmpl
 				s.Tag = len(tmpl.Variants)
 				tmpl.Variants = append(tmpl.Variants, s)
+				// where the variant is stored (D198)
+				td, _ := tmpl.Decl.(*ast.TraitDecl)
+				s.Indirect = d.Indirect || td != nil && td.Indirect && !d.Inline
+				s.Inline = d.Inline
 			}
 		}
 	}
@@ -2097,8 +2103,8 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 	if types.IsInvalid(impl.Target) {
 		return
 	}
-	if en, ok := impl.Target.(*types.Enum); ok && !d.Derived {
-		c.errorf(d.Target.Span(), "cannot implement '%s' for enum '%s': an enum is a set of values with no methods of its own; it already compares, hashes, orders, prints and encodes by itself (D57, D58)", trait.Name, en.Name)
+	if en, ok := impl.Target.(*types.Enum); ok && !d.Derived && !isEnumeratedTrait(trait) {
+		c.errorf(d.Target.Span(), "cannot implement '%s' for enum '%s': an enum is a set of values with no methods of its own; it already compares, hashes, orders, prints and encodes by itself — only 'Enumerated' may be implemented, to give 'parse' or 'toString(case:)' a meaning of its own (D57, D58, D205)", trait.Name, en.Name)
 		return
 	}
 	if sealedFor != nil {
@@ -2325,6 +2331,14 @@ func (c *Checker) checkImplComplete(d *ast.ImplDecl, impl *Impl, trait *types.Tr
 	if c.deriveFailed[impl] {
 		return // the reason was reported
 	}
+	if isEnumeratedTrait(trait) {
+		// an enum's Enumerated is the compiler's; an implement overrides
+		// parse or toString(case:), never the members (D205)
+		if t, ok := impl.Methods["values"]; ok && t.Decl != nil {
+			c.errorf(t.Decl.Name.Pos, "'values' of an enum is always its members in order; an implement of 'Enumerated' may override 'parse' and 'toString(case:)' (D205)")
+		}
+		return
+	}
 	var missing, stubs []string
 	for _, name := range trait.MethodList {
 		if _, ok := impl.Methods[name]; !ok && c.traitDefault(trait, name) == nil {
@@ -2509,6 +2523,22 @@ func typeMangle(t types.Type) string {
 // ---------------------------------------------------------------------------
 // generic instantiation
 
+// stripLabels returns args without tuple labels, the slice itself when none
+// has any.
+func stripLabels(args []types.Type) []types.Type {
+	for i, a := range args {
+		if types.HasLabels(a) {
+			out := make([]types.Type, len(args))
+			copy(out, args[:i])
+			for j := i; j < len(args); j++ {
+				out[j] = types.StripLabels(args[j])
+			}
+			return out
+		}
+	}
+	return args
+}
+
 func argsKey(args []types.Type) string {
 	parts := make([]string, len(args))
 	for i, a := range args {
@@ -2521,6 +2551,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 	c.resolveStruct(tmpl)
 	c.checkTypeArgBounds(tmpl.Name, tmpl.TypeParams, args, span)
 	c.checkSecretArg(tmpl, args, span)
+	args = stripLabels(args) // shared by every labelling (D166), as instances of functions are
 	key := argsKey(args)
 	if inst, ok := tmpl.Instances[key]; ok {
 		return inst
@@ -2544,6 +2575,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 
 func (c *Checker) instantiateSealed(tmpl *types.Sealed, args []types.Type, span source.Span) *types.Sealed {
 	c.checkTypeArgBounds(tmpl.Name, tmpl.TypeParams, args, span)
+	args = stripLabels(args)
 	key := argsKey(args)
 	if inst, ok := tmpl.Instances[key]; ok {
 		return inst
@@ -2756,6 +2788,8 @@ func (c *Checker) runRound() *Program {
 		c.prog.Root = c.pkg.Root
 		if c.pkg.Manifest != nil {
 			c.prog.Threads = c.pkg.Manifest.Runtime.Threads
+			c.prog.GCMinHeap = c.pkg.Manifest.Runtime.GCMinHeap
+			c.prog.GCGoal = c.pkg.Manifest.Runtime.GCGoal
 		}
 	}
 	c.prog.ResultType = func(ok, err types.Type) types.Type { return c.ResultType(ok, err) }
@@ -2920,14 +2954,16 @@ func modIndex(p *Package, m *Module) int {
 // the given type arguments. ownerSubst maps the owner struct's parameters.
 func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]types.Type, typeArgs []types.Type, span source.Span) *Func {
 	c.resolveSignature(t)
+	// one instance serves every labelling of its type arguments (D166), so
+	// it holds none; a call's result takes the caller's back (relabel)
 	m := map[*types.TypeParam]types.Type{}
 	for k, v := range ownerSubst {
-		m[k] = v
+		m[k] = types.StripLabels(v)
 	}
 	var keyParts []string
 	for i, tp := range t.TypeParams {
 		if i < len(typeArgs) {
-			m[tp] = typeArgs[i]
+			m[tp] = types.StripLabels(typeArgs[i])
 			keyParts = append(keyParts, types.Key(typeArgs[i]))
 		}
 	}
@@ -2988,6 +3024,11 @@ func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]t
 	fn.subst = m
 	fn.Const = t.Decl != nil && t.Decl.Const
 	t.Instances[key] = fn
+	if c.instances == nil {
+		// an annotation's argument (D174) is evaluated while declarations
+		// are collected, before the first round makes this table
+		c.instances = map[string]*Func{}
+	}
 	c.instances[fn.Name] = fn
 	c.funcs = append(c.funcs, fn)
 	if t.InferRet {

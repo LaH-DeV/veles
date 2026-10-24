@@ -73,6 +73,7 @@ func (s *cabiShape) leaves(prefix string) []cabiField {
 // the stack. C adds 1 to every field and Veles adds 10, so a field that
 // lands in the wrong register or half shows in the output.
 func TestCStructsByValue(t *testing.T) {
+	t.Parallel()
 	clang, err := findClang()
 	if err != nil {
 		t.Skip("clang not available:", err)

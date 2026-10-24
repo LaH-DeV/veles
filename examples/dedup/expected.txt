@@ -47,5 +47,32 @@ $ dedup nowhere
 dedup: 'nowhere' is not a directory
 exit=2
 $ dedup
-dedup: usage: dedup <dir> [--workers N] [--min-size BYTES] [--verbose]
+error: the argument <dir> is missing
+
+Usage: dedup [options] <dir>
+Run 'dedup --help' for more.
+exit=2
+$ dedup --help
+Find duplicate files under a directory.
+
+Files are hashed a few at a time and grouped by size and hash; nothing is
+deleted.
+
+Usage: dedup [options] <dir>
+
+Arguments:
+  <dir>  The directory to scan.
+
+Options:
+  -w, --workers <WORKERS>    How many files to hash at once. (default: 4)
+      --min-size <MIN-SIZE>  Smallest file to consider, in bytes. (default: 1)
+  -v, --verbose              Say which file is hashed.
+  -h, --help                 Print this help
+exit=0
+$ dedup fixtures --wrkers 2
+error: unknown flag '--wrkers'; did you mean '--workers'?
+error: unexpected argument '2'
+
+Usage: dedup [options] <dir>
+Run 'dedup --help' for more.
 exit=2

@@ -37,7 +37,7 @@ func (c *Checker) receiverPass(prog *Program) {
 			if self == nil {
 				continue
 			}
-			esc, wr := selfUse(fn, self)
+			esc, wr := selfUse(fn.Body, self)
 			if esc && !fn.SelfEscapes {
 				fn.SelfEscapes = true
 				changed = true
@@ -48,6 +48,7 @@ func (c *Checker) receiverPass(prog *Program) {
 			}
 		}
 	}
+	c.settleOnCalls()
 	c.fieldUsePass(prog)
 	c.lintParamCopies(prog)
 	c.lintNeverClosed(prog)
@@ -89,11 +90,11 @@ func selfVarOf(fn *Func) *Var {
 	return nil
 }
 
-// selfUse scans fn's body for the ways self can escape or be written.
-func selfUse(fn *Func, self *Var) (escapes, writes bool) {
+// selfUse scans a body for the ways self can escape or be written.
+func selfUse(body *Block, self *Var) (escapes, writes bool) {
 	reads := map[*AddrOf]bool{}  // `*&place`: the pointer is consumed at once
 	recvs := map[*AddrOf]*Func{} // a call's receiver pointer: the callee decides
-	walkBlock(fn.Body, func(n any) {
+	walkBlock(body, func(n any) {
 		switch n := n.(type) {
 		case *Assign:
 			if rootVar(n.Target) == self {

@@ -21,6 +21,11 @@ import (
 
 var fence = regexp.MustCompile("(?s)```veles\\n(.*?)```(?:\\s*\\n\\s*Output:\\s*\\n```text\\n(.*?)```)?")
 
+func TestMain(m *testing.M) { buildtest.Main(m) }
+
+// TestDocs runs the blocks in parallel, each in a directory of its own that
+// is also its working directory and its os.tempDir(), so two blocks never
+// see each other's files.
 func TestDocs(t *testing.T) {
 	veles := buildtest.Compiler(t)
 	var mds []string
@@ -46,8 +51,16 @@ func TestDocs(t *testing.T) {
 			}
 			name := strings.TrimSuffix(filepath.Base(md), ".md") + "/" + itoa(i+1)
 			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 				dir := t.TempDir()
-				if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(code), 0o644); err != nil {
+				src := filepath.Join(dir, "src")
+				tmp := filepath.Join(dir, "tmp")
+				for _, d := range []string{src, tmp} {
+					if err := os.Mkdir(d, 0o755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.WriteFile(filepath.Join(src, "main.vs"), []byte(code), 0o644); err != nil {
 					t.Fatal(err)
 				}
 				hasMain := strings.Contains(code, "fun main(")
@@ -55,7 +68,9 @@ func TestDocs(t *testing.T) {
 				if hasMain {
 					mode = "run"
 				}
-				cmd := exec.Command(veles, mode, dir)
+				cmd := exec.Command(veles, mode, src)
+				cmd.Dir = tmp
+				cmd.Env = append(os.Environ(), "TMPDIR="+tmp, "TMP="+tmp, "TEMP="+tmp)
 				var stdout, stderr bytes.Buffer
 				cmd.Stdout, cmd.Stderr = &stdout, &stderr
 				err := cmd.Run()

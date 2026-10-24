@@ -9,7 +9,7 @@
 // at the bottom of this file checks the two against each other.
 
 /// Linear scan: O(n), works on unsorted input. (`xs.indexOf(target)` is the
-/// built-in spelling; it answers -1 rather than null.)
+/// built-in spelling of the same answer.)
 fun linearSearch(xs: List<i64>, target: i64): i64? {
   loop ((i, x) in xs.iter().enumerate()) {
     if (x == target) return i
@@ -65,13 +65,13 @@ fun preludeAgrees(xs: List<i64>): bool {
   val sorted = xs.sorted()
   loop (target in -2..12) {
     if (sorted.lowerBound(target) != lowerBound(sorted, target)) return false
-    // the prelude answers -1 where this file answers null
+    // both answer null when the target is absent
     val here = binarySearch(sorted, target)
     val prelude = sorted.binarySearch(target)
-    if ((here != null) != (prelude >= 0)) return false
-    if (prelude >= 0 && sorted.at(prelude) != target) return false
+    if ((here != null) != (prelude != null)) return false
+    if (prelude != null && sorted.at(prelude) != target) return false
     // and it always answers the first of several equal elements
-    if (prelude >= 0 && prelude != sorted.lowerBound(target)) return false
+    if (prelude != null && prelude != sorted.lowerBound(target)) return false
     // the half-open range [lowerBound, upperBound) is exactly the equals
     if (sorted.upperBound(target) - sorted.lowerBound(target) != sorted.count(x => x == target)) return false
     // partitionPoint is the same question with the predicate spelled out

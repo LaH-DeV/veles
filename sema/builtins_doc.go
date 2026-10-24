@@ -44,16 +44,19 @@ var builtinFamilies = []struct{ family, header, doc string }{
 	{"MutableSet", "struct MutableSet<T> : Set<T>", "A hash set that can be changed in place."},
 	{"Channel", "struct Channel<T>", "A bounded channel between tasks (D16). `Channel<T>(capacity: n)` creates one."},
 	{"Task", "struct Task<T>", "A handle to a running child of a `scope`, from `async f()` — or of a block, from `with t = async f()`, which cancels it when the block ends (D100); `await t` is its result, `t.cancel()` stops it."},
+	{"Result", "sealed trait Result<T, E>", "A success or a typed error. Handle it before interpolation; toString() explicitly prints the wrapper (D157)."},
 	{"Range", "struct Range<T>", "`lo..hi` (inclusive) or `lo..<hi` (exclusive); iterate with `loop (i in r)`."},
 	{"float", "struct f64", "Floating-point numbers (`f64`, `f32`). Every method is a single machine instruction."},
 	{"int", "struct i64", "Integers (`i8`..`i64`, `u8`..`u64`). Arithmetic panics on overflow in debug builds."},
 	{"enum", "struct Enum", "Every `enum E : i64 { A = 1, B }` (D57): a closed set of named values of one integer type. `E.A` names a member, `x.value` reads its number."},
+	{"any", "extend<T> T", "Every value, whatever its type, unless the type has a method of the same name (D207)."},
 }
 
 var builtinDocs = []BuiltinDoc{
+	{"Result", "toString", "(): string", "Explicitly formats the Result, including its Ok or Err wrapper. Unlike interpolation, this deliberately prints an unhandled result (D157)."},
 	{"string", "len", "(): i64", "Length in bytes."},
 	{"string", "isEmpty", "(): bool", "True when the length is zero."},
-	{"string", "startsWith", "(prefix: string): bool", "True when the text begins with `prefix`."},
+	{"string", "startsWith", "(prefix: string, startIndex: i64 = 0): bool", "True when the bytes from `startIndex` on begin with `prefix` (one memory compare). `startIndex` is a byte index, like `indexOf(from:)`; one below 0 or past `len()` answers `false` (D202)."},
 	{"string", "endsWith", "(suffix: string): bool", "True when the text ends with `suffix`."},
 	{"string", "contains", "(part: string): bool", "True when `part` occurs anywhere in the text."},
 	{"string", "charCount", "(): i64", "Number of Unicode code points (not bytes)."},
@@ -71,7 +74,7 @@ var builtinDocs = []BuiltinDoc{
 	{"List", "first", "(): T?", "The first element, or `null` when empty."},
 	{"List", "last", "(): T?", "The last element, or `null` when empty."},
 	{"List", "contains", "(x: T): bool", "True when some element equals `x`."},
-	{"List", "indexOf", "(x: T): i64", "Index of the first element equal to `x`, or -1."},
+	{"List", "indexOf", "(x: T): i64?", "Index of the first element equal to `x`, or null when there is none (D165)."},
 	{"List", "filterIs", "<V>(): List<V>", "On a list of a sealed type: the elements that are the variant `V`, typed as `V` — `shapes.filterIs<Circle>()`. What `filter(s => s is Circle)` cannot promise, the type argument does."},
 	{"List", "sorted", "(): List<T>", "A sorted copy, stable, O(n log n) (elements must be numbers, strings, tuples of those, or `Comparable`)."},
 	{"List", "sortedBy", "<K>(key: fun(T): K): List<T>", "A copy sorted by `key(x)`; a tuple key sorts on several fields: `sortedBy(e => (-e.size, e.name))`."},
@@ -112,7 +115,7 @@ var builtinDocs = []BuiltinDoc{
 	{"Map", "containsKey", "(key: K): bool", "True when `key` has an entry."},
 	{"Map", "keys", "(): List<K>", "The keys."},
 	{"Map", "values", "(): List<V>", "The values."},
-	{"Map", "entries", "(): List<(K, V)>", "The entries as `(key, value)` tuples."},
+	{"Map", "entries", "(): List<(key: K, value: V)>", "The entries as labelled tuples, `(key: k, value: v)` (D166)."},
 	{"Map", "toMap", "(): Map<K, V>", "An immutable copy."},
 	{"Map", "toMutable", "(): MutableMap<K, V>", "A mutable copy."},
 	{"MutableMap", "set", "(key: K, value: V)", "Inserts or replaces the entry for `key`."},
@@ -202,6 +205,8 @@ var builtinDocs = []BuiltinDoc{
 	{"int", "swapBytes", "(): i64", "The bytes in reverse order — between big- and little-endian; the identity on 8-bit types (D104)."},
 	{"int", "reverseBits", "(): i64", "The bits in reverse order: the lowest becomes the highest (D104)."},
 
+	{"any", "apply", "(block: fun on T()): T", "A receiver block run on this value in place — a `var`, a `var` field, what a pointer points at, a temporary: `server.apply { port = 8080 }` — and gives it back; inside the block its members are reached bare. A string, `List`, `Map` or `Set` gets its edited copy (as `edit`). On a `val` it is an error: use `edit` (D207)."},
+	{"any", "edit", "(block: fun on T()): T", "A changed copy, with one copy at most: the block runs on a `StringBuilder` of a string (`name.edit { trim(); toLower() }`), the mutable form of a `List`, `Map` or `Set` (frozen back without a second copy), or a copy of any other value. The value itself does not change (D207)."},
 	{"enum", "toString", "(): string", "The member's name as written in the declaration: `Ordering.Less.toString() == \"Less\"`; interpolation uses it too."},
 	{"enum", "compareTo", "(other: This): Ordering", "The order of the two values' numbers; `<` and `sorted()` use it."},
 	{"enum", "values", "(): List<This>", "Every member in declaration order."},
@@ -300,6 +305,10 @@ func builtinFamily(t types.Type) string {
 		return "Channel"
 	case *types.Task:
 		return "Task"
+	case *types.Sealed:
+		if isResultType(tt) {
+			return "Result"
+		}
 	case *types.Range:
 		return "Range"
 	case *types.Enum:
@@ -318,6 +327,9 @@ func lookupBuiltinDoc(family, name string) *BuiltinDoc {
 	}
 	if base := strings.TrimPrefix(family, "Mutable"); base != family {
 		return lookupBuiltinDoc(base, name)
+	}
+	if family != "any" && (name == "apply" || name == "edit") {
+		return lookupBuiltinDoc("any", name) // on every type (D207)
 	}
 	return nil
 }
@@ -484,3 +496,19 @@ var variantCtorDocs = map[string][3]string{
 
 // panicDoc is the hover of the built-in `panic`.
 const panicDoc = "Stops the task with `message` and the call's `file:line:col` (D64). For a bug — a state the program's own logic rules out — not for a failure the caller could handle: that is `throws` (D4)."
+
+// refBuiltinType records the name of a built-in generic in a type position
+// (`List<string>`, `Array<u8, 16>`) for the editor: the hover shows the
+// family's header and description.
+func (c *Checker) refBuiltinType(span source.Span, name string, t types.Type) {
+	if c.index == nil || !span.IsValid() || types.IsInvalid(t) {
+		return
+	}
+	for _, fam := range builtinFamilies {
+		if fam.family == name {
+			c.index.Refs = append(c.index.Refs, Ref{Span: span, Kind: "type", Name: name, Type: t,
+				Detail: fam.header + "  (built in)", Doc: fam.doc})
+			return
+		}
+	}
+}

@@ -20,12 +20,9 @@ uidx.bad.2:
   unreachable
 uidx.ok.1:
   %t12 = load ptr, ptr %t5
-  %t13 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t5, i32 0, i32 3
+  %t13 = getelementptr inbounds [8 x i8], ptr %t12, i64 %t6
   %t14 = load i64, ptr %t13
-  %t15 = mul i64 %t14, %t6
-  %t16 = getelementptr inbounds i8, ptr %t12, i64 %t15
-  %t17 = load i64, ptr %t16
-  ret i64 %t17
+  ret i64 %t14
 }
 
 define void @v_main.put(ptr %p1, i64 %p2, i64 %p3) {
@@ -61,11 +58,8 @@ uidx.bad.4:
   unreachable
 uidx.ok.3:
   %t17 = load ptr, ptr %t7
-  %t18 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t7, i32 0, i32 3
-  %t19 = load i64, ptr %t18
-  %t20 = mul i64 %t19, %t8
-  %t21 = getelementptr inbounds i8, ptr %t17, i64 %t20
-  store i64 %t6, ptr %t21
+  %t18 = getelementptr inbounds [8 x i8], ptr %t17, i64 %t8
+  store i64 %t6, ptr %t18
   ret void
 }
 

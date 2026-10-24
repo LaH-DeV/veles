@@ -3,7 +3,7 @@ use io { println }
 use time
 
 fun main() {
-  val (sum, elapsed) = time.Stopwatch.measure(() => {
+  val (sum, elapsed) = time.measure(() => {
     var sum: i64 = 0
     loop (_ in 0..<5) {
       var m: MutableMap<i64, i64> = [:]

@@ -200,16 +200,10 @@ test "a discarded span is not exported" {
 
 test fun childTask(): List<List<u8>> {
   with parent = span("parent")
-  var seen: List<u8> = []
-  var traceSeen: List<u8> = []
-  scope {
-    val t = async whoIsCurrent()
-    expect(parent.context().spanId.len() == 8)  // the parent goes on while the child runs
-    val got = await t
-    seen = got.at(0) ?: []
-    traceSeen = got.at(1) ?: []
-  }
-  [parent.context().spanId, seen, parent.context().traceId, traceSeen]
+  val child = async whoIsCurrent()
+  expect(parent.context().spanId.len() == 8)  // the parent goes on while the child runs
+  val got = await child
+  [parent.context().spanId, got.at(0) ?: [], parent.context().traceId, got.at(1) ?: []]
 }
 
 test fun whoIsCurrent(): List<List<u8>> {

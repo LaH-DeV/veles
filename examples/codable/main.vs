@@ -103,7 +103,7 @@ fun main() throws EncodeError | DecodeError {
     is Ok(s)  => println("unexpected: $s")
     is Err(e) => println("shape: ${e.message()}")
   }
-  println(try json.encode(Page(items: [Version(major: 1, minor: 2)], total: 1), json.Options(keys: codec.KeyStyle.SnakeCase)))
+  println(try json.encode(Page(items: [Version(major: 1, minor: 2)], total: 1), json.Options(keys: Case.Snake)))
 
   // enums by name or by number: the format's choice
   println(try json.encode([Role.Admin, Role.Member]))
@@ -168,7 +168,9 @@ fun durations() throws EncodeError | DecodeError {
     loop (d in ds) {
       val text = try json.encode(Job(name: "x", timeout: d), o)
       val back = try json.decode<Job>(text, o)
-      line += " ${text.substring(text.indexOf("\"timeout\":") + 10, text.len() - 1) ?: "?"}${if (back.timeout == d) "" else " (read back as ${back.timeout})"}"
+      val at = text.indexOf("\"timeout\":")
+      val shown = if (at == null) "?" else text.substring(at + 10, text.len() - 1) ?: "?"
+      line += " $shown${if (back.timeout == d) "" else " (read back as ${back.timeout})"}"
     }
     println(line)
   }

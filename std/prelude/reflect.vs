@@ -21,3 +21,19 @@ public struct FieldInfo {
   /// Which struct this describes, for `attr` and `has` (the compiler's number).
   public owner: i64 = -1
 }
+
+/// A member of an enum or a variant of a sealed family, as the compiler
+/// describes it while compiling (D203). `Level.members` is a
+/// `List<MemberInfo>` in declaration order; an `inline loop (m in
+/// Command.members)` also reads `m.Type` (a variant's) and the annotations
+/// (`m.has<A>()`, `m.attr<A>()`).
+public struct MemberInfo {
+  /// The name as declared.
+  public name: string
+  /// The doc comment above the member, without the `///`.
+  public doc: string = ""
+  /// The position in declaration order, from 0.
+  public index: i64 = 0
+  /// Which enum or family this describes, for `attr` and `has` (the compiler's number).
+  public owner: i64 = -1
+}

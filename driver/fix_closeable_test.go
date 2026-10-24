@@ -11,6 +11,7 @@ import (
 // discarded result is bound by `with _ =` — leave a program that checks
 // without the warning.
 func TestCheckFixNeverClosed(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	src := `use io

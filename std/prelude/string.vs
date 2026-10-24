@@ -33,18 +33,23 @@ extend string {
     this.substring(lo, hi) ?: panic("slice: both bounds are in range and on character edges")
   }
 
-  /// Byte index of the first occurrence of `part` at or after `from`, or -1.
-  public const fun indexOf(part: string, from: i64 = 0): i64 => unsafe {
-    // SAFETY: a read-only search inside both strings' lengths; `from` is clamped
-    // by the runtime
-    veles_string_find(this, part, from)
+  /// Byte index of the first occurrence of `part` at or after `from`, or
+  /// null when there is none (D165).
+  public const fun indexOf(part: string, from: i64 = 0): i64? {
+    val at = unsafe {
+      // SAFETY: a read-only search inside both strings' lengths; `from` is
+      // clamped by the runtime, which answers -1 when `part` is absent
+      veles_string_find(this, part, from)
+    }
+    if (at < 0) null else at
   }
 
-  /// Byte index of the last occurrence of `part`, or -1.
-  public const fun lastIndexOf(part: string): i64 {
-    var last: i64 = -1
+  /// Byte index of the last occurrence of `part`, or null when there is
+  /// none (D165).
+  public const fun lastIndexOf(part: string): i64? {
+    var last: i64? = null
     var at = this.indexOf(part)
-    loop (at >= 0) {
+    loop (at != null) {
       last = at
       at = this.indexOf(part, from: at + 1)
     }
@@ -80,11 +85,11 @@ extend string {
   }
 
   /// The text before and after the first `sep`, or `null` when `sep` does
-  /// not occur: `"key=a=b".splitOnce("=")` is `("key", "a=b")`. An empty
-  /// `sep` splits before the first character: `("", text)`.
-  public const fun splitOnce(sep: string): (string, string)? {
-    val at = this.indexOf(sep)
-    if (at < 0) return null
+  /// not occur: `"key=a=b".splitOnce("=")` is
+  /// `(before: "key", after: "a=b")`. An empty `sep` splits before the first
+  /// character: `(before: "", after: text)`.
+  public const fun splitOnce(sep: string): (before: string, after: string)? {
+    val at = this.indexOf(sep) ?: return null
     val before = this.substring(0, at) ?: panic("splitOnce: indexOf found sep inside the text")
     val after = this.substring(at + sep.len(), this.len()) ?: panic("splitOnce: indexOf found sep inside the text")
     (before, after)
@@ -105,12 +110,11 @@ extend string {
     out
   }
 
-  /// The text with every occurrence of `old` replaced by `new`.
+  /// The text with every occurrence of `old` replaced by `new`: one pass and
+  /// one copy, or the text itself when `old` does not occur.
   public const fun replace(old: string, new: string): string {
     if (old.isEmpty()) return this
-    val parts = this.split(old)
-    if (parts.len() == 1) return this
-    parts.join(new)
+    stringReplace(this, old, new)
   }
 
   /// The text repeated `n` times (empty for `n <= 0`).
@@ -122,23 +126,13 @@ extend string {
     out.decodeUtf8() ?: ""
   }
 
-  /// Copy with ASCII letters upper-cased.
-  public const fun toUpper(): string {
-    var out: MutableList<u8> = []
-    loop (b in this.bytes()) {
-      out.push(b.toAsciiUpper())
-    }
-    out.decodeUtf8() ?: this
-  }
+  /// Copy with ASCII letters upper-cased — one copy, or the text itself when
+  /// nothing changes.
+  public const fun toUpper(): string => stringAsciiCase(this, true)
 
-  /// Copy with ASCII letters lower-cased.
-  public const fun toLower(): string {
-    var out: MutableList<u8> = []
-    loop (b in this.bytes()) {
-      out.push(b.toAsciiLower())
-    }
-    out.decodeUtf8() ?: this
-  }
+  /// Copy with ASCII letters lower-cased — one copy, or the text itself when
+  /// nothing changes.
+  public const fun toLower(): string => stringAsciiCase(this, false)
 
   /// Copy with the first ASCII letter upper-cased, the rest unchanged.
   public const fun capitalize(): string {

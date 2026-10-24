@@ -65,5 +65,5 @@ fun notSendable(xs: List<i64>): i64 {
 }
 
 fun main() throws Boom {
-  io.println("${pipelined([1, 2, 3])} ${outcomes([1, -2])} ${bound([1, 2])}")
+  io.println("${try pipelined([1, 2, 3])} ${outcomes([1, -2])} ${bound([1, 2])}")
 }

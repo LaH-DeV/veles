@@ -12,7 +12,7 @@ first language.
 1. [Getting started](01-getting-started.md) — install, run your first program, use the editor.
 2. [Values, types and strings](02-values-and-strings.md) — `val`/`var`, numbers, text, `bool`.
 3. [Functions and control flow](03-functions-and-control-flow.md) — `fun`, `if`, `loop`, ranges, `when`.
-4. [Collections](04-collections.md) — lists, maps, sets and the operations on them.
+4. [Collections](04-collections.md) — lists, tuples, maps, sets and the operations on them.
 5. [Structs and methods](05-structs-and-methods.md) — your own types, static functions.
 6. [Nothing, maybe: nullable types](06-nullable-types.md) — `T?`, `?.`, `?:` and smart casts.
 

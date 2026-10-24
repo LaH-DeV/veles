@@ -49,6 +49,8 @@ test "_open with a mode" {
   expect(unsafe { _close(fd) } == 0)
 }
 `
+	} else if runtime.GOOS == "darwin" {
+		files = strings.ReplaceAll(files, "0x41, 0o600", "0x201, 0o600")
 	}
 	src := `use ffi
 

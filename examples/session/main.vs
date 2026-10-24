@@ -108,7 +108,7 @@ fun exchange(port: i64, method: string, target: string, body: string, extra: str
   out.append("< ${try conn.readLine(max: maxResponseLine) ?: "(no response)"}")
   loop (val line = try conn.readLine(max: maxResponseLine)) {
     if (line.isEmpty()) break
-    val name = line.splitOnce(":")?.0?.toLower() ?: ""
+    val name = line.splitOnce(":")?.before?.toLower() ?: ""
     if (name in ["set-cookie", "location"]) out.append("\n<   $line")
   }
   var text = ""

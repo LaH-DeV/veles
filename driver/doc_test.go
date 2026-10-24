@@ -12,6 +12,7 @@ import (
 // comment, its documented members — and nothing private, and no module
 // the root module does not re-export (D89).
 func TestDoc(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write := func(rel, src string) {
 		p := filepath.Join(root, filepath.FromSlash(rel))

@@ -20,8 +20,10 @@ func (p *Parser) parseType() ast.Type {
 	case lexer.LParen:
 		p.next()
 		var elems []ast.Type
+		var labels tupleLabels
 		trailingComma := false
 		for !p.at(lexer.RParen, lexer.EOF) {
+			labels.add(p, len(elems))
 			elems = append(elems, p.parseType())
 			trailingComma = false
 			if !p.accept(lexer.Comma) {
@@ -30,10 +32,10 @@ func (p *Parser) parseType() ast.Type {
 			trailingComma = true
 		}
 		p.expect(lexer.RParen)
-		if len(elems) == 1 && !trailingComma {
+		if len(elems) == 1 && !trailingComma && labels.names == nil {
 			t = elems[0] // parenthesised type
 		} else {
-			t = &ast.TupleType{Elems: elems, Pos: p.spanFrom(start)}
+			t = &ast.TupleType{Elems: elems, Labels: labels.done(p, len(elems)), Pos: p.spanFrom(start)}
 		}
 	case lexer.KwFun:
 		p.next()
@@ -251,8 +253,13 @@ func (p *Parser) dblColon() {
 }
 
 // parseFunType parses the rest of a function type after `fun`:
-// `(A, B): R suspends throws E`.
+// `(A, B): R suspends throws E`, or `on T(A, B): R` for a function whose
+// `this` is a T (D207; `on` is a word only here).
 func (p *Parser) parseFunType(ft *ast.FunType, start source.Span) {
+	if p.at(lexer.Ident) && p.cur().Text == "on" {
+		p.next()
+		ft.On = p.parseType()
+	}
 	if _, ok := p.expect(lexer.LParen); ok {
 		for !p.at(lexer.RParen, lexer.EOF) {
 			ft.Params = append(ft.Params, p.parseType())
@@ -267,4 +274,51 @@ func (p *Parser) parseFunType(ft *ast.FunType, start source.Span) {
 	}
 	ft.Effects = p.parseEffects()
 	ft.Pos = p.spanFrom(start)
+}
+
+// tupleLabels collects the labels of a tuple type or literal as its
+// elements are parsed: every element labelled or none (D166).
+type tupleLabels struct {
+	names     []ast.Ident // the labels so far; nil until the first one
+	unlabeled source.Span // the first element without a label
+}
+
+// add reads `name:` before element i when it is there.
+func (l *tupleLabels) add(p *Parser, i int) {
+	if p.at(lexer.Ident) && p.peek(1).Kind == lexer.Colon {
+		tok := p.next()
+		p.next() // :
+		if l.names == nil {
+			l.names = make([]ast.Ident, i)
+		}
+		l.names = append(l.names, ast.Ident{Name: tok.Text, Pos: tok.Span})
+		return
+	}
+	if !l.unlabeled.IsValid() {
+		l.unlabeled = p.span()
+	}
+	if l.names != nil {
+		l.names = append(l.names, ast.Ident{})
+	}
+}
+
+// done checks the labels of a tuple of n elements and returns them, or nil
+// when there are none or they are mixed (the error is reported).
+func (l *tupleLabels) done(p *Parser, n int) []ast.Ident {
+	if l.names == nil {
+		return nil
+	}
+	if l.unlabeled.IsValid() {
+		p.errorf(l.unlabeled, "a tuple labels every element or none: this element has no label (D166)")
+		return nil
+	}
+	for i, a := range l.names {
+		for _, b := range l.names[:i] {
+			if a.Name == b.Name {
+				p.errorf(a.Pos, "label '%s' is used twice in one tuple (D166)", a.Name)
+				return nil
+			}
+		}
+	}
+	return l.names[:n]
 }

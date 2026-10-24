@@ -61,14 +61,17 @@ func (f *fnCtx) staticCond(cond ast.Expr) (value, known bool) {
 	switch c := cond.(type) {
 	case *ast.ImplementsExpr:
 		return f.implementsAnswer(c, false)
-	case *ast.CallExpr:
-		return f.handleHas(c) // `f.has<A>()` of an inline loop's field (D174)
+	case *ast.CallExpr, *ast.MemberExpr:
+		return f.handleConst(c) // `f.has<A>()`, `f.isOptional`, … of an inline loop's field (D174, D203)
 	case *ast.UnaryExpr:
 		if c.Op == lexer.Bang {
 			v, k := f.staticCond(c.X)
 			return !v, k
 		}
 	case *ast.BinaryExpr:
+		if c.Op == lexer.Eq || c.Op == lexer.NotEq {
+			return f.handleConst(c) // `f.name == "x"` (D203)
+		}
 		lv, lk := f.staticCond(c.L)
 		rv, rk := f.staticCond(c.R)
 		switch c.Op {
@@ -123,6 +126,48 @@ func (f *fnCtx) staticIf(e *ast.IfExpr, taken bool, want types.Type, asValue boo
 // locals it names count as used, as they are in the instances that take
 // it.
 func (f *fnCtx) skipBranch(b *ast.Block) {
+	if b == nil {
+		return
+	}
+	f.skipExpr(b)
+}
+
+// staticWhen is a `when { }` without a subject whose arms the constants
+// decide (D203, as `staticIf`): every arm before the one taken is known
+// false and the taken one known true (or `else`). The taken arm's body is
+// the whole expression; ok is false when the arms are not all known.
+func (f *fnCtx) staticWhen(e *ast.WhenExpr, want types.Type) (Expr, bool) {
+	if e.Subject != nil {
+		return nil, false
+	}
+	taken := -1
+	for i, arm := range e.Arms {
+		if arm.Else {
+			taken = i
+			break
+		}
+		v, known := f.staticCond(arm.Cond)
+		if !known {
+			return nil, false
+		}
+		if v {
+			taken = i
+			break
+		}
+	}
+	if taken < 0 {
+		return nil, false // no arm applies: the usual checks report the missing else
+	}
+	for i, arm := range e.Arms {
+		if i != taken {
+			f.skipExpr(arm.Body)
+		}
+	}
+	return f.checkExpr(e.Arms[taken].Body, want), true
+}
+
+// skipExpr marks what a branch not taken mentions as used.
+func (f *fnCtx) skipExpr(b any) {
 	if b == nil {
 		return
 	}

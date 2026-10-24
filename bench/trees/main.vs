@@ -22,7 +22,7 @@ fun count(node: *Node): i64 {
 }
 
 fun main() {
-  val (check, elapsed) = time.Stopwatch.measure(() => {
+  val (check, elapsed) = time.measure(() => {
     var check: i64 = 0
     var depth = 4
     loop (depth <= 16) {

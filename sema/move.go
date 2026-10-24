@@ -133,6 +133,9 @@ func (f *fnCtx) movable(x Expr, span source.Span) bool {
 				decl = n
 				declLoops = append([]*ast.LoopStmt(nil), loops...)
 			}
+			if ne, ok := n.Value.(*ast.NameExpr); ok && ne.Name == v.Name && copiesElements(n.Pattern) {
+				allowed[ne] = true // `val [.., last] = xs else …` copies elements out
+			}
 		case *ast.LoopStmt:
 			if ne, ok := n.Iter.(*ast.NameExpr); ok && ne.Name == v.Name {
 				if hasRefBinding(n.Var) {

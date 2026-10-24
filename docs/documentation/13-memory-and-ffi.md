@@ -62,8 +62,25 @@ Output:
 ```
 
 Run it with `VELES_GC_TRACE=1` in the environment to see the collections
-happen. `VELES_GC_THRESHOLD=<bytes>` lowers the trigger, which is how
-the collector's own tests stress it, and `VELES_GC_MARKERS=<n>` sets how
+happen.
+
+Two numbers decide when the collector runs, and the program's `veles.toml`
+sets them (D200):
+
+```toml
+[runtime]
+gc.minHeap = "32MiB"   # no collection before the heap holds this much; default "8MiB"
+gc.goal = 100          # the heap grows this % over the live data before the next one; default 100
+```
+
+The defaults are close to Go's (4 MB, `GOGC=100`) and suit most programs. A
+program that churns a lot of short-lived memory — a compiler, a parser, a
+batch job — runs faster with a larger `minHeap`, at the price of that much
+memory; a smaller `goal` keeps the heap tighter and collects more often.
+`VELES_GC_MIN_HEAP=<size>` (bytes, or `32MiB`-style) and `VELES_GC_GOAL=<n>`
+override both at run time without a rebuild; a small `VELES_GC_MIN_HEAP` is
+how the collector's own tests stress it (`VELES_GC_THRESHOLD` is its older
+name). `VELES_GC_MARKERS=<n>` sets how
 many threads mark and sweep (1: the collecting thread alone; with it set,
 the helpers take part in every collection, however small the heap).
 `VELES_GC_CONCURRENT=0` keeps the marking in one pause everywhere; `=1`
@@ -946,5 +963,54 @@ too. The Veles code itself needs no instrumentation — it is bounds-checked
 already — and the program runs a few times slower, so this is a debugging
 build. On Windows it needs clang's sanitizer runtimes installed (MSYS2:
 `pacman -S mingw-w64-ucrt-x86_64-compiler-rt`).
+
+## Stepping through a program: a debugger
+
+A debug build — `veles build` without `--release`, and what `veles run` and
+`veles test` make — carries DWARF debug information, so gdb and lldb read
+it as Veles: a breakpoint goes on a `file:line` or on a function by its
+name, `next` and `step` move line by line, and arguments and locals print
+with their types.
+
+```text
+$ veles build . -o shapes
+$ gdb ./shapes
+(gdb) break main.vs:25
+(gdb) run
+Thread 5 hit Breakpoint 1, report () at main.vs:25
+25	    total += distance(Point(x: 0, y: 0), far) + i
+(gdb) info locals
+far = {x = 3, y = 4}
+name = {data = 0x7ff6707ac047 "far point", len = 9}
+total = 0
+i = 0
+(gdb) break distance
+(gdb) continue
+Thread 5 hit Breakpoint 2, distance (a=..., b=...) at main.vs:9
+(gdb) next
+(gdb) print dx
+$1 = -3
+```
+
+- Numbers and `bool` print as themselves, a `string` as its bytes and their
+  count, a struct with its fields, a pointer as an address `*p` follows.
+- A suspending function stops where it is written too, on whichever thread
+  the task is running when it gets there (gdb says which); its arguments
+  and the locals declared after its last suspension print. A local that
+  lives across a suspension does not yet — its value moves into the task's
+  frame, and the description does not follow it.
+- Lists, maps, sets, nullables, sealed values and closures are named and
+  sized, but their contents are not described yet: print a list's elements
+  from the program, or step into the code that reads them.
+- Code of the standard library is compiled into the compiler, not read from
+  a directory, so the debugger names its files (`list.vs`) but cannot show
+  their text.
+- A `--release` build carries no line information.
+
+In VS Code, the C/C++ extension debugs a Veles program through gdb or lldb:
+a `launch.json` entry of type `cppdbg` whose `program` is the built
+executable and whose `MIMode` is `gdb` (Windows with MSYS2, Linux) or
+`lldb` (macOS). Breakpoints set in a `.vs` file are honoured once
+`"debug.allowBreakpointsEverywhere": true` is in the settings.
 
 Next: [Attributes and the test runner](14-attributes-and-testing.md).

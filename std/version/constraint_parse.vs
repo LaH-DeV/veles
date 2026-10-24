@@ -120,7 +120,7 @@ fun isWildcard(part: string): bool => part in ["x", "X", "*"]
 fun readPartial(written: string, whole: string): Partial throws VersionError {
   val text = if (written.startsWith("v")) written.slice(1, written.len()) else written
   val (numbers, preText) = text.splitOnce("-") ?: (text, "")
-  val pre: List<string> = if (text.indexOf("-") >= 0) try readPre(preText, whole) else []
+  val pre: List<string> = if (text.contains("-")) try readPre(preText, whole) else []
   val parts = numbers.split(".")
   if (parts.len() > 3) throw VersionError(message: "${quoted(whole)}: ${quoted(written)} has more than three numbers")
   val values: MutableList<i64?> = []

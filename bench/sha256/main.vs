@@ -8,7 +8,7 @@ fun main() {
   data.reserve(1048576)
   loop (i in 0..<1048576) data.push((i * 31 % 256).wrapU8())
   val bytes = data.toList()
-  val (last, elapsed) = time.Stopwatch.measure(() => {
+  val (last, elapsed) = time.measure(() => {
     var last = ""
     loop (_ in 0..<16) last = "${crypto.sha256(bytes)}"
     last

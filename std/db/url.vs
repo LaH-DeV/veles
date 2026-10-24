@@ -62,8 +62,8 @@ fun parseTarget(url: Secret<string>, application: string): Target throws DbError
   var user = ""
   var password = ""
   var hostPort = authority
-  if (authority.contains("@")) {
-    val at = authority.lastIndexOf("@")
+  val at = authority.lastIndexOf("@")
+  if (at != null) {
     val info = authority.slice(0, at)
     hostPort = authority.slice(at + 1, authority.len())
     if (info.contains(":")) {
@@ -77,8 +77,7 @@ fun parseTarget(url: Secret<string>, application: string): Target throws DbError
   var host = hostPort
   var port: i64 = 5432
   if (hostPort.startsWith("[")) {
-    val close = hostPort.indexOf("]")
-    if (close < 0) throw configError("the database URL has an unclosed [ in its host")
+    val close = hostPort.indexOf("]") ?: throw configError("the database URL has an unclosed [ in its host")
     host = hostPort.slice(1, close)
     val after = hostPort.slice(close + 1, hostPort.len())
     if (after.startsWith(":")) port = after.slice(1, after.len()).toInt() ?: throw configError("the database URL has a port that is not a number")

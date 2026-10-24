@@ -79,6 +79,42 @@ func (l *Layout) Of(t Type) (size, align int) {
 	return 8, 8
 }
 
+// VariantBoxed reports whether a variant is stored behind a pointer in its
+// sealed value (D198): `indirect`, or larger than a word in a recursive
+// sealed type unless `inline`.
+func (l *Layout) VariantBoxed(v *Struct) bool {
+	tmpl := v
+	if v.Template != nil {
+		tmpl = v.Template
+	}
+	if v.Sealed == nil || tmpl.Inline {
+		return false
+	}
+	if tmpl.Indirect {
+		return true
+	}
+	if !v.Sealed.IsRecursive() {
+		return false
+	}
+	size, _ := l.Of(v)
+	return size > 8
+}
+
+// SealedPayloadWords is the room after a sealed value's tag: its largest
+// inline variant, a word for a boxed one.
+func (l *Layout) SealedPayloadWords(s *Sealed) int {
+	words := 0
+	for _, v := range s.Variants {
+		w := 1
+		if !l.VariantBoxed(v) {
+			size, _ := l.Of(v)
+			w = (size + 7) / 8
+		}
+		words = max(words, w)
+	}
+	return words
+}
+
 // LLAlign is the alignment LLVM gives the type's representation.
 func (l *Layout) LLAlign(t Type) int {
 	switch t := t.(type) {

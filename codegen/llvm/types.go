@@ -197,14 +197,7 @@ func (g *gen) sealedType(s *types.Sealed) string {
 		return name
 	}
 	g.typeDecls[name] = ""
-	words := 0
-	for _, v := range s.Variants {
-		sz, _ := g.layout(v)
-		if w := (sz + 7) / 8; w > words {
-			words = w
-		}
-	}
-	g.typeDecls[name] = fmt.Sprintf("{ i32, [%d x i64] }", words)
+	g.typeDecls[name] = fmt.Sprintf("{ i32, [%d x i64] }", g.payloadWords(s))
 	g.typeOrder = append(g.typeOrder, name)
 	return name
 }
@@ -235,14 +228,7 @@ func (g *gen) unionWords(t types.Type) int {
 func (g *gen) payloadWords(t types.Type) int {
 	switch t := t.(type) {
 	case *types.Sealed:
-		words := 0
-		for _, v := range t.Variants {
-			sz, _ := g.layout(v)
-			if w := (sz + 7) / 8; w > words {
-				words = w
-			}
-		}
-		return words
+		return g.layouter().SealedPayloadWords(t) // a boxed variant takes a word (D198)
 	case *types.ErrorUnion:
 		return g.unionWords(t)
 	}

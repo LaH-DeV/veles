@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,25 +36,30 @@ func TestP0Source(t *testing.T) {
 			t.Parallel()
 			f := source.NewFile(file.path, file.content)
 			compare(t, exe, "--positions", file.path, goPositions(f))
+			if !file.textual() {
+				return
+			}
 			compare(t, exe, "--lines", file.path, goLines(f))
 			compare(t, exe, "--render", file.path, goRender(f))
 		})
 	}
 }
 
-// buildSelfhost builds selfhost/ with a freshly built compiler.
+func TestMain(m *testing.M) { buildtest.Main(m) }
+
+// buildSelfhost builds selfhost/ with a freshly built compiler, once for
+// every test of the package.
 func buildSelfhost(t *testing.T) string {
 	t.Helper()
 	veles := buildtest.Compiler(t)
-	exe := filepath.Join(t.TempDir(), "selfhost")
-	if runtime.GOOS == "windows" {
-		exe += ".exe"
-	}
-	build := exec.Command(veles, "build", ".", "-o", exe, "--release")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("building selfhost: %v\n%s", err, out)
-	}
-	return exe
+	return buildtest.Built(t, "selfhost", func(dir string) (string, error) {
+		exe := buildtest.Exe(dir, "selfhost")
+		build := exec.Command(veles, "build", ".", "-o", exe, "--release")
+		if out, err := build.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("%v\n%s", err, out)
+		}
+		return exe, nil
+	})
 }
 
 type corpusFile struct {
@@ -63,6 +67,11 @@ type corpusFile struct {
 	// removed: the file uses a spelling Veles has removed (removedSpellings)
 	removed bool
 }
+
+// textual is whether the file is UTF-8, so the modes that print its text
+// (lines, render, quote) apply: a file that is not is refused by both
+// lexers (D199), and a Veles string cannot hold its bytes to print them.
+func (f corpusFile) textual() bool { return utf8.ValidString(f.content) }
 
 // removedSpellings are in the Go parser's reports of the spellings Veles has
 // removed: `use m.{ }`, `mut fun`, `fun <T> f`, `impl`, the receiver `self`,
@@ -136,9 +145,6 @@ func corpus(t *testing.T) []corpusFile {
 		if err != nil {
 			return err
 		}
-		if !utf8.Valid(data) {
-			return nil // a Veles string is UTF-8; such a file comes with the lexer (P1)
-		}
 		rel, _ := filepath.Rel(root, path)
 		files = append(files, corpusFile{name: filepath.ToSlash(rel), path: path, content: string(data), removed: usesRemovedSpelling(path, string(data))})
 		return nil
@@ -165,24 +171,29 @@ func corpus(t *testing.T) []corpusFile {
 		"tabs":          "\tfun\t main() {\n\t\t}\n",
 		"long":          long.String(),
 		// what the lexer must get wrong the same way
-		"unterminated-string":   "val s = \"abc\nval t = 1\n",
-		"unterminated-block":    "val a = 1 /* not closed\n/* nested /* */\n",
-		"unterminated-interp":   "val s = \"a ${b + \"c\" \n",
-		"interp-nested":         "val s = \"${ m.get(\"{\") ?: \"}\" } and $name and $ alone and ${x}${y}\"\n",
-		"text-blocks":           "val a = \"\"\"\n    a ${x} $y\n      b\\t\n\n    c \\\" \"\n    \"\"\"\nval e = \"\"\"\n  \"\"\"\nval f = sql\"\"\"\n  select ${n}\n  \"\"\"\n",
-		"text-block-errors":     "val a = \"\"\"abc\"\"\"\nval b = \"\"\"\n  a\n  b\"\"\"\nval c = \"\"\"\n  a\n b\n  \"\"\"\nval d = \"\"\"\n  ${x\"\"\"\nval g = \"\"\"\n  a\n",
-		"format-specs":          "val a = \"${x:>10.2} ${f(a: 1):x} ${m.get(\"a:b\"):<5} ${c == ':':^3} ${a ?: b} ${[1: 2].len()} ${x:} $y:z\"\nval b = \"\"\"\n  ${n:08x}\n  \"\"\"\n",
-		"extensions":           "extend string with fun shout(): string => this.toUpper()\npublic extend<T: Comparable> List<T> with fun isSorted(): bool => true\ninternal extend string {\n  fun a(): i64 => 1\n}\nextend i64 with public fun b(): i64 { return 2 }\nextend i64 with 5\nextend i64 with fun a() => 1 fun b() => 2\n",
-		"raw-strings":          "val a = `C:\\Users\\${x} \"q\"\nnext`\nval b = ``\nval c = `open\n",
-		"escapes":               "val s = \"\\q \\u{zz} \\u{} \\u{110000} \\u{D800} \\u{FFFFFFFFF} \\u{1F600} \\u 9 \\0\\$\\'\"\n",
-		"escape-multibyte":      "val s = \"\\é\"\nval c = '\\é'\n",
-		"chars":                 "val a = 'ab'\nval b = '\nval c = 'é'\nval d = '\\n'\nval e = '",
-		"numbers":               "val a = 12abc\nval b = 0x\nval c = 1e\nval d = 1.e5\nval e = pair.0.1\nval f = 0b102\nval g = 1_000.5e-3\nval h = 0o78\nval i = 1..5\nval j = 1...2\n",
-		"strange-characters":    "val a = 1 # 2\nval b\u00a0= 3\nval c = 4\u200b\nval d = \u202e5\n// comment \u202e here\nval e = \"\u2066x\"\nval f = 1\ufeff\nval g = 1\x01 + 2\x7f\n",
-		"bom":                   "\ufeff/// the module\n\nfun main() {}\n",
-		"docs": "/// first\n/// second\n\n/// detached\n\n/** block\n * doc\n */\nfun a() {}\n////not doc\n/**/\n/***/\nfun b() {}\n/// next to\nval x = 1\n/** one line */ val y = 2\n",
-		"chains":                "val x = a\n  .b()\n  // a comment\n  ?.c\n  ?: d\n  ?! e\n  ?? f\n  /* block */ .g\nval r = 1\n..2\nval t: List<List<i64>>\nval u = m?\n",
-		"nesting":               "f(a,\n  b)\nxs[1,\n2]\n{\n  x\n}\nfoo(]\n)\n}\n",
+		"unterminated-string": "val s = \"abc\nval t = 1\n",
+		"unterminated-block":  "val a = 1 /* not closed\n/* nested /* */\n",
+		"unterminated-interp": "val s = \"a ${b + \"c\" \n",
+		"interp-nested":       "val s = \"${ m.get(\"{\") ?: \"}\" } and $name and $ alone and ${x}${y}\"\n",
+		"text-blocks":         "val a = \"\"\"\n    a ${x} $y\n      b\\t\n\n    c \\\" \"\n    \"\"\"\nval e = \"\"\"\n  \"\"\"\nval f = sql\"\"\"\n  select ${n}\n  \"\"\"\n",
+		"text-block-errors":   "val a = \"\"\"abc\"\"\"\nval b = \"\"\"\n  a\n  b\"\"\"\nval c = \"\"\"\n  a\n b\n  \"\"\"\nval d = \"\"\"\n  ${x\"\"\"\nval g = \"\"\"\n  a\n",
+		"format-specs":        "val a = \"${x:>10.2} ${f(a: 1):x} ${m.get(\"a:b\"):<5} ${c == ':':^3} ${a ?: b} ${[1: 2].len()} ${x:} $y:z\"\nval b = \"\"\"\n  ${n:08x}\n  \"\"\"\n",
+		"extensions":          "extend string with fun shout(): string => this.toUpper()\npublic extend<T: Comparable> List<T> with fun isSorted(): bool => true\ninternal extend string {\n  fun a(): i64 => 1\n}\nextend i64 with public fun b(): i64 { return 2 }\nextend i64 with 5\nextend i64 with fun a() => 1 fun b() => 2\n",
+		"raw-strings":         "val a = `C:\\Users\\${x} \"q\"\nnext`\nval b = ``\nval c = `open\n",
+		"escapes":             "val s = \"\\q \\u{zz} \\u{} \\u{110000} \\u{D800} \\u{FFFFFFFFF} \\u{1F600} \\u 9 \\0\\$\\'\"\n",
+		"escape-multibyte":    "val s = \"\\é\"\nval c = '\\é'\n",
+		"chars":               "val a = 'ab'\nval b = '\nval c = 'é'\nval d = '\\n'\nval e = '",
+		"numbers":             "val a = 12abc\nval b = 0x\nval c = 1e\nval d = 1.e5\nval e = pair.0.1\nval f = 0b102\nval g = 1_000.5e-3\nval h = 0o78\nval i = 1..5\nval j = 1...2\n",
+		"strange-characters":  "val a = 1 # 2\nval b\u00a0= 3\nval c = 4\u200b\nval d = \u202e5\n// comment \u202e here\nval e = \"\u2066x\"\nval f = 1\ufeff\nval g = 1\x01 + 2\x7f\n",
+		"bom":                 "\ufeff/// the module\n\nfun main() {}\n",
+		// not UTF-8 (D199): refused byte by byte, nothing lexed
+		"not-utf8-comment": "// caf\xe9\nfun main() {}\n",
+		"not-utf8-string":  "val s = \"\xff\xfe\"\nval t = 1\n",
+		"not-utf8-code":    "val a\xc0\xaf = 1\nval b = \xed\xa0\x80\n\xf4\x90\x80\x80 \xe2\x82\n",
+		"not-utf8-bom":     "\ufeffval x = \x80\n",
+		"docs":             "/// first\n/// second\n\n/// detached\n\n/** block\n * doc\n */\nfun a() {}\n////not doc\n/**/\n/***/\nfun b() {}\n/// next to\nval x = 1\n/** one line */ val y = 2\n",
+		"chains":           "val x = a\n  .b()\n  // a comment\n  ?.c\n  ?: d\n  ?! e\n  ?? f\n  /* block */ .g\nval r = 1\n..2\nval t: List<List<i64>>\nval u = m?\n",
+		"nesting":          "f(a,\n  b)\nxs[1,\n2]\n{\n  x\n}\nfoo(]\n)\n}\n",
 		// what the parser must recover from the same way: one per path
 		"p-decls": "use\nuse a { }\nuse a { * }\nuse a.b as\npublic internal fun f() {}\nprivate val x = 1\n" +
 			"extend X for Y {}\nerror E = A | B\nenum E<T> { A, B = 2, 3 }\n" +
@@ -207,7 +218,7 @@ func corpus(t *testing.T) []corpusFile {
 			"  race { val v = ch.recv() => v\n sleep(d) -> 0\n x }\n  race { ch.recv() as v => v\n async f() as w => w\n async g()\n f(x as T) as y => y\n t as }\n  awaitFirst(async a(), async b())\n  race { async a()\n async { b() }\n loop (x in xs) async c(x) }\n  race { }\n  select { val v = ch.recv() => v\n val w = async f() => w\n sleep(d) => 0 }\n  select\n  select { }\n  x.select { 1 }\n  val t = async { await sleep(d)\n 1 }\n  async { }\n  gather { }\n  unsafe { }\n  scope\n  fun\n  x is T(a) && y !is U\n  T implements Display\n  x as T\n" +
 			"  sql\"a ${b}\"\n  sql \"a\"\n  db.sql\"x\"\n  \"${a b}\"\n  \"${}\"\n  1..<2\n  a ?: return\n  !(return)\n  f(x ?: return, y)\n  ~a\n  *p\n  &x\n  -1\n}\n",
 	}
-	// the fuzzers' findings that are text (a Veles string is always UTF-8)
+	// the fuzzers' findings, UTF-8 or not (D199)
 	found, _ := filepath.Glob(filepath.Join(root, "*", "testdata", "fuzz", "*", "*"))
 	for _, path := range found {
 		data, err := os.ReadFile(path)
@@ -219,7 +230,7 @@ func corpus(t *testing.T) []corpusFile {
 				continue
 			}
 			text, err := strconv.Unquote(line[len("string(") : len(line)-1])
-			if err == nil && utf8.ValidString(text) {
+			if err == nil {
 				edges["fuzz-"+filepath.Base(filepath.Dir(path))+"-"+filepath.Base(path)+"-"+strconv.Itoa(i)] = text
 			}
 		}
@@ -348,6 +359,9 @@ func TestP3Quote(t *testing.T) {
 		file := file
 		t.Run(file.name, func(t *testing.T) {
 			t.Parallel()
+			if !file.textual() {
+				t.Skip("not UTF-8: no text to quote (D199)")
+			}
 			f := source.NewFile(file.path, file.content)
 			var want strings.Builder
 			for n := 1; n <= strings.Count(file.content, "\n")+1; n++ {

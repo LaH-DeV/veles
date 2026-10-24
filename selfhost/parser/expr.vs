@@ -234,6 +234,24 @@ extend Parser {
         this.next()
         return x
       }
+      Kind.LBrace            => {
+        // `x.apply { … }`, `configure(&s) { … }`: a block on the same line
+        // after a call or a name is the call's last argument (D207)
+        if (this.noLambda > 0) return null
+        var call: ast.CallExpr = when (x) {
+          is ast.CallExpr   => if (x.block || x.trailing) return null else x
+          is ast.NameExpr   => ast.CallExpr(callee: &x)
+          is ast.MemberExpr => ast.CallExpr(callee: &x)
+          else              => return null
+        }
+        val blockStart = this.span()
+        val body = this.parseBlock()
+        val lambda: ast.Expr = ast.LambdaExpr(body: &ast.BlockExpr(block: body), bare: true, pos: this.spanFrom(blockStart))
+        call.args = call.args.edit { push(ast.Arg(value: &lambda)) }
+        call.trailing = true
+        call.pos = this.spanFrom(start)
+        return call
+      }
       Kind.LBracket          => {
         this.next()
         val index = this.parseExpr()
@@ -339,7 +357,7 @@ extend Parser {
       }
       Kind.Regex => {
         this.next()
-        val closing = t.text.lastIndexOf("/")
+        val closing = t.text.lastIndexOf("/") ?: 0
         // an unterminated literal: the lexer reported it
         if (closing < 1) return ast.RegexLit(pattern: t.text.slice(1, t.text.len()), pos: t.span)
         return ast.RegexLit(pattern: t.text.slice(1, closing), flags: t.text.slice(closing + 1, t.text.len()), pos: t.span)
@@ -372,6 +390,13 @@ extend Parser {
         return this.parseParenOrTuple()
       }
       Kind.LBracket => return this.parseCollectionLit()
+      Kind.LBrace => {
+        // `{ … }` alone: a receiver block, or a plain `fun()` (D207)
+        if (this.noLambda == 0) {
+          val body = this.parseBlock()
+          return ast.LambdaExpr(body: &ast.BlockExpr(block: body), bare: true, pos: this.spanFrom(start))
+        }
+      }
       Kind.KwMut => {
         // `mut [1, 2]`, `mut ["k": v]`, `mut [:]`
         this.next()
@@ -451,7 +476,7 @@ extend Parser {
         continue
       }
       val toks = tokenizeRange(this.file, part.span.start, part.span.end, this.diags)
-      var sub = Parser(file: this.file, toks: toks.toMutable(), diags: this.diags)
+      var sub = Parser(file: this.file, toks, diags: this.diags)
       val e = sub.parseExpr()
       sub.skipSemis()
       if (!sub.at(Kind.EOF)) sub.errorAt(sub.span(), "unexpected ${sub.cur().describe()} in string interpolation")
@@ -470,11 +495,52 @@ extend Parser {
         Kind.RParen, Kind.RBracket, Kind.RBrace => {
           depth -= 1
           if (depth == 0) {
-            val after = this.peek(i + 1).kind
-            return after in [Kind.FatArrow, Kind.Colon]
+            return when (this.peek(i + 1).kind) {
+              Kind.FatArrow => true
+              Kind.Colon    => this.returnTypeThenArrow(i + 2)
+              else          => false
+            }
           }
         }
         Kind.EOF => return false
+        else => { }
+      }
+      i += 1
+    }
+  }
+
+  // whether the tokens from peek(i) are a type followed by `=>`: `(x): i64 =>
+  // …` is a lambda, while the key of a map literal, `[(1, 2): "a"]`, is
+  // followed by a value no type contains — a literal, a `,` or closing
+  // bracket outside any brackets of its own, or a `:` after anything but a
+  // function type's parameters (`[(1, 2): (y: i64): i64 => y]` has a lambda
+  // as its value)
+  fun returnTypeThenArrow(from: i64): bool {
+    var depth: i64 = 0
+    var angles: i64 = 0
+    // the outermost group is a `fun(…)`'s parameters
+    var funOpen = false
+    var funClosed = false
+    var i = from
+    loop {
+      when (this.peek(i).kind) {
+        Kind.FatArrow => if (depth == 0 && angles == 0) return true
+        Kind.Colon => if (depth == 0 && (this.peek(i - 1).kind != Kind.RParen || !funClosed)) return false
+        Kind.LParen, Kind.LBracket => {
+          if (depth == 0) funOpen = this.peek(i - 1).kind == Kind.KwFun
+          depth += 1
+        }
+        Kind.RParen, Kind.RBracket => {
+          if (depth == 0) return false
+          depth -= 1
+          if (depth == 0) funClosed = funOpen
+        }
+        Kind.Lt => angles += 1
+        Kind.Gt => angles -= 1
+        Kind.Shr => angles -= 2
+        Kind.Comma => if (depth == 0 && angles <= 0) return false
+        Kind.Int => if (angles <= 0) return false  // `Array<u8, 4>` holds one
+        Kind.Float, Kind.String, Kind.Char, Kind.Regex, Kind.LBrace, Kind.RBrace, Kind.Semi, Kind.EOF => return false
         else => { }
       }
       i += 1
@@ -544,15 +610,22 @@ extend Parser {
     this.next()  // (
     if (this.accept(Kind.RParen)) return ast.TupleExpr(pos: this.spanFrom(start))  // unit
     val elems: MutableList<ast.Expr> = []
+    val labels: MutableList<ast.Ident> = []
+    var missing: Span? = null
     var trailingComma = false
     loop (!this.atAny(Kind.RParen, Kind.EOF)) {
+      if (val label = this.tupleLabel()) labels.push(label) else if (missing == null) missing = this.span()
       elems.push(this.parseExpr())
       trailingComma = this.accept(Kind.Comma)
       if (!trailingComma) break
     }
     this.expect(Kind.RParen)
+    if (!labels.isEmpty()) {
+      return ast.TupleExpr(elems: elems.toList(), labels: this.tupleLabels(labels, missing), pos: this.spanFrom(start))
+    }
     val [only] = elems else return ast.TupleExpr(elems: elems.toList(), pos: this.spanFrom(start))
-    if (trailingComma) return ast.TupleExpr(elems: elems.toList(), pos: this.spanFrom(start))
+    if (trailingComma) return ast.TupleExpr(elems, pos: this.spanFrom(start))
+    this.parens.push(ast.exprSpan(only))
     // parentheses end a `?.` chain (D70)
     when (only) {
       is ast.MemberExpr => {

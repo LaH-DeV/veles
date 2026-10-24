@@ -1033,6 +1033,11 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	} else if d.Internal {
 		p.w("internal ")
 	}
+	if d.Indirect {
+		p.w("indirect ") // D198
+	} else if d.Inline {
+		p.w("inline ")
+	}
 	switch {
 	case d.Error:
 		p.w("error ")
@@ -1280,6 +1285,9 @@ func (p *printer) traitDecl(d *ast.TraitDecl) {
 	} else if d.Internal {
 		p.w("internal ")
 	}
+	if d.Indirect {
+		p.w("indirect ") // D198
+	}
 	if d.Sealed {
 		p.w("sealed ")
 	}
@@ -1434,6 +1442,17 @@ func (p *printer) typ(t ast.Type) {
 		p.typ(t.Elem)
 	case *ast.TupleType:
 		p.w("(")
+		if t.Labels != nil {
+			for i, e := range t.Elems {
+				if i > 0 {
+					p.w(", ")
+				}
+				p.w(t.Labels[i].Name + ": ")
+				p.typ(e)
+			}
+			p.w(")")
+			return
+		}
 		p.typeList(t.Elems)
 		if len(t.Elems) == 1 {
 			p.w(",")
@@ -1446,7 +1465,12 @@ func (p *printer) typ(t ast.Type) {
 		if t.C {
 			p.w("extern ")
 		}
-		p.w("fun(")
+		p.w("fun")
+		if t.On != nil {
+			p.w(" on ")
+			p.typ(t.On)
+		}
+		p.w("(")
 		p.typeList(t.Params)
 		p.w(")")
 		if t.Ret != nil {
@@ -1833,6 +1857,22 @@ func (p *printer) exprInner(e ast.Expr) {
 			p.typeList(e.TypeArgs)
 			p.w(">")
 		}
+		if block := trailingBlock(e); block != nil {
+			// a receiver block goes after the call, `x.apply { … }` (D207)
+			if rest := e.Args[:len(e.Args)-1]; len(rest) > 0 {
+				owner := e.Pos
+				if e.Trailing {
+					closing := strings.LastIndex(p.src[e.Pos.Start:block.Pos.Start], ")")
+					owner.End = e.Pos.Start + closing + 1
+				}
+				p.w("(")
+				p.args(rest, owner)
+				p.w(")")
+			}
+			p.w(" ")
+			p.receiverBlock(block.Body.(*ast.BlockExpr).Block)
+			return
+		}
 		p.w("(")
 		p.args(e.Args, e.Pos)
 		p.w(")")
@@ -1935,6 +1975,17 @@ func (p *printer) exprInner(e ast.Expr) {
 	case *ast.LambdaExpr:
 		p.lambda(e)
 	case *ast.TupleExpr:
+		if e.Labels != nil {
+			// laid out like named arguments: `(key: k, value: v)` (D166)
+			args := make([]ast.Arg, len(e.Elems))
+			for i, el := range e.Elems {
+				args[i] = ast.Arg{Name: &e.Labels[i], Value: el}
+			}
+			p.w("(")
+			p.args(args, e.Pos)
+			p.w(")")
+			return
+		}
 		p.w("(")
 		p.oneTuple = len(e.Elems) == 1
 		p.exprList(e.Elems, e.Pos, "(")
@@ -2148,6 +2199,10 @@ func (p *printer) brokenList(multi bool, n, open, close int, span func(i int) (i
 }
 
 func (p *printer) lambda(e *ast.LambdaExpr) {
+	if e.Bare {
+		p.block(e.Body.(*ast.BlockExpr).Block)
+		return
+	}
 	single := len(e.Params) == 1 && e.Params[0].Type == nil && e.Ret == nil && p.src[e.Pos.Start] != '('
 	if single {
 		p.w(e.Params[0].Name.Name)
@@ -2579,4 +2634,37 @@ func (p *printer) on(e, workers ast.Expr) {
 		p.expr(workers, 0)
 	}
 	p.w(") ")
+}
+
+// trailingBlock is the receiver block a call ends with, written after the
+// call — `x.apply { … }` — whether or not the author put it inside the
+// parentheses (D207); nil when the last argument is anything else.
+func trailingBlock(e *ast.CallExpr) *ast.LambdaExpr {
+	if len(e.Args) == 0 {
+		return nil
+	}
+	last := e.Args[len(e.Args)-1]
+	if l, ok := last.Value.(*ast.LambdaExpr); ok && l.Bare && last.Name == nil && !last.Spread {
+		return l
+	}
+	return nil
+}
+
+// receiverBlock prints a trailing receiver block: on one line when the
+// author wrote it on one line with no comment — `s.apply { port = 5 }`,
+// `name.edit { trim(); toLower() }` — else as any block.
+func (p *printer) receiverBlock(b *ast.Block) {
+	text := p.src[b.Pos.Start:b.Pos.End]
+	if len(b.Stmts) == 0 || strings.ContainsAny(text, "\r\n") || strings.Contains(text, "//") || strings.Contains(text, "/*") {
+		p.block(b)
+		return
+	}
+	p.w("{ ")
+	for i, s := range b.Stmts {
+		if i > 0 {
+			p.w("; ")
+		}
+		p.nested(func() { p.stmt(s) })
+	}
+	p.w(" }")
 }

@@ -14,6 +14,7 @@ import (
 // with `implement Validate` — and a table built by a `const fun` from the
 // annotations is part of the program. Debug and release.
 func TestAnnotationsAcrossPackages(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -97,6 +98,7 @@ fun main() {
 // D174: what a program may not do with annotations is refused where it is
 // written, each with the rule.
 func TestAnnotationMisuse(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "main.vs"), []byte(`annotation Short(letter: string) on field
 

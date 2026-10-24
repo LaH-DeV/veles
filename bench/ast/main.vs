@@ -58,7 +58,7 @@ fun count(e: Expr): i64 => when (e) {
 }
 
 fun main() {
-  val ((nodes, check), elapsed) = time.Stopwatch.measure(() => {
+  val ((nodes, check), elapsed) = time.measure(() => {
     var check: i64 = 0
     var nodes: i64 = 0
     loop (r in 0..<6) {

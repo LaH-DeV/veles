@@ -15,9 +15,9 @@
  *            interface WSAPoll and select are built on, completing on an
  *            I/O completion port — as libuv, mio and wepoll use it. A
  *            posted packet interrupts a wait.
- *   others   poll() over the armed descriptors with a self-pipe (macOS
- *            until plan A7 brings kqueue). Linux builds it too when
- *            VELES_POLL_FALLBACK is defined, which is how it is tested.
+ *   macOS    kqueue with one-shot filters; a user event interrupts a wait.
+ *   others   poll() over the armed descriptors with a self-pipe. Linux
+ *            and macOS build it when VELES_POLL_FALLBACK is defined.
  *
  * Before this, every wait rebuilt a pollfd array of every parked socket
  * under the runtime lock: O(parked) per wait, and with several threads the
@@ -47,6 +47,12 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/syscall.h>
+#include <time.h>
+#elif defined(__APPLE__) && !defined(VELES_POLL_FALLBACK)
+#define VELES_POLL_KQUEUE 1
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/event.h>
 #include <time.h>
 #else
 #include <unistd.h>
@@ -477,6 +483,85 @@ int64_t veles_poll_wait(int64_t timeout_ns, veles_poll_event *out, int64_t max) 
         n++;
     }
     return n;
+}
+
+#elif defined(VELES_POLL_KQUEUE)
+
+static int kqfd = -1;
+
+void veles_poll_init(void) {
+    if (kqfd >= 0) return;
+    int queue = kqueue();
+    if (queue < 0) poll_fatal("kqueue");
+    if (fcntl(queue, F_SETFD, FD_CLOEXEC) < 0) poll_fatal("kqueue close-on-exec");
+    struct kevent event;
+    EV_SET(&event, 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, NULL);
+    if (kevent(queue, &event, 1, NULL, 0, NULL) < 0) poll_fatal("kqueue wake event");
+    kqfd = queue;
+}
+
+int64_t veles_poll_arm(int64_t fd, int64_t read, int64_t write) {
+    struct kevent changes[2], receipts[2];
+    EV_SET(&changes[0], (uintptr_t)fd, EVFILT_READ,
+           EV_RECEIPT | (read ? EV_ADD | EV_ONESHOT : EV_DELETE), 0, 0, NULL);
+    EV_SET(&changes[1], (uintptr_t)fd, EVFILT_WRITE,
+           EV_RECEIPT | (write ? EV_ADD | EV_ONESHOT : EV_DELETE), 0, 0, NULL);
+    int count;
+    do {
+        count = kevent(kqfd, changes, 2, receipts, 2, NULL);
+    } while (count < 0 && errno == EINTR);
+    if (count < 0) return errno ? errno : 1;
+    for (int index = 0; index < count; index++) {
+        if (!receipts[index].data) continue;
+        int wanted = receipts[index].filter == EVFILT_READ ? read != 0 : write != 0;
+        if (!wanted && receipts[index].data == ENOENT) continue;
+        return receipts[index].data;
+    }
+    return 0;
+}
+
+void veles_poll_forget(int64_t fd) {
+    if (kqfd < 0) return;
+    struct kevent changes[2], receipts[2];
+    EV_SET(&changes[0], (uintptr_t)fd, EVFILT_READ, EV_DELETE | EV_RECEIPT, 0, 0, NULL);
+    EV_SET(&changes[1], (uintptr_t)fd, EVFILT_WRITE, EV_DELETE | EV_RECEIPT, 0, 0, NULL);
+    while (kevent(kqfd, changes, 2, receipts, 2, NULL) < 0 && errno == EINTR) {}
+}
+
+void veles_poll_wake(void) {
+    if (__atomic_exchange_n(&wake_pending, 1, __ATOMIC_SEQ_CST)) return;
+    struct kevent event;
+    EV_SET(&event, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, NULL);
+    int result;
+    do {
+        result = kevent(kqfd, &event, 1, NULL, 0, NULL);
+    } while (result < 0 && errno == EINTR);
+    if (result < 0) poll_fatal("kqueue wake");
+}
+
+int64_t veles_poll_wait(int64_t timeout_ns, veles_poll_event *out, int64_t max) {
+    struct kevent events[128];
+    if (max > 128) max = 128;
+    struct timespec timeout, *deadline = NULL;
+    if (timeout_ns >= 0) {
+        timeout.tv_sec = timeout_ns / 1000000000;
+        timeout.tv_nsec = timeout_ns % 1000000000;
+        deadline = &timeout;
+    }
+    int count = kevent(kqfd, NULL, 0, events, (int)max, deadline);
+    if (count < 0 && errno != EINTR) poll_fatal("kevent wait");
+    int64_t got = 0;
+    for (int index = 0; index < count; index++) {
+        if (events[index].filter == EVFILT_USER) {
+            __atomic_store_n(&wake_pending, 0, __ATOMIC_SEQ_CST);
+            continue;
+        }
+        out[got].fd = (int64_t)events[index].ident;
+        out[got].read = events[index].filter == EVFILT_READ;
+        out[got].write = events[index].filter == EVFILT_WRITE;
+        got++;
+    }
+    return got;
 }
 
 #else

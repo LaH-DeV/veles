@@ -567,7 +567,7 @@ func (f *fnCtx) launchCall(e *ast.CallExpr, want types.Type) Expr {
 	if call.Fn.tmpl != nil && call.Fn.tmpl.TestCode && f.inTest() {
 		prev := f.newTemp(types.TI64)
 		enter := &Builtin{exprBase{types.TI64}, "test.enter", nil, e.Pos}
-		leave := &ExprStmt{&Builtin{exprBase{types.TUnit}, "test.leave", []Expr{ref(prev)}, e.Pos}}
+		leave := &ExprStmt{X: &Builtin{exprBase{types.TUnit}, "test.leave", []Expr{ref(prev)}, e.Pos}}
 		h := f.newTemp(l.Type())
 		return &Let{exprBase{l.Type()}, prev, enter, &Let{exprBase{l.Type()}, h, l,
 			&BlockExpr{exprBase{l.Type()}, &Block{Stmts: []Stmt{leave}, Value: ref(h), Type: l.Type()}}}}

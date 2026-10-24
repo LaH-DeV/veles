@@ -80,6 +80,8 @@ typedef struct veles_span {
     uint8_t *used;     /* per object: allocated */
     size_t free_hint;  /* every slot below it is in use (slots are freed only by a sweep) */
     size_t nused;      /* slots in use, so a full span is skipped without a scan */
+    size_t virgin;     /* no slot from here on has held an object: its memory still reads as zeros */
+    uint8_t wipes;     /* an object of a DESC_WIPE descriptor was allocated here: the sweep zeroes the dead ones */
     struct veles_span *next; /* in size class list */
     void *owner;       /* the thread allocating from it, or NULL (D66) */
     struct veles_arena *arena; /* where it was carved from, and its first piece there */
@@ -447,6 +449,22 @@ void veles_gc_collect(void);
 
 /* ---- allocation ----------------------------------------------------------- */
 
+/* clears a slot that held an object before: a constant size for the small
+ * structs, so the compiler writes a few stores instead of calling memset */
+static inline void zero_slot(char *obj, size_t n) {
+    switch (n) {
+    case 16: memset(obj, 0, 16); return;
+    case 32: memset(obj, 0, 32); return;
+    case 48: memset(obj, 0, 48); return;
+    case 64: memset(obj, 0, 64); return;
+    case 80: memset(obj, 0, 80); return;
+    case 96: memset(obj, 0, 96); return;
+    case 112: memset(obj, 0, 112); return;
+    case 128: memset(obj, 0, 128); return;
+    default: memset(obj, 0, n);
+    }
+}
+
 static void *alloc_in_span(veles_span *s, veles_desc *desc) {
     /* slots are freed only by a sweep, which resets free_hint, so the hint
      * only moves forward between collections and the scan is amortised
@@ -457,7 +475,13 @@ static void *alloc_in_span(veles_span *s, veles_desc *desc) {
             s->nused++;
             s->free_hint = i + 1;
             char *obj = s->start + i * s->objsize;
-            memset(obj, 0, s->objsize);
+            /* a span comes from the OS zeroed (new_span) and a large one
+             * goes back when its object dies: only a slot that held an
+             * object before needs clearing — a big list's growth no longer
+             * touches every page twice (plan S7) */
+            if (i < s->virgin) zero_slot(obj, s->objsize);
+            else s->virgin = i + 1;
+            if (desc && (desc->kind & DESC_WIPE)) s->wipes = 1;
             *(veles_desc **)obj = desc;
             /* Published last, so a marker that finds the slot used finds it
              * whole (the helpers may mark while the program runs, F18 c).
@@ -496,12 +520,13 @@ void *veles_gc_alloc(veles_desc *desc, int64_t size) {
             cls = (size_t)cls + 1 < NCLASSES ? cls + 1 : -1;
         }
     }
-    if (me && cls >= 0 && !veles_stop_requested) {
-        veles_span *s = me->tl[cls];
-        if (s && me->tl_bytes + need <= tl_chunk) {
+    veles_thread *self = me; /* one read of the thread's block, not one per use */
+    if (self && cls >= 0 && !veles_stop_requested) {
+        veles_span *s = self->tl[cls];
+        if (s && self->tl_bytes + need <= tl_chunk) {
             void *p = alloc_in_span(s, desc);
             if (p) {
-                me->tl_bytes += need;
+                self->tl_bytes += need;
                 return p;
             }
         }
@@ -1202,6 +1227,31 @@ static void collect_now(void) {
     }
 }
 
+/* D200: the heap grows gc_goal % over the live data before the next
+ * collection (Go's GOGC), and never collects below gc_min_threshold */
+static int64_t gc_goal = 100;
+static bool min_heap_from_env, goal_from_env;
+
+/* "33554432", "32MiB", "512KiB", "1GiB", "100B"; 0 when unreadable */
+static size_t parse_size(const char *s) {
+    char *end;
+    unsigned long long n = strtoull(s, &end, 10);
+    if (end == s) return 0;
+    if (strcmp(end, "") == 0 || strcmp(end, "B") == 0) return (size_t)n;
+    if (strcmp(end, "KiB") == 0) return (size_t)(n << 10);
+    if (strcmp(end, "MiB") == 0) return (size_t)(n << 20);
+    if (strcmp(end, "GiB") == 0) return (size_t)(n << 30);
+    return 0;
+}
+
+static void set_min_heap(size_t n) {
+    gc_min_threshold = n;
+    if (gc_count == 0 || gc_threshold < n) gc_threshold = gc_trigger = n;
+    tl_chunk = n / 8;
+    if (tl_chunk < 256) tl_chunk = 256;
+    if (tl_chunk > (256u << 10)) tl_chunk = 256u << 10;
+}
+
 void veles_gc_init(void) {
     small_classes_init(); /* before the first allocation, which needs heap_lock made here too */
     world_lock = veles_lock_new();
@@ -1210,12 +1260,24 @@ void veles_gc_init(void) {
     cycle_init();
     veles_thread_attach();
     stack_base = find_stack_base();
-    const char *env = getenv("VELES_GC_THRESHOLD");
-    if (env) gc_min_threshold = gc_threshold = gc_trigger = (size_t)strtoull(env, NULL, 10);
-    tl_chunk = gc_min_threshold / 8;
-    if (tl_chunk < 256) tl_chunk = 256;
-    if (tl_chunk > (256u << 10)) tl_chunk = 256u << 10;
+    size_t min_heap = 0;
+    const char *env = getenv("VELES_GC_MIN_HEAP");
+    if (!env) env = getenv("VELES_GC_THRESHOLD"); /* the older name */
+    if (env && (min_heap = parse_size(env)) > 0) min_heap_from_env = true;
+    env = getenv("VELES_GC_GOAL");
+    if (env && atoi(env) > 0) {
+        gc_goal = atoi(env);
+        goal_from_env = true;
+    }
+    set_min_heap(min_heap ? min_heap : gc_min_threshold);
     if (getenv("VELES_GC_OFF")) gc_enabled = false;
+}
+
+/* the program's `[runtime] gc.minHeap` / `gc.goal` (D200), before its
+ * globals are built; 0 keeps the default, and the environment wins */
+void veles_runtime_gc(int64_t min_heap, int64_t goal) {
+    if (min_heap > 0 && !min_heap_from_env) set_min_heap((size_t)min_heap);
+    if (goal > 0 && !goal_from_env) gc_goal = goal;
 }
 
 /* ---- sweeping ------------------------------------------------------------- */
@@ -1229,18 +1291,24 @@ static int gc_poison = -1;
  * no start, for sweep_compact to drop from the list */
 static void sweep_span(veles_span *s) {
     size_t live = 0;
+    /* a dead object is read only when it may need zeroing (a Secret's
+     * bytes) or poisoning: otherwise its header stays out of the cache */
+    int touch = s->wipes || gc_poison;
     for (size_t k = 0; k < s->nobjs; k++) {
-        if (s->used[k] && !s->marks[k]) {
-            s->used[k] = 0;
+        if (!s->used[k]) continue;
+        if (s->marks[k]) {
+            live++;
+            continue;
+        }
+        s->used[k] = 0;
+        if (touch) {
             char *obj = s->start + k * s->objsize;
             veles_desc *d = *(veles_desc **)obj;
             if (d && (d->kind & DESC_WIPE)) veles_wipe(obj + HEADER, s->objsize - HEADER);
             if (gc_poison) memset(obj, 0xCD, s->objsize);
-        } else if (s->used[k]) {
-            live++;
         }
-        s->marks[k] = 0;
     }
+    memset(s->marks, 0, s->nobjs);
     s->free_hint = 0;
     s->marked_any = 0;
     s->nused = live;
@@ -1549,9 +1617,10 @@ void veles_gc_pause_reset(void) {
     pause_total_ns = 0;
 }
 
-/* the next collection's goal — twice what is live — and its trigger */
+/* the next collection's goal — gc_goal % over what is live, twice it by
+ * default — and its trigger */
 static void set_goal(void) {
-    size_t next = live_bytes * 2;
+    size_t next = live_bytes + (size_t)((double)live_bytes * (double)gc_goal / 100.0);
     if (next < gc_min_threshold) next = gc_min_threshold;
     gc_threshold = next;
     size_t early = mark_alloc_last + mark_alloc_last / 5;
@@ -1665,7 +1734,11 @@ enum { DIRTY_NONE, DIRTY_WATCH, DIRTY_SOFT, DIRTY_ALL };
 static int dirty_kind = -1;
 static int concurrent_forced;
 static size_t dirty_page = 4096;
-#define CONCURRENT_FROM ((size_t)4 << 20) /* live bytes below which one pause is cheaper than two */
+/* live bytes below which one pause is cheaper than two: up to 16 MiB a
+ * pause marks in about a millisecond, while a concurrent cycle's reset of
+ * the write watch and its pre-cleaning rounds cost a fast-allocating
+ * program more than that — 4 MiB made bench/parse 15% slower (S16) */
+#define CONCURRENT_FROM ((size_t)16 << 20)
 #define PRECLEAN_ROUNDS 4
 #define PRECLEAN_ENOUGH 256 /* pages with something marked: few enough to leave to the last pause */
 

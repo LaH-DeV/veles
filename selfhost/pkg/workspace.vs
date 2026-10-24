@@ -43,7 +43,7 @@ fun memberDirectory(section: Section, at: Value, member: string): string throws 
   if (paths.isAbsolute(member) || clean == ".." || clean.startsWith("../")) {
     throw section.failAt(at, "[workspace] members: ${quote(member)} leaves the workspace; a member is a directory below the root manifest")
   }
-  if (member.indexOf("*") >= 0 || member.indexOf("?") >= 0 || member.indexOf("[") >= 0) {
+  if (member.contains("*") || member.contains("?") || member.contains("[")) {
     throw section.failAt(at, "[workspace] members: patterns such as ${quote(member)} are not supported yet; list each member directory")
   }
   clean

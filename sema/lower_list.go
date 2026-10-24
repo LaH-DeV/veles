@@ -106,12 +106,14 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		}
 		nv := f.newTemp(lt.Elem)
 		pre = append(pre, &VarDecl{Var: nv, Init: needle})
-		res := f.newTemp(types.TI64)
-		stmts := []Stmt{&VarDecl{Var: res, Init: &IntConst{exprBase{types.TI64}, 1, true}}}
+		// null when absent, never -1 (D165)
+		found := &types.Nullable{Elem: types.TI64}
+		res := f.newTemp(found)
+		stmts := []Stmt{&VarDecl{Var: res, Init: &NullConst{exprBase{found}}}}
 		idxVar := f.newTemp(types.TI64)
 		stmts = append(stmts, &VarDecl{Var: idxVar, Init: i64c(0)})
 		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
-			hit := &Block{Stmts: []Stmt{&Assign{Target: ref(res), Value: ref(idxVar)}, &Break{Loop: lp}}, Type: types.TNever}
+			hit := &Block{Stmts: []Stmt{&Assign{Target: ref(res), Value: &SomeWrap{exprBase{found}, ref(idxVar)}}, &Break{Loop: lp}}, Type: types.TNever}
 			return []Stmt{
 				&ExprStmt{X: &If{exprBase{types.TUnit}, &Binary{exprBase{types.TBool}, OpEq, ref(x), ref(nv), span}, hit, nil}},
 				&Assign{Target: ref(idxVar), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idxVar), i64c(1), span}},
@@ -126,7 +128,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		if types.IsInvalid(inner.Type()) {
 			return inner
 		}
-		return finish(nil, &Binary{exprBase{types.TBool}, OpGe, inner, i64c(0), span})
+		return finish(nil, &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, inner}, span})
 	case "at":
 		// `xs.at(i)` is the checked read: `T?`, null when out of range. A
 		// negative index counts from the end: `xs.at(-1)` is the last element.

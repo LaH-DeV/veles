@@ -76,14 +76,14 @@ fun pageText(client: http.Client, url: string): string suspends throws http.Fetc
   try client.get(url).text()
 
 fun threePages(client: http.Client, base: string) suspends throws http.FetchError {
-  scope {
-    val first = async pageText(client, "$base/page/1")
-    val second = async pageText(client, "$base/page/2")
-    val third = async pageText(client, "$base/page/3")
-    println(await first)
-    println(await second)
-    println(await third)
-  }
+  val (first, second, third) = awaitAll(
+    async pageText(client, "$base/page/1"),
+    async pageText(client, "$base/page/2"),
+    async pageText(client, "$base/page/3"),
+  )
+  println(first)
+  println(second)
+  println(third)
 }
 
 fun main() throws IoError {

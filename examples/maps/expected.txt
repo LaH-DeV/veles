@@ -1,5 +1,5 @@
 {ann: 41, bob: 29} len 2 ann 41 zed -1 has true
-keys [ann, bob] values [41, 29] entries [(ann, 41), (bob, 29)]
+keys [ann, bob] values [41, 29] entries [(key: ann, value: 41), (key: bob, value: 29)]
 {a: 3, b: 2, c: 1}
 a=3
 b=2

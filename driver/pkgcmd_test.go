@@ -12,6 +12,7 @@ import (
 // capture runs f with standard output and error redirected to files.
 func capture(t *testing.T, f func() int) (int, string, string) {
 	t.Helper()
+	serialOnly(t)
 	dir := t.TempDir()
 	out, err := os.Create(filepath.Join(dir, "out"))
 	if err != nil {

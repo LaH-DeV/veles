@@ -39,6 +39,42 @@ func (f *fnCtx) removedOrPanic(e *ast.CallExpr, name string) {
 		name, recv, checked, arg, recv)
 }
 
+// D205: `codec.KeyStyle` became the prelude's `Case`, for keys and enum text
+// alike; its members were renamed.
+var keyStyleMembers = map[string]string{"AsWritten": "AsWritten", "SnakeCase": "Snake", "CamelCase": "Camel", "UpperSnake": "ScreamingSnake"}
+
+// isKeyStyle reports `KeyStyle` or `codec.KeyStyle` where neither names
+// anything else.
+func (f *fnCtx) isKeyStyle(x ast.Expr) bool {
+	switch x := x.(type) {
+	case *ast.NameExpr:
+		return x.Name == "KeyStyle" && f.lookup("KeyStyle") == nil
+	case *ast.MemberExpr:
+		n, ok := x.X.(*ast.NameExpr)
+		return ok && x.Name.Name == "KeyStyle" && n.Name == "codec"
+	}
+	return false
+}
+
+// removedKeyStyle reports `KeyStyle.SnakeCase` (or `codec.KeyStyle…`) with a
+// fix to `Case.Snake`, and checks the replacement so nothing cascades.
+func (f *fnCtx) removedKeyStyle(e *ast.MemberExpr) (Expr, bool) {
+	if !f.isKeyStyle(e.X) {
+		return nil, false
+	}
+	member, known := keyStyleMembers[e.Name.Name]
+	if !known {
+		f.errorf(e.Pos, "'KeyStyle' was replaced by 'Case' (D205): its members are Case.AsWritten, Case.Snake, Case.Camel, Case.ScreamingSnake and more")
+		return bad(), true
+	}
+	repl := "Case." + member
+	f.c.errorFix(e.Pos, fixReplace("Replace with '"+repl+"'", e.Pos, repl), "'KeyStyle' was replaced by 'Case' (D205): write '%s'", repl)
+	if ct := f.c.preludeType("Case"); ct != nil {
+		return f.checkExpr(&ast.MemberExpr{X: &ast.TypeExpr{Type: &ast.ResolvedType{T: ct, Pos: e.Pos}, Pos: e.Pos}, Name: ast.Ident{Name: member, Pos: e.Name.Pos}, Pos: e.Pos}, nil), true
+	}
+	return bad(), true
+}
+
 // Factory functions that stood in for a constructor are gone: a `private`
 // field with a default no longer keeps the implicit constructor inside its
 // module (M5 v0.30, now across modules too), so `StringBuilder()` is how a

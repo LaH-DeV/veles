@@ -156,7 +156,7 @@ public struct Uuid {
       Uuid.zero()
     }
 
-    override static fun schema(format: string, keys: codec.KeyStyle): codec.Schema =>
+    override static fun schema(format: string, keys: Case): codec.Schema =>
       codec.Schema.leaf(codec.SchemaKind.Text, "a UUID like 123e4567-e89b-12d3-a456-426614174000")
   }
 

@@ -13,6 +13,7 @@ import (
 // is under 80 bytes; a header plus the old four-element buffer was over 100),
 // and by growing such lists from nothing, through reserve, append and copy.
 func TestEmptyListNoStorage(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}

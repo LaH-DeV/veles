@@ -38,7 +38,8 @@ Point -> 0.0
 - `struct Circle : Shape` makes `Circle` a variant of `Shape`. Variants
   are ordinary structs: construct them, print them, compare them.
 - A `Shape` value is stored **inline** as a tagged union — no allocation
-  — sized for its largest variant (D12).
+  — sized for its largest variant (D12). A sealed type that contains
+  itself is laid out differently: see "Trees" below.
 - `is Circle(r)` both tests the variant and **destructures** its fields
   by position. `is Point` tests without binding. You can also write
   `is Circle` and then read `s.r`, because inside that arm `s` is
@@ -144,6 +145,80 @@ click at 3,4 / click off-screen / escape / key 65 / bye
 A guarded arm (`if cond`) does not count towards exhaustiveness; there
 must be an unguarded arm (or `else`) for each variant.
 
+## Trees: where a variant is stored
+
+A sealed type that contains itself — through a pointer, a list, a map or
+another type's field — is a **tree**: an expression made of expressions,
+a JSON value holding JSON values. Sizing every value of a tree for its
+largest node would copy that much at every step, so a tree is laid out the
+way Go and Kotlin lay out such values: each variant larger than a word
+lives on the heap, and the value is its tag and a pointer, 16 bytes (D198).
+Nothing in the program changes — you construct, match and read the
+variants as before, and a value is still a value: changing a copy never
+changes the original.
+
+```veles
+use io
+
+sealed trait Expr {
+  struct Num {
+    value: f64
+  }
+  struct Bin {
+    op:    string
+    left:  *Expr
+    right: *Expr
+  }
+  inline struct Missing { }
+}
+
+fun eval(e: Expr): f64 => when (e) {
+  is Num     => e.value
+  is Missing => 0.0
+  is Bin     => {
+    val (a, b) = (eval(*e.left), eval(*e.right))
+    if (e.op == "+") a + b else a * b
+  }
+}
+
+sealed trait Event {
+  struct Tick {
+    at: i64
+  }
+  indirect struct Upload {
+    name:  string
+    owner: string
+    bytes: List<u8>
+    sent:  string
+  }
+}
+
+fun main() {
+  val two: Expr = Num(value: 2.0)
+  val sum: Expr = Bin(op: "+", left: &Num(value: 1.5), right: &two)
+  val product: Expr = Bin(op: "*", left: &sum, right: &Num(value: 4.0))
+  io.println("${eval(product)} ${eval(Missing())}")
+  val events: List<Event> = [Tick(at: 1), Upload(name: "a.txt", owner: "ann", bytes: [1, 2], sent: "now"), Tick(at: 2)]
+  io.println("${events.len()} events")
+}
+```
+
+Output:
+```text
+14.0 0.0
+3 events
+```
+
+- `Expr` is a tree (`Bin` holds `*Expr`), so `Bin` is stored behind a
+  pointer and built on the heap; `Num` fits a word and stays in the value.
+- `inline struct` keeps a variant in the value even in a tree — for a small
+  node made very often, when the allocation costs more than the room.
+- `indirect struct` stores a variant behind a pointer in a type that is not
+  a tree: `Event` is mostly `Tick`s, and without it every `Tick` in the list
+  would carry room for an `Upload`. `indirect sealed trait` does it for
+  every variant.
+- When one variant of a non-tree type is much larger than the others, the
+  compiler says so (lint `large_variant`) and offers to add `indirect`.
 ## Methods on a sealed trait
 
 Shared behaviour goes in the sealed trait's body and dispatches on the
@@ -288,14 +363,45 @@ What you get without writing anything:
 | `p.toString()`, `"$p"` | the member's name, `"Amber"` |
 | `Phase.values()` | every member in declaration order |
 | `Phase.fromValue(n)` | the member with that number, or `null` |
-| `Phase.parse("Amber")` | the member with that name, or `null` |
+| `Phase.parse("Amber")` | the member with that name, exactly, or `null` |
+| `Phase.parse("amber", case: Case.Any)` | the member in any spelling (`AMBER`, `am-ber`), or `null` (D205) |
+| `p.toString(case: Case.Kebab)` | the name in a `Case`: `Lower`, `Upper`, `Camel`, `Pascal`, `Snake`, `Kebab`, `ScreamingSnake` |
+| `p.isAmber()` | true for that member alone, one predicate per member (D206) |
 | `==`, `<`, `sorted()`, map keys | by the number; an enum is `Comparable` and `Hashable` |
 
 An enum compares with its own base type — `level == 10`, `level < 5` —
 but never converts to or from it: a `u8` is not a `Level` (say
 `Level.fromValue(n)`), and a `Level` is not a `u8` (say `.value`). It has
-no fields, no `implement` blocks and cannot be generic: an enum is a set of
-values. Behaviour that needs one goes in a function that takes it, like
+no fields and cannot be generic: an enum is a set of values. Every enum is
+`Enumerated` (`values`, `parse(text, case:)`, `toString(case:)`), so generic
+code reads any of them; two members that are one name in another spelling
+(`Ok` and `OK`) are refused, so a `Case.Any` parse is never ambiguous. The
+one `implement` an enum may write is `Enumerated`'s, to give `parse` or
+`toString(case:)` a meaning of its own:
+
+```veles
+use io
+
+enum Arch { X64, Arm64 }
+
+implement Enumerated for Arch {
+  static fun parse(text: string, case: Case): Arch? => when (text) {
+    "x86_64", "amd64" => Arch.X64
+    "aarch64"         => Arch.Arm64
+    else              => null
+  }
+}
+
+fun main() {
+  val arch = Arch.parse("x86_64") ?: Arch.Arm64
+  io.println("${arch} ${arch.isX64()} ${Arch.Arm64.toString(case: Case.Lower)}")
+}
+```
+
+Output:
+```text
+X64 true arm64
+``` Behaviour that needs one goes in a function that takes it, like
 `next` above, or in an **extension function** (`extend Level { … }`, or
 `extend Level with fun next(): Level? => …`), which reads as a method:
 
@@ -324,7 +430,7 @@ wrn true false
 ```
 
 The extension cannot reuse a built-in name (`value`, `toString`, `values`,
-`fromValue`, `parse`), and from another module it is brought in with the
+`fromValue`, `parse`, a member's `is…`), and from another module it is brought in with the
 `use … extend` clause like any extension function. When the alternatives
 start to carry data, you have outgrown the enum and want a sealed trait.
 

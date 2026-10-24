@@ -72,5 +72,5 @@ fun handle(): i64 throws Boom {
 }
 
 fun main() throws Boom {
-  io.println("${total()} ${pool([1, 2, 3])} ${asArgument()}")
+  io.println("${total().toString()} ${pool([1, 2, 3]).toString()} ${asArgument().toString()}")
 }

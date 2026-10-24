@@ -91,7 +91,7 @@ fun main() throws {
     async mayFail(2)
     async square(5)
   }
-  println("gather $r1 $r2 $r3")
+  println("gather ${r1.toString()} ${r2.toString()} ${r3.toString()}")
 
   // D38/D169: select — the first ready arm wins
   val ch = Channel<string>(capacity: 1)

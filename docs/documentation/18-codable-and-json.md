@@ -123,7 +123,7 @@ struct Account {
 fun main() throws EncodeError {
   val a = Account(id: 7, name: "ann", createdAt: 1, secret: "hunter2")
   io.println(try json.encode(a))
-  io.println(try json.encode(a, json.Options(keys: codec.KeyStyle.SnakeCase)))
+  io.println(try json.encode(a, json.Options(keys: Case.Snake)))
 }
 ```
 
@@ -366,9 +366,9 @@ Output:
 and `json.toValue(x)` / `json.fromValue<T>(v)` move between a typed value
 and the tree.
 
-The tree, the styles (`KeyStyle`, `EnumStyle`, `DurationStyle`) and the
+The tree, the styles (`Case`, `EnumStyle`, `DurationStyle`) and the
 `Encoder`/`Decoder` traits live in module `codec`: `use codec`, then
-`codec.Value`, `codec.KeyStyle.SnakeCase`. Deriving needs none of it —
+`codec.Value`, `Case.Snake`. Deriving needs none of it —
 `implement Codable`, `EncodeError` and `DecodeError` are global — so only
 a program that walks a document whose shape it does not know, picks a
 style, or writes a format of its own imports it.

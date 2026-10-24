@@ -8,14 +8,14 @@ and kept verbatim in `archive/progress-log-2026-09.md`.
 
 How the files relate:
 
-| File | Holds |
-|---|---|
-| `veles-spec.md` | language decisions (D/M numbers) — what a program means |
-| `veles-checklist.md` | production readiness per area; §9 the open decisions (Q-labels), §10 the decision log, §11 known limits |
-| this file | the **order** of work, with acceptance; a progress log at the bottom |
-| `notes_to_change.txt` | the user's open design notes and standing directions |
-| `veles-selfhost-frontend-plan.md` | the Veles rewrite of the lexer/parser (track E4) |
-| `archive/` | finished plans, decided design notes, old logs — read-only |
+| File                              | Holds                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `veles-spec.md`                   | language decisions (D/M numbers) — what a program means                                                 |
+| `veles-checklist.md`              | production readiness per area; §9 the open decisions (Q-labels), §10 the decision log, §11 known limits |
+| this file                         | the **order** of work, with acceptance; a progress log at the bottom                                    |
+| `notes_to_change.txt`             | the user's open design notes and standing directions                                                    |
+| `veles-selfhost-frontend-plan.md` | the Veles rewrite of the lexer/parser (track E4)                                                        |
+| `archive/`                        | finished plans, decided design notes, old logs — read-only                                              |
 
 A task is done when its acceptance holds, `go build ./... && go vet ./...
 && go test ./...` is green, docs say what changed, and the checklist is
@@ -57,12 +57,12 @@ next. A step names what it needs; the reason for the order is in brackets.
 5. ~~**B13**~~ **Done 2026-10-02.** D111, D112, D114, D115 task-holding values, `Secret`, unchecked
    access, never-closed warning [needs B10].
 6. ~~**B15**~~ **Done 2026-10-02.** D116, D117, D119, D135 suspension follows the argument + B8, `is
-   Trait`, `Default`, the downcast [independent; shrinks the IR before the big
+Trait`, `Default`, the downcast [independent; shrinks the IR before the big
    std work; D135 before E2].
 7. ~~**B14**~~ **Done 2026-10-03.** D113 parts 1–3 (constant expressions, tables, `static assert`)
    [B16's `Array<T, N>` needs constant lengths; E7 needs part 1–2].
 8. ~~**B16**~~ **Done 2026-10-03.** D120–D123 C layout, `Array<T, N>`, variadic calls [needs A8, B14].
-9. ~~**C2**~~ **Done 2026-10-04** (`tls.Conn` joins `io.Stream` with E1). `io.Stream` (D128: trait, `net.Conn`, `fs.File`, `http` over it) → 
+9. ~~**C2**~~ **Done 2026-10-04** (`tls.Conn` joins `io.Stream` with E1). `io.Stream` (D128: trait, `net.Conn`, `fs.File`, `http` over it) →
    `std/compress` + `http.compress()` (D124) → `http.testServer` (D130, needs
    B13) [compress streams over `Stream`].
 10. ~~**C3**~~ **Done 2026-10-04.** `std/config` (D125) [needs B13's `Secret`].
@@ -78,7 +78,7 @@ next. A step names what it needs; the reason for the order is in brackets.
 18. ~~**E7**~~ **Done 2026-10-07.** packages (D131, D132, D138, D139): stages a–h; `package.vs` stays decided and unbuilt.
 
 Then the rest of track E in its own order (reactor, self-hosted front end, GC,
-release engineering, compiler speed), and A7 (macOS) when the M4 is at hand.
+release engineering, compiler speed). A7 (macOS arm64) is done 2026-10-21.
 
 **Where to continue (2026-10-14 audit):** every step above is done, and so are tracks C
 and F. B17 (D142 visibility) and B20 (D158 bare members) were built 2026-10-17. Next, in
@@ -86,50 +86,51 @@ order: **B26** (D174 annotations, decided 2026-10-18, before C9), **B19** (D157,
 **B22** (D166), the F19 migration left in checklist §11, then **S6–S8** (finish the front
 end, its speed, debug info), **C9** (`std/cli`, before the driver is ported), then
 **S9–S12**. Track P (D159–D162) runs beside S from P1. Checklist §9 is empty again.
+_(2026-10-23: B26, B19, B21, B22, the F19 migration and S6–S8 are done but for D199's part of S6; D198 and D199 were decided the same day, and S16 (D198) is built. 2026-10-24: D200–D202 decided and built (S18–S20; bench/parse 0.7–0.9× Go), and S17 (D199) built; C9 built the same day (D167 names, D203, D204, `std/build`, `std/cli`) — next are **S9–S12**, with track P from P1.)_
 
 ---
 
 ## A — Correct everywhere (next)
 
-| # | Task | Acceptance |
-|---|---|---|
-| A1 | **Done 2026-09-28.** **Linux build and test** (notes R3), in WSL Ubuntu 24.04 (`wsl -d Ubuntu`; Go 1.23.2 in `~/.local/go`, clang 18 from apt); rerun with `internal/wsl-test.sh` | `go test ./...` green on Linux x86-64: the runtime compiles (incl. the never-compiled `posix_spawnp` branch of `os.run`), every example and doc block passes, the thread stress (`VELES_THREADS=1/2/4/8`) passes; differences fixed, not skipped. A `bench/results.md` run recorded from that machine |
-| A2 | **Done 2026-09-28.** **Sanitizers over the examples** (`--sanitize`; `go test ./examples -sanitize`, `go test ./driver -sanitize` on Linux) | the runtime built with `-fsanitize=address,undefined` and a tiny `VELES_GC_THRESHOLD`, run over every example (a test flag or a script under `internal/`); clean, or each finding fixed with a test |
-| A3 | **Done 2026-09-28.** **Verify D21 ships**: `+` checked in debug, wrapping in release, `+%` always; `as` between widths truncates only where written | a codegen golden per profile; checklist §1.4/§2 items ticked or turned into bugs |
-| A4 | **Done 2026-09-28** (every diagnostic has a case or the reason no program reaches it). **Conformance suite** (the old P6 item) | `sema/testdata/conform/*.vs` with `// error: text` / `// warning: text` expectations, grouped by D-number, one negative case per diagnostic the checker emits; a test runs them all and lists diagnostics without a case |
-| A5 | **Done 2026-09-28.** **Socket close vs a read in flight** (§11) | a per-socket in-use count (Go's fdMutex idea) so a close on one thread waits for, or fails, I/O in progress on another; a threaded test that closes during reads |
-| A6 | **Done 2026-09-28.** **Fuzz the HTTP request parser** (checklist §2) | an in-process fuzz target over the request parsing `http.call` shares with `serve`; corpus kept; no panic, limits hold |
-| A8 | **Done 2026-10-01** (the classifier landed in the same change, so the interim refusal was not needed). **C ABI for structs by value** (bug found 2026-10-01: `lldiv` segfaults on Windows; decision-free) | first, at once: a by-value `extern struct` in an `extern` signature, an `extern fun` type or an exported `extern "C" fun` is an error naming the pointer form (a footgun refused until it works); then a classifier per target — Win64 (≤ 8 bytes of size 1/2/4/8 in a register, else by hidden pointer / `sret`), SysV x86-64 (INTEGER/SSE eightbyte classes, ≤ 16 bytes in registers, else memory), AAPCS64 (HFA/HVA, ≤ 16 bytes in registers, else indirect) — applied to calls, `extern fun` pointer calls and exported functions, the error lifted; a C file in a driver test with functions taking and returning structs of each class (1–4 `i32`, two `i64`, `{u8, i64, u16}`, two `f64`, `{f32, f32, f32}`, 24 bytes) called both ways, on Windows and WSL (aarch64 cross-compiled only until A7) |
-| A7 | macOS (later; the user runs it on an M4) | as A1, on macOS arm64 — the aarch64 register capture is so far only cross-compiled |
+| #   | Task                                                                                                                                                                                                      | Acceptance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | **Done 2026-09-28.** **Linux build and test** (notes R3), in WSL Ubuntu 24.04 (`wsl -d Ubuntu`; Go 1.23.2 in `~/.local/go`, clang 18 from apt); rerun with `internal/wsl-test.sh`                         | `go test ./...` green on Linux x86-64: the runtime compiles (incl. the never-compiled `posix_spawnp` branch of `os.run`), every example and doc block passes, the thread stress (`VELES_THREADS=1/2/4/8`) passes; differences fixed, not skipped. A `bench/results.md` run recorded from that machine                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| A2  | **Done 2026-09-28.** **Sanitizers over the examples** (`--sanitize`; `go test ./examples -sanitize`, `go test ./driver -sanitize` on Linux)                                                               | the runtime built with `-fsanitize=address,undefined` and a tiny `VELES_GC_THRESHOLD`, run over every example (a test flag or a script under `internal/`); clean, or each finding fixed with a test                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| A3  | **Done 2026-09-28.** **Verify D21 ships**: `+` checked in debug, wrapping in release, `+%` always; `as` between widths truncates only where written                                                       | a codegen golden per profile; checklist §1.4/§2 items ticked or turned into bugs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| A4  | **Done 2026-09-28** (every diagnostic has a case or the reason no program reaches it). **Conformance suite** (the old P6 item)                                                                            | `sema/testdata/conform/*.vs` with `// error: text` / `// warning: text` expectations, grouped by D-number, one negative case per diagnostic the checker emits; a test runs them all and lists diagnostics without a case                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| A5  | **Done 2026-09-28.** **Socket close vs a read in flight** (§11)                                                                                                                                           | a per-socket in-use count (Go's fdMutex idea) so a close on one thread waits for, or fails, I/O in progress on another; a threaded test that closes during reads                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| A6  | **Done 2026-09-28.** **Fuzz the HTTP request parser** (checklist §2)                                                                                                                                      | an in-process fuzz target over the request parsing `http.call` shares with `serve`; corpus kept; no panic, limits hold                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| A8  | **Done 2026-10-01** (the classifier landed in the same change, so the interim refusal was not needed). **C ABI for structs by value** (bug found 2026-10-01: `lldiv` segfaults on Windows; decision-free) | first, at once: a by-value `extern struct` in an `extern` signature, an `extern fun` type or an exported `extern "C" fun` is an error naming the pointer form (a footgun refused until it works); then a classifier per target — Win64 (≤ 8 bytes of size 1/2/4/8 in a register, else by hidden pointer / `sret`), SysV x86-64 (INTEGER/SSE eightbyte classes, ≤ 16 bytes in registers, else memory), AAPCS64 (HFA/HVA, ≤ 16 bytes in registers, else indirect) — applied to calls, `extern fun` pointer calls and exported functions, the error lifted; a C file in a driver test with functions taking and returning structs of each class (1–4 `i32`, two `i64`, `{u8, i64, u16}`, two `f64`, `{f32, f32, f32}`, 24 bytes) called both ways, on Windows and WSL (aarch64 cross-compiled only until A7) |
+| A7  | **Done 2026-10-21.** **macOS arm64**, Apple clang 21 and Go 1.23.2; rerun with `internal/macos-test.sh`                                                                                                   | build, vet and every test green, C structs and varargs in debug/release, GC register capture and stack overflow exercised natively; kqueue reactor and poll fallback tested, 1/2/4/8-worker reactor runs, GC/sync examples each 20 runs per worker count with poison and a 256-byte threshold, every example and reactor/C ABI tests under ASan/UBSan; benchmarks recorded. Staticcheck, Intel Macs and Windows/Linux reruns remain unverified (checklist §11)                                                                                                                                                                                                                                                                                                                                            |
 
 ## B — Daily developer experience (decision-free unless marked)
 
-| # | Task | Acceptance |
-|---|---|---|
-| B1 | **Done 2026-09-28.** **Every diagnostic names its fix and links its docs** (checklist §6; D79 named families + `veles explain`) | audit of every `errorf`/`warnf` site; each message says what to write; an anchor per error family in `reference/errors.md`, printed as `see: <link>` and sent as LSP `codeDescription` |
-| B2 | **Done 2026-09-28.** `veles build --timings` (checklist §3.2) | wall time per phase and per module; docs 01 |
-| B3 | **Done 2026-09-28** (D80). `veles test`: parallel tests (`--jobs`); helper tracing through `async helper()` (§11) | tests run as tasks across threads, reports stay in order; a test pins the order |
-| B4 | **Done 2026-09-28** (D81). **Panic stack traces with symbol names** (checklist §4, D49) | a panic in a task prints the Veles call chain, `at file:line` per frame; the crash-report format documented |
-| B5 | **Done 2026-09-28** (D82). `os.run` with stdin and a separately captured stderr (checklist §5.10) — **public API, ask first** | both platforms; docs 15 |
-| B6 | **Done 2026-09-28.** LSP leftovers | code action "implement missing trait members"; whatever the B1 audit shows missing |
-| B7 | **Done 2026-09-28.** `veles new --template server` (checklist §6) | logging, `/healthz`, graceful shutdown wired; runs and tests first try |
-| B8 | **Done 2026-10-02 (with B15).** *(2026-10-01: unblocked by D116 — built as part of B15.)* **Blocked 2026-09-28: not by speed (with `reserve` the prelude form is as fast at -O2) but by effects — the lowered adapters let a lambda throw or suspend (`xs.map(a => try eval(a))` is a `Result`); a prelude function would need to be generic over its argument's effects. See the progress log.** Move the Go-lowered eager adapters into the prelude (notes #14) | benchmark first (`veles-bench`); move only what is not slower at -O2 |
-| B17 | **Done 2026-10-17** (progress log: what differs from the acceptance text). **D142: visibility — unmarked is the package, `internal` the module, `public` other packages** (decided 2026-10-08; whole tree migrated in the same change) | sema: the four levels on top-level declarations, fields and methods; an import from another package resolves any module's `public` items by path (`use dep.mod`), `public use` facades work and may export unmarked items (only under the facade's name; `internal`/`private` refused); a `public` signature naming a type not visible outside the package is an error with both fixes; a field or method not visible from another package cannot be read, assigned or bound there, and the implicit constructor supplies/defaults it as M5 v0.30 does for `private`; errors: top-level `private` (fix `internal`), `public internal`, an item not `public` imported from another package (fix names `public`); warning + `--fix`: `public` in a program (root declares `main`); the loader stops treating the root as the only surface; LSP hover/completion follow the levels. Migration program (scratchpad, from the checker's view): unmarked → `internal`, `public` → unmarked unless reachable from another package; run over std, examples, bench, selfhost, docs programs, templates; `veles fmt` clean. Tests: `sema/testdata/conform/D142-visibility.vs`, a driver test with a two-package build (path export, facade, construction with an unseen field with and without default, the program warning), `examples/packages` updated. Docs: chapter on modules/packages, cheat sheet, errors reference. Green on Windows and WSL |
-| B18 | **Small devex fixes found by the 2026-10-14 review** (decision-free) | `veles fmt` keeps a one-expression `unsafe { f() }` on one line when it fits (format case; std reformatted, 73 sites); the 84 `at(...) ?: panic(...)` sites in the tree classified, and D62's bounds facts extended where one pattern repeats (a field kept in range by every assignment is out of scope unless measured to matter); conformance cases for each new fact |
-| B19 | **D157: a `Result` or task handle cannot be interpolated** (decided 2026-10-14) | sema: the error (family `results-and-errors`) in `"$x"`, `"${e}"` and template-literal values when the type is a `Result` (a throwing call without `try` included) or `Task`, with the `try` fix (applied by `--fix` where the function may throw) and the `??` fix; conformance `D157-interpolation.vs` (a call, a `Result` local, a `Task`, inside a template literal, `r.toString()` and `"${r.ok}"` accepted); the tree fixed where it trips (any hit is a bug found); docs chapter 7, the errors reference, cheat sheet. Windows and WSL green |
-| B20 | **Done 2026-10-17** (progress log). **D158: bare names reach the receiver's members** (decided 2026-10-14) | sema: the lookup order of the entry (locals, members of `this`, module, prelude) in methods, `init`, `implement`/`extend` bodies and trait defaults, with D5 narrowing and D22's `var` rule unchanged; statics reach static members only, with the error naming `static`; the shadowing warning (family `this`); lambdas capture `this`; conformance `D158-*` (each rule, a parameter shadowing a field, narrowing through a bare field, a sendable lambda naming a member, `executor` state unchanged); LSP hover, rename and references over both spellings; formatter round trip; docs chapter 5, cheat sheet, errors reference. Whether a lint prefers one spelling and whether std/`selfhost/` migrate are asked when it lands (checklist §11). Windows and WSL green |
-| B21 | **D163–D165: positional one-parameter constructors, `copy`, `i64?` from the index-of family** (decided 2026-10-14) | **D163**: sema accepts one positional argument where the constructor has exactly one parameter (fields with defaults and `init` parameters counted), the "add a name" error and fix when a type grows; the tree migrated where it reads better (`throw X(message: …)` sites by `--fix`, as the user chooses when built); conformance `D163-*`. **D164**: `copy` generated per struct/error/variant (generic too), named arguments defaulting to the receiver's fields, `init` run, visibility as construction, refusals (D111, `with`-bound), a hand-written `copy` wins, a field named `copy` warned; `const fun` evaluable; conformance `D164-*`, a run test, hover/completion signature. **D165**: the seven functions return `i64?`; the D62 fact; the migration error and fix for `>= 0`/`< 0`/`== -1`/`!= -1`; std, examples, selfhost, bench, docs migrated; `veles-bench` on `sort`/`strings` no slower. Docs chapters 4–5, cheat sheet, references. Windows and WSL green |
-| B22 | **D166: labelled tuples** (decided 2026-10-14) | parser/AST/formatter: labels in tuple types and literals (all or none; mixed a syntax error); checker: `.label` access, unlabelled ↔ labelled conversion, the different-labels error with its fix, labels in hover/errors; codegen unchanged (same layout and instances — a golden shows it); `"$t"` prints labels; std: `Map.entries()`, `enumerate()`, `splitOnce` labelled, `.0`/`.1` sites in std/examples/selfhost moved to labels where clearer; the self-hosted parser reads the new syntax (G-gates over a corpus file using it); conformance `D166-*`; docs chapters 3–4 with the tuple-vs-struct guideline, cheat sheet. Windows and WSL green |
-| B23 | **Done 2026-10-16.** **D168: racing computations** (decided 2026-10-15) | parser (Go and `selfhost/`, G-gates): `async` arms, bare arms, `src as name =>`; the removed `val x = src =>` / `val r = await h =>` / `val _ = src =>` keep parsing with an error naming the fix (`sema/removed.go`); checker: arm kinds, bare-arm and `as` rules (none on sleep/send/wait/changed), race type as the join, `async` placement extended to race arms, effects (arms' errors join the function's `throws`), `awaitFirst` built-in (n ≥ 2, inline `async` only, the errors of the entry); lowering: async arms launched in arm order into a race-owned group, losers cancelled and joined before the winning body; formatter aligns `as`/`=>`; hover on async arms; std (`http`, prelude `iter`), examples, docs (chapter 12, cheat sheet, `veles-idioms-and-apis.md`) migrated; tests: winner/loser timing (no wait for the loser), loser `with` cleanup ran, first-finished error thrown, handle arms not cancelled, under 1/2/4/8 threads; conformance `D168-*`. Windows and WSL green |
-| B24 | **Done 2026-10-16.** **D169: `race` as a block, `select` with arms, `async { }`** (decided 2026-10-16) | parser (Go and `selfhost/`, G-gates): `select {` contextual, `race { body }`, `async { body }`; the old `race` with arms, `as` arms, bare arms and `awaitFirst` error with fixes; checker: race contestants (launches into the race's group, one type, none → error/panic, one → warning), select = the D168 arm checker without bare/`as`, async block = a started sendable lambda (captures, `return`, break/continue refused); lowering: race over a run-time list of tasks (`veles_race_new(n)`), losers cancelled and joined; formatter, dump, hover; std, examples, docs, tests migrated; conformance `D169-*`; driver test on 1/2/4/8 threads. Windows and WSL green |
-| B26 | **Built 2026-10-18 except what checklist §11 lists** (progress log; `T.annotated<A>()` and the pair form of `inline loop` the same day). **D174: user-defined annotations** (decided 2026-10-18; large — the mechanism first, before C9) | (1) parser/AST/formatter (Go and `selfhost/`, G-gates): `annotation Name(params) on targets [for Traits]`, `@Name(args)` resolved as a type (imports, qualified, D142 visibility); sema: target check, constant arguments, the reader-clause warning, lowercase names reserved, "attribute" renamed "annotation" in the diagnostics, `ast` and docs; (2) reflection: `T.fields` / `Self.fields` as a constant description (name, type, doc comment, default, annotations; enum members and variants too), `f.attr<A>()`, `f has A`, readable from `const fun` (results stored read-only) and `inline loop (f in Self.fields)` in trait default bodies with typed `get`/`set` by field; errors inside an unrolled body name the field and its type; (3) hover shows values, `veles doc` lists annotations, the LSP completes them; (4) conformance `D174-*`, a driver test of a small library (a `Validate` trait and an `Args`-like table) used from another package; docs chapter 14 (written for readers who dislike annotations: data only), cheat sheet, errors reference. Then C9 on top; the Go `Codable` derive and its `@key`/`@skip`/`@required`/`@tag` move to `std/codec` later (checklist §11). Windows and WSL green |
-| B27 | **D177: lint levels, lint rules in Veles, formatter options** (decided 2026-10-18; parts 1–2 built 2026-10-18, part 3 built 2026-10-19 except `[lint.forbid]`, type-aware rules and exit callbacks) | (1) levels: a lint registry in `sema` (name, default, doc), `[lint] name = allow\|warn\|deny`, `[lint.forbid]`, errors for unknown names with a suggestion, `veles lint --list`; (2) formatter: `trailing_commas`, `line_endings`, the `long_line` lint with `max_width` 120; tests, `driver` manifest tests, docs (chapter 11, 25, cheat sheet, errors reference); (3) rule API: first measure the D113 evaluator running a visitor over the std tree (budget: no visible `veles check` slowdown), then `std/lint` (`Rule`, `Visitor`, `ctx`), the reflected AST, rules from dependencies by `package.name`, fixes through `veles check --fix`, a sample rules package with tests; if the evaluator is too slow, record the numbers and ask before changing the run model |
-| B28 | **D178: skipping tests** (built 2026-10-18; left over: checklist §11) | (1) vocabulary `skip`/`skipIf` in test code (sema, as `require`; works in helpers and lambdas); (2) codegen/runtime: a third outcome, the `skipped: why` line, the summary `N passed, M failed, K skipped`, exit 0, `veles test --fail-on-skip`; (3) suite bodies accept `skip`/`skipIf` statements (parser Go and `selfhost/` with the G-gates, formatter, AST), evaluated once before the suite's first test; (4) std annotations `Skip`/`SkipIf` and the targets `test` and `suite` (D174), constant conditions, a skipped test is not run; (5) the Go driver tests' `t.Skip` conditions mirrored in `selfhost`/std tests where they exist; LSP outline/hover, docs chapter 14, cheat sheet, errors reference, conformance `D178-*`, driver tests |
-| B25 | **Done 2026-10-17** (progress log). **D173: extension functions on types you do not own** (decided 2026-10-17) | parser (Go and `selfhost/`, G-gates): `extend T with fun …` as a one-function form beside `extend T { }`; sema: `extend` on a foreign type becomes an extension (inherent wins + "never called" warning, public API only, not satisfying bounds or `is`, importer-scoped through `use`, ambiguity error naming the fix, effects inferred, `public` per M5); the own-type `extend` unchanged; formatter keeps the one-line form; hover and `veles doc` name the source module; std gets a first user (a helper that was a free function or a one-method trait); tests per rule, conformance `D173-*`, docs (traits chapter, cheat sheet, errors reference); the open details in checklist §11 settled and removed |
+| #   | Task                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Acceptance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1  | **Done 2026-09-28.** **Every diagnostic names its fix and links its docs** (checklist §6; D79 named families + `veles explain`)                                                                                                                                                                                                                                                                                                                                   | audit of every `errorf`/`warnf` site; each message says what to write; an anchor per error family in `reference/errors.md`, printed as `see: <link>` and sent as LSP `codeDescription`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| B2  | **Done 2026-09-28.** `veles build --timings` (checklist §3.2)                                                                                                                                                                                                                                                                                                                                                                                                     | wall time per phase and per module; docs 01                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| B3  | **Done 2026-09-28** (D80). `veles test`: parallel tests (`--jobs`); helper tracing through `async helper()` (§11)                                                                                                                                                                                                                                                                                                                                                 | tests run as tasks across threads, reports stay in order; a test pins the order                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| B4  | **Done 2026-09-28** (D81). **Panic stack traces with symbol names** (checklist §4, D49)                                                                                                                                                                                                                                                                                                                                                                           | a panic in a task prints the Veles call chain, `at file:line` per frame; the crash-report format documented                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| B5  | **Done 2026-09-28** (D82). `os.run` with stdin and a separately captured stderr (checklist §5.10) — **public API, ask first**                                                                                                                                                                                                                                                                                                                                     | both platforms; docs 15                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| B6  | **Done 2026-09-28.** LSP leftovers                                                                                                                                                                                                                                                                                                                                                                                                                                | code action "implement missing trait members"; whatever the B1 audit shows missing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| B7  | **Done 2026-09-28.** `veles new --template server` (checklist §6)                                                                                                                                                                                                                                                                                                                                                                                                 | logging, `/healthz`, graceful shutdown wired; runs and tests first try                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| B8  | **Done 2026-10-02 (with B15).** _(2026-10-01: unblocked by D116 — built as part of B15.)_ **Blocked 2026-09-28: not by speed (with `reserve` the prelude form is as fast at -O2) but by effects — the lowered adapters let a lambda throw or suspend (`xs.map(a => try eval(a))` is a `Result`); a prelude function would need to be generic over its argument's effects. See the progress log.** Move the Go-lowered eager adapters into the prelude (notes #14) | benchmark first (`veles-bench`); move only what is not slower at -O2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| B17 | **Done 2026-10-17** (progress log: what differs from the acceptance text). **D142: visibility — unmarked is the package, `internal` the module, `public` other packages** (decided 2026-10-08; whole tree migrated in the same change)                                                                                                                                                                                                                            | sema: the four levels on top-level declarations, fields and methods; an import from another package resolves any module's `public` items by path (`use dep.mod`), `public use` facades work and may export unmarked items (only under the facade's name; `internal`/`private` refused); a `public` signature naming a type not visible outside the package is an error with both fixes; a field or method not visible from another package cannot be read, assigned or bound there, and the implicit constructor supplies/defaults it as M5 v0.30 does for `private`; errors: top-level `private` (fix `internal`), `public internal`, an item not `public` imported from another package (fix names `public`); warning + `--fix`: `public` in a program (root declares `main`); the loader stops treating the root as the only surface; LSP hover/completion follow the levels. Migration program (scratchpad, from the checker's view): unmarked → `internal`, `public` → unmarked unless reachable from another package; run over std, examples, bench, selfhost, docs programs, templates; `veles fmt` clean. Tests: `sema/testdata/conform/D142-visibility.vs`, a driver test with a two-package build (path export, facade, construction with an unseen field with and without default, the program warning), `examples/packages` updated. Docs: chapter on modules/packages, cheat sheet, errors reference. Green on Windows and WSL |
+| B18 | **Small devex fixes found by the 2026-10-14 review** (decision-free)                                                                                                                                                                                                                                                                                                                                                                                              | `veles fmt` keeps a one-expression `unsafe { f() }` on one line when it fits (format case; std reformatted, 73 sites); the 84 `at(...) ?: panic(...)` sites in the tree classified, and D62's bounds facts extended where one pattern repeats (a field kept in range by every assignment is out of scope unless measured to matter); conformance cases for each new fact                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| B19 | **D157: a `Result` or task handle cannot be interpolated** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                                                   | sema: the error (family `results-and-errors`) in `"$x"`, `"${e}"` and template-literal values when the type is a `Result` (a throwing call without `try` included) or `Task`, with the `try` fix (applied by `--fix` where the function may throw) and the `??` fix; conformance `D157-interpolation.vs` (a call, a `Result` local, a `Task`, inside a template literal, `r.toString()` and `"${r.ok}"` accepted); the tree fixed where it trips (any hit is a bug found); docs chapter 7, the errors reference, cheat sheet. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| B20 | **Done 2026-10-17** (progress log). **D158: bare names reach the receiver's members** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                        | sema: the lookup order of the entry (locals, members of `this`, module, prelude) in methods, `init`, `implement`/`extend` bodies and trait defaults, with D5 narrowing and D22's `var` rule unchanged; statics reach static members only, with the error naming `static`; the shadowing warning (family `this`); lambdas capture `this`; conformance `D158-*` (each rule, a parameter shadowing a field, narrowing through a bare field, a sendable lambda naming a member, `executor` state unchanged); LSP hover, rename and references over both spellings; formatter round trip; docs chapter 5, cheat sheet, errors reference. Whether a lint prefers one spelling and whether std/`selfhost/` migrate are asked when it lands (checklist §11). Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| B21 | **Done 2026-10-23** (progress log; `copy` with `init` parameters and on an `extern union` decided the same day — refused, D164 addendum; the `throw X(message: …)` migration left to the user in checklist §11 "B21 left open"). **D163–D165: positional one-parameter constructors, `copy`, `i64?` from the index-of family** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                | **D163**: sema accepts one positional argument where the constructor has exactly one parameter (fields with defaults and `init` parameters counted), the "add a name" error and fix when a type grows; the tree migrated where it reads better (`throw X(message: …)` sites by `--fix`, as the user chooses when built); conformance `D163-*`. **D164**: `copy` generated per struct/error/variant (generic too), named arguments defaulting to the receiver's fields, `init` run, visibility as construction, refusals (D111, `with`-bound), a hand-written `copy` wins, a field named `copy` warned; `const fun` evaluable; conformance `D164-*`, a run test, hover/completion signature. **D165**: the seven functions return `i64?`; the D62 fact; the migration error and fix for `>= 0`/`< 0`/`== -1`/`!= -1`; std, examples, selfhost, bench, docs migrated; `veles-bench` on `sort`/`strings` no slower. Docs chapters 4–5, cheat sheet, references. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| B22 | **Done 2026-10-23** (progress log; labels in the type arguments of a generic struct or sealed type are refused, not kept — checklist §11 "B22 left open"). **D166: labelled tuples** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                                                                                    | parser/AST/formatter: labels in tuple types and literals (all or none; mixed a syntax error); checker: `.label` access, unlabelled ↔ labelled conversion, the different-labels error with its fix, labels in hover/errors; codegen unchanged (same layout and instances — a golden shows it); `"$t"` prints labels; std: `Map.entries()`, `enumerate()`, `splitOnce` labelled, `.0`/`.1` sites in std/examples/selfhost moved to labels where clearer; the self-hosted parser reads the new syntax (G-gates over a corpus file using it); conformance `D166-*`; docs chapters 3–4 with the tuple-vs-struct guideline, cheat sheet. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| B23 | **Done 2026-10-16.** **D168: racing computations** (decided 2026-10-15)                                                                                                                                                                                                                                                                                                                                                                                           | parser (Go and `selfhost/`, G-gates): `async` arms, bare arms, `src as name =>`; the removed `val x = src =>` / `val r = await h =>` / `val _ = src =>` keep parsing with an error naming the fix (`sema/removed.go`); checker: arm kinds, bare-arm and `as` rules (none on sleep/send/wait/changed), race type as the join, `async` placement extended to race arms, effects (arms' errors join the function's `throws`), `awaitFirst` built-in (n ≥ 2, inline `async` only, the errors of the entry); lowering: async arms launched in arm order into a race-owned group, losers cancelled and joined before the winning body; formatter aligns `as`/`=>`; hover on async arms; std (`http`, prelude `iter`), examples, docs (chapter 12, cheat sheet, `veles-idioms-and-apis.md`) migrated; tests: winner/loser timing (no wait for the loser), loser `with` cleanup ran, first-finished error thrown, handle arms not cancelled, under 1/2/4/8 threads; conformance `D168-*`. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| B24 | **Done 2026-10-16.** **D169: `race` as a block, `select` with arms, `async { }`** (decided 2026-10-16)                                                                                                                                                                                                                                                                                                                                                            | parser (Go and `selfhost/`, G-gates): `select {` contextual, `race { body }`, `async { body }`; the old `race` with arms, `as` arms, bare arms and `awaitFirst` error with fixes; checker: race contestants (launches into the race's group, one type, none → error/panic, one → warning), select = the D168 arm checker without bare/`as`, async block = a started sendable lambda (captures, `return`, break/continue refused); lowering: race over a run-time list of tasks (`veles_race_new(n)`), losers cancelled and joined; formatter, dump, hover; std, examples, docs, tests migrated; conformance `D169-*`; driver test on 1/2/4/8 threads. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| B26 | **Built 2026-10-18 except what checklist §11 lists** (progress log; `T.annotated<A>()` and the pair form of `inline loop` the same day). **D174: user-defined annotations** (decided 2026-10-18; large — the mechanism first, before C9)                                                                                                                                                                                                                          | (1) parser/AST/formatter (Go and `selfhost/`, G-gates): `annotation Name(params) on targets [for Traits]`, `@Name(args)` resolved as a type (imports, qualified, D142 visibility); sema: target check, constant arguments, the reader-clause warning, lowercase names reserved, "attribute" renamed "annotation" in the diagnostics, `ast` and docs; (2) reflection: `T.fields` / `Self.fields` as a constant description (name, type, doc comment, default, annotations; enum members and variants too), `f.attr<A>()`, `f has A`, readable from `const fun` (results stored read-only) and `inline loop (f in Self.fields)` in trait default bodies with typed `get`/`set` by field; errors inside an unrolled body name the field and its type; (3) hover shows values, `veles doc` lists annotations, the LSP completes them; (4) conformance `D174-*`, a driver test of a small library (a `Validate` trait and an `Args`-like table) used from another package; docs chapter 14 (written for readers who dislike annotations: data only), cheat sheet, errors reference. Then C9 on top; the Go `Codable` derive and its `@key`/`@skip`/`@required`/`@tag` move to `std/codec` later (checklist §11). Windows and WSL green                                                                                                                                                                                                           |
+| B27 | **D177: lint levels, lint rules in Veles, formatter options** (decided 2026-10-18; parts 1–2 built 2026-10-18, part 3 built 2026-10-19 except `[lint.forbid]`, type-aware rules and exit callbacks)                                                                                                                                                                                                                                                               | (1) levels: a lint registry in `sema` (name, default, doc), `[lint] name = allow\|warn\|deny`, `[lint.forbid]`, errors for unknown names with a suggestion, `veles lint --list`; (2) formatter: `trailing_commas`, `line_endings`, the `long_line` lint with `max_width` 120; tests, `driver` manifest tests, docs (chapter 11, 25, cheat sheet, errors reference); (3) rule API: first measure the D113 evaluator running a visitor over the std tree (budget: no visible `veles check` slowdown), then `std/lint` (`Rule`, `Visitor`, `ctx`), the reflected AST, rules from dependencies by `package.name`, fixes through `veles check --fix`, a sample rules package with tests; if the evaluator is too slow, record the numbers and ask before changing the run model                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| B28 | **D178: skipping tests** (built 2026-10-18; left over: checklist §11)                                                                                                                                                                                                                                                                                                                                                                                             | (1) vocabulary `skip`/`skipIf` in test code (sema, as `require`; works in helpers and lambdas); (2) codegen/runtime: a third outcome, the `skipped: why` line, the summary `N passed, M failed, K skipped`, exit 0, `veles test --fail-on-skip`; (3) suite bodies accept `skip`/`skipIf` statements (parser Go and `selfhost/` with the G-gates, formatter, AST), evaluated once before the suite's first test; (4) std annotations `Skip`/`SkipIf` and the targets `test` and `suite` (D174), constant conditions, a skipped test is not run; (5) the Go driver tests' `t.Skip` conditions mirrored in `selfhost`/std tests where they exist; LSP outline/hover, docs chapter 14, cheat sheet, errors reference, conformance `D178-*`, driver tests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| B25 | **Done 2026-10-17** (progress log). **D173: extension functions on types you do not own** (decided 2026-10-17)                                                                                                                                                                                                                                                                                                                                                    | parser (Go and `selfhost/`, G-gates): `extend T with fun …` as a one-function form beside `extend T { }`; sema: `extend` on a foreign type becomes an extension (inherent wins + "never called" warning, public API only, not satisfying bounds or `is`, importer-scoped through `use`, ambiguity error naming the fix, effects inferred, `public` per M5); the own-type `extend` unchanged; formatter keeps the one-line form; hover and `veles doc` name the source module; std gets a first user (a helper that was a free function or a one-method trait); tests per rule, conformance `D173-*`, docs (traits chapter, cheat sheet, errors reference); the open details in checklist §11 settled and removed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 | B10 | **Done 2026-10-01.** **D100: `with x = e` as a statement, `with t = async f()`, resources cannot outlive their block; whole tree migrated** (decided 2026-09-30) | parser: `with name = expr` in a braced statement list (not module level, expression bodies, braceless bodies or operands — each an error naming the block form), one binding per statement; checker: lowers to D43's block form over the rest of the block, one cleanup stack per block with block-form `with`s (last registered closes first); a statement-form `with` as the last statement warns "closed as soon as it is opened"; `async` allowed as a `with` value — a fail-fast child of the rest of the block, cancelled then joined at every exit unless finished, `await t` gives its value, errors join the inferred `throws`, captures under D35; the "`async` must be inside scope/gather" error names the `with` form; new family `resources` with the D43 not-Closeable message and D100 part 3's escape error (return, block value, stored outside, captured by a returned/stored lambda; passing as an argument allowed); formatter round trip; LSP hover on `with` says where it closes, inlay hint after the enclosing `}` lists the closes in order, completion; conformance `D100-*` (every error and warning, the ordering, loop iterations); driver/run tests that each exit path (end, return, break, continue, failed try, throw, panic, cancellation) closes in order and that a with-task is cancelled at the end, fails fast, and is not waited for when awaited; `examples/with` extended; migration of every statement-position `with` block that ends its block and every `scope { … t.cancel() }` background-task shape in std, examples, bench, templates, docs and Go test programs, expected outputs unchanged; docs chapters 7 and 12, cheat sheet, errors reference; Windows and WSL green |
 | B16 | **Done 2026-10-03.** **D120–D123: C layout attributes, `extern union`, `Array<T, N>` and const generics, variadic C calls** (decided 2026-10-01; after A8, which they rely on for by-value layout) | **D120**: `@packed` (unaligned field loads, `&` on a packed field refused), `@align(n)` on structs and extern fields (checked power of two ≥ natural), `extern union` (construction with one field, access in `unsafe`, `CLayout`, no `==`/`Display`), `@transparent` (ABI of its field in extern signatures); a driver test against a C file checking `sizeof`/`offsetof` of each shape agrees with Veles (`epoll_event`-like packed struct with a union, an aligned struct, a transparent handle). **D121**: `Array<T, N>` type (sema/types, layout, GC descriptor repeating the element's), literals with length check, `at`/`set`/`len`/loops/read-only adapters/`toList`/`toArray<N>`/`make`, `==`/hash/`Display`/`Codable`/`Default`/`Sendable`/`CLayout`/`withRaw`; const generic parameters on functions, structs and `extend` (inference from argument types, explicit `<16>`, `N + 1` refused), per-`N` instances; constant indexes compile to plain loads (golden); std's SHA-256 state and similar fixed buffers moved to it with `veles-bench` before/after; conformance, an example, formatter, hover. **D122**: notes #16 closed, docs say how a binding package is laid out. **D123**: `...` in extern declarations, promotions, refusals; `printf` and `fcntl`/`open` (POSIX) called in a driver test on both platforms. Docs chapter 13, the cheat sheet, the errors reference. Windows and WSL green |
-| B15 | **Done 2026-10-02.** **D116, D117, D119, D135: suspension follows the argument (and B8), `is Trait` both ways, `Default`, `is T` downcast** (decided 2026-10-01) | **D135** (with D117's run-time part): `x is T` on an open trait object by type-id comparison, narrowing, `when` arms, the "never matches" error only when `T` does not implement the trait, a type parameter refused; conformance and a run case. **D116**: the suspension pass gains *conditional* suspension (calls of, or passing on, a `suspends` function parameter); call sites suspend only when a bound argument does; codegen emits a plain and a coroutine instance on demand (stenciling key bit); hover "suspends if `f` does"; trait methods unchanged; conformance and run tests (a pure lambda through a `suspends` parameter inside `withLock` and a D107 region; a suspending one suspends; cancellation inside it); then **B8**: the eager adapters move from `sema/lower_list.go`/`check_map.go` into the prelude over `throws E` + conditional suspension, `xs.map(x => slow(x))` allowed, `veles-bench` before/after (no regression over noise) and the `--timings` IR size of `examples/httpd` recorded, the Go lowering deleted. **D117**: the decision-free message fix first; run-time `is Trait` on trait objects with narrowing, `!is`, `when` arms, the per-trait type-id table, the limits (object-safe, fully applied, supertrait limit) and the static warning; compile-time `T implements Trait` in `if`/`static assert`, the bound added in the true branch, dead branch dropped per instance, dictionary entry for shared instances; conformance, a run example (a `Flusher` upgrade, a generic `show`). **D119**: prelude `Default` with the listed implements, derive by empty `implement` (field default, else the type's `default()`, else an error naming the field; generic bounds inferred; refusals for sealed/enum/`Secret`/task-holding), `T.default()`; conformance and an example. Docs: chapters 8, 10, 12, the cheat sheet, stdlib and errors references. Windows and WSL green |
+| B15 | **Done 2026-10-02.** **D116, D117, D119, D135: suspension follows the argument (and B8), `is Trait` both ways, `Default`, `is T` downcast** (decided 2026-10-01) | **D135** (with D117's run-time part): `x is T` on an open trait object by type-id comparison, narrowing, `when` arms, the "never matches" error only when `T` does not implement the trait, a type parameter refused; conformance and a run case. **D116**: the suspension pass gains _conditional_ suspension (calls of, or passing on, a `suspends` function parameter); call sites suspend only when a bound argument does; codegen emits a plain and a coroutine instance on demand (stenciling key bit); hover "suspends if `f` does"; trait methods unchanged; conformance and run tests (a pure lambda through a `suspends` parameter inside `withLock` and a D107 region; a suspending one suspends; cancellation inside it); then **B8**: the eager adapters move from `sema/lower_list.go`/`check_map.go` into the prelude over `throws E` + conditional suspension, `xs.map(x => slow(x))` allowed, `veles-bench` before/after (no regression over noise) and the `--timings` IR size of `examples/httpd` recorded, the Go lowering deleted. **D117**: the decision-free message fix first; run-time `is Trait` on trait objects with narrowing, `!is`, `when` arms, the per-trait type-id table, the limits (object-safe, fully applied, supertrait limit) and the static warning; compile-time `T implements Trait` in `if`/`static assert`, the bound added in the true branch, dead branch dropped per instance, dictionary entry for shared instances; conformance, a run example (a `Flusher` upgrade, a generic `show`). **D119**: prelude `Default` with the listed implements, derive by empty `implement` (field default, else the type's `default()`, else an error naming the field; generic bounds inferred; refusals for sealed/enum/`Secret`/task-holding), `T.default()`; conformance and an example. Docs: chapters 8, 10, 12, the cheat sheet, stdlib and errors references. Windows and WSL green |
 | B13 | **Done 2026-10-02.** **D111, D112, D114, D115: task-holding values, `Secret<T>`, unchecked access, never-closed warning** (decided 2026-10-01; D111 after B10) | **D111**: task-holding types computed from declared fields; such a value must be a `with` value or returned straight up (error family `tasks` with the fix elsewhere); `async` accepted as a field argument of such a constructor that is returned or `with`-bound; held tasks become fail-fast background children of the receiving block (D100 part 2 machinery), cancelled and joined in reverse field order before `close()`; a failure between the `async` and the return cancels and joins first; hover; conformance cases; `std/http/limits.test.vs` rewritten with a `TestServer` helper and every other server test migrated where it repeats setup; a run test that a held task's `Err` fails the receiving block and that close order is tasks then `close()`. **D112**: prelude `Secret<T>` for `string`/`List<u8>` (other `T` refused), redaction everywhere text is produced (interpolation, `expect` capture), not `Encodable` (derive error names `@skip`), `Decodable`, constant-time `==`, not `Hashable`/`Comparable`, `close()` wipes and later `expose()` panics at the caller; runtime: a wipe flag in the object header and a `memset` at sweep (test with `VELES_GC_THRESHOLD` that the freed bytes are zero — a runtime test reading the span); docs (chapter 7 or a security page), stdlib reference; std's keys (HMAC, JWT) moved to it. **D114**: the three unchecked built-ins, refused outside `unsafe`, checked with a panic in debug, unchecked in release (codegen golden in both profiles). **D115**: the local hand-off analysis, the warning and fix, measured over std/examples/bench (each hit fixed or argued), conformance cases including no warning on `serve(listener)`. Windows and WSL green |
 | B14 | **Done: parts 1–3 2026-10-03, part 4 (`const fun`) 2026-10-05; the review list is notes_to_change C1 and checklist §11.** **D113: compile-time evaluation** (decided 2026-10-01; large — the parts land in order, each green) | (1) constant expressions over consts with cycles refused, compile-time overflow/division/shift errors, string `+`/interpolation, `len`, conversions, `if`/`when`, tuples/enums/structs without `init`, `at(i)` on tables; (2) constant `List`/`Map`/`Set` emitted read-only in the binary (the collector skips them; a test that a table is not rebuilt at start-up and is shared), elements in `when` patterns; (3) `static assert(cond, "why")` at module level and in bodies, the failure quoting the reason and the constants' values; (4) `const fun` — declaration-time checking of the body rules (each refusal an error with its rule), the HIR evaluator `sema/consteval` with a step budget (`--const-steps`, default 10 000 000) and the recursion limit, panics and throws as compile errors with the call chain, IEEE-exact floats (`f32` rounded each step), std functions marked `const fun` as programs need them (strings, numbers, list building first); a differential test: every `const fun` in the test corpus evaluated at compile time equals its run-time result; migrate std's start-up tables (SHA-256 constants, base64 alphabets, keyword tables) to constants and measure start-up and binary size; docs chapter 2/3 and the cheat sheet; self-host plan notes the evaluator as a port cost. Windows and WSL green |
 | B12 | **Done 2026-10-02.** **D107–D110: `Mutex` guard, `race` send arms, `with expr`, concurrency helpers** (decided 2026-10-01; build after B10, which they extend) | **D107**: `lock()` accepted only as a `with` value (error with fix elsewhere), binds `*T`; the held region (the `with`'s body) refuses every suspension with the message in the spec; the pointer under D100 part 3; re-locking panics; conformance cases (suspension in statement and block form, escape, outside `with`), a threaded run test (8 tasks × 10 000 increments through `with n = counter.lock()` equal the total), hover. **D108**: parser/checker accept `ch.send(v) =>` arms (operands evaluated once in arm order at the start); the runtime claim makes win and commit one step; tests: a losing send arm never delivered (a receiver after the race sees nothing), a winning one delivered, a closed channel panics, under `VELES_THREADS` 1/2/4/8 ×5 and `--sanitize` on Linux; the which-arm-wins rule documented (checklist §1.3). **D109**: `with expr` and mixed block items; conformance and format cases. **D110**: the four helpers with doc comments, catalogue/hover entries, `std/…test.vs` unit tests (retry counts and delay, cancellation during the wait; Semaphore never exceeds n under 8 threads, `tryAcquire`; drains end at close; ticker drops ticks for a slow reader and stops on close), docs chapter 12 and the stdlib reference. Windows and WSL green |
@@ -142,11 +143,11 @@ In this order, because each unblocks the next real program:
 
 1. **Done 2026-09-29.** **`std/log`** — levels, structured fields, request-scoped through
    task-locals, no cost when a level is off (checklist §5.7).
-*(2026-10-01: every public API below is decided — batch 7 of
-`archive/veles-spec-prep.md`, spec D124–D130 — so this track needs no further
-questions; each item's acceptance is its spec entry built in full, tests in
-`std/<module>/*.test.vs`, docs (a chapter section and the stdlib reference),
-Windows and WSL green.)*
+   _(2026-10-01: every public API below is decided — batch 7 of
+   `archive/veles-spec-prep.md`, spec D124–D130 — so this track needs no further
+   questions; each item's acceptance is its spec entry built in full, tests in
+   `std/<module>/_.test.vs`, docs (a chapter section and the stdlib reference),
+   Windows and WSL green.)\*
 
 2. **Done 2026-10-04** (compress and `testServer` with C2). **`std/http` server completeness** — cookies, forms (urlencoded,
    multipart to disk), static-file caching (`ETag`, `Range`), max
@@ -170,20 +171,28 @@ Windows and WSL green.)*
    `http.Client`; `io.Stream` (D128) first, so TLS (E1) plugs in.
 8. **Done 2026-10-04.** **Template literals** (D129 part 1) — the language feature (`@template`,
    `tag"…"`), before E2 needs it.
-9. **`std/cli` (D167, decided 2026-10-14; after B26 — its `@positional`, `@short`, `@name`, `@env`,
+9. **Built 2026-10-24** (progress log; `examples/todo` stays on its own parser, checklist §11). **`std/cli` (D167, decided 2026-10-14; after B26 — its `@positional`, `@short`, `@name`, `@env`,
    `@hidden` become annotations declared in `std/cli` on D174's mechanism, not compiler code)** — the derive, `cli.parse<T>`/`tryParse<T>`,
    help from doc comments, subcommands as a sealed trait, typo suggestions, every problem at
    once; tests in `std/cli/*.test.vs`; `examples/dedup`, `httpd`, `todo` moved to it (their
    `commands.txt` outputs updated with `-update` where help/usage text changes); docs chapter
-   15 and the reference. The names of attributes and functions confirmed with the user first.
+   15 and the reference. Names confirmed 2026-10-24 (D167 addendum): `cli.parse<T>` throws,
+   `cli.args<T>()` prints and exits; `@Flag(short:, name:, env:, hidden:)` and `@Positional`;
+   `cli.Args`, `cli.Error` (`kind` Help/Version/Usage), exit 0 / 2.
+   **Built first, in this order (decided 2026-10-24):** (a) the `build` module (D160:
+   `build.target`, `Os`, `Arch`; D204: `build.program`), constants filled by the compiler from
+   the target and the manifest, with tests and the D160 constant-branch rule; (b) D203's
+   reflection — `f.default()`, `f.isOptional`/`f.isList`/`f.Inner`, pruning of `if`s on handle
+   constants, `T.members` (enum members, sealed variants: name, doc, index, annotations,
+   `Type`), every enum `Parsable` — each with conformance tests; (c) `std/cli` on them.
 
 ## D — Decisions to ask (checklist §9)
 
-*(2026-10-14)* Every batch below was asked and decided by 2026-10-13 (D100–D156);
+_(2026-10-14)_ Every batch below was asked and decided by 2026-10-13 (D100–D156);
 the batch prepared in `veles-direction-2026-10-14.md` (Q32–Q43: idioms, self-hosting
 needs, platform APIs) was decided the same day as D157–D167. Checklist §9 is empty.
 
-*(2026-09-30, history)* The order of asking is now the batch table of
+_(2026-09-30, history)_ The order of asking is now the batch table of
 `archive/veles-spec-prep.md` §3: batches 1 (nesting, D100) and 2 (small
 consistencies, D101–D106) are decided; next are 3 tests and concurrency (Q2,
 Q1, P11, a `Mutex` guard), 4 safety and build (Q9, Q11, Q10, unused
@@ -199,40 +208,45 @@ Q15, Q16 decided 2026-09-29.)
 The front-end rewrite itself is E4. This track keeps the language and std
 on course for it, a little at a time, alongside A–C.
 
-| # | Task | Acceptance |
-|---|---|---|
-| S1 | **Done 2026-09-29.** **Refresh `veles-selfhost-frontend-plan.md`** against D60–D78 | its §4 "not gaps" list re-checked (a module-level `var` is now an error unless `Mutex`/`Atomic` — the keyword table and any interning move to a `val` or into a struct; `this`; `init(params)`; D78 tests for the harness; the UAX #31 table generator); stale claims struck with the date |
-| S2 | **Done 2026-09-29.** **Compiler-shaped benchmarks** in `bench/` | Veles vs Go on: tokenising a large file, building a sealed-tree AST and walking it with `when`, a string-interning map, emitting text through `StringBuilder`; recorded, and each gap over 3× Go gets a checklist item |
-| S3 | **Done 2026-09-29.** **Capability audit for a whole compiler**, not only the front end | a section in the self-host plan: what sema/codegen in Veles would lean on (large pointer graphs under the GC, maps keyed by structs, deterministic iteration order, sorting, `os.run` of clang, file I/O, deep recursion) — each marked has / gap, gaps become checklist items |
-| S4 | **Readiness in every decision** | `veles-decide` prepares a "what this means for writing the compiler in Veles" line when it applies (Q15/Q16 first) |
-| S5 | **Done 2026-10-08.** Start E4's P0 (`source` + harness) | once A1 is green and S1 is done |
+| #   | Task                                                                                   | Acceptance                                                                                                                                                                                                                                                                                 |
+| --- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| S1  | **Done 2026-09-29.** **Refresh `veles-selfhost-frontend-plan.md`** against D60–D78     | its §4 "not gaps" list re-checked (a module-level `var` is now an error unless `Mutex`/`Atomic` — the keyword table and any interning move to a `val` or into a struct; `this`; `init(params)`; D78 tests for the harness; the UAX #31 table generator); stale claims struck with the date |
+| S2  | **Done 2026-09-29.** **Compiler-shaped benchmarks** in `bench/`                        | Veles vs Go on: tokenising a large file, building a sealed-tree AST and walking it with `when`, a string-interning map, emitting text through `StringBuilder`; recorded, and each gap over 3× Go gets a checklist item                                                                     |
+| S3  | **Done 2026-09-29.** **Capability audit for a whole compiler**, not only the front end | a section in the self-host plan: what sema/codegen in Veles would lean on (large pointer graphs under the GC, maps keyed by structs, deterministic iteration order, sorting, `os.run` of clang, file I/O, deep recursion) — each marked has / gap, gaps become checklist items             |
+| S4  | **Readiness in every decision**                                                        | `veles-decide` prepares a "what this means for writing the compiler in Veles" line when it applies (Q15/Q16 first)                                                                                                                                                                         |
+| S5  | **Done 2026-10-08.** Start E4's P0 (`source` + harness)                                | once A1 is green and S1 is done                                                                                                                                                                                                                                                            |
 
-*(2026-10-14, from the audit in `veles-direction-2026-10-14.md` §2.)* The front end agrees
+_(2026-10-14, from the audit in `veles-direction-2026-10-14.md` §2.)_ The front end agrees
 with Go's (G1–G4). What stands between it and a compiler written in Veles, decision-free
 steps first; the sizes are today's Go: `sema` 35 000 lines, `codegen/llvm` 9 000, `types`
 1 400, `driver` 2 200, `format` 2 400, `lsp` 3 200 (the C runtime stays C).
 
-| # | Task | Acceptance |
-|---|---|---|
-| S6 | **Finish E4**: P6 `Layout`, a dump that prints every span, files that are not valid UTF-8 | G2 compares spans; the `Layout` of every corpus file agrees with Go's; the lexer reads bytes (`fs.readBytes`), so the fuzz findings and the non-UTF-8 files join the corpus; checklist §8b ticked |
-| S7 | **Front-end speed, as a finding about the language** (3 MB of std: Veles 1.3 s, Go 0.55 s) | profile (`bench/parse` added: the self-hosted parser over std), fix what is the compiler's or the runtime's (not the port's), record in `bench/results.md`; target ≤ 1.3× Go. The port is not rewritten to allocate less (self-host plan §5) |
-| S8 | **Debug info**: LLVM `!dbg` line tables and locals in debug builds (DWARF on Linux, CodeView on Windows) | `gdb`/`lldb` and the VS Code C++ debugger stop at a Veles `file:line`, step, and show locals of scalar and struct types in a probe; a codegen golden; docs chapter 13. A compiler written in Veles needs a debugger |
-| S9 | **The formatter in Veles** (`selfhost/format`), the next slice with a free oracle | needs S6's `Layout`; `veles fmt --stdout` byte-identical with the Veles formatter over the whole corpus (gate G5); the Veles sources stay idiomatic (self-host plan §11) |
-| S10 | **First cut built 2026-10-19** (progress log; what is left: checklist §11). **Oracles for `sema`**: stable text dumps of each phase | `veles check --dump=names|types|hir` (resolution, every expression's type, the lowered HIR) deterministic across runs and platforms, golden-tested; this is what a Veles `sema` is gated against, phase by phase, as the parser was against `veles parse` |
-| S11 | **Written 2026-10-19: `veles-selfhost-sema-plan.md`** (phases R0–R9, gates, costs, four questions Q-S1–Q-S4 for `veles-decide`). **`veles-selfhost-sema-plan.md`** — the cut and the phases of the checker port | the order (resolver → types → declarations → bodies → effects → lowering → `const fun` evaluator), each phase's gate over S10's dumps, what the language must offer first (the Q32–Q43 answers that apply), a size and time estimate measured from S6–S9 |
-| S10b | **Built 2026-10-19** (progress log; what is left: checklist §11). **Per-phase dumps** for the sema port's gates (decision-free; from `veles-selfhost-sema-plan.md` §2.1) | `veles check --dump=modules|scopes|decls|effects` (the module graph, the scopes before bodies, the resolved declarations, the inferred effects with their rounds), a spans flag on every dump, golden-tested; the first gates of R1–R3 and R5 |
-| S12 | **Module interface files** (spec §5; E8 per-module caching) | inferred effects and signatures written per module and read back, so a 50 000-line compiler in Veles is not rechecked whole on every build; `--timings` before/after on `selfhost/` |
-| S13 | **One syntax tree for the compiler and for lint rules** (from the std/lint duplication, 2026-10-19). Today the tree exists as `ast/ast.go`, `selfhost/ast` and a generated copy in `std/lint` (`go test ./selfhost -run LintAPI -update`), plus a Go-to-Veles reflector (`sema/lintrules.go`, `TestRuleASTFields`) | (1) once the Veles front end is the compiler (S6, S9–S12), rules get its tree directly: delete the reflector and `ruleFieldAlias`; (2) **decide** (`veles-decide`) whether `ast`, `source` and `Kind` become one public std module that `selfhost` imports, removing the generator, or stay generated; (3) **decide** the rule API's stability: version `std/lint` apart from the compiler tree, or accept breaking rules until 1.0, and say so in chapter 11; (4) until then the generator and `TestLintAPI`/`TestRuleASTFields` are what keep the three trees from drifting |
+| #    | Task                                                                                                                                                                                                                                                                                                               | Acceptance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S6   | **Built 2026-10-23; non-UTF-8 input 2026-10-24 (S17, D199)** (progress log). **Finish E4**: P6 `Layout`, a dump that prints every span, files that are not valid UTF-8                                                                                                                                                                                                                          | G2 compares spans; the `Layout` of every corpus file agrees with Go's; the lexer reads bytes (`fs.readBytes`), so the fuzz findings and the non-UTF-8 files join the corpus; checklist §8b ticked                                                                                                                                                                                                                                                                                                                                                                             |
+| S7   | **Done 2026-10-23 with S16: `bench/parse` 3.0× → 1.0–1.1× Go on Linux, 1.1× on Windows** (progress log; the target became Go's speed, D198). **Front-end speed, as a finding about the language** (3 MB of std: Veles 1.3 s, Go 0.55 s)                                                                                                                                                                                                                         | profile (`bench/parse` added: the self-hosted parser over std), fix what is the compiler's or the runtime's (not the port's), record in `bench/results.md`; target ≤ 1.3× Go. The port is not rewritten to allocate less (self-host plan §5)                                                                                                                                                                                                                                                                                                                                  |
+| S8   | **Built 2026-10-23** (progress log; DWARF on Windows too — the target is `windows-gnu`; what is left: checklist §11). **Debug info**: LLVM `!dbg` line tables and locals in debug builds (DWARF on Linux, CodeView on Windows)                                                                                                                                                                                                           | `gdb`/`lldb` and the VS Code C++ debugger stop at a Veles `file:line`, step, and show locals of scalar and struct types in a probe; a codegen golden; docs chapter 13. A compiler written in Veles needs a debugger                                                                                                                                                                                                                                                                                                                                                           |
+| S9   | **The formatter in Veles** (`selfhost/format`), the next slice with a free oracle                                                                                                                                                                                                                                  | needs S6's `Layout`; `veles fmt --stdout` byte-identical with the Veles formatter over the whole corpus (gate G5); the Veles sources stay idiomatic (self-host plan §11)                                                                                                                                                                                                                                                                                                                                                                                                      |
+| S10  | **First cut built 2026-10-19** (progress log; what is left: checklist §11). **Oracles for `sema`**: stable text dumps of each phase                                                                                                                                                                                | `veles check --dump=names                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | types  | hir`(resolution, every expression's type, the lowered HIR) deterministic across runs and platforms, golden-tested; this is what a Veles`sema`is gated against, phase by phase, as the parser was against`veles parse` |
+| S11  | **Written 2026-10-19: `veles-selfhost-sema-plan.md`** (phases R0–R9, gates, costs, four questions Q-S1–Q-S4 for `veles-decide`). **`veles-selfhost-sema-plan.md`** — the cut and the phases of the checker port                                                                                                    | the order (resolver → types → declarations → bodies → effects → lowering → `const fun` evaluator), each phase's gate over S10's dumps, what the language must offer first (the Q32–Q43 answers that apply), a size and time estimate measured from S6–S9                                                                                                                                                                                                                                                                                                                      |
+| S10b | **Built 2026-10-19** (progress log; what is left: checklist §11). **Per-phase dumps** for the sema port's gates (decision-free; from `veles-selfhost-sema-plan.md` §2.1)                                                                                                                                           | `veles check --dump=modules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | scopes | decls                                                                                                                                                                                                                 | effects` (the module graph, the scopes before bodies, the resolved declarations, the inferred effects with their rounds), a spans flag on every dump, golden-tested; the first gates of R1–R3 and R5 |
+| S12  | **Module interface files** (spec §5; E8 per-module caching)                                                                                                                                                                                                                                                        | inferred effects and signatures written per module and read back, so a 50 000-line compiler in Veles is not rechecked whole on every build; `--timings` before/after on `selfhost/`                                                                                                                                                                                                                                                                                                                                                                                           |
+| S13  | **One syntax tree for the compiler and for lint rules** (from the std/lint duplication, 2026-10-19). Today the tree exists as `ast/ast.go`, `selfhost/ast` and a generated copy in `std/lint` (`go test ./selfhost -run LintAPI -update`), plus a Go-to-Veles reflector (`sema/lintrules.go`, `TestRuleASTFields`) | (1) once the Veles front end is the compiler (S6, S9–S12), rules get its tree directly: delete the reflector and `ruleFieldAlias`; (2) **decide** (`veles-decide`) whether `ast`, `source` and `Kind` become one public std module that `selfhost` imports, removing the generator, or stay generated; (3) **decide** the rule API's stability: version `std/lint` apart from the compiler tree, or accept breaking rules until 1.0, and say so in chapter 11; (4) until then the generator and `TestLintAPI`/`TestRuleASTFields` are what keep the three trees from drifting |
 
-*(2026-10-19, from the gap review "what do we need to be self-hosted and feature rich".)*
+_(2026-10-19, from the gap review "what do we need to be self-hosted and feature rich".)_
 Decision-free items added to the track; the language-shaping questions (SIMD, a wasm target)
 go through `veles-decide` first. (Operator overloading already exists: D71 `Addable` etc.)
 
-| # | Task | Acceptance |
-|---|---|---|
-| S14 | **Harness built 2026-10-19** (`internal/bootstrap`, progress log); the gate itself waits for S11's `selfhost/compiler`. **Bootstrap fixpoint test**: stage0 (Go) builds stage1 (Veles compiler), stage1 builds stage2 | `veles build` of the Veles compiler by stage1 and by stage2 produce byte-identical IR/binaries; a driver test and a CI line; the proof that the compiler is self-hosted. Needs S11's port; the harness (a stage runner, an IR diff) can be written earlier against the front end |
-| S15 | **Backend decision for a self-hosted compiler**: keep textual LLVM IR + clang, or add a small second backend | a short write-up (via `veles-decide`): what a Veles-written compiler depends on (clang on PATH), what a second backend would cost, what the wasm target (G1 below) needs |
-| G1 | **Gap list from the 2026-10-19 review**, each asked before built | **SIMD, D181** (`Vector128/256/512<T>`, `Simd<T, bits>`, lane aliases; codegen to LLVM vectors, sema rules for `T` and width, std type, docs, a `bench/` dot product and byte scan against scalar); **a WebAssembly target, D180**; **`std/regex`, D182 — built 2026-10-19, what is left is in checklist §11** (the `/…/flags` literal in the Go and `selfhost/` lexers, parser, formatter, LSP and editor grammar; the engine in Veles; compile-time check of literals through the const evaluator; string extensions; tests, docs, a log-analyser example, a `bench/` run against Go's `regexp`); `BigInt`/`Decimal`/`Vec`/`Mat` on D71's operator traits (A44, A60); `std/regex` (the `regex"…"` tag); `std/bigint`/`std/decimal`; Unicode normalization and grapheme segmentation; property-based and snapshot tests in `veles test`; runnable doc-comment examples; `veles test --coverage` and a profiler command; `veles apidiff` on module interfaces (S12); CSV/TOML/YAML/URL/MIME/archive modules |
+| #   | Task                                                                                                                                                                                                                  | Acceptance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S14 | **Harness built 2026-10-19** (`internal/bootstrap`, progress log); the gate itself waits for S11's `selfhost/compiler`. **Bootstrap fixpoint test**: stage0 (Go) builds stage1 (Veles compiler), stage1 builds stage2 | `veles build` of the Veles compiler by stage1 and by stage2 produce byte-identical IR/binaries; a driver test and a CI line; the proof that the compiler is self-hosted. Needs S11's port; the harness (a stage runner, an IR diff) can be written earlier against the front end                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| S15 | **Backend decision for a self-hosted compiler**: keep textual LLVM IR + clang, or add a small second backend                                                                                                          | a short write-up (via `veles-decide`): what a Veles-written compiler depends on (clang on PATH), what a second backend would cost, what the wasm target (G1 below) needs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| S16 | **Built 2026-10-23** (progress log; `bench/parse` at Go's speed on Linux, 1.1× on Windows; what is left: checklist §11). **D198: trees are boxed** (decided 2026-10-23; from S7) — recursive sealed types box their variants, `indirect struct` / `inline struct`, the lopsided-variant lint | sema: recursion found through pointers, collections, nullables and other types' fields; a boxed variant's layout (tag + one word) in `types/layout.go`; codegen: construction allocates the variant, `when`/`is`/field reads load through the pointer, a write through a narrowed `var` copies the box first, equality/hash/order/show/`Codable` and the constant evaluator unchanged in result; GC descriptors; parser, formatter, self-hosted parser, editor grammar and hover for `indirect`/`inline` (contextual words before `struct` in a sealed trait's body); the lint with its fix (family performance); conformance `D198-*` and a driver test of value semantics under boxing (debug and release, 1–8 threads); a codegen golden; `bench/parse` against Go's speed (the target the user set: Go, not 1.3×), `trees`, `ast` and the whole suite no slower; `selfhost/ast` marks nothing it does not need; docs chapter 9 and chapter 13 (layout), the cheat sheet. Windows and WSL green |
+| S17 | **Built 2026-10-24** (progress log). **D199: a source file must be valid UTF-8** (decided 2026-10-23; finishes S6) | Go lexer: every undecodable sequence an error at its position, comments included (message in D199), family syntax; the self-hosted front end reads bytes (`fs.readBytes`), reports the same errors and lexes nothing more; the non-UTF-8 fuzz finding and a hand-written file (a stray byte in a comment, a string and code) join the corpus under G1–G3; conformance file; errors reference; LSP shows the diagnostic. Windows and WSL green |
+| S18 | **Built 2026-10-24** (progress log). **D202: `string.startsWith(prefix, startIndex)`** (decided 2026-10-24) | builtin signature + check (named and positional), runtime compare with the out-of-range rule, hover/builtin docs, cheat sheet; a test of the edges (negative, past the end, empty prefix); the self-hosted lexer's `holdsAt` replaced; bench/parse re-measured |
+| S19 | **Built 2026-10-24** (progress log). **D200: `[runtime] gc.minHeap` / `gc.goal`** (decided 2026-10-24) | manifest reader (Go and self-hosted test) with the errors in D200; start-up code passes them to the collector; `VELES_GC_MIN_HEAP` / `VELES_GC_GOAL` (and `VELES_GC_THRESHOLD`) override; a driver test runs one program under each; manifest docs; bench/parse sets 32 MiB |
+| S20 | **Built 2026-10-24** (progress log). **D201: a field moves out of a local whose methods were called** (decided 2026-10-24) | per-method summaries (keeps `this`, fields used) in sema; the move rule of D201 with each refusal reason pinned by a conformance test; hover and `redundant_copy`; the self-hosted lexer's `Scan(…)` moves its lists and the parser stops copying them back (`>>` split without `insert`); instruction counts re-measured on Linux |
+| G1  | **Gap list from the 2026-10-19 review**, each asked before built                                                                                                                                                      | **SIMD, D181** (`Vector128/256/512<T>`, `Simd<T, bits>`, lane aliases; codegen to LLVM vectors, sema rules for `T` and width, std type, docs, a `bench/` dot product and byte scan against scalar); **a WebAssembly target, D180**; **`std/regex`, D182 — built 2026-10-19, what is left is in checklist §11** (the `/…/flags` literal in the Go and `selfhost/` lexers, parser, formatter, LSP and editor grammar; the engine in Veles; compile-time check of literals through the const evaluator; string extensions; tests, docs, a log-analyser example, a `bench/` run against Go's `regexp`); `BigInt`/`Decimal`/`Vec`/`Mat` on D71's operator traits (A44, A60); `std/regex` (the `regex"…"` tag); `std/bigint`/`std/decimal`; Unicode normalization and grapheme segmentation; property-based and snapshot tests in `veles test`; runnable doc-comment examples; `veles test --coverage` and a profiler command; `veles apidiff` on module interfaces (S12); CSV/TOML/YAML/URL/MIME/archive modules |
 
 ## P — Platform APIs: the low level reached from Veles, a high level on top (decided 2026-10-14: D159–D162)
 
@@ -244,18 +258,18 @@ its tests run in WSL and CI, typed errors with a `kind`, `with` for every open d
 `io.Stream`/`Subscription` for data, cancellation and `withTimeout` honoured, a package
 capability, docs chapter and stdlib reference, an example that does real work (R5).
 
-| # | Task | Needs |
-|---|---|---|
-| P1 | **D160** per-target code: the loader picks `_windows`/`_linux`/`_macos` files for the target; std `build` with `build.target` (`Target`, `Os`, `Arch`) as a constant; constant `if`/`when` compile the taken branch; `veles check` and the LSP check each OS's file set (errors name the OS); conformance `D160-*`, a driver test that builds one module for Windows and Linux (cross-compiled IR) and a check that reports a Linux-only mistake on Windows; docs chapter 11 and 13, cheat sheet. Windows and WSL green | — |
-| P2 | `net`: UDP, multicast, Unix-domain sockets, `lookup` | P1 |
-| P3 | `std/term`: raw mode, size, keys, colour, a progress line | P1 |
-| P4 | `fs.watch`, `fs.map` | P1 |
-| P5 | `std/sys/windows/com` (COM/WinRT calls) and `std/sys/linux/dbus` (a D-Bus client) | P1, P2 (Unix sockets) |
-| P6 | `std/serial` | P1 |
-| P7 | `std/bluetooth`, LE central — **decided 2026-10-14 (D159)**: the surface, errors, `bluetooth.Simulated`, the capability, WinRT/BlueZ; acceptance: an example (a heart-rate reader) tested against the simulator in CI and WSL, std's own tests on real hardware on Windows behind `VELES_HW_TESTS=1`, docs chapter + reference | P1, P5 |
-| P8 | `std/hid` | P1 |
-| P9 | `std/usb` | P1, P8 |
-| P10 | **D162** `veles bindgen` over clang's JSON AST; layouts checked by a generated C probe; a driver test over a header with each C shape (struct, packed, union, array field, enum, `#define`, variadic, function pointer); docs chapter 13 | any time; P5–P9 use it |
+| #   | Task                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Needs                  |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| P1  | **D160** per-target code: the loader picks `_windows`/`_linux`/`_macos` files for the target; std `build` with `build.target` (`Target`, `Os`, `Arch`) as a constant; constant `if`/`when` compile the taken branch; `veles check` and the LSP check each OS's file set (errors name the OS); conformance `D160-*`, a driver test that builds one module for Windows and Linux (cross-compiled IR) and a check that reports a Linux-only mistake on Windows; docs chapter 11 and 13, cheat sheet. Windows and WSL green | —                      |
+| P2  | `net`: UDP, multicast, Unix-domain sockets, `lookup`                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | P1                     |
+| P3  | `std/term`: raw mode, size, keys, colour, a progress line                                                                                                                                                                                                                                                                                                                                                                                                                                                               | P1                     |
+| P4  | `fs.watch`, `fs.map`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | P1                     |
+| P5  | `std/sys/windows/com` (COM/WinRT calls) and `std/sys/linux/dbus` (a D-Bus client)                                                                                                                                                                                                                                                                                                                                                                                                                                       | P1, P2 (Unix sockets)  |
+| P6  | `std/serial`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | P1                     |
+| P7  | `std/bluetooth`, LE central — **decided 2026-10-14 (D159)**: the surface, errors, `bluetooth.Simulated`, the capability, WinRT/BlueZ; acceptance: an example (a heart-rate reader) tested against the simulator in CI and WSL, std's own tests on real hardware on Windows behind `VELES_HW_TESTS=1`, docs chapter + reference                                                                                                                                                                                          | P1, P5                 |
+| P8  | `std/hid`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | P1                     |
+| P9  | `std/usb`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | P1, P8                 |
+| P10 | **D162** `veles bindgen` over clang's JSON AST; layouts checked by a generated C probe; a driver test over a header with each C shape (struct, packed, union, array field, enum, `#define`, variadic, function pointer); docs chapter 13                                                                                                                                                                                                                                                                                | any time; P5–P9 use it |
 
 ## E — Large items, in order
 
@@ -264,14 +278,14 @@ capability, docs chapter and stdlib reference, an example that does real work (R
 2. ~~**PostgreSQL**~~ **Done 2026-10-05** (the wire protocol in Veles, not libpq; `examples/pgnotes` still open). **PostgreSQL**: libpq binding, `std/db` as D129 (`sql"…"`, pool as a
    task-holding value, transactions as `with`, rows through the derive) →
    `examples/pgnotes` (§5.8). Password hashing (D130) with it.
-3. ~~**I/O reactor**~~ **Done 2026-10-08** but kqueue (with A7) and writev/readv (checklist §11
+3. ~~**I/O reactor**~~ **Done 2026-10-08**, kqueue added with A7 (2026-10-21); writev/readv left (checklist §11
    "Deferred from E3"): `poll` → epoll/kqueue/IOCP, writev/readv; an HTTP
    hello load test added to `bench/` first, to measure it (§3.1, §3.3).
 4. **Self-hosted front end**, P0 → P6 (`veles-selfhost-frontend-plan.md`). **P0–P5 done 2026-10-08
    (G1–G4 green); P6 `Layout`, span-checking dump and byte input open** — the next steps
    towards a self-hosted compiler are track S below (S6–S12, 2026-10-14).
-5. **GC**: *(2026-10-13: the pause is out of the way on Windows, F18; Linux still marks in
-   the pause; the metrics and the heap ceiling are still open.)* pause/heap/allocation metrics, then generational or incremental
+5. **GC**: _(2026-10-13: the pause is out of the way on Windows, F18; Linux still marks in
+   the pause; the metrics and the heap ceiling are still open.)_ pause/heap/allocation metrics, then generational or incremental
    marking once a server-shaped heap is measured (§3.1).
 6. **Release engineering**: an `-O2` + LTO profile, static binaries,
    Windows → Linux cross-compile, a Docker image, the "deploying Veles"
@@ -360,95 +374,729 @@ on Linux).
    threads on WSL, ≤ 0.3 ms on Windows; the review's `startlat` probe). Acceptance:
    `httphello` at 32 threads no slower than at 8; child start worst case ≤ 0.5 ms on Linux.
 10. ~~**F10**~~ **Done 2026-10-10** (`httphello` as fast at 32 threads as at 8; CPU at 32 threads a quarter of before — see the log).
-   **F10 memory, the collector and the last locks** (after F9, the user: "the concurrency
-   topic must be done perfectly"): measure where the CPU and the allocation of a server go, and
-   take out what is not the work. Acceptance: F9's `httphello` acceptance; `bench/idle` reports
-   bytes per parked task; no runtime-lock contention left on a server's paths.
+    **F10 memory, the collector and the last locks** (after F9, the user: "the concurrency
+    topic must be done perfectly"): measure where the CPU and the allocation of a server go, and
+    take out what is not the work. Acceptance: F9's `httphello` acceptance; `bench/idle` reports
+    bytes per parked task; no runtime-lock contention left on a server's paths.
 11. ~~**F11**~~ **Done 2026-10-10** (idle threads park each on its own; Windows timers to ~0.5 ms; CPU lists past 63 on Windows — see the log).
-   **F11 parking and the last §11 items of F9** (one condition variable per executor, Windows'
-   1 ms timers, processor groups). Acceptance: no runtime lock on idle or wake; sub-millisecond
-   sleeps on Windows; `httphello` no slower.
+    **F11 parking and the last §11 items of F9** (one condition variable per executor, Windows'
+    1 ms timers, processor groups). Acceptance: no runtime lock on idle or wake; sub-millisecond
+    sleeps on Windows; `httphello` no slower.
 12. ~~**F12**~~ **Done 2026-10-11** (249 bytes per parked task, was 345: the task is 152 bytes, the frame stayed
-   apart — the diet alone reached the target — see the log).
-   **F12 the task diet** (review B4, decision-free). The task object and its root frame in one
-   allocation, the rarely used fields behind one pointer. Acceptance: `bench/idle` ≤ 250 bytes per
-   parked task; `spawn` and `httphello` no slower; every concurrency test green on both systems.
+    apart — the diet alone reached the target — see the log).
+    **F12 the task diet** (review B4, decision-free). The task object and its root frame in one
+    allocation, the rarely used fields behind one pointer. Acceptance: `bench/idle` ≤ 250 bytes per
+    parked task; `spawn` and `httphello` no slower; every concurrency test green on both systems.
 13. ~~**F13**~~ **Done 2026-10-11** (and a smart cast set in a loop no longer outlives it — see the log).
-   **F13 `await` after `cancel()` (D154).** Acceptance: a sema test with the dominating cancel
-   (plain `await`, a `race` arm) refused with the line of the cancel, the cancel on one path
-   accepted; docs (reference/concurrency's "Do not await a task you cancelled") rewritten.
+    **F13 `await` after `cancel()` (D154).** Acceptance: a sema test with the dominating cancel
+    (plain `await`, a `race` arm) refused with the line of the cancel, the cancel on one path
+    accepted; docs (reference/concurrency's "Do not await a task you cancelled") rewritten.
 14. ~~**F14**~~ **Done 2026-10-11** (and every `Executor.pool` was one thread on Windows: fixed — see the log).
-   **F14 a pool hands off (D153).** Acceptance: a driver test where every thread of a 2-thread
-   pool blocks in a C call while its other tasks keep running on spare threads, named like the
-   pool; an `Executor.thread` blocked in a call keeps its tasks; Linux and Windows.
+    **F14 a pool hands off (D153).** Acceptance: a driver test where every thread of a 2-thread
+    pool blocks in a C call while its other tasks keep running on spare threads, named like the
+    pool; an `Executor.thread` blocked in a call keeps its tasks; Linux and Windows.
 15. ~~**F15**~~ **Done 2026-10-11.**
-   **F15 `runBlocking` and `Executor.default` (D152).** Acceptance: a `Thread`'s function and a
-   `blocking` thread send to a channel through it; a compile error in a suspending function; the
-   panic on an executor's thread (default pool, pool, one thread); docs.
+    **F15 `runBlocking` and `Executor.default` (D152).** Acceptance: a `Thread`'s function and a
+    `blocking` thread send to a channel through it; a compile error in a suspending function; the
+    panic on an executor's thread (default pool, pool, one thread); docs.
 16. ~~**F16**~~ **Done 2026-10-11** (116 ns a call, was ~450; a plain loop stopped on one thread).
-   **F16 `withTimeout` in the caller's task (D151).** Acceptance: no task per call (`bench`
-   measures one call: time and allocation); a plain loop under `VELES_THREADS=1` stopped within
-   the limit plus ~10 ms; nested limits each report their own; an outer cancellation passes
-   through; scopes inside `f` joined and `with` values closed before `Timeout`; a non-Sendable
-   capture compiles; `httphello` no slower. (`net.Conn` keeps its buffer `Mutex`: an accept loop
-   hands each connection to a task, so it must be `Sendable` anyway.)
+    **F16 `withTimeout` in the caller's task (D151).** Acceptance: no task per call (`bench`
+    measures one call: time and allocation); a plain loop under `VELES_THREADS=1` stopped within
+    the limit plus ~10 ms; nested limits each report their own; an outer cancellation passes
+    through; scopes inside `f` joined and `with` values closed before `Timeout`; a non-Sendable
+    capture compiles; `httphello` no slower. (`net.Conn` keeps its buffer `Mutex`: an accept loop
+    hands each connection to a task, so it must be `Sendable` anyway.)
 17. ~~**F17**~~ **Done 2026-10-11.**
-   **F17 declared executors (D150).** Acceptance: the D150 example compiles and runs (state on
-   gl's thread — its thread id checked —, children capturing a `MutableList`, a call from main
-   hopping to gl); errors for state named outside gl, a pool with state, a plain caller, a
-   sendable lambda naming gl's state, `gl.close()`, a refused priority panicking before main;
-   formatter round trip, hover "runs on gl", docs (chapter 12, reference/concurrency).
+    **F17 declared executors (D150).** Acceptance: the D150 example compiles and runs (state on
+    gl's thread — its thread id checked —, children capturing a `MutableList`, a call from main
+    hopping to gl); errors for state named outside gl, a pool with state, a plain caller, a
+    sendable lambda naming gl's state, `gl.close()`, a refused priority panicking before main;
+    formatter round trip, hover "runs on gl", docs (chapter 12, reference/concurrency).
 18. ~~**F18**~~ **Done 2026-10-13 on Windows; Linux marks in the pause (checklist §11).**
-   **F18 the collector out of the pause** (user, 2026-10-13: "do 1, then 2"; decision-free —
-   the runtime only, no language or codegen change). Measured first (scratchpad gcpause: 134 MB
-   live in 4M pointer-linked nodes, small lists made and dropped, 8 markers, Windows): every
-   pause 19 ms — mark 13, sweep 5.7; Go's under 1 ms. A store barrier does not fit: the
-   coroutine frames are heap objects LLVM writes its spills into, and the runtime's C writes
-   pointers in hundreds of places — one missed barrier is a use after free. The OS sees every
-   write instead (Boehm's mostly-concurrent marking). Steps, each measured and soaked:
-   (a) **lazy sweeping** — a span is swept when it is claimed, and helper threads sweep the rest
-   while the program runs; the pause keeps the mark. (b) **spans from tracked regions** — large
-   reservations the spans are carved from (Windows `MEM_WRITE_WATCH`), a page table readers can
-   use while it grows. (c) **mostly concurrent marking** — a short pause takes the roots, the
-   helpers mark while the program runs (objects made meanwhile are born marked), rounds rescan
-   the marked objects on pages written meanwhile, and a short final pause rescans the roots and
-   the last written pages. The written pages: Windows' write watch; Linux's soft-dirty bits when
-   a self-test at start-up shows they work (stock Ubuntu/Debian kernels have them; WSL2's does
-   not); elsewhere marking stays in the pause. A test mode that takes every page as written runs
-   the protocol where the OS cannot tell. (d) **pacing** — a thread allocating fast while the
-   helpers mark helps them instead of growing the heap without bound. Acceptance: gcpause's
-   longest pause under 2 ms on Windows with the same live heap, throughput within 10 % of now;
-   every test, the sanitized examples and a soak under `VELES_GC_THRESHOLD`/`VELES_GC_POISON`
-   clean on Windows and Linux; `veles_gc_collect()` stays a full collection (the tests and
-   bench/idle read exact counts after it).
-19. ~~**F19**~~ **Built 2026-10-13** (all five parts; the migration of std/examples and the new
-   bench are not done — see the progress log and checklist §11).
-   **F19 concurrency with less ceremony (D156; decided 2026-10-13).** In this order,
-   each its own green step: (a) `scope` as an expression and the error for a placed scope that
-   starts nothing; (b) `val h = async f()` in any block with the must-await check (sema: a
-   definite-await pass beside definite assignment; lowering: the with-task path) and the warning
-   for an immediate await; (c) `awaitAll` (tuple and list forms; inline launches in a scope of
-   their own); (d) `scope`/`gather(workers: n)` (runtime: a count and a wait queue on the scope;
-   the launch is a suspension point); (e) lazy `iter.mapConcurrent` in the prelude and loops
-   receiving a task-holding iterable. Then migrate std, examples, docs and benchmarks where a
-   `scope` existed only to launch and await (D156's shapes), and the self-hosted parser.
-   Acceptance: a conformance file per part with every error of the spec entry (a `return`/
-   `break`/`continue` skipping the await, a branch, a loop, a race arm, passing/storing/cancelling
-   the handle, a non-task `awaitAll` argument, `await awaitAll`, a no-launch `scope(on:)`, a
-   scope value ending in a statement); driver tests under `VELES_THREADS=1/2/4/8`, debug and
-   release: an abnormal exit cancels and joins an un-awaited handle before the error leaves
-   (its `with`s closed), `awaitAll` cancels its inline siblings on the first failure, never more
-   than `workers` children running (counted by the children) with `on:` and without, the lazy
-   `mapConcurrent` keeps order and runs ahead (timed), a `break` out of its loop cancels and joins
-   the calls in flight; formatter round trip; hover texts; `veles-bench`: `spawn`, `suscall`,
-   `httphello` no slower, and a new bench of `awaitAll` over two tasks against the `scope`
-   form; docs chapter 12, reference/concurrency, reference/errors, cheatsheet.
+    **F18 the collector out of the pause** (user, 2026-10-13: "do 1, then 2"; decision-free —
+    the runtime only, no language or codegen change). Measured first (scratchpad gcpause: 134 MB
+    live in 4M pointer-linked nodes, small lists made and dropped, 8 markers, Windows): every
+    pause 19 ms — mark 13, sweep 5.7; Go's under 1 ms. A store barrier does not fit: the
+    coroutine frames are heap objects LLVM writes its spills into, and the runtime's C writes
+    pointers in hundreds of places — one missed barrier is a use after free. The OS sees every
+    write instead (Boehm's mostly-concurrent marking). Steps, each measured and soaked:
+    (a) **lazy sweeping** — a span is swept when it is claimed, and helper threads sweep the rest
+    while the program runs; the pause keeps the mark. (b) **spans from tracked regions** — large
+    reservations the spans are carved from (Windows `MEM_WRITE_WATCH`), a page table readers can
+    use while it grows. (c) **mostly concurrent marking** — a short pause takes the roots, the
+    helpers mark while the program runs (objects made meanwhile are born marked), rounds rescan
+    the marked objects on pages written meanwhile, and a short final pause rescans the roots and
+    the last written pages. The written pages: Windows' write watch; Linux's soft-dirty bits when
+    a self-test at start-up shows they work (stock Ubuntu/Debian kernels have them; WSL2's does
+    not); elsewhere marking stays in the pause. A test mode that takes every page as written runs
+    the protocol where the OS cannot tell. (d) **pacing** — a thread allocating fast while the
+    helpers mark helps them instead of growing the heap without bound. Acceptance: gcpause's
+    longest pause under 2 ms on Windows with the same live heap, throughput within 10 % of now;
+    every test, the sanitized examples and a soak under `VELES_GC_THRESHOLD`/`VELES_GC_POISON`
+    clean on Windows and Linux; `veles_gc_collect()` stays a full collection (the tests and
+    bench/idle read exact counts after it).
+19. ~~**F19**~~ **Built 2026-10-13** (all five parts); the migration of std/examples/docs and
+    the `awaitall`/`awaitscope` benches done 2026-10-23 (progress log).
+    **F19 concurrency with less ceremony (D156; decided 2026-10-13).** In this order,
+    each its own green step: (a) `scope` as an expression and the error for a placed scope that
+    starts nothing; (b) `val h = async f()` in any block with the must-await check (sema: a
+    definite-await pass beside definite assignment; lowering: the with-task path) and the warning
+    for an immediate await; (c) `awaitAll` (tuple and list forms; inline launches in a scope of
+    their own); (d) `scope`/`gather(workers: n)` (runtime: a count and a wait queue on the scope;
+    the launch is a suspension point); (e) lazy `iter.mapConcurrent` in the prelude and loops
+    receiving a task-holding iterable. Then migrate std, examples, docs and benchmarks where a
+    `scope` existed only to launch and await (D156's shapes), and the self-hosted parser.
+    Acceptance: a conformance file per part with every error of the spec entry (a `return`/
+    `break`/`continue` skipping the await, a branch, a loop, a race arm, passing/storing/cancelling
+    the handle, a non-task `awaitAll` argument, `await awaitAll`, a no-launch `scope(on:)`, a
+    scope value ending in a statement); driver tests under `VELES_THREADS=1/2/4/8`, debug and
+    release: an abnormal exit cancels and joins an un-awaited handle before the error leaves
+    (its `with`s closed), `awaitAll` cancels its inline siblings on the first failure, never more
+    than `workers` children running (counted by the children) with `on:` and without, the lazy
+    `mapConcurrent` keeps order and runs ahead (timed), a `break` out of its loop cancels and joins
+    the calls in flight; formatter round trip; hover texts; `veles-bench`: `spawn`, `suscall`,
+    `httphello` no slower, and a new bench of `awaitAll` over two tasks against the `scope`
+    form; docs chapter 12, reference/concurrency, reference/errors, cheatsheet.
+20. **F20 D197 `cede` and removal of `yieldNow()` (specified, not built).**
+    Implement the reserved, statement-only scheduler operation per
+    `veles-cede-spec.md` sections 1-7. Both frontends, AST/printers, sema
+    effect propagation and context checks, HIR/codegen/runtime lifecycle,
+    removed-form diagnostics/safe fixes, formatter/LSP/editor grammars and
+    live std/examples/bench/docs migration land together. Keep zero sleep,
+    automatic loop yields and `checkCancelled()`; no compatibility alias.
+    Acceptance: the specification's syntax/effect/cancellation/fail-fast/
+    shielded-cleanup/affinity/name-resolution matrix; selfhost parity;
+    debug/release under 1/2/4/8 workers and GC stress, supported Linux
+    sanitizer and Windows/Linux/macOS runs; before/after yield cost and
+    allocations at 1/8 workers plus idle/spawn/channels/suscall/httphello
+    regressions; full build/vet/tests and tested docs. No ordering-dependent
+    expected output. Record unavailable gates in checklist section 11.
+    User requested specification first: do not start this implementation
+    instead of the next generator-research/planning discussion (I1).
 
 ---
 
 ## Progress log
 
 Older entries: `archive/progress-log-2026-09.md`.
+
+### 2026-10-24 — C12: tests that can run in the compiler run there too (D208) — built
+
+`sema/compile_tests.go`: `compilerCanRun` decides a test or helper (the
+`const fun` rules, quietly, memoized; a test is declared throwing, so its
+body decides); after the last round of `veles test`'s check the checker runs
+each such test in the evaluator, whose `test.fail`/`stop`/`skip` record
+instead of erroring and whose panics and stops become failure lines like the
+runtime's; over the step budget a test runs in the program only. The runner
+prints `ok (also in the compiler)`, or fails a test the compiler failed and
+the program passed ("FAILED in the compiler only …"), or adds "in the
+compiler it passed" under a program failure. `@SkipIf(helper())` evaluates
+a runnable helper; one that is not says why. `VELES_COMPILER_TESTS=why`
+explains a refusal. 24 of the prelude's tests now run both ways and agree.
+Tests: `TestTestsRunInTheCompiler` (both ways, program only, a helper in
+`@SkipIf`, a disagreement through `sema.SkewReplaceForTest`),
+`TestConstantCallsTestHelper`. Docs: chapter 14, cheat sheet.
+
+Acceptance: the checker decides per test (and per `test fun`) whether the
+compiler can run it — the `const fun` rules, inferred, no keyword;
+`veles test` evaluates those in the interpreter and runs them in the
+program, one report: `… ok (also in the compiler)`, a one-sided failure
+naming the side and the first `expect` that differs; `@SkipIf` accepts a
+helper the compiler can run (the D113/D78 error stays for one it cannot,
+saying why); the step limit as for constants; tests (a test that diverges on
+purpose through an evaluator hook, a test that cannot run in the compiler,
+a helper in `@SkipIf`); std's const helpers exercised both ways by their
+existing tests; docs (chapter 14, errors reference).
+
+### 2026-10-24 — C11: receiver blocks (D207) — built
+
+`fun on T(A): R` in both parsers, the formatter, types (`types.Func.On`:
+the first parameter is a pointer to the receiver's place); `{ … }` alone
+and trailing after a call or a name (`ast.LambdaExpr.Bare`,
+`ast.CallExpr.Trailing`), the formatter writing the trailing form and
+keeping a one-line block on one line; a receiver block checked with `this`
+its first parameter and bare members resolved against it
+(`resolveBlockMembers`, `SelfExpr.Implicit/Outer` for an enclosing
+method's members); `sema/apply_edit.go`: `apply`/`edit` on every type,
+the literal block inlined (`fnCtx.recvStack`), `return`/leaving jumps
+refused, the heap decision deferred to the receiver pass
+(`settleOnCalls`); `StringBuilder.trim/toLower/toUpper/replace/insert` on
+new runtime functions (`veles_bytes_*`) with evaluator twins; the edited
+string taken from the builder's bytes without a copy. Measured
+(`--release`, 20M calls): `p.apply { x += i; y -= 1 }` 0.33 ns per call,
+the same as the two assignments (a closure was ~25 ns);
+`text.edit { trim(); toLower(); replace(" ", "-") }` ~400 ns, as the
+chain `trim().toLower().replace(…)` on a 32-byte string. Tests:
+`D207-receiver-blocks.vs`, `std/prelude/builder.test.vs` (9 tests, all
+also in the compiler), `parser/receiver_test.go`, a formatter case, the
+self-hosted front end byte-identical on all of it. Docs: chapter 10
+"Receiver blocks", cheat sheet, errors reference, hover for `on`,
+`apply`, `edit`; the editor grammar colours `fun on`. Left: checklist §11.
+
+### 2026-10-24 — C11: blocks on a receiver (D207) — decided, after C10
+
+Amended the same day (D207 addendum): receiver blocks are passed trailing,
+`x.apply { … }`, `configure(&s) { … }`, `measure { … }` (a same-line `{`
+after a call or method name, filling a last `fun on T()` or `fun()`), in
+both parsers; the formatter writes the trailing form; docs say "receiver
+block" / "receiver function".
+
+Acceptance: the type `fun on T(...): R` in both parsers, the formatter,
+hover; a `{ … }` lambda (or `(a) => { … }`) checked with `this` the
+receiver, bare members reaching it (D158); std `apply` (in place; a `val`
+refused with a fix to `edit`) and `edit` for string (a mutable text with
+in-place `trim`/`toLower`/`toUpper`/`replace`/`insert`), List, Map, Set
+and structs, one copy each (measured); conformance and runtime tests; docs
+(closures chapter, reference, cheat sheet); the self-hosted front end.
+
+### 2026-10-24 — C10: enums as text and predicates (D205, D206) — built
+
+Built as accepted below: `std/prelude/case.vs` (`Case`, `Enumerated`, the
+casing helpers, in Veles), `sema/enum.go` (`parse` with a case through
+`enumPick`, `toString(case:)`, `isM()`, overrides through `implement
+Enumerated for E` — its receiver passed as a method's, which a first try got
+wrong and crashed — collisions under `Case.Any`), `KeyStyle` → `Case` by a
+scratchpad tool over std, examples and docs (`KeyStyle.SnakeCase`,
+`codec.KeyStyle` and the type are errors with fixes, `sema/removed.go`),
+`std/build` reading the compiler's words with `Case.Any`, `std/cli` reading
+enum flags in any spelling and listing their choices. Tests: two conformance
+files, `std/prelude/case.test.vs`, the KeyStyle conformance file, a cli test.
+The same day, decision-free: `toLower`/`toUpper`/`replace` copy once (or not
+at all), hover on built-in generics and an inline loop's name, keyword hover
+for `implements` and `test fun`, annotation targets highlighted.
+`std/time/stopwatch.test.vs` was updated to the user's staged change making
+`measure` a free function.
+
+Acceptance: prelude `Case` and `Enumerated`; `E.parse(text, case:)` (exact
+default, `Any`, one form), `e.toString(case:)`, `e.isM()` folding to a
+constant; collisions under `Any` refused; `implement Enumerated for E`
+overriding `parse`/`toString(case:)`; `KeyStyle` → `Case` across std, docs,
+examples, with the old name an error and a fix; `std/build` without
+`osNamed`/`archNamed`, its tests with `isWindows()`; `std/cli` reading enum
+flags with `Case.Any` and listing their choices in kebab case; conformance
+and runtime tests; docs (enums chapter, reference, cheat sheet).
+
+### 2026-10-24 — C9: `std/cli`, on `std/build` and D203's reflection
+
+The user confirmed D167's names (one `@Flag(short:, name:, env:, hidden:)`
+over five annotations; `cli.parse<T>` throws, `cli.args<T>()` prints and
+exits 0/2) and, when starting showed D174 could not serve it, decided D203
+and D204. Built in that order:
+
+- **`std/build`** (D160's module, D204): `build.target` (`Os`, `Arch`,
+  `release`) and `build.program` (`name`, `version` from the manifest),
+  constants from two std-only compiler calls (`sema/buildinfo.go`).
+  `@SkipIf(build.target.os == …)` works. Found on the way: an annotation
+  argument that calls a `const fun` crashed the compiler (the instance table
+  did not exist yet while declarations were collected) — fixed.
+- **D203** (`sema/reflect.go`): `f.default()`, `f.isOptional`, `f.isList`,
+  `f.Inner`; `if` and subject-less `when { }` keep only the branch handle
+  constants decide (`f.name == "x"` too); `T.members` for enums and sealed
+  families (`MemberInfo`, and `m.Type`/annotations in an `inline loop`);
+  every enum `Parsable`; `T.doc` for a type's doc comment. `T.build` in a
+  trait default body now sets the implementing type's non-visible fields,
+  as `f.get` reads them (a library could not build a user's struct). The
+  parser kept no doc comment on a variant nested in a sealed trait (Go and
+  `selfhost/`, so hover lost it too) — fixed in both.
+- **`std/cli`** in Veles: flags in kebab case, switches with `--no-`, `T?`,
+  `List<T>`, positionals (a list takes the rest), short groups and attached
+  values, `--`, environment fallback, every problem at once with the
+  nearest flag or command, help from doc comments with defaults, `--version`
+  from `build.program`, subcommands as a sealed family. Tests:
+  `std/cli/cli.test.vs` (10), `TestCliProgram` (another package, exit codes,
+  stderr, env), `TestReflectionForLibraries`, `TestBuildModule`, the D203
+  conformance file. `examples/dedup` and `httpd` moved to it (their
+  transcripts gained `--help` and a typo; the example runner now shows
+  stderr after stdout); `todo` did not fit (checklist §11). Chapter 15 has a
+  section, the stdlib reference two modules.
+- **Std tests in the suite**: ten std modules' `*.test.vs` (prelude,
+  crypto, toml, config, …) were run by nobody; `TestStdModuleTests` now runs
+  every module's that has no test of its own.
+
+### 2026-10-24 — A flaky driver test under load: `TestLessCeremony`
+
+Found by running `./driver` beside the heavy packages on Linux (one failure
+in four runs; the full suite had failed once): in `stopped()` the release
+build on 8 threads printed `every started call closed: false`. The runtime
+was right — the test asserted that at least two calls had started when the
+loop broke, which its own comment says depends on scheduling: the first
+call ends at once, and on a loaded machine the loop broke before any other
+call ran (a call cancelled before it starts never runs). The loop now waits
+until a second call has started before it breaks, so the break always
+cancels a call inside its `with` — what the line checks. Eight loaded runs
+of the test (each debug and release on 1, 2, 4 and 8 threads) pass.
+
+### 2026-10-24 — S17 / D199: a source file must be UTF-8
+
+- **Both lexers** check the text before lexing it: every byte that does not
+  decode (in the steps of Go's `utf8.DecodeRune` — overlong forms,
+  surrogates, past U+10FFFF and a truncated sequence included) is an error
+  `the text is not valid UTF-8 here (byte 0xE9): save the file as UTF-8`
+  (family `syntax`), and nothing more is lexed, so the two agree byte for
+  byte. The self-hosted front end reads bytes: `source.readSource` keeps
+  each bad byte's offset and value on `File` (`notUtf8`) and a `?` in its
+  place in `content`, so every offset is the disk's.
+- **Gates**: the corpus no longer drops such files and fuzz findings; four
+  hand-written ones (a comment, a string, code with overlong / surrogate /
+  past-the-end / truncated sequences, after a BOM) pass every mode but the
+  three that print text. `TestNotUTF8` pins the Go lexer's offsets.
+- **Users**: the excerpt under the error shows U+FFFD for each bad byte (the
+  caret stays aligned); the language server analyses the disk's bytes while
+  the buffer is that file as the editor decoded it (`TestNotUTF8OnDisk`);
+  `veles fmt` leaves such a file alone. Errors reference and chapter 1.
+- **Found on the way and fixed**: a format spec on any integer but `i64` and
+  `u64` failed to compile (`"${b:02X}"` with `b: u8`: "no method
+  'toString'"); a narrower integer now widens first
+  (`std/prelude/format.test.vs`).
+
+### 2026-10-24 — S18–S20 / D200–D202: the three choices left by the parse work
+
+Decided by the user the same day (recommended for D200 and D201; Kotlin's
+`startIndex` over the recommended `at:` for D202), then built:
+
+- **D202** `string.startsWith(prefix, startIndex)`: checked in sema (named
+  or positional; a wrong name or count is an error naming the form), folded
+  in constants, and emitted **inline** — a bounds test, a first-byte
+  compare, `memcmp` for the rest. A runtime call per try was tried first and
+  made the parse *slower* (616M → 679M instructions: the lexer tries 59
+  operators at a position, and the hand loop it replaced rejected on the
+  first byte inline). The self-hosted lexer's `holdsAt` is gone.
+- **D200** `[runtime] gc.minHeap` / `gc.goal` (also as `[runtime.gc]`):
+  both manifest readers with the same refusals (gate R1 has the cases),
+  passed to `veles_runtime_gc` at start-up, `VELES_GC_MIN_HEAP` /
+  `VELES_GC_GOAL` override (`VELES_GC_THRESHOLD` kept as the old name), the
+  goal now a percent in `set_goal`. `TestRuntimeGCManifest` counts
+  collections (default 9, 1 GiB none, goal 1000 vs 10: 4 vs 25).
+  `selfhost/veles.toml` sets `gc.minHeap = "32MiB"`.
+- **D201** a field moves out of a local whose methods were called:
+  `sema/move_method.go` summarises each method from its source (keeps
+  `this`? which fields it uses, which it may hand out), the union over the
+  methods it reaches; `movableField` consults it. A list pattern that binds
+  no rest now counts as reading elements (for locals too). Accepted and
+  refused cases are in `TestMutableToImmutableMove`. The self-hosted lexer
+  hands the parser its token list (`tokenizeForParser`, a labelled tuple)
+  and both copies per file are gone; `redundant_copy` found two more.
+
+**Measured.** Self-hosted parse of std 616M → **507M** instructions (Go's
+front end: 1,024M). `bench/parse` **0.7–0.9× Go on Windows** (four runs,
+loaded machine; was 1.1×), **0.7× on Linux**. Windows and WSL suites green.
+macOS not run. Left: checklist §11 (D200–D202).
+
+### 2026-10-23 — The Windows gap on `bench/parse`, measured by instructions
+
+The machine was loaded (a game) while this was done, so wall-clock numbers
+were compared only interleaved (a scratchpad tool runs binaries in turn
+and reports min and median) and the work was guided by instruction counts:
+valgrind's callgrind, unpacked into the WSL home like perf, is the same
+however loaded the machine is.
+
+**What the counts said.** The self-hosted parse of std is 616M
+instructions; the Go front end doing the same work is 1,024M (its operator
+scan alone, with `memeq`, ~230M against our 118M). Veles is not slower by
+code — it is ~40% leaner. Where its time goes: the lexer's operator scan
+19%, `memcpy` 12% (two whole-list copies of the tokens per file — the
+port's `toList()`/`toMutable()` — 7%, and list growth 5%), allocation 13%,
+marking 10%.
+
+**Changed (compiler and runtime only).**
+- A list element's address uses the element type's size, known at compile
+  time, instead of loading the stride from the header and multiplying.
+- The sweep reads a dead object only when its span may hold a `Secret`'s
+  bytes or poisoning is on (`span.wipes`), and clears the marks with one
+  `memset`.
+- `veles_gc_alloc` reads the thread's block once, not four times; a reused
+  slot of a small class is cleared with a constant-size `memset` (a few
+  stores). `veles_gc_alloc`'s own instructions 71M → 40M.
+- Tried and reverted: a word-at-a-time search for a free slot (more
+  instructions — the runs are short); `memory(read, inaccessiblemem:
+  readwrite)` on the back-edge poll's call (LLVM hoisted nothing and the
+  scan grew).
+
+Interleaved on Windows: 3–4% faster (min 114 → 110 ms under that load).
+The Windows ratio to Go could not be measured cleanly under the load (the
+runner showed 0.6–0.9×, Go suffering more). What remains, by experiment:
+with a 32 MiB collection threshold, or none, the parse is ~5% faster —
+Go marks on other cores, a Veles collection of a heap this small marks in
+a pause. Left for the user (checklist §11): a larger minimum heap (memory
+for speed in every program), D188's move extended to a field of a dead
+local (removes the two token-list copies, 7%), and a std `startsWith(at:)`
+the lexer could use.
+
+### 2026-10-23 — S16 / D198: trees are boxed
+
+**Syntax.** `indirect struct` and `inline struct` in a sealed trait's body,
+`indirect sealed trait` before a declaration — contextual words, in the Go
+and self-hosted parsers (`StructDecl.Indirect/Inline`, `TraitDecl.Indirect`),
+`veles parse`, the formatter, the editor grammar; `std/lint/ast.vs` and the
+span walker regenerated.
+
+**Checking.** `markRecursive` (`sema/boxed.go`) sets `Sealed.Recursive` on a
+sealed type one of whose variants reaches it again through a pointer, a
+collection, a nullable, a tuple or array, another struct's fields or
+another sealed type's variants (`Stmt` → `Block` → `List<Stmt>` included).
+The rule for which variants are boxed lives in `types.Layout`
+(`VariantBoxed`, `SealedPayloadWords`), shared by the checker and codegen:
+`indirect`, or larger than a word in a tree unless `inline`. Lint
+`large_variant` (registry, both sides) warns of a non-tree, non-generic
+sealed type whose largest variant is over four words and over twice the
+next, with a fix that writes `indirect`; it fires nowhere in std,
+examples or selfhost. Hover says `indirect`/`inline`, or "boxed: 'Expr' is
+a tree".
+
+**Codegen** (`codegen/llvm/boxed.go`). Every sealed value is built and read
+through `makeTaggedT`/`extractTaggedT`, so a boxed variant is allocated
+there (its own descriptor and size) and loaded through the pointer; the
+payload words are conservatively traced already. A place reached through
+a narrowed boxed variant (`placeAs` of a `VariantCast`) loads the pointer;
+for a write or a pointer that outlives the access it copies the box first
+and stores the copy in the value — unless the variant has no `var` field,
+when nothing can be written. A probe's output is identical with the HEAD
+compiler (markers removed).
+
+**Speed.** Every `selfhost` AST union is now `{ i32, [1 x i64] }` (16
+bytes; `Expr` was 180, `Decl` 348). The parse alone did not move at first
+(≈85 ms on Windows): the parser's functions dropped out of the profile
+(`parsePostfixOp` 7% → 1%), and what was left was the lexer and the
+collector. On Linux that is parity: 63–70 ms against Go's 64–65. On
+Windows it was 78–80 ms against 61: the write-watch concurrent marking,
+which started at 4 MiB live, cost a fast-allocating program ~10 ms (with
+`VELES_GC_CONCURRENT=0`, 69 ms). `CONCURRENT_FROM` is 16 MiB now — a pause
+marks that much in about a millisecond — and the Windows parse is 69–74 ms,
+1.1×. `gcpause`'s longest pause is unchanged (1.39–1.42 ms at 4 MiB,
+1.32–1.45 ms at 16 MiB, same session); `ast` and `json`, A/B against HEAD
+alternately, within noise.
+
+Tests: conformance `D198-boxed-variants` (the lint, `indirect`, `inline`,
+`indirect sealed trait`), `D198-boxed-syntax`; `driver/boxed_test.go`
+(value semantics — a write through a narrowed copy, equality, a set,
+printing, an `indirect` variant written through a `var` — and deep trees
+built in tasks under `VELES_GC_THRESHOLD=65536`, debug and release, 1 and
+4 threads); `parser/boxed_test.go`; formatter round trip; `lsp/boxed_test.go`;
+codegen golden `boxed` (the box allocated, read through, copied before a
+write). Docs: chapter 9 "Trees: where a variant is stored", cheat sheet,
+errors reference.
+
+### 2026-10-23 — S8: debug information
+
+A debug build now carries DWARF (`codegen/llvm/debug.go`), so gdb and an
+editor's debugger work on Veles source. The checker gives every lowered
+statement the position it was written at (`Pos` on the HIR statements,
+`ValuePos` for a block's last expression, set once where an AST statement
+is lowered and on the returns made from expression bodies); codegen opens a
+`DISubprogram` per function, attaches the current statement's
+`DILocation` to every instruction it emits (`emit` appends it), and
+declares locals and parameters with `llvm.dbg.declare` and a type: base
+types for numbers and `bool`, a `string` as `{data, len}` (gdb prints the
+text), a struct with its fields at `StructPlan`'s offsets, a pointer to its
+target; other types by name and size. Helpers and the entry point carry
+none. The driver asks for it when the build is not `--release`
+(`Program.DebugInfo`); the goldens leave it out except
+`codegen/llvm/golden/debuginfo`, whose metadata `ModuleIR` renumbers by
+first use with the directory hidden.
+
+Windows is `x86_64-w64-windows-gnu`, whose gdb (MSYS2) and VS Code's
+C/C++ extension in gdb mode read DWARF, so CodeView was not needed.
+
+**Found on the way.** The "Debug Info Version" flag makes clang verify the
+module, which the driver otherwise skips (`-disable-llvm-verifier`); every
+async program failed: `llvm.coro.end` was declared with the token argument
+clang 18 added, which clang 17 rejects. It is the two-argument form now,
+which clang 18 upgrades (checked on both); goldens regenerated. Every debug
+build is now verified by LLVM as a side effect.
+
+Tests: `driver/debuginfo_test.go` runs gdb in batch mode over a program —
+a breakpoint by line and by function name, arguments, `next` onto a block's
+last expression, locals (a struct, a string's text, numbers), and a
+suspending function after its `sleep` on another thread; it skips without
+gdb (`VELES_GDB` names one off PATH). Green on Windows (MSYS2 gdb 15) and
+Linux (gdb 15.1, unpacked without `sudo`). Docs: chapter 13 "Stepping
+through a program: a debugger".
+
+Left (checklist §11): a local that lives across a suspension loses its
+description when LLVM moves it into the coroutine frame; contents of
+lists, maps, sets, nullables, sealed values and closures; std's embedded
+files cannot be shown; lldb on macOS not run; no line information in
+`--release` builds.
+
+### 2026-10-23 — S7: the self-hosted front end's speed, first pass
+
+**Measured first.** `bench/parse` times the self-hosted lexer and parser
+over std's 155 files against the Go front end (`selfhost --bench-parse
+std`; the runner's `programs` table builds `selfhost/` for it). Start: 164
+ms against 55 ms, 3.0×. Lexing alone was 88 ms (Go 40), parsing 76 (Go 15).
+Profiled on Linux with `perf` (no `sudo` needed: the packages unpacked into
+the home directory) and LLVM's IR-level entry counts through a `VELES_CLANG`
+wrapper.
+
+**Fixed, all the compiler's or the runtime's.**
+- `s.byteAt(i)` was a call into the C runtime — 16 M calls over std. It is
+  now a compare and a load, the runtime called only to panic: 150 ms;
+  `bench/lexer` 85 → 53 ms.
+- Every allocation cleared its slot, though a span comes from the OS
+  zeroed and a large one goes back when its object dies: growing a big list
+  touched each page twice. A span now knows up to where its slots have
+  never held an object (`virgin`) and clears only below: 130 ms; most of
+  the suite gains a little (table in `bench/results.md`).
+- `MutableList.insert` and `removeAt` shifted element by element through
+  `at`/`set`; they are one `memmove` now (`listMove`, a std-only builtin
+  the constant evaluator runs too). No visible change here — the parser
+  inserts rarely — but no longer O(n) calls of a generic `set`.
+
+**Fixed in the port, as its plan said to.** The self-host plan's §5 named
+"span arithmetic" as a risk: a `Span` holding its `File` by value is a copy
+per node. It did: a span was 64 bytes and an `ast.Expr` 380. `Span.file` is
+now `(*File)?` (24 bytes, the null niche), which took the parse to 84–91 ms,
+1.5–1.7× Go. `std/lint` keeps the by-value file — rules run in the
+constant evaluator, which builds spans that way (the generator says so).
+
+**Left, and why.** An `ast.Expr` is still a 180-byte inline union and a
+`Decl` 348 — D12 lays a sealed value out inline, sized for its largest
+variant, so every node returned or boxed moves that much; Go's interface is
+16 bytes. Changing that changes D12's promise of no allocation, so it is
+the user's (checklist §11). The target of ≤ 1.3× Go is not reached.
+
+### 2026-10-23 — S6: the span gate and P6 `Layout`
+
+**Every span compared.** G2 compares `ast.Dump`'s text, which carries no
+span. `selfhost/spans_test.go` adds a gate over the whole corpus (970
+files): each side lists `Node.field start end` for every span-typed field
+of every node, sorted, each once (the Go parser shares some nodes), and the
+lists must be equal. The Go side walks the tree by reflection; the Veles
+side by `selfhost/ast/spans.vs`, generated from `selfhost/ast/ast.vs`
+(`go test ./selfhost -run SpanWalker -update`; the test fails when it is
+stale), run by `selfhost --spans`. Two nodes are named apart (`File` is
+`SourceFile`, `SelfExpr` `ThisExpr`) and one field (`AnnotationInfo.For` is
+`readers`). Found by it: the Veles `ExecutorDecl` kept no span of its
+arguments (`argsPos`, which the Go formatter reads) — added, and
+`std/lint/ast.vs` regenerated.
+
+**P6 `Layout`.** `parseFileLayout` returns the tree, the comments and the
+spans of parenthesised expressions, as `parser.ParseFileLayout` does — the
+input a formatter written in Veles needs (plan S9). `selfhost --layout`
+prints them; `TestP6Layout` compares with Go over the corpus. Green.
+
+**Not done: files that are not valid UTF-8.** None is in the repository;
+one fuzz finding of ten is. A Veles `string` is always UTF-8 and
+`fs.readFile` refuses such a file, while the Go lexer reads the bytes and
+reports a character or a string literal it cannot decode — and accepts an
+invalid byte in a comment. Matching it means either a byte-level `File` in
+the self-hosted front end, or both compilers refusing a non-UTF-8 file up
+front; the second changes what the compiler accepts, so it is the user's
+(checklist §11).
+
+### 2026-10-23 — F19's migration: scopes that only launched and awaited
+
+The `scope` blocks whose only job was to start named tasks and await them
+now use D156's shapes: `std/net`'s stream test, `std/otel`'s child-span test
+and `examples/streams` hold a `val server = async …` in the function's own
+block; `http.Health`'s `runAll` is `scope { …; awaitAll(tasks) }` as the
+function's value; `examples/httpclient` fetches its three pages with one
+`awaitAll`. Left as they are on purpose: scopes of unnamed children (the
+scope is what joins them), scopes that cancel a handle (`serve`'s
+`serving.cancel()`, `examples/cancel`), fan-outs over a loop, the
+`TaskLocal` test (its `await async` is the point), and chapter 12's first
+example, which introduces `scope` before the sections on the lighter forms.
+`concurrency-explained.md` no longer says a task can only start in a
+`scope`: its first program has no scope, the JavaScript table maps
+`Promise.all` to `awaitAll`, and "nothing floats away" names both owners.
+
+New benches `awaitall` (two inline launches joined by `awaitAll`) and
+`awaitscope` (the same pairs in a `scope` with two handles), one Go
+reference (two goroutines and a `WaitGroup` per pair). Windows, default
+threads, four runs: 40.6–44.8 ms against 41.0–41.7 ms — the same cost; Go
+63 ms. Recorded in `bench/results.md`.
+
+### 2026-10-23 — B22: labelled tuples (D166)
+
+**Syntax.** A tuple type or literal labels every element or none
+(`(quotient: i64, remainder: i64)`, `(key: k, value: v)`); mixed labels and
+a repeated label are syntax errors. `ast.TupleType`/`TupleExpr` carry
+`Labels` (nil when unlabelled; `ast.Clone` regenerated); `veles parse`
+prints them; the formatter lays a labelled literal out like named arguments
+(a broken one keeps its breaks); a labelled one-element tuple needs no
+trailing comma. The self-hosted AST, parser and printer do the same
+(G-gates green; `std/lint/ast.vs` regenerated).
+
+**Checking.** `types.Tuple.Labels` is for reading and display: `Identical`
+and `Key` ignore it, so layout, `==`, hashing, ordering and the generic
+instance are the unlabelled tuple's. `t.label` reads an element (`t.0`
+still does); an unlabelled literal takes the expected type's labels.
+`types.LabelsDiffer` finds two different label lists in the same position —
+at the top or inside lists, maps, sets, nullables, tasks, channels and
+function types — and `coerce`/`assignableTo` refuse it (family
+type-mismatch, both types named); at the top the fix drops the value's
+labels (deletes them from a literal, rebuilds a name as `(p.0, p.1)`). A
+function instance holds no labels (`types.StripLabels` on its type
+arguments, so what it shows cannot depend on which caller came first); the
+call gives its caller the labels back by substituting the template's result
+type with the caller's bindings, so `entries().sortedBy(…).first()` is a
+labelled entry. The `Result` instance of a throwing call is shared too, so
+the HIR `Call` keeps the labelled success type (`Ok`), which `try`, `??`,
+`catch` and `?!` read (`okType`). Generic struct and sealed instances hold
+none either; writing labels in a generic type's arguments
+(`Box<(lo: i64, hi: i64)>`) is refused with the unlabelled spelling, rather
+than dropped where `box.value.lo` would then fail (checklist §11).
+
+**Text and constants.** `"$t"` prints `(quotient: 3, remainder: 1)`:
+codegen's display helpers are cached by `types.LabelKey`. The constant
+evaluator prints a tuple, an optional and a list by the static type, as run
+time does (a case in `driver/constfun_test.go`, debug and release).
+
+**std.** `Map.entries()` gives `(key: K, value: V)`, `List.enumerate()` and
+`Iterator.enumerate()` `(index: i64, value: T)`, `splitOnce`
+`(before: string, after: string)?`. Moved to labels: `examples/dedup`,
+`todo` (its rows are `(number: i64, task: Task)`), `json`, `regex`, `fuzz`,
+`session`, `std/http/cookie.test.vs`, docs chapter 12. Regenerated:
+`examples/maps/expected.txt` (entries print their labels),
+`std/testdata/const-functions.txt`.
+
+**Tooling.** Hover shows the labels (they are in the type's text);
+completion after `t.` offers each label beside its position.
+
+**Found on the way, fixed.** (1) A tuple key in a map literal,
+`[(1, 2): "a"]`, was read as a lambda's parameters (`(…):` was taken for a
+return type): `looksLikeLambda` now requires a type and `=>` after the
+colon, in both parsers. (2) `implement Codable` on a struct with a tuple
+field said "no method 'encode' on type '(string, i64)'"; the derive now
+names the field and says a tuple has no wire form (a list, set or map of
+tuples too).
+
+Tests: conformance `D166-labelled-tuples`, `-syntax`,
+`-generic-type-labels`, `-tuples-not-codable`; `sema/labelled_tuple_test.go`
+(both fixes compile; one instance serves three labellings);
+`parser/tuple_test.go` (labels, their errors, tuple keys vs lambdas);
+`format` `TestLabelledTupleRoundTrips`; `lsp/tuple_test.go`; codegen golden
+`labels` (the labelled and unlabelled `divmod` compile to the same body, one
+`swap` instance, labels only in the text helper). Docs: chapter 3 "Several
+results", chapter 4 "Tuples" with the tuple-vs-struct guideline, cheat
+sheet, stdlib and errors references. `go build`, `go vet` clean; staticcheck
+reports only its three earlier unused symbols. `go test ./...` green on
+Windows and on Linux (WSL) — the first full runs since B19 and B21, which
+were therefore verified on both here too.
+
+### 2026-10-23 — B21: one-parameter constructors, `copy`, `i64?` index-of
+
+**D163.** A constructor that takes exactly one parameter from the call site
+— fields `init` does not assign and the caller may see, plus `init`'s
+parameters — takes it positionally (`soleParam`, `sema/check_call.go`), in
+construction and in generic inference (`Mutex(0)` is a `Mutex<i64>`); not
+for `extern struct`s. The count follows visibility: `Mutex`'s private
+defaulted `word` does not count from outside, does inside. A positional
+argument records no field reference in the index, so a rename leaves the
+call alone. When a type grows a second parameter the existing D28 error
+fires, its text now naming both rules, with the fix that writes the name.
+
+**D164.** `v.copy(field: e, …)` lowers to a construction from a temporary of
+v (`copyStruct`): named fields from the arguments, the rest read from v,
+`init` run again through the same helper construction now uses
+(`runInit`). Refused: positional arguments (puns allowed), unknown or
+repeated fields, fields `init` assigns, fields the caller cannot see, type
+arguments, task-holding types (D111), `with`-bound resources (D100),
+`extern union`s, and types whose `init` takes parameters — the last two
+gaps in D164, decided the same day by the user as built (refused; D164
+addendum v0.105). A hand-written `copy` or a field named `copy`
+(warned at the field) means no generated one. Hover shows the signature for
+the call site (`fun Rect.copy(w: i64 = this.w, h: i64 = this.h): Rect
+(generated)`), completion offers it. Found on the way: the constant
+evaluator had no case for `Zero`, so no type with an `init` block could be
+built in a constant; it now can, and `copy` with it.
+
+**D165.** `List.indexOf` (built in), `indexOfFirst`, `string.indexOf`,
+`lastIndexOf`, `binarySearch`, `binarySearchBy`, `binarySearchWith` answer
+`i64?`; `contains` tests for null. `val i = xs.indexOf(v) ?: <leaves>` puts
+i in range of xs (D62, `foundIndexOf` in `sema/bounds.go`); `?: 0` does not.
+`… >= 0`, `< 0`, `== -1`, `!= -1` on a call of the family is an error
+(family removed-syntax) with the fix to `!= null`/`== null` — `== -1` would
+otherwise compile and always be false. Migrated: std (prelude string,
+format, duration, codec; path, http, db, regex, toml, version), examples
+(httpd, codable, algorithms), selfhost (lexer, parser, linter, pkg, text),
+docs chapters 2 and 4, references, cheat sheet; most `>= 0` tests became
+`contains`, most "find then check -1" became `?: return`. Regenerated:
+`examples/algorithms/expected.txt` (`-1` → `null`), the `strings` codegen
+golden (IR only), `std/testdata/const-functions.txt`. `veles-bench`, three
+runs each against a HEAD worktree on Windows: `sort` 35.6–36.9 ms vs
+37.3–39.6 ms, `strings` 57.9–60.0 ms vs 56.0–61.8 ms (medians 58.7 vs
+58.1) — no slower.
+
+Tests: conformance `D163-positional-constructor`, `D164-copy`,
+`D165-index-of-nullable`; `sema/copy_test.go` (visibility across modules
+for both), `sema/index_family_test.go` (both fixes compile), a `copy` case
+in `driver/constfun_test.go` (compile time = run time, debug and release),
+LSP hover (`lsp/copy_test.go`) and completion.
+
+### 2026-10-23 — Embedded std parsed once per process
+
+Checklist §11 "Test-suite wall time", point (2). A profile of
+`TestCheckEveryPrefix/httpd` (27 s wall, 69 s CPU) put 13 s in loading —
+12 s of it parsing std — 11 s in `Check` and the rest in GC, which parsing
+fed most. The checker writes into the tree it is given: D158 replaces bare
+member names in every method body by `this.name` through reflection, D176
+replaces a decorated function's body, so a parsed tree cannot be shared
+between checks (a data race under the LSP's concurrent loads, a D158
+shadowing warning lost on the second check, and a rewrite that depends on
+the program's own impls on std types). `sema/stdparse.go` parses each
+embedded std file once and hands every load a deep copy; `ast.Clone` is
+generated from `ast/ast.go` (`go generate ./ast`, `ast/internal/clonegen`;
+a test fails when it is stale) and keeps the sharing the parser makes (a
+struct's impls are also in the file's declarations; desugared declarations
+share a `NamedType`) — `ast/clone_test.go` checks over every std and
+repository source that the copy shares nothing with the original and shares
+within itself exactly what the original does. Prelude: parse 13.7 ms /
+15.8 MB, copy 2.3 ms / 2.3 MB. A first reflective copy took 7.5 ms and cost
+more than it saved under load.
+
+Measured on Windows: `go test ./sema` 384 s → 168 s;
+`TestCheckEveryPrefix/httpd` 27.5 s → 17.3 s (CPU 69 → 31 s); a language
+server edit of `examples/httpd/main.vs` loads in 9 ms instead of 45 ms, but
+checking it (`CheckIndex`) takes ~590 ms either way — recorded in §11 as
+"Checking the embedded std once", with what caching checked std would take.
+`go test ./lsp` unchanged (~10 s; it is not load-bound). `go build`, `go vet`
+clean; `go test ./...` green on Windows (8 min wall) except two failures
+that come from a CRLF checkout (`core.autocrlf=true`), not from this change:
+`format` `TestCorpus` and `examples/todo` fail on CRLF copies of
+`examples/regex/main.vs` and `examples/todo/main.vs` and pass on LF ones
+(checklist §11). Linux (WSL): build, vet and `go test ./...` green; `go
+test -race` clean on `ast` and on `sema`'s concurrent-load test and httpd
+prefixes.
+
+### 2026-10-22 - B19 / D157: reject unhandled values in interpolation
+
+**Implemented; cross-platform completion remains pending in checklist 11.**
+Strings, format specs and template values reject a Result or task handle.
+Result diagnostics name propagation and fallback; throwing functions receive
+a mechanical `try` edit, including expansion of `$name` to `${try (name)}`.
+CLI repair is idempotent and the LSP offers the same preferred edit.
+Explicit `Result.toString()` is catalogued for tooling and lowers to the
+existing display HIR; try-chain resolution recognizes it as a Result method.
+Task diagnostics direct the caller to `await`. No parser, codegen, runtime or
+std API change was needed. The D157 generic declared-parameter exception and
+test capture remain accepted.
+
+Regression tests were observed failing before implementation. Conformance,
+accepted forms, edit round trips, CLI debug/release execution and LSP quick
+fixes pass on macOS arm64 with Go 1.23.2. Existing checker fixtures, two task
+examples, an executor test and executable documentation now inspect Results
+explicitly, with their expected output unchanged. Final `go build ./...`,
+`go vet ./...` and `go test ./...` all passed on macOS arm64 with Go 1.23.2.
+The new fixture was formatted and its line-sensitive expectations rechecked.
+Staticcheck is not installed; Windows/Linux are not available for reruns.
+The initial runtime timing failure,
+not reproduced in an isolated HEAD test or the next full driver run, is tracked
+in checklist 11 rather than treated as fixed.
+
+### 2026-10-21 — Cede specification, implementation pending
+
+**D197 specified, not built.** `veles-cede-spec.md` records primary-source
+research (Kotlin, Tokio, Go, Python asyncio, Rust threads), the reserved
+statement-only `cede`, cancellation/cleanup/executor guarantees, explicit
+scheduling non-guarantees, removal of the prelude `yieldNow()` with safe
+migration, all-layer ownership and the acceptance matrix. Existing driver
+cancellation/deferred-cancellation/caller-task-timeout regressions passed
+on macOS with Go 1.23.2, as did `TestAtomicOperations` (existing `yieldNow`
+callers). New syntax was not tested or implemented; no full build/vet/test,
+runtime benchmark or Windows/Linux run was performed. F20 remains pending.
+Next discussion: resume generator research/planning (I1), not generator
+implementation; D197 does not decide a generator design.
 
 ### 2026-09-28
 
@@ -798,6 +1446,7 @@ mean; if either is a language change, it goes through `veles-decide`.
 Asked together: panic call chains (D81, a shadow stack in debug builds —
 after the user asked for DWARF to be explained next to it), `os.run`
 input and stderr (D82), list capacity (D83), and Q18 (D84).
+
 - **D83 `xs.reserve(n)`**: a built-in (`veles_list_reserve`), in the
   catalogue and hover, allowed on a local that is later moved (D63's
   method list), refused on a `List`; chapter 4's `build(n)` uses it.
@@ -806,7 +1455,7 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   (a run returns each implement's value). Conformance
   `D84-associated-types.vs`; chapter 8.
 - **D82 / B5 done**: `os.run(program, args, input: "", stderr:
-  os.Stderr.Capture)` with `Capture | Inherit | Merge` (capitalised like
+os.Stderr.Capture)` with `Capture | Inherit | Merge` (capitalised like
   every enum's members — the question had them in lower case) and
   `Output.stderr`. Both platforms feed the input and read both outputs at
   once — Windows with a writer and a reader thread, POSIX with one `poll`
@@ -922,7 +1571,7 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   debug chain says the site once: the runtime finds the chain line whose site
   is the panic's, prints `at SITE in CALLER` and drops the std frames above
   it. Marked: `swap insert removeAt chunked windowed step` (both), `toString
-  (radix:)` + `checkRadix`, `randomBytes`, `Uuid.of`, `random.range`. Not
+(radix:)` + `checkRadix`, `randomBytes`, `Uuid.of`, `random.range`. Not
   marked: trait implementations (`Hmac.update`), the JWT key check, and
   `mapConcurrent` (suspends). Tests: driver `TestCallerLocationPanics`
   (debug + release, through two marked frames), conform `D88-*`, goldens
@@ -1275,8 +1924,8 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   clang's front end does, per target: Win64 (1/2/4/8 bytes as an integer,
   anything else by pointer to a caller copy and `sret`), SysV x86-64
   (eightbytes classed INTEGER/SSE and coerced — `i24`, `{ i64, i32 }`,
-  `<2 x float>`, `{ double, i64 }` — `byval` beyond 16 bytes *or when the
-  registers left cannot hold the whole struct*, `sret` for large results),
+  `<2 x float>`, `{ double, i64 }` — `byval` beyond 16 bytes _or when the
+  registers left cannot hold the whole struct_, `sret` for large results),
   AAPCS64 (homogeneous float aggregates as `[n x float|double]`, other
   structs up to 16 bytes as `i64`/`[2 x i64]`, larger by pointer, `sret`).
   One classification serves the four places a struct crosses: extern
@@ -1348,7 +1997,7 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   Decision-free: the `async` placement error names what to write; the
   needless-`throws` warning reworded into `results-and-errors`; a literal
   argument takes the type the expected result binds (`val small: i8 =
-  id(12)`, §11 limit removed). Also fixed after B10: the close-order inlay hint
+id(12)`, §11 limit removed). Also fixed after B10: the close-order inlay hint
   no longer lists a with-task that is awaited on every path. Not done: the
   run-time count is not checked by iterators, which already walk copies.
 
@@ -1359,7 +2008,7 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   with-task's `cancel()` stays allowed. Conformance cases in
   `D100-with-statement` (direct, through an alias inside a lambda, a plain
   `val` allowed, `t.cancel()` allowed); the fix checked with `veles check
-  --fix`. Docs chapter 13 and the errors reference; spec D136 (v0.68).
+--fix`. Docs chapter 13 and the errors reference; spec D136 (v0.68).
 
 - **B12 done (2026-10-02): D107–D110.** D107: `with n = m.lock()` (prelude
   `Mutex.lock()` returning a private `Locked<T>`; `sema/lockguard.go`): `lock()`
@@ -1388,7 +2037,7 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
 - **Sanitized programs end cleanly again (2026-10-02).** Every program built
   with `--sanitize` on Linux aborted as its first thread ended ("AddressSanitizer
   failed to deallocate … error code 22"), at HEAD too, so `go test ./examples
-  -sanitize` and `./driver -sanitize` had stopped meaning anything. Cause: each
+-sanitize` and `./driver -sanitize` had stopped meaning anything. Cause: each
   runtime thread installs a malloc'd alternate signal stack over the one ASan
   gave it, and ASan unmaps whatever is installed when the thread ends; the
   Veles main thread also never called `veles_stack_thread_done`. Now
@@ -1421,8 +2070,8 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   constructors do (`MutableList.repeat(false, n)` now compiles). D111: the
   adopt-after-return hand-off the user first chose was found racy reading
   the runtime (a finishing task against the move; a cancelled caller
-  orphaning staged tasks); the user then chose the recommended *receiving
-  scope*: a task-local binding (key -3) carrying the `with`'s scope while the
+  orphaning staged tasks); the user then chose the recommended _receiving
+  scope_: a task-local binding (key -3) carrying the `with`'s scope while the
   value is computed, so held tasks launch straight into it and suspending
   callees inherit it. A held `with` is a `ScopeBlock` with `Held`
   (`codegen/llvm/held.go`): tasks are cancelled and joined before `close()`
@@ -1455,7 +2104,7 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   Found building it, decided by the user: after `is Clicks` the name is the
   value inside the box, not a copy (writes reach it; D135 amended). D119:
   prelude `Default`, derived by an empty implement. D117 compile time: `T
-  implements X` is a per-instance constant; only the taken branch is checked
+implements X` is a per-instance constant; only the taken branch is checked
   and compiled. D116: two views per function in the suspension pass, a call
   asks whether what it passes suspends; codegen emits `.plain` copies on
   demand, lambdas under the creating instance's view, and keeps a
@@ -1503,7 +2152,7 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   green (full suite on both).
 - **2026-10-03 — B16 started: D123 (variadic C calls) done.** Choice asked
   for the rest of B16 (user, recommended): `Array<T, N>` and any value over
-  a size threshold get a *memory class* in codegen (memcpy copies, passed
+  a size threshold get a _memory class_ in codegen (memcpy copies, passed
   by pointer to a caller copy, returned through `sret`), not SSA. D123:
   `...` ends the parameters of a function in an `extern "C"` block
   (`FunDecl.CVariadic`, `types.Func.CVariadic`); the extra arguments are
@@ -1544,13 +2193,13 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   differ by that line only; `spawn` 43.9 ms vs 42.4 ms recorded, `channels`
   4.7 ms vs 9.3 ms — noise). Windows and WSL green.
 - **2026-10-03 — B16: D121 (`Array<T, N>`, const generics) done — B16 complete.**
-  *Types and syntax:* `types.Array` (length a `types.Const`, a const type
+  _Types and syntax:_ `types.Array` (length a `types.Const`, a const type
   parameter, or open in a template), `<const N: i64>` on functions, structs
   and impls, constants where a type argument goes (`Array<u8, 4 * 16>`,
   `Array<u8, WIDTH>`; `>>` still closes two lists), `N` an `i64` constant in
   each instance, per-`N` instances, inference through `unify`, `N + 1` and
   non-`i64` parameters refused; formatter, `ast.Dump`, hover (`<const N: i64>`),
-  completion, catalogue, tmLanguage. *Memory class* (the user's choice): a
+  completion, catalogue, tmLanguage. _Memory class_ (the user's choice): a
   value of 128 bytes or more that holds an array is an address in a register,
   copied by `memmove`, passed as the address of the caller's copy, returned
   through `sret` — `codegen/llvm/mem.go` (isMem, storeVal/loadVal, part,
@@ -1558,7 +2207,7 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   (locals, fields, literals, nullables, tagged values, `Result`, closures,
   thunks, vtables, tasks and their argument blocks, channels, maps, trait
   objects, C by value); everything smaller emits the same IR as before (all
-  goldens unchanged). A 1 MiB local compiles in a second. *Arrays:* literals
+  goldens unchanged). A 1 MiB local compiles in a second. _Arrays:_ literals
   with the length checked, `at` (T where the index is a constant in range or
   proven: `loop (i in a.indices())`, `0..<K.len()`, `i < 4`), `set`, `first`,
   `last`, `indices`, `toList`/`toMutable`, `Array.make`, `xs.toArray<N>()`,
@@ -1566,8 +2215,8 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   const tables (`[N x T]` rodata, read in place, constant index folded),
   prelude adapters for `map`/`filter`/`forEach`/`fold`/`any`/`all`/`find`,
   every other read-only `List` method on a copy, `Default`, `Codable` (exactly
-  `N`), `Sendable`, `CLayout` + `withRaw`, C arrays in extern structs. 
-  *Tests:* TestArraysAgreeWithC (sockaddr, mixed, float and 80/160-byte
+  `N`), `Sendable`, `CLayout` + `withRaw`, C arrays in extern structs.
+  _Tests:_ TestArraysAgreeWithC (sockaddr, mixed, float and 80/160-byte
   structs by value, 2-D arrays; Windows ABI here, SysV on WSL), TestArrays
   (12 tests: values, reads, loops, const generics, list methods, hash/text/
   default, codable, then the memory class through nullables, tuples, branches,
@@ -1576,7 +2225,7 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   format `TestConstGenericsRoundTrip`, lsp `TestArraysInTheEditor`, example
   `arrays`. Docs: chapters 4 (Arrays), 8 (constants as generic arguments),
   13 (arrays in a C struct, large values), cheat sheet, stdlib reference.
-  *Std:* SHA-256 on arrays — `sha256` 113–135 ms → 86–91 ms (four runs
+  _Std:_ SHA-256 on arrays — `sha256` 113–135 ms → 86–91 ms (four runs
   each; `bench/results.md`). **Also (user note):** field and enum-member
   annotations now sit on the line above, as on declarations, in the
   formatter (`@key("x")` / `id: i64`), in docs, examples and tests.
@@ -1586,17 +2235,17 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   as a shift (now a type-argument context stops at `>>`); a List method that
   lends storage (`withRaw`) found through the array→List view would have
   written to a copy (the array has its own). Windows and WSL green.
-- **2026-10-04 — C2 part 1: `io.Stream` (D128).** *Language:* suspending trait
+- **2026-10-04 — C2 part 1: `io.Stream` (D128).** _Language:_ suspending trait
   methods work through trait objects (the checker refused them: "suspending
   trait methods are not supported yet") — a slot declared `suspends` holds the
   coroutine form of the impl's method (a ramp for a plain impl, so `fs.File`
   and `net.Conn` fit one trait), `callVirtual` starts it as a task and awaits it
   (`sema.ObjectSigs`, `vtableThunk`); default arguments declared in the trait now
-  apply to calls through an object (`traitParamDefault`). *Std:* `io.Stream : Closeable`
+  apply to calls through an object (`traitParamDefault`). _Std:_ `io.Stream : Closeable`
   (read, readExact, readLine, write, writeText, shutdownWrite), `io.TooLong`
   (moved from `net`, every use migrated), implemented by `net.Conn` (its methods
   moved into the implement) and `fs.File` (new `readExact`/`readLine`/`writeText`/`shutdownWrite`;
-  `readLine` is stateless over `readAt`). *Tests:* `std/fs/fs.test.vs` (a file through the object and a
+  `readLine` is stateless over `readAt`). _Tests:_ `std/fs/fs.test.vs` (a file through the object and a
   generic bound, lines, ceilings), `std/net/net.test.vs` (a suspending call on a
   real connection; a std test file may import only what its module already
   does — `io.test.vs` importing `fs`/`net` made every program using `io` load
@@ -1619,24 +2268,24 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   `withTimeout`/`async` — implementors checked at their `implement`, boxing
   at the conversion; plus `with s = <object>` accepts an object whose trait
   requires `Closeable`. Conformance `D35-sendable-supertrait*`; `veles test
-  std/http` 105 passed. `tls.Conn` joins with E1.
+std/http` 105 passed. `tls.Conn` joins with E1.
 - **2026-10-04 — C2 part 3: `std/compress` (D124) and `http.testServer` (D130) — C2 done.**
-  *Std:* `std/compress` in Veles: a resumable inflater (the bit buffer in locals,
+  _Std:_ `std/compress` in Veles: a resumable inflater (the bit buffer in locals,
   48 bits at a time, restart at the last whole symbol), a deflater (hash chains, lazy
   matching from level 4, per block the cheapest of stored/fixed/dynamic, length-limited
   Huffman by the two-queue method with Kraft repair, a sliding window so a stream
   compresses in constant memory), CRC-32 by slicing-by-eight, `gzip`/`gunzip`/`deflate`/`inflate`
   (`max:` is a ceiling on the output, 64 MiB), `GzipWriter`/`GzipReader` over `io.Stream`,
   `GzipEncoder` (no stream; what the HTTP body writer holds under a lock).
-  *http:* `http.compress(minBytes:, level:)`, `http.decompressRequests(max:)`, `.gz` siblings in
+  _http:_ `http.compress(minBytes:, level:)`, `http.decompressRequests(max:)`, `.gz` siblings in
   `http.files`, `http.testServer` (the tests' own helper, migrated: 25 call sites).
-  *Measured* (`bench/gzip`, `bench/gunzip`, Go's `compress/gzip`): 1.1× / 1.5× on 2 MiB of word
+  _Measured_ (`bench/gzip`, `bench/gunzip`, Go's `compress/gzip`): 1.1× / 1.5× on 2 MiB of word
   text; on 0.8 MB of Markdown prose 2.3× / ~3× (it began at 2.3× / 4.6× — the CRC went from
   byte-wise to slicing-by-eight, and `slice`/`addAll` from a push per element to one `memcpy`,
   8× on bytes); output 0.7–1.7% smaller than Go's. The other benchmarks did not move
   (json 1.0×, sort 0.8×). `examples/httpd` now compiles 5.6 MB of IR (was 4.4) and links a
   2.7 MB binary (was 2.45) because every function of an imported module is emitted — the
-  case for dead-function elimination in codegen. *Tests:* `std/compress/compress.test.vs` (15:
+  case for dead-function elimination in codegen. _Tests:_ `std/compress/compress.test.vs` (15:
   Go-made vectors, every level, damaged/cut/oversized input, a reader fed one byte at a time,
   the writer with flushes), `std/http/compress.test.vs` (13: which responses are touched, a
   stream, over a socket, `.gz` siblings, request bodies and their ceiling),
@@ -1658,7 +2307,7 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
 - 2026-10-04 — **C3 `std/config` (D125) done.** Decided with the user first (all recommended): the
   derive writes `Decodable.schema(format, keys)` beside a derived `decode`; an empty variable is a
   value; dotenv has no interpolation. Built: `std/config/{config,dotenv}.vs` — `load<T>(files:,
-  prefix:)` (environment, files last to first, field defaults), `describe<T>(prefix:)`,
+prefix:)` (environment, files last to first, field defaults), `describe<T>(prefix:)`,
   `config.Error` (one `Problem` per variable, named by the variable with its source, a `Secret`
   never echoed), dotenv reader (quotes, escapes, multi-line, `export`, ` #` comments, no
   interpolation), JSON files by field name; the schema types `Schema`/`SchemaField`/`SchemaKind`
@@ -1691,14 +2340,14 @@ input and stderr (D82), list capacity (D83), and Q18 (D84).
   byte-range and shared locks are not offered. Next in the Build order: step 12 C8 template
   literals (D129 part 1).
 
-- 2026-10-04 — **Test files (D78 amended) and C8 template literals (D129 part 1).** *Test files* (the
+- 2026-10-04 — **Test files (D78 amended) and C8 template literals (D129 part 1).** _Test files_ (the
   user): a top-level `fun` in a `*.test.vs` file is an error with a fix that writes `test fun`; a type,
   value or helper declared there is an error when a non-test file names it (`declaredInTestFile`); the whole
   tree migrated (12 test files, one Go test's embedded source); tests `TestTestFile…` in
   `sema/testfile_rules_test.go`. **The user's "later"** — exporting test code so people can write reusable test
-  libraries — is open (checklist §11). *Standing rule* (the user): everything not done goes into checklist
+  libraries — is open (checklist §11). _Standing rule_ (the user): everything not done goes into checklist
   §11 in the same change (CLAUDE.md, memory); the deferred items of C2, C3, C5/C6 were written there.
-  *C8:* `tag"…"` parsed (adjacent string after a name or `module.name`), lowered by the checker to the call
+  _C8:_ `tag"…"` parsed (adjacent string after a name or `module.name`), lowered by the checker to the call
   `tag(pieces, values)`, `@template` validated, formatter/`Dump`/grammar, example `examples/templates`, docs 2
   and 14; no design question was open (D129 fixes the form). **Not done:** `std/db`, std tags,
   semantic tokens, tagged multi-line/raw literals (checklist §11). Next in the Build order: step 13 C7, the
@@ -1751,7 +2400,7 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 
 **Also 2026-10-08 (decision-free fixes found on the way).** A union of error types could not be written as a type argument — `Result<i64, IoError | io.TooLong>`, the type the checker itself prints — because `Name |` in a type argument was read as a constant expression (D121); names joined by `|` there are now an error union, and a constant parameter reads them back as `N | M` (`sema/testdata/conform/D45-union-type-argument.vs`). `throws A, B` in a declaration said "function needs a body"; it is now "error types are joined with '|', not ','" with a fix, and the declaration still means the union (`D45-throws-comma.vs`).
 
-**`const fun`, the review list (notes C1/C2), 2026-10-08.** C2 (documentation) done: chapter 2 has how the evaluator works, a table of what a `const fun` may call (each row checked by a probe at compile time against run time), a worked failure with the real output, and when to use `const fun` vs `const` vs `val`; the self-host plan §10 says the evaluator is part of the port; the veles-develop skill has the contributor checklist. C1.a: **lambdas, closures (captures share their cells, as at run time), named `const fun`s as values and std's function-taking helpers** (`map`, `filter`, `fold`, `sortedBy`, `binarySearch`, `Map.mapValues`…) now run in the compiler; a lambda is held to the rules with the function it is written in; trait objects remain refused. C1.c: the function-free `List`/`Range` helpers, `Duration`, the `hex`/`base64` encoders and `std/utf8` are `const fun`, and `std/testdata/const-functions.txt` lists every std `const fun` so a dropped mark fails `go test ./std`. **Bugs fixed on the way:** an instance of a generic `const fun` was refused at std's declaration whenever its type argument kept it from running in the compiler — so `xs.max()` at *run time* on a type with an ordinary `compareTo` failed to compile — it is now refused only if a constant runs it, with the reason; a `const fun` whose body did not check added a cascade at its constant ("this (*sema.UnitConst) is not a constant expression"), and the evaluator's fallback message no longer prints Go type names. Pinned by `driver/constfun_test.go` (25 differential tests, debug and release), `D113-const-fun-cascade.vs`, `D113-const-fun-generic-instance.vs` and the updated `D113-const-fun.vs`.
+**`const fun`, the review list (notes C1/C2), 2026-10-08.** C2 (documentation) done: chapter 2 has how the evaluator works, a table of what a `const fun` may call (each row checked by a probe at compile time against run time), a worked failure with the real output, and when to use `const fun` vs `const` vs `val`; the self-host plan §10 says the evaluator is part of the port; the veles-develop skill has the contributor checklist. C1.a: **lambdas, closures (captures share their cells, as at run time), named `const fun`s as values and std's function-taking helpers** (`map`, `filter`, `fold`, `sortedBy`, `binarySearch`, `Map.mapValues`…) now run in the compiler; a lambda is held to the rules with the function it is written in; trait objects remain refused. C1.c: the function-free `List`/`Range` helpers, `Duration`, the `hex`/`base64` encoders and `std/utf8` are `const fun`, and `std/testdata/const-functions.txt` lists every std `const fun` so a dropped mark fails `go test ./std`. **Bugs fixed on the way:** an instance of a generic `const fun` was refused at std's declaration whenever its type argument kept it from running in the compiler — so `xs.max()` at _run time_ on a type with an ordinary `compareTo` failed to compile — it is now refused only if a constant runs it, with the reason; a `const fun` whose body did not check added a cascade at its constant ("this (\*sema.UnitConst) is not a constant expression"), and the evaluator's fallback message no longer prints Go type names. Pinned by `driver/constfun_test.go` (25 differential tests, debug and release), `D113-const-fun-cascade.vs`, `D113-const-fun-generic-instance.vs` and the updated `D113-const-fun.vs`.
 
 **Progress 2026-10-08 (S5 / E4 P0: the self-hosted front end begins).** `selfhost/`: a Veles package (`veles.toml`, `main.vs`, `source/source.vs`) that ports Go's `source` — files, the line table, positions, lines, spans, diagnostics and their rendering — and `selfhost/selfhost_test.go`, the equivalence harness of the self-host plan §2: it builds `selfhost/` with a freshly built compiler and compares its output with the Go `source` package's, byte for byte, on every Veles file in the repository plus edge files (331 files, ~8 s). Gate P0 holds; a deliberately broken `line` (keeping a `\r`) fails it on the first CRLF file. Next: P1, the lexer (G1, tokens), which must also read files that are not valid UTF-8.
 
@@ -1765,7 +2414,7 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 
 **Progress 2026-10-08 (implicit_return levels; user).** The on/off `[lint] explicit_return` became `implicit_return = "full" | "lambda" | "expr"`: "full" (the default) allows a body's last expression as its value anywhere; "lambda" keeps it in every lambda and in `fun f() = expr` but asks a function's or method's `{ }` body for `return`; "expr" allows it only in bodies without braces. `sema/lint_return.go`, `sema/manifest.go`; `lint_return_test.go` checks the lines each level reports and the fix. Docs: chapters 11 and 25, `reference/errors.md`, the spec addendum.
 
-**Progress 2026-10-08 (D140: `fun f() => expr`; user, recommended of 3).** An expression body is written after `=>`, so `=` only binds and `=>` only yields. The Go parser reads `=> expr`; the removed `= expr` is an error with a fix that writes `=>` (family removed-syntax), and `=> { … }` an error with a fix that removes the arrow. The formatter prints ` =>` and parenthesizes a returned lambda (`=> (x => x + n)`, as D106 for arms); the trait-method stubs a fix writes and the hover of a trait's default method use `=>`. The self-hosted parser reads `=> expr` only; `= expr` joined `removedSpellings` and `edge/p-removed`, `fun q() => { 1 }` the `p-signatures` edge. Migration: the parser's own fix applied by a scratch tool to 278 files — std, examples, bench, selfhost, the conformance cases, the codegen golden sources, the docs' and skills' programs, and the Veles programs inside Go test strings (1,956 bodies), plus 13 lines of `driver/constfun_test.go` and one `Sprintf` template by hand. Codegen goldens re-accepted (panic-site columns +1), two hand-written expected call sites moved one column, the vendored `examples/packages/app` greeter's hash updated, `std/const_test.go` cuts a signature at ` => `. Tests: `parser_test.go` TestD140ArrowBodies, a formatter style case. `go test ./...` green on Windows.
+**Progress 2026-10-08 (D140: `fun f() => expr`; user, recommended of 3).** An expression body is written after `=>`, so `=` only binds and `=>` only yields. The Go parser reads `=> expr`; the removed `= expr` is an error with a fix that writes `=>` (family removed-syntax), and `=> { … }` an error with a fix that removes the arrow. The formatter prints ` =>` and parenthesizes a returned lambda (`=> (x => x + n)`, as D106 for arms); the trait-method stubs a fix writes and the hover of a trait's default method use `=>`. The self-hosted parser reads `=> expr` only; `= expr` joined `removedSpellings` and `edge/p-removed`, `fun q() => { 1 }` the `p-signatures` edge. Migration: the parser's own fix applied by a scratch tool to 278 files — std, examples, bench, selfhost, the conformance cases, the codegen golden sources, the docs' and skills' programs, and the Veles programs inside Go test strings (1,956 bodies), plus 13 lines of `driver/constfun_test.go` and one `Sprintf` template by hand. Codegen goldens re-accepted (panic-site columns +1), two hand-written expected call sites moved one column, the vendored `examples/packages/app` greeter's hash updated, `std/const_test.go` cuts a signature at `=>`. Tests: `parser_test.go` TestD140ArrowBodies, a formatter style case. `go test ./...` green on Windows.
 
 **Progress 2026-10-08 (D141: task handles stay in their scope; `await` gives the value; user, recommended of 3 each).** The user's question on `bench/httphello` (handles pushed into a list declared before the `scope`, awaited after it) found: a handle could leave its scope, and awaiting it after an early exit panicked at run time; in a fail-fast block a throwing child's handle was `Task<Result<R, E>>` whose `Err` was never observed. Probing found two bugs besides, fixed in the same change: a scope abandoned by a failed child left the suspending call its body was inside running after the scope had rethrown (an orphan, against D3), and `async` of a function returning a `Result` without `throws`, awaited in a scope, was an internal compiler error. Sema: each `scope`/`gather` has a marker that its `async` handles alias, so D100 part 3's local escape checks (`resources.go`) refuse returning, assigning outward, storing in an outer collection and outward-stored lambdas (a collection of the block's own may hold them); `Launch` gains `Fails` (the callee throws) and `Unwrap` (a fail-fast launch: handle `Task<R>`); a `Task<Result<…>>` written where the handle goes, and `try await t`, get D141 messages with a fix. Runtime: a failing child marks its scope failed and cancels its siblings before it publishes `T_DONE`; `veles_task_set_unwrap`/`veles_task_value` give `await` the Ok payload; an await (or race arm) on a failed unwrap child never yields it — the awaiter yields until abandoned or cancelled, and panics when the scope is already over; `veles_scope_abandon` cancels the body's call in progress and makes it join the scope. Migrated: `withTimeout`, `http.requestLine`, `std/net` test, `examples/httpclient`, `examples/streams`, `bench/spawn`, `bench/pipes`, `bench/httphello`, two driver test programs, the D45 conformance case. Tests: `sema/testdata/conform/D141-task-handles.vs`, `driver/taskhandle_test.go` (debug and release, 1–8 threads). Docs: chapter 12 "Handles belong to their scope", errors reference (`tasks`), cheat sheet, stdlib table. Limits in checklist §11.
 
@@ -1781,19 +2430,19 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 **Progress 2026-10-09 (D149, `MutableList.updateAt`).** Added the generic in-place transform `updateAt(i, transform): T`: synchronous/non-throwing callback called once, stores and returns its replacement, same bounds behavior as `at`/`set`, and a documented warning not to mutate the receiver from the callback. Kept `incrementAt` for the counter case. Regression tests cover a side-effect counter proving one call, `i64` and `string` elements, negative/out-of-range indexes, and const-vs-runtime behavior. Updated collection/reference/const-function docs.
 **Verification 2026-10-09 (D149).** Windows `go build ./...`, `go vet ./...`, and uncached serial `go test -count=1 -p 1 ./...` passed. WSL targeted const-fun, `std/prelude`, and `std/compress` tests passed. The full WSL script did not finish: the driver process hit its 10-minute timeout during `TestStdHttpUnitTests` in the HTTP limits group; this change's targeted WSL tests are green, but the full WSL suite remains unverified.
 
-**Progress 2026-10-09 (F3: a suspending call runs in its caller's task).** Before, every call of a suspending function was a task of its own — a task object, an argument block, a frame, a result cell and a `setjmp` — about 70 ns even when nothing waited. Now a call passes the callee a *link* in the caller's frame (the caller's handle, the callee's depth, a done flag, the result): a callee that finishes without waiting writes its result and returns, and the caller goes on; one that waits parks the task in its own frame (`veles_frame_park`) and, when it ends, hands the task back to its caller (`popped`; the executor's `resume` runs the caller next). A task's own frame has the root link and still finishes the task. Frames of calls come from a per-task bump arena (dropped when the task parks in its own frame, so an idle task carries none); the common paths of allocating, freeing and returning are inline IR (`veles.frame.*`, field offsets asserted in `veles_task.c`). Cancellation unwinds frame by frame, innermost first; a failed child abandoning a scope body inside calls marks the task's `abandon_depth`, and every deeper frame sees a cancellation, leaves its waits and unwinds back to the body (so the body's own `with` now closes after the calls' — before, it closed first). A panic unwinds the whole task. The task lost `awaiting` (the old callee-task chain) and kept 248 bytes (`result` shares storage with `entry_args`). **Measured** against HEAD, three rounds: `bench/suscall` (new: 10M three-deep calls that never wait) 2.45–2.61 s → 128–148 ms (~70 → ~4.4 ns a call); `httphello` 1.11–1.30 → 0.93–0.98 s; `spawn` 55–73 → 41–51 ms; `channels`, `pipes`, `parallel`, `json` unchanged or better. **Bug found and fixed on the way:** a method-table slot declared `suspends` over a method that does not suspend forwarded no arguments to its ramp (it took them from the ramp, which lists none) and worked only because they stayed in their registers; the extra link argument broke it (`std/fs`'s stream test ran out of memory). Pinned by `TestSuspendingCallsInOneTask` (abandonment three calls deep, timeout three calls deep, values, big values and errors across suspensions, 20 000-deep recursion, a panic two calls deep; debug and release, 1/2/8 threads, GC pressure), golden IR updated; docs reference/concurrency "What it costs", chapter 13; spec D35 addendum. Windows and WSL suites green, examples at 1/2/8 threads on WSL, sanitizer clean on the concurrency tests. Next: F4 (D145).
+**Progress 2026-10-09 (F3: a suspending call runs in its caller's task).** Before, every call of a suspending function was a task of its own — a task object, an argument block, a frame, a result cell and a `setjmp` — about 70 ns even when nothing waited. Now a call passes the callee a _link_ in the caller's frame (the caller's handle, the callee's depth, a done flag, the result): a callee that finishes without waiting writes its result and returns, and the caller goes on; one that waits parks the task in its own frame (`veles_frame_park`) and, when it ends, hands the task back to its caller (`popped`; the executor's `resume` runs the caller next). A task's own frame has the root link and still finishes the task. Frames of calls come from a per-task bump arena (dropped when the task parks in its own frame, so an idle task carries none); the common paths of allocating, freeing and returning are inline IR (`veles.frame.*`, field offsets asserted in `veles_task.c`). Cancellation unwinds frame by frame, innermost first; a failed child abandoning a scope body inside calls marks the task's `abandon_depth`, and every deeper frame sees a cancellation, leaves its waits and unwinds back to the body (so the body's own `with` now closes after the calls' — before, it closed first). A panic unwinds the whole task. The task lost `awaiting` (the old callee-task chain) and kept 248 bytes (`result` shares storage with `entry_args`). **Measured** against HEAD, three rounds: `bench/suscall` (new: 10M three-deep calls that never wait) 2.45–2.61 s → 128–148 ms (~70 → ~4.4 ns a call); `httphello` 1.11–1.30 → 0.93–0.98 s; `spawn` 55–73 → 41–51 ms; `channels`, `pipes`, `parallel`, `json` unchanged or better. **Bug found and fixed on the way:** a method-table slot declared `suspends` over a method that does not suspend forwarded no arguments to its ramp (it took them from the ramp, which lists none) and worked only because they stayed in their registers; the extra link argument broke it (`std/fs`'s stream test ran out of memory). Pinned by `TestSuspendingCallsInOneTask` (abandonment three calls deep, timeout three calls deep, values, big values and errors across suspensions, 20 000-deep recursion, a panic two calls deep; debug and release, 1/2/8 threads, GC pressure), golden IR updated; docs reference/concurrency "What it costs", chapter 13; spec D35 addendum. Windows and WSL suites green, examples at 1/2/8 threads on WSL, sanitizer clean on the concurrency tests. Next: F4 (D145).
 
-**Progress 2026-10-09 (F4: D145 — loops are cancellation points, suspending loops yield).** A loop's back edge now polls `veles_attention` (the collector raises it as it raised `veles_stop_requested`; so do a cancellation or a scope abandonment of a *running* task, and the monitor's request to yield), alone on a 64-byte line. The slow path asks the runtime: a suspending function takes its ordinary cancellation path, yields through `sleep(0)`, or runs the scope body's fail-fast check; a plain function unwinds the task from where it is, as a panic does. **New: a task unwound without its frame (a panic, or that cancellation) ends only once the children of the scopes it left have finished** — it waits as `T_ENDING`; a panic used to end at once and leave them running (D3). Shielding: a per-thread count raised by a held `Mutex` and around each `with` close (`runClose`). The monitor (5 ms looks while tasks run) asks a task running ~10 ms with work waiting to yield, and at its first look moves that worker's `runnext` (a child the running task launched) to the shared queue — found while testing: a child launched by a body that then looped never started until the loop ended (`runnext` is now changed by exchange everywhere). `yieldNow()`, `checkCancelled()` in the prelude. **Measured**: `withTimeout(100 ms)` around a 4-billion-step plain loop returns in ~100 ms at ≥ 2 threads (it ran to the end before); with one thread a suspending loop lets a 50 ms ticker run on time (was after the loop, 1.3 s); benchmarks against HEAD equal or better (`sort`, `json`, `strings`, `channels`; `spawn` 56 → 36 ms, `httphello` 1.02–1.06 → 0.90 s). **A regression caught and fixed:** `sha256` was 8–10 % slower until the polled word got a cache line of its own (59–66 ms against HEAD's 66–79 after). Pinned by `TestLoopsAreCancellationPoints` (a plain loop under `withTimeout`, a suspending loop's fairness on one thread, a lock region and a `close()` shielded, `checkCancelled`, the wait for a scope's children after a cancellation and after a panic, a body loop abandoned by a failed child — debug and release, 2/4/8 threads under GC pressure, and one thread); docs reference/concurrency (the interruption rule, both examples rewritten to show it, the mistakes table), chapters 12, 14, 16, concurrency-explained, stdlib; spec D145 "Built". **Not done** (checklist): under `VELES_THREADS=1` a plain computation keeps the only thread. Next: F5 (D144 atomics).
+**Progress 2026-10-09 (F4: D145 — loops are cancellation points, suspending loops yield).** A loop's back edge now polls `veles_attention` (the collector raises it as it raised `veles_stop_requested`; so do a cancellation or a scope abandonment of a _running_ task, and the monitor's request to yield), alone on a 64-byte line. The slow path asks the runtime: a suspending function takes its ordinary cancellation path, yields through `sleep(0)`, or runs the scope body's fail-fast check; a plain function unwinds the task from where it is, as a panic does. **New: a task unwound without its frame (a panic, or that cancellation) ends only once the children of the scopes it left have finished** — it waits as `T_ENDING`; a panic used to end at once and leave them running (D3). Shielding: a per-thread count raised by a held `Mutex` and around each `with` close (`runClose`). The monitor (5 ms looks while tasks run) asks a task running ~10 ms with work waiting to yield, and at its first look moves that worker's `runnext` (a child the running task launched) to the shared queue — found while testing: a child launched by a body that then looped never started until the loop ended (`runnext` is now changed by exchange everywhere). `yieldNow()`, `checkCancelled()` in the prelude. **Measured**: `withTimeout(100 ms)` around a 4-billion-step plain loop returns in ~100 ms at ≥ 2 threads (it ran to the end before); with one thread a suspending loop lets a 50 ms ticker run on time (was after the loop, 1.3 s); benchmarks against HEAD equal or better (`sort`, `json`, `strings`, `channels`; `spawn` 56 → 36 ms, `httphello` 1.02–1.06 → 0.90 s). **A regression caught and fixed:** `sha256` was 8–10 % slower until the polled word got a cache line of its own (59–66 ms against HEAD's 66–79 after). Pinned by `TestLoopsAreCancellationPoints` (a plain loop under `withTimeout`, a suspending loop's fairness on one thread, a lock region and a `close()` shielded, `checkCancelled`, the wait for a scope's children after a cancellation and after a panic, a body loop abandoned by a failed child — debug and release, 2/4/8 threads under GC pressure, and one thread); docs reference/concurrency (the interruption rule, both examples rewritten to show it, the mistakes table), chapters 12, 14, 16, concurrency-explained, stdlib; spec D145 "Built". **Not done** (checklist): under `VELES_THREADS=1` a plain computation keeps the only thread. Next: F5 (D144 atomics).
 
 **Progress 2026-10-09 (F5: D144 — atomics).** `Atomic<T>` gains `compareAndSet` and `compareExchange` (with `failure:`), and on the ten integer types `add`/`sub` (new value, wrapping) and `fetchAnd`/`fetchOr`/`fetchXor` (old value), one `extend Atomic<T>` block per type. Every operation takes `order: MemoryOrder` (a new prelude enum: `Relaxed`, `Acquire`, `Release`, `AcqRel`, `SeqCst`, the default). An order written as a case and invalid for the operation is a compile error at the call (`sema/atomic.go` `checkMemoryOrders`): a load that releases, a store that acquires, a failure order that stores or is stronger than `order:`. An order known only at run time goes to the instruction as a value: a switch with one block per LLVM ordering, folded when inlined (release `hits.add(1)` = one `lock incq`), and an invalid one acts as `SeqCst`. An `Atomic` of a pointer, a nullable pointer or an enum is lock-free now. `add` on a non-integer `Atomic` says where it lives. std's counters use `add`/`sub` instead of `update(n => n ± k)`. Tests: `sema TestAtomicMemoryOrders`, `driver TestAtomicOperations` (a Treiber stack on `Atomic<(*Node)?>`, relaxed adds, bit flags, a release/acquire hand-off, wrapping; debug/release, 1/2/8 threads, GC pressure). Docs: chapter 12 (the operation table), chapter 13 "Atomics and memory orders" (the stack, the order table), reference/concurrency, stdlib, cheatsheet. Measured: 8 tasks × 2 M increments on 8 threads, `add` 130–153 ms, `update` 266–376 ms.
 
-**Progress 2026-10-09 (F6: D146 — RwLock, Event, Lazy, Broadcast, Watch).** All prelude. `RwLock<T>`: a two-word runtime lock (`veles_rw_read/write_lock/unlock` in `veles_sync.c`: writer bit, parked bit, readers from bit 2, plus a waiting-writers count that keeps new readers out), parked on the Mutex stripes; the thread keeps a list of the RwLocks it holds (TLS `rw_held`), so a re-lock panics; `read()`/`write()` go through the D107 machinery (`isMutexLock`, `HeldLock.Method`), with `withRead`/`withWrite` and `get`/`set`. `Event`, `Watch`, `Broadcast`/`Subscription` (`std/prelude/notify.vs`) keep state behind a Mutex and wake waiters by closing a signal channel. Their waits are *awaited* methods: `sema/awaited.go` requires `await` on `wait`/`changed`/`recv` (D16) and lowers a race arm `x.m()` to a channel arm on `x.mSignal()` whose win runs `x.mTake()`. `Lazy<T>` builds under its lock, publishes with a release store and reads with an acquire load; a panic in `init` is recorded by a close (`veles_panic_current`) and re-raised by every later `get`. All Sendable when `T` is (`syncWrapper`). Tests: sema `TestSyncTypes` (awaits, the race receiver rule, read() outside `with`, a wait in a write region, Sendable); driver `TestSyncTypes` (debug/release, 1/2/8 threads, GC pressure; the three re-lock panics). Docs: chapter 12 section and example, reference/concurrency, stdlib, cheatsheet, errors. Settled details in the D146 "Built" addendum (Watch's last-seen per copy, the race receiver rule, send after close panics, get/set/isReady added for parity). Found on the way: `sema TestCheckEveryPrefix` (the "load flake" of F4) failed reliably now — the hint for an unknown name re-parsed every standard module not yet imported, once per unknown name (a 128-line prefix of `examples/algorithms` has 67): parsed modules are kept per package now (`Package.peeked`), `veles check` of that prefix 5.3 → 2.4 s, the test 184 → 157 s. And `examples/cancel` (F4's other "load flake") failed on an idle Linux run: it gave its children 20 ms to start, and a child there can take longer (F9); it now waits on a channel the children signal when they hold their resources and when the gather's child has closed — output unchanged, 30/30 on Linux.
+**Progress 2026-10-09 (F6: D146 — RwLock, Event, Lazy, Broadcast, Watch).** All prelude. `RwLock<T>`: a two-word runtime lock (`veles_rw_read/write_lock/unlock` in `veles_sync.c`: writer bit, parked bit, readers from bit 2, plus a waiting-writers count that keeps new readers out), parked on the Mutex stripes; the thread keeps a list of the RwLocks it holds (TLS `rw_held`), so a re-lock panics; `read()`/`write()` go through the D107 machinery (`isMutexLock`, `HeldLock.Method`), with `withRead`/`withWrite` and `get`/`set`. `Event`, `Watch`, `Broadcast`/`Subscription` (`std/prelude/notify.vs`) keep state behind a Mutex and wake waiters by closing a signal channel. Their waits are _awaited_ methods: `sema/awaited.go` requires `await` on `wait`/`changed`/`recv` (D16) and lowers a race arm `x.m()` to a channel arm on `x.mSignal()` whose win runs `x.mTake()`. `Lazy<T>` builds under its lock, publishes with a release store and reads with an acquire load; a panic in `init` is recorded by a close (`veles_panic_current`) and re-raised by every later `get`. All Sendable when `T` is (`syncWrapper`). Tests: sema `TestSyncTypes` (awaits, the race receiver rule, read() outside `with`, a wait in a write region, Sendable); driver `TestSyncTypes` (debug/release, 1/2/8 threads, GC pressure; the three re-lock panics). Docs: chapter 12 section and example, reference/concurrency, stdlib, cheatsheet, errors. Settled details in the D146 "Built" addendum (Watch's last-seen per copy, the race receiver rule, send after close panics, get/set/isReady added for parity). Found on the way: `sema TestCheckEveryPrefix` (the "load flake" of F4) failed reliably now — the hint for an unknown name re-parsed every standard module not yet imported, once per unknown name (a 128-line prefix of `examples/algorithms` has 67): parsed modules are kept per package now (`Package.peeked`), `veles check` of that prefix 5.3 → 2.4 s, the test 184 → 157 s. And `examples/cancel` (F4's other "load flake") failed on an idle Linux run: it gave its children 20 ms to start, and a child there can take longer (F9); it now waits on a channel the children signal when they hold their resources and when the gather's child has closed — output unchanged, 30/30 on Linux.
 
-**Progress 2026-10-10 (F7: D147 — a close() that suspends).** sema: `fun close() suspends` is allowed in `implement Closeable` and required when the close suspends (`suspend.go`); a Closeable object of such a type is refused (`boxValue`, supers included); lock regions and non-suspending lambdas refuse it through the existing checks. Codegen/runtime: `runClose` shields the task (`veles_task_shield_enter/leave`, a `shield` byte in `veles_task`, still 248 bytes; `cancel_task` neither wakes a shielded parked task nor does a failed child abandon its body); a panic's close thunk hands a suspending close to a *closer* task (`veles_cleanup_continue`): the remaining cleanups are copied to the heap through each record's new `move` function — the frames and the stack they point into are being left (the first try kept the records in place and crashed on one living on the C stack) — and the closer runs them after the close (`veles_task_finish`); the unwinding task waits for it as for a draining scope. std: `Tx.close()` sends ROLLBACK within the transaction's timeout and keeps the connection; `Telemetry.close()` flushes; TLS: `io.Stream : Closeable` and TLS conns are `io.Stream` objects, so the close stays plain and sends close_notify as Go's `Close` does, with one non-blocking write (`net.Conn.tryWrite`, new) — the user: "do it like go/rust". Tests: sema `TestSuspendingClose`; driver `TestSuspendingClose` (normal end, a panic across two suspending closes, cancellation parked and in a plain loop, a cancellation during the close, generics; debug/release, 1/2/8 threads, GC pressure); `TestTLSClient` (a Go server reads the alert from the socket; fails without it); `std/db` against PostgreSQL 18 (the abandoned transaction's connection is the next statement's; fails with the old close); `std/otel` (the end of the `with` exports). Docs: chapter 13 "A close that waits", 16, 23, 24, reference concurrency/stdlib/errors; spec D147 "Built" addendum with the TLS deviation.
+**Progress 2026-10-10 (F7: D147 — a close() that suspends).** sema: `fun close() suspends` is allowed in `implement Closeable` and required when the close suspends (`suspend.go`); a Closeable object of such a type is refused (`boxValue`, supers included); lock regions and non-suspending lambdas refuse it through the existing checks. Codegen/runtime: `runClose` shields the task (`veles_task_shield_enter/leave`, a `shield` byte in `veles_task`, still 248 bytes; `cancel_task` neither wakes a shielded parked task nor does a failed child abandon its body); a panic's close thunk hands a suspending close to a _closer_ task (`veles_cleanup_continue`): the remaining cleanups are copied to the heap through each record's new `move` function — the frames and the stack they point into are being left (the first try kept the records in place and crashed on one living on the C stack) — and the closer runs them after the close (`veles_task_finish`); the unwinding task waits for it as for a draining scope. std: `Tx.close()` sends ROLLBACK within the transaction's timeout and keeps the connection; `Telemetry.close()` flushes; TLS: `io.Stream : Closeable` and TLS conns are `io.Stream` objects, so the close stays plain and sends close_notify as Go's `Close` does, with one non-blocking write (`net.Conn.tryWrite`, new) — the user: "do it like go/rust". Tests: sema `TestSuspendingClose`; driver `TestSuspendingClose` (normal end, a panic across two suspending closes, cancellation parked and in a plain loop, a cancellation during the close, generics; debug/release, 1/2/8 threads, GC pressure); `TestTLSClient` (a Go server reads the alert from the socket; fails without it); `std/db` against PostgreSQL 18 (the abandoned transaction's connection is the next statement's; fails with the old close); `std/otel` (the end of the `with` exports). Docs: chapter 13 "A close that waits", 16, 23, 24, reference concurrency/stdlib/errors; spec D147 "Built" addendum with the TLS deviation.
 
 **Progress 2026-10-10 (F8: D143 — executors and threads).** Decided while building (user; D143 addendum): an executor is made by static functions that throw, `try Executor.pool(threads:, name:, priority:, cpus:)` and `try Executor.thread(name:, …)` (D73: an `init` cannot throw); `Thread.start` takes its function as `f:`; closing a `Thread` blocks (Rust's `join`). The user rewrote `Executor.run`'s body as `return await async f()`. Runtime (`veles_task.c`): the default pool's globals became a `veles_exec` record — shared queue, run queues, idle/waking/spinning counts — and every pool, `Executor.thread` and the blocking pool has one; a task runs on its scope's executor (`veles_scope.exec`: `on:`, or the owner's), so `place` queues every wake there; `veles_task` unchanged (248 bytes). Other executors' threads only run tasks: timers and sockets stay with the default pool, which a pool thread wakes when it arms an earlier timer or parks on a socket; no hand-off around blocking calls outside the default pool; the monitor looks at every executor's runs (the list under the runtime lock); the deadlock check counts every executor's queues and running threads. Threads set their name, priority and CPUs as they start (`veles_thread_configure` in `veles_sync.c`: Windows priorities and affinity masks, Linux nice/SCHED_FIFO and `sched_setaffinity`, macOS a name) and report before the next starts, so a refusal is a `ThreadError` with nothing left running; a thread of a closed executor detaches from the collector (`veles_thread_detach`) and frees its block. The blocking pool grows a thread at a time up to 128, threads end after 10 s idle. `Thread`: the function runs as a task outside every executor (a panic unwinds and is raised again at the join; task-locals follow). Language: `scope(on: e)`, `gather(on: e)` in both front ends (Go and `selfhost`), the formatter and the AST printer; sema checks the type and lowers to the handle; `[runtime] threads` in the manifest reaches the runtime before anything runs (`veles_runtime_threads`). Prelude `std/prelude/executor.vs`: `Executor` (Sendable), `Priority`, `ThreadError`, `blocking`, `Thread`. **Measured** (Windows, 8-thread default pool, an HTTP server and 16 clients): p50 230–265 µs idle, 450–466 µs with 6 spinning loops on the default pool, 279–289 µs with them on their own pool. Tests: driver `TestExecutors` (debug/release, 1/2/8 threads, GC pressure — at most a pool's threads used, one OS thread across 1 000 suspensions, `run`/`blocking`/`gather(on:)`, a timer and a socket on a pool's task, a Thread's join and panic, refused CPUs, a closed executor), `TestRuntimeThreadsManifest`; sema `TestExecutorPlacement`, `TestManifestRuntime`; format `TestScopeOnRoundTrips`; codegen goldens re-accepted (two declarations). Docs: chapter 12 "Choosing the threads: executors" (tested), chapter 11 `[runtime]`, concurrency-explained, reference concurrency/stdlib/cheatsheet/errors. Not done (checklist §11): CPUs past 63 on Windows, macOS settings, a blocking `run` for a Thread's plain function, the latency tail with a busy pool (Linux: median kept, p99 1.6–2.5 ms). Verified on WSL (full suite green; priority High/Realtime refused without CAP_SYS_NICE, with the reason). Open for the user: Q29 (non-Sendable state on an `Executor.thread`). Next: F9.
 
-**Progress 2026-10-10 (F9: the runtime lock, timers, the wake-up path).** Measured first with a start-latency probe and lock statistics (per caller, how often the runtime lock was taken and found taken). **Found:** the root task's ramp ran inline in `veles_task_start`, before `veles_run` had started a worker or the monitor, so a child launched before `main` first waited never started while `main` computed (18 s in the probe); now the root is queued and `veles_run` runs it. A child in a computing parent's `runnext` waited for the monitor (5–10 ms; about 7 ms on Linux): `place` now wakes an idle worker for it, and a stealer takes a running worker's `runnext` when its next look (a spin round later) finds the same task and the same run — Go's runnext steal, without its sleep. `sleep` and race deadlines are nanoseconds end to end (sema passes `Duration.ns`; `veles_task_sleep`, `veles_race_sleep`, `veles_ticker_start` take ns); idle waits use them at the system's resolution: condition variables on the monotonic clock with ns timeouts, `epoll_pwait2` (ENOSYS → `epoll_wait`), and on Windows the 1 ms timer period (`timeBeginPeriod` loaded from winmm). The lock statistics put 99 % of runtime-lock entries at 32 threads in `race_wait` (384k, 94 % contended), `scope_cancel` (192k) and socket waits (64k): the timer heap moved under a spinlock of its own (allocation and wakes outside it), `cancel_task` now takes apart only a *parked* task's waits (claimed S_IDLE → S_QUEUED first) and a running one leaves its own when it sees the request (`veles_task_cancelled`), so `race_wait` and `sleep` take no runtime lock; `scope_cancel` with no child left takes none. **Measured** (Windows): child start p99 5–10 µs, worst 16–106 µs (Linux worst 136 µs at 32 threads; target ≤ 0.5 ms); `sleep(200 µs)` 14–16 ms → 0.2–2 ms (Linux about 0.3 ms); `httphello` 8 threads 0.42 → 0.33 s, 32 threads 0.95 → 0.57 s — still slower than at 8, but Go's reference goes 175 → 665 ms on this machine (Linux 183 → 580 ms; Veles 0.45 → 0.63 s), so the acceptance "no slower at 32" is not met by either and is recorded in §11 with what is left (socket waits on the runtime lock, one condition variable per executor). Benchmarks otherwise equal or better (`spawn` 32 ms; Linux `spawn` 3.9× → 2.2× Go, `parallel` 1.2× → 0.7×). Test: driver `TestChildStartAndFineTimers` (a child starting before main's first wait and while its parent computes, sub-ms sleep and race timeouts never early and not a timer slice late; debug/release, 2/8 threads; fails at HEAD). A reference example that cancelled a just-launched task expecting it never to start became timing-dependent and now shows the running case only; the rule's text says why. **Found while verifying (there at HEAD too):** `TestTLSClient`'s 1 MB echo stalled for the Go server's 2-minute deadline about once in six runs under load — a deadlock in `std/tls`: a read that found records queued (often the writer's, not yet taken) waited for `sendLock`, held by the writer stalled on a full socket, while the echoing peer waited for this side to read. A reader now never waits for the lock: it leaves the records to the holder (`sendWanted`), which sends them before and just after it lets go; 8/8 under the same load. Docs chapter 20, reference/concurrency, stdlib. Track F is done; the review's remaining items are in §11.
+**Progress 2026-10-10 (F9: the runtime lock, timers, the wake-up path).** Measured first with a start-latency probe and lock statistics (per caller, how often the runtime lock was taken and found taken). **Found:** the root task's ramp ran inline in `veles_task_start`, before `veles_run` had started a worker or the monitor, so a child launched before `main` first waited never started while `main` computed (18 s in the probe); now the root is queued and `veles_run` runs it. A child in a computing parent's `runnext` waited for the monitor (5–10 ms; about 7 ms on Linux): `place` now wakes an idle worker for it, and a stealer takes a running worker's `runnext` when its next look (a spin round later) finds the same task and the same run — Go's runnext steal, without its sleep. `sleep` and race deadlines are nanoseconds end to end (sema passes `Duration.ns`; `veles_task_sleep`, `veles_race_sleep`, `veles_ticker_start` take ns); idle waits use them at the system's resolution: condition variables on the monotonic clock with ns timeouts, `epoll_pwait2` (ENOSYS → `epoll_wait`), and on Windows the 1 ms timer period (`timeBeginPeriod` loaded from winmm). The lock statistics put 99 % of runtime-lock entries at 32 threads in `race_wait` (384k, 94 % contended), `scope_cancel` (192k) and socket waits (64k): the timer heap moved under a spinlock of its own (allocation and wakes outside it), `cancel_task` now takes apart only a _parked_ task's waits (claimed S_IDLE → S_QUEUED first) and a running one leaves its own when it sees the request (`veles_task_cancelled`), so `race_wait` and `sleep` take no runtime lock; `scope_cancel` with no child left takes none. **Measured** (Windows): child start p99 5–10 µs, worst 16–106 µs (Linux worst 136 µs at 32 threads; target ≤ 0.5 ms); `sleep(200 µs)` 14–16 ms → 0.2–2 ms (Linux about 0.3 ms); `httphello` 8 threads 0.42 → 0.33 s, 32 threads 0.95 → 0.57 s — still slower than at 8, but Go's reference goes 175 → 665 ms on this machine (Linux 183 → 580 ms; Veles 0.45 → 0.63 s), so the acceptance "no slower at 32" is not met by either and is recorded in §11 with what is left (socket waits on the runtime lock, one condition variable per executor). Benchmarks otherwise equal or better (`spawn` 32 ms; Linux `spawn` 3.9× → 2.2× Go, `parallel` 1.2× → 0.7×). Test: driver `TestChildStartAndFineTimers` (a child starting before main's first wait and while its parent computes, sub-ms sleep and race timeouts never early and not a timer slice late; debug/release, 2/8 threads; fails at HEAD). A reference example that cancelled a just-launched task expecting it never to start became timing-dependent and now shows the running case only; the rule's text says why. **Found while verifying (there at HEAD too):** `TestTLSClient`'s 1 MB echo stalled for the Go server's 2-minute deadline about once in six runs under load — a deadlock in `std/tls`: a read that found records queued (often the writer's, not yet taken) waited for `sendLock`, held by the writer stalled on a full socket, while the echoing peer waited for this side to read. A reader now never waits for the lock: it leaves the records to the holder (`sendWanted`), which sends them before and just after it lets go; 8/8 under the same load. Docs chapter 20, reference/concurrency, stdlib. Track F is done; the review's remaining items are in §11.
 
 **Progress 2026-10-10 (F10: memory, the collector and the last locks).** The user: "the concurrency topic must be done perfectly". Measured before changing anything — CPU time by category in the default pool's loop (rdtsc), lock statistics per call site, the collector's phases, allocation per call site, frame sizes and arena use at each park: at 32 threads `bench/httphello` burned 7–10 s of user CPU in a 0.65 s run (Go 1.6–3.2 s), and the time was inside the tasks, not in spinning. **The collector was half the run:** ~100 stop-the-world collections in 0.4 s, marking and sweeping on one thread while the others waited. **Allocation:** two thirds of it (612 MB of ~900 MB) were 2 KB frame-arena chunks — a task dropped its chunk at every park in its own frame and at its end, and took a new one at its next call; a frame chain shrinking back dropped the chunks it had grown into. Chunks now go back to a cache in the thread block (16), and are sized to the collector's 2048-byte class (2072 bytes had taken a 4096 slot). **Coroutine frames** were 0.8–5.6 KB in `std/http` (`readRequest` 5.6 KB: 169 allocas, 56 of them its own result type, one per return and throw): without lifetime markers the coroutine split counts every alloca live from the function's entry, so each temporary written after a suspension point took a frame slot of its own. A temporary built and taken apart in place (the codegen's `scratch`: tagged values, union fields and conversions, if/when/race results outside the memory class, the result handed to `veles_frame_return`) now gets `llvm.lifetime.start` where it is made, and stays on the stack: those frames are under 256 bytes now, and a task parked ten calls deep in a read holds ~4 KB. A first attempt marked every alloca and broke two tests: a race's send arm and an integer's text buffer are kept by a call past a suspension the IR does not show — the split then put them on a discarded stack; the comment on `scratch` says so. **The collector:** size classes at most a quarter apart from 64 bytes on (36, found in one look for sizes up to 1 KB); marking shared with helper threads (one per core up to eight, once 1 MB stays live; `VELES_GC_MARKERS`) that sleep until a marker shares a batch of its stack — half of it, oldest first, from eight entries on (helpers spinning for work slowed the collecting thread down; sharing only past 512 entries never happened on a tree's narrow stack); sweeping in chunks of spans claimed by the markers; a heap-bounds check before the page table. **Locks:** socket waits in 64 shards of their own (the runtime lock had been found taken in 78 % of them at 32 threads), the timers in 64 heaps chosen by the task's address (the one timer heap's spinlock 73 %), the default pool's housekeeping between batches (timers, a quick look at the sockets) off the runtime lock, tickers under a spinlock of their own, and the Windows reactor's socket table in 32 shards. The monitor now registers with the collector (it moves tasks between queues) and fires timers and looks at sockets that no default thread came back for — a pool task's `sleep` waited for every default thread's plain loop to end. **Found and fixed:** a suspending call cancelled at a loop's back edge before it ever waited returned to its caller with `done` set, and the caller went on and read the result the call never wrote (`TestLoopsAreCancellationPoints` case 9 printed the caller's line at HEAD): `veles_frame_unwound` marks the link 2, and the caller then unwinds or abandons its scope as after a suspension point. **Measured:** `httphello` on Windows 310 → 160–180 ms at 8 threads, 650 → 180–230 ms at 32 (Go 150 / 400 ms; CPU at 32 threads 7–10 s → 2–2.5 s); Linux 0.45 → 0.22–0.26 s at 8, 0.63 → 0.26–0.33 s at 32 (Go 0.19–0.22 / 0.55–0.60 s, with twice the CPU); collections 102 → 65 at 8 threads, mark 58 → 17 ms and sweep 34 → 8 ms in all; `bench/idle` (new, with a memory table in the runner): 345 bytes per parked task, Go 8.7 KB per goroutine, the review's 250 not reached (§11 says what it needs). Other benchmarks equal or better. Tests: driver `TestParallelCollector` (1/2/8 markers, 2/8 threads, debug/release, poisoned sweeps), `TestExecutors` case 11 (a pool's timer and socket while every default thread runs a plain loop; fails without the monitor's part), `TestLoopsAreCancellationPoints` case 9. Docs chapters 12 and 13, concurrency-explained, reference/concurrency, cheatsheet, README. Left in §11: `withTimeout`'s task per call, the task's size, the stop-the-world pause, idle threads on one condition variable per executor, Windows' 1 ms timers.
 
@@ -1815,7 +2464,7 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 
 **Progress 2026-10-13 (F19 built: D156).** Tests first: conformance files D156-awaited-handles, -await-all, -workers, -scope-value, -lazy-map; driver `TestLessCeremony` (an abandoned `val` task cancelled and joined before the error leaves, a failing child failing the block, `awaitAll` cancelling its inline siblings, peaks under `workers:` with and without `on:` and in `gather`, the lazy form's order and run-ahead, a `break` joining every call it started, a scope's value; debug and release, 1–8 threads); a new example `examples/verify` (a `sha256sum -c`: manifest and listing read with `awaitAll`, files hashed by the lazy `mapConcurrent`) and a D156 section in `examples/tasks`. Built: (a) `scope` as an expression (`ast.ScopeExpr`; a scope ending a block that has a value is that value) and `workers:` in the parser, formatter and self-hosted parser; (b) `val h = async f()` lowered as a with-task whose handle is checked awaited on every normal exit by a flow fact (`sema/mustawait.go`), every other use refused; the immediate-await warning; (c) `awaitAll` (`sema/awaitall.go`; the list form is the prelude's `awaitEach`); (d) `workers:` in the runtime — `veles_scope_slot` parks the owner at the limit and a leaving child wakes it (`slot_wait`, Dekker-ordered with `live`); (e) D42's `AsyncIterator`, `ConcurrentMap` with a runner task, and loops receiving a task-holding value (`loopHeld`). Found on the way and fixed: `when` dropped every flow fact its arms established (now joined, as `if` and `race` do), and a `when` value whose arms all leave was not `Never`; `Task<Result<R, Never>>` did not match the task of a non-throwing instance (Subst now makes it `Task<R>`); D111 refused `tasks.at(0)` on a scope's own list of handles. Measured against HEAD (spawn, suscall, channels, idle): within run-to-run noise. Linux: the D156 tests, the two examples ×5 on 1/2/4/8 threads and under the sanitizer, clean. Not done: migrating std/examples away from scopes that only launch and await (none trips the new warning), a bench of `awaitAll` against the scope form, and the rest listed in checklist §11.
 
-**Review 2026-10-14 (direction: documents, self-hosting, idioms, platform APIs; `veles-direction-2026-10-14.md`).** The user asked whether the spec, plan and checklist are current, what self-hosting needs next, what idiomatic Veles looks like and where it could improve, and for low-level platform APIs (Bluetooth etc.) with a high-level developer experience. *Documents:* status drift fixed — Build order step 11, B14, track C items 2–8, track E items 1/2/4/5/7, track D's batch text; the spec's twelve examples and four prose spans still in the removed `fun f() = expr` form migrated to `=>`, §4b's "`implement`, not `implement`" restored to `impl`; checklist ticks for OTel, the `substring` check, `std/fs`, the GC line (F18), §8b's intro, a stale §11 entry; README rewritten to v0.81 (registry, reactor, C ABI, 25 chapters, 63 examples); the self-host plan has a status block; the cheat sheet's module-level `var` (an error since D66) and `i8 i16 i64 i64` fixed; a stale `mut` comment in `examples/httpd`. *Found:* B17 (D142) is the real next build step; interpolating a `Result` compiles and loses the error (Q32); no per-target Veles code, no debug info, no UDP/Unix sockets/file watching/terminal/device modules. *Added:* track S rows S6–S12, B18, track P (P1–P10), checklist §9 Q32–Q43 and a §11 entry. Every "today" program in the review was compiled and run (scratchpad `gallery`, `gallery2`, `doc1`, `doc2`). Not done: nothing was built; the full `go test ./...` was not run — only documentation and one example comment changed: `go build ./...` and `go vet ./...` green, `go test ./docs/` and the `httpd` example green after the edits.
+**Review 2026-10-14 (direction: documents, self-hosting, idioms, platform APIs; `veles-direction-2026-10-14.md`).** The user asked whether the spec, plan and checklist are current, what self-hosting needs next, what idiomatic Veles looks like and where it could improve, and for low-level platform APIs (Bluetooth etc.) with a high-level developer experience. _Documents:_ status drift fixed — Build order step 11, B14, track C items 2–8, track E items 1/2/4/5/7, track D's batch text; the spec's twelve examples and four prose spans still in the removed `fun f() = expr` form migrated to `=>`, §4b's "`implement`, not `implement`" restored to `impl`; checklist ticks for OTel, the `substring` check, `std/fs`, the GC line (F18), §8b's intro, a stale §11 entry; README rewritten to v0.81 (registry, reactor, C ABI, 25 chapters, 63 examples); the self-host plan has a status block; the cheat sheet's module-level `var` (an error since D66) and `i8 i16 i64 i64` fixed; a stale `mut` comment in `examples/httpd`. _Found:_ B17 (D142) is the real next build step; interpolating a `Result` compiles and loses the error (Q32); no per-target Veles code, no debug info, no UDP/Unix sockets/file watching/terminal/device modules. _Added:_ track S rows S6–S12, B18, track P (P1–P10), checklist §9 Q32–Q43 and a §11 entry. Every "today" program in the review was compiled and run (scratchpad `gallery`, `gallery2`, `doc1`, `doc2`). Not done: nothing was built; the full `go test ./...` was not run — only documentation and one example comment changed: `go build ./...` and `go vet ./...` green, `go test ./docs/` and the `httpd` example green after the edits.
 
 **Decided 2026-10-14 (D157–D167, the review's batch).** Asked in four rounds the same day; every recommended option except where noted. D157 a `Result`/task cannot be interpolated (Q32); D158 bare names reach the receiver's members (Q33); D159 `std/bluetooth`, LE central, high level, simulated backend (Q42); D160 per-target code — file suffixes plus `build.target` from an imported std `build` module (Q39: the user turned down a free `target`, offered `package.target.os`, then chose "'build' is better"; `package.vs` stays held back); D161 `std/sys/<os>` in Veles with portable modules on top, all four module groups (Q40, Q41); D162 `veles bindgen` (Q43); D163 one-parameter constructors positional (Q34); D164 `copy` (Q36); D165 the index-of family answers `i64?` (Q37); D166 labelled tuples (Q35, after the full write-up of every use case the user asked for); D167 `std/cli` by derive (Q38). Spec v0.82; checklist §9 empty, §10 rows, §11 "decided, not built"; plan B19–B22, C9, P1/P7/P10 acceptance, the continue-order updated. Nothing built yet.
 
@@ -1827,12 +2476,11 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 
 **2026-10-17 (later) — D171 and D172 decided, not built.** After the above, the user chose format specs after `:` with a higher-level `std/fmt` (locales noted as a todo) and `"""` text blocks plus backtick raw strings. Build order when picked up: lexer (`"""` margin, backticks, the `:spec` inside `${}`) → parser/AST → formatter → sema spec check → `selfhost/` lexer/parser with corpus lines → `std/fmt` → docs. Q47/Q48 are closed in checklist §9/§10.
 
-**2026-10-17 (later still) — D172 and D171 built.** *D172:* the lexer reads `"""` text blocks (text starts on the line after the opening delimiter; the closing delimiter's indentation is the margin; escapes and `${}` work; a less-indented line is an error; CRLF folds to LF; a tag may precede it) and backtick raw strings (no escapes, no interpolation, over lines); a failed literal still yields a string token so the parser does not cascade. *D171:* the lexer splits `${expr:spec}` at the first top-level colon (outside brackets, strings and character literals, not `?:`) into `StringPart.Spec`; `ast.StringPart` carries it (and `ast.Dump` prints `:"spec"`); sema parses the spec (`sema/formatspec.go`), checks it against the value's type and lowers it to the prelude helpers `fmtNum`/`fmtText` (`std/prelude/format.vs`, not public) through a synthesized call on the already-checked value (`ast.CheckedExpr`), so nothing is parsed at run time; widths count characters. `selfhost/` lexer, parser, AST and printer mirror both, with gate corpus lines (`text-blocks`, `raw-strings`, `format-specs`) byte-identical to the Go front end. `std/fmt` (first set: `thousands`, `bytes`, `percent`, `ordinal`, `duration`, `table`; `std/fmt/fmt.test.vs` with labelled tests). Docs: chapter 2 (text blocks, raw strings, format specs), stdlib reference, errors reference, cheat sheet; conformance `D171-format-specs.vs`; VS Code grammar for `"""` and backticks. Limits in checklist §11.
-
+**2026-10-17 (later still) — D172 and D171 built.** _D172:_ the lexer reads `"""` text blocks (text starts on the line after the opening delimiter; the closing delimiter's indentation is the margin; escapes and `${}` work; a less-indented line is an error; CRLF folds to LF; a tag may precede it) and backtick raw strings (no escapes, no interpolation, over lines); a failed literal still yields a string token so the parser does not cascade. _D171:_ the lexer splits `${expr:spec}` at the first top-level colon (outside brackets, strings and character literals, not `?:`) into `StringPart.Spec`; `ast.StringPart` carries it (and `ast.Dump` prints `:"spec"`); sema parses the spec (`sema/formatspec.go`), checks it against the value's type and lowers it to the prelude helpers `fmtNum`/`fmtText` (`std/prelude/format.vs`, not public) through a synthesized call on the already-checked value (`ast.CheckedExpr`), so nothing is parsed at run time; widths count characters. `selfhost/` lexer, parser, AST and printer mirror both, with gate corpus lines (`text-blocks`, `raw-strings`, `format-specs`) byte-identical to the Go front end. `std/fmt` (first set: `thousands`, `bytes`, `percent`, `ordinal`, `duration`, `table`; `std/fmt/fmt.test.vs` with labelled tests). Docs: chapter 2 (text blocks, raw strings, format specs), stdlib reference, errors reference, cheat sheet; conformance `D171-format-specs.vs`; VS Code grammar for `"""` and backticks. Limits in checklist §11.
 
 **2026-10-17 (later still) — pipelines: D173 decided (extension functions), not built.** The user asked how to serve people who like pipelining (`|>` / `->` floated). Findings: method chains already are the pipeline (`.` continues a line, one `try` covers the chain, D134); the gap is free functions and foreign types, because D23 declined extension functions (the trait + `implement` route works and chains, but is global under D17 and takes two declarations). The user chose extension functions over a pipe or UFCS, visible by importing the module, with their own spelling `extend T with fun f() …` beside `extend T { }`; recorded as D173, §10 Q49, B25; `|>` not added (re-open only if real code shows a gap). Nothing built; open details in checklist §11.
 
-**2026-10-17 (later still) — B25 built: D173 extension functions.** *Parser (Go and `selfhost/`, G-gates with a new `extensions` corpus line):* `extend T with fun f() …` (`ImplDecl.With`), `public extend` / `internal extend` (`ImplDecl.Pub/Internal`; the old "'extend' cannot be public" error is gone), the error `expected 'fun' after 'extend … with'`; dump (`(extend T public with`), formatter keep the one-line form. *Sema (`sema/extension.go`, `declareExtend`, `check_call.go`):* `extend` of a type the package does not own (`ownsType` false) declares an extension — `Impl.Foreign`, kept in `Checker.foreignExts` apart from `extends`, so no existing lookup (hover shape of built-ins, loop-change checks, suggestions) sees it. Resolution is the last step of `dispatchMethod`, after inherent methods and trait methods: in scope when the file `use`s the module (a braced `use m { x }` counts; the module's own files always), `callMethod` enforces `public`/`internal`/unmarked per D142; more than one candidate (two imports, or a trait method) is `ambiguous method … drop one of the imports or rename one of them (D173)`; a bound that does not hold gives the `extend<T: B>` message of own blocks. Declaration rules: no `static fun`, no `private`, no `Result`/`Option`, an inherent method of the same name (struct body, built-in, own-package extend) gives a warning "never called" (post-pass in `checkCoherence`). A call from a file that does not import the module says `'f' is an extension function in module 'm': add 'use m'` (per-file: a sibling file's import does not help). Hover: `extend T — extension from module 'm'`, and a `public extend` block's visibility shows on the function. *Tests:* `sema/extension_test.go` (11 cases: scope per file, braced import, shadow warning, two-module ambiguity, trait ambiguity, bounds, public-API-only through `Duration.ns`, not a trait bound, statics/private/Result), `TestExtendBlocks` cases flipped, conformance `D173-extension-functions.vs`, `TestExtensionRoundTrips`, parser rejections, `TestHoverExtensionFunction`, example `examples/extensions` (module `strx` + a chain). Docs: chapter 5 (new section), chapter 8 table, cheat sheet, errors reference (declarations, members). Limits in checklist §11.
+**2026-10-17 (later still) — B25 built: D173 extension functions.** _Parser (Go and `selfhost/`, G-gates with a new `extensions` corpus line):_ `extend T with fun f() …` (`ImplDecl.With`), `public extend` / `internal extend` (`ImplDecl.Pub/Internal`; the old "'extend' cannot be public" error is gone), the error `expected 'fun' after 'extend … with'`; dump (`(extend T public with`), formatter keep the one-line form. _Sema (`sema/extension.go`, `declareExtend`, `check_call.go`):_ `extend` of a type the package does not own (`ownsType` false) declares an extension — `Impl.Foreign`, kept in `Checker.foreignExts` apart from `extends`, so no existing lookup (hover shape of built-ins, loop-change checks, suggestions) sees it. Resolution is the last step of `dispatchMethod`, after inherent methods and trait methods: in scope when the file `use`s the module (a braced `use m { x }` counts; the module's own files always), `callMethod` enforces `public`/`internal`/unmarked per D142; more than one candidate (two imports, or a trait method) is `ambiguous method … drop one of the imports or rename one of them (D173)`; a bound that does not hold gives the `extend<T: B>` message of own blocks. Declaration rules: no `static fun`, no `private`, no `Result`/`Option`, an inherent method of the same name (struct body, built-in, own-package extend) gives a warning "never called" (post-pass in `checkCoherence`). A call from a file that does not import the module says `'f' is an extension function in module 'm': add 'use m'` (per-file: a sibling file's import does not help). Hover: `extend T — extension from module 'm'`, and a `public extend` block's visibility shows on the function. _Tests:_ `sema/extension_test.go` (11 cases: scope per file, braced import, shadow warning, two-module ambiguity, trait ambiguity, bounds, public-API-only through `Duration.ns`, not a trait bound, statics/private/Result), `TestExtendBlocks` cases flipped, conformance `D173-extension-functions.vs`, `TestExtensionRoundTrips`, parser rejections, `TestHoverExtensionFunction`, example `examples/extensions` (module `strx` + a chain). Docs: chapter 5 (new section), chapter 8 table, cheat sheet, errors reference (declarations, members). Limits in checklist §11.
 
 **2026-10-18 — D173 extensions shown on the import (user: "the imported module's hover (or maybe even inline hint) should inform us of the extensions").** `Checker.indexExtensions` (`sema/extension.go`) adds, to every reference to a module, the extension functions the referring file may call (`declVisible` from that file's module): the module hover gets a `// extension functions` block of `public extend T with fun …` lines, and `Ref.Extends` lists the types. `lsp/inlay.go` `extensionHints` ends a `use` line with `extends string, List<T>`. Test `TestExtensionsShownOnTheImport` (an `internal` extension of another module stays out); docs chapter 5.
 
@@ -1879,3 +2527,5 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 - 2026-10-20 — `freeze()` built (D188, Q56): a flags word (exposed, frozen) ends every list and map header; `xs.freeze()` freezes in place, copies the storage first if a pointer into it was ever made; writes through old names panic (`TestFreeze`, 17 panic cases in debug and release); write-guard cost within noise on sort/gzip/gunzip/intern. The move inlay hint (`moved, not copied`) is in the editor. Q57 (a marker for panicking functions) stays open: the user leans to none.
 - 2026-10-20 — `isFrozen()` on MutableList/MutableMap/MutableSet (D188; the user's question, recommended option): the frozen bit as one inline load; not a mutating method for `protected var` fields; `TestFreeze` and `sema/testdata/conform/D188-freeze.vs` cover it.
 - 2026-10-20 — Style lints from the syntax review (`veles-syntax-ideas.md`): `redundant_discard`, `loop_is_range`, `continue_skips_step`, `else_if_ladder` built with fixes and applied to the whole repository (about 100 + 23 + 59 sites, `TestRedundantDiscardLint`, `TestElseIfLadderLint`, `TestCounterLoopLints`); the `redundant_copy` lint now covers maps and sets, and D63's "built here" rule accepts constructors and static factories (`MutableSet<T>()`, `MutableList<bool>.repeat(…)`). Found on the way: the lint once rewrote the compiler's own derived `implement Decodable` into a `when` (spans of derived code are the user's); derived code is skipped now.
+- 2026-10-21 — A7, macOS arm64: native kqueue with one-shot read/write filters, EVFILT_USER wake coalescing, close-on-exec and nanosecond waits; portable poll remains testable on macOS. `TestReactorKqueue` pins backend selection, filter replacement, one-shot readiness, EOF, forgetting and invalid descriptors; the connection stress now includes 4 workers, and the sanitizer smoke test runs on macOS. Fixed the C varargs fixture's Linux-only O_CREAT value (Darwin uses 0x200); snprintf/varargs and C structs already used the correct Apple ABI. Go 1.23.2 + Apple clang 21: build/vet/all tests green; all examples under poisoned GC at threshold 256 and ASan/UBSan, reactor/C ABI sanitizer tests, and GC/sync examples each 20 repetitions at 1/2/4/8 workers green. Sustained connection stress hit Darwin's ephemeral port limit, not a lost wake. All 22 benchmark checksums match Go, recorded in `bench/results.md`: httphello 386 ms default, 790 ms at 1 worker, 384 ms at 8; longest gcpause 15.96 ms (marking remains in the pause). Same-toolchain comparison: poll 369 ms before, kqueue 388–394 ms over three runs after, within the 10% noise threshold; no speedup claimed. `internal/macos-test.sh` pins the validation toolchain by default: Go 1.27's newer Unicode fails generated-table freshness, so no language data was regenerated. TLS uses tested Homebrew OpenSSL 3; D143's refused priority/affinity settings remain unchanged. Staticcheck was skipped by the user; Intel Macs and Windows/Linux reruns remain in checklist §11.
+- 2026-10-23 — Test-suite wall time, point (3): codegen emits only what is reachable (`codegen/llvm/prune.go`). A last pass over the finished module keeps the definitions and private constants reachable from what is named from outside it (`veles_main`, `veles_init_globals`, `extern "C"` exports, non-private globals) through every `@name`: calls, function values and their thunks, closures, coroutine frames and method tables. Order and bodies are unchanged, so the codegen goldens did not move; the new `golden/reach` fixture pins it (an unused function and method gone; methods reached only through a trait object's table, a function passed by name and a lambda kept). Hello world 540 → 4 `define`s (1.3 MB → 28 KB IR), clang ~450 → ~245 ms; `examples/httpd` 2156 → 822 (9.3 → 4.0 MB), clang 2.9 → 1.4 s; `go test ./docs ./examples` 59 → 32 s; `driver` 586 → 325 s; benchmarks unchanged (`bench/results.md`). Linux (WSL) all green. Windows is green except three tests that also fail without this change in a fresh checkout: `examples/regex` and `examples/todo` sources check out with CRLF there (checklist §11).

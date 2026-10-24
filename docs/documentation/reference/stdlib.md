@@ -20,7 +20,7 @@ public trait Iterator {
   fun filter(f: fun(Item): bool): FilterIter<This>
   fun take(n: i64): TakeIter<This>
   fun skip(n: i64): SkipIter<This>
-  fun enumerate(): EnumerateIter<This>        // yields (i64, Item)
+  fun enumerate(): EnumerateIter<This>        // yields (index: i64, value: Item)
   fun zip<J: Iterator>(other: J): ZipIter<This, J>   // yields (Item, J.Item)
   // up to `workers` calls of f under way, results in order as asked for;
   // holds tasks: a loop over it (or a `with`) owns them (D156)
@@ -190,12 +190,27 @@ inline loop (f in T.fields) { … }    // unrolled once per field; f is a handle
 //   f.Type                                             the field's type, in a type position or as a receiver
 //   f.get(x)                                           x.name, read with the field's own type
 //   f.has<A>(), f.attr<A>()                            constants; `if (f.has<A>())` and `if (val a = f.attr<A>())` keep one branch
+//   f.default()                                        the declared default; an error on a field without one (D203)
+//   f.isOptional, f.isList                             constants: the field is a T?, or a List<T> (D203)
+//   f.Inner                                            that T, as a type or a receiver (D203)
 T.build(f => value)                  // a T made field by field; the body is checked once per field
+
+public struct MemberInfo { public name: string; public doc: string = ""; public index: i64 = 0 }
+T.members: List<MemberInfo>          // a constant: an enum's members, or a sealed family's variants (D203)
+inline loop (m in T.members) { … }   // m.name, m.doc, m.index, m.has<A>(), m.attr<A>(); m.Type for a variant
 ```
+
+An `if` or a `when { }` whose conditions are made of a handle's constants
+(`f.isOptional`, `f.isList`, `f.hasDefault`, `f.has<A>()`, `f.name == "x"`,
+with `!`, `&&`, `||`) checks and compiles only the branch it takes, so the
+other may use what this field does not have (`f.Inner`, `f.default()`).
+Every enum is `Parsable`: `E.parse(name)` is its member named so, and a
+generic function asking `V implements Parsable` reads enums like numbers
+(D203).
 
 Annotations and the reflection that reads them are
 [chapter 14](../14-attributes-and-testing.md#annotations-of-your-own); the
-decision is D174.
+decisions are D174 and D203.
 
 ### Panics (D52)
 
@@ -330,7 +345,7 @@ by hand); an enum cannot implement it (D57).
 ```veles
 // fragment
 public trait Encodable { fun encode(to: codec.Encoder) throws EncodeError }
-public trait Decodable { static fun decode(from: codec.Decoder): This throws DecodeError; static fun schema(format: string, keys: codec.KeyStyle): codec.Schema }   // schema: derived beside a derived decode (D125); the default is one opaque value
+public trait Decodable { static fun decode(from: codec.Decoder): This throws DecodeError; static fun schema(format: string, keys: Case): codec.Schema }   // schema: derived beside a derived decode (D125); the default is one opaque value
 public trait Codable : Encodable + Decodable { }   // `implement Codable` in a struct body derives both; `implement Codable for pkg.T` at top level
 public error EncodeError { message, path }; public error DecodeError { problems: List<codec.Problem> }
 ```
@@ -351,7 +366,7 @@ use codec
 public trait Encoder { format(); enums(); keys(); beginObject(); key(name); endObject(); beginList(); endList(); writeI64/U64/F64/Bool/String/Null(v) }
 public trait Decoder { format(); enums(); keys(); peek(): Kind; beginObject(); nextKey(): string?; endObject(); beginList(); hasNext(); endList(); readI64/U64/F64/Bool/String/Null(); skip(); path(); problem(msg); problemAt(path, msg); problems() }
 public struct Problem { path, message; pointer() }; public struct Problems   // what a decoder records
-public enum EnumStyle { Name, Number }; public enum DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }; public enum KeyStyle { AsWritten, SnakeCase, CamelCase, UpperSnake }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
+public enum EnumStyle { Name, Number }; public enum DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }; public enum Case { AsWritten, SnakeCase, CamelCase, UpperSnake }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
 public sealed trait Value   // VNull, VBool, VInt, VFloat, VString, VList, VObject; get(k), at(i), asString/asI64/asF64/asBool(), isNull()
 ValueEncoder.of(format, enums, keys, durations); ValueDecoder.of(v, format, enums, keys, durations)   // a Value as the sink / the source
 public struct Schema { kind: SchemaKind, what: string, secret: bool, fields: List<SchemaField>; element(): Schema?; asSecret() }   // the shape of a Decodable (D125): what `config` asks for by name
@@ -361,7 +376,7 @@ public enum SchemaKind { Bool, Int, Float, Text, List, Object, Opaque, Unsupport
 
 A program imports `codec` to walk a document whose shape it does not know
 (`codec.Value`), to pick a style (`json.Options(keys:
-codec.KeyStyle.SnakeCase)`), or to write a format of its own.
+Case.Snake)`), or to write a format of its own.
 
 ### StringBuilder
 
@@ -485,13 +500,14 @@ opens them. Both kinds are called the same way.
 | `chars()` | `List<string>`, one string per code point |
 | `isEmpty()` | `bool` |
 | `startsWith(s)`, `endsWith(s)`, `contains(s)` | `bool` |
-| `indexOf(part, from: 0)`, `lastIndexOf(part)` | `i64` byte index, −1 if absent |
+| `startsWith(s, startIndex)` | `bool`: `s` at that byte index; `false` when the index is below 0 or past `len()` (D202) |
+| `indexOf(part, from: 0)`, `lastIndexOf(part)` | `i64?` byte index, null if absent (D165) |
 | `substring(from, to)` | `string?` — byte offsets; null if a boundary splits a character |
 | `byteAt(i)`, `bytes()` | `u8` (panics out of range), `List<u8>` |
 | `byteAtUnchecked(i)` | `u8`; only in `unsafe`, checked in a debug build only (D114) |
 | `trim()`, `trimStart()`, `trimEnd()` | ASCII whitespace removed |
 | `split(sep)`, `lines()` | `List<string>`; `lines` drops `\r` and a final empty line |
-| `splitOnce(sep)` | `(string, string)?`: the text before and after the first `sep`, or `null` when it does not occur — `val (k, v) = line.splitOnce("=") ?: return` |
+| `splitOnce(sep)` | `(before: string, after: string)?`: the text before and after the first `sep`, or `null` when it does not occur — `val (k, v) = line.splitOnce("=") ?: return` |
 | `replace(old, new)`, `repeat(n)` | `string` |
 | `toUpper()`, `toLower()` | ASCII letters only |
 | `padStart(width, pad: " ")`, `padEnd(width, pad: " ")` | `string` |
@@ -544,7 +560,7 @@ out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the s
 | `indices()` | `0..<len()`; in `loop (i in xs.indices())` each `xs.at(i)` is a `T` |
 | `atOrDefault(i, d)` | `T`; `at(i) ?: d` |
 | `len()`, `isEmpty()`, `lastIndex()` | `lastIndex` is `len() - 1`: −1 when empty |
-| `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64` (−1 if absent), `i64` |
+| `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64?` (null if absent, D165), `i64` |
 | `first()`, `last()`, `min()`, `max()` | `T?`; `min`/`max` need `Comparable` elements |
 | `take(n)`, `drop(n)`, `slice(from, to)` | new `List`, bounds clamped; on an immutable `List` a window onto the same storage, no copy (`toList()` detaches it), on a `MutableList` a copy (D196) |
 | `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)` | eager; return `List`. These and `any`, `all`, `find`, `count`, `indexOfFirst`, `mapNotNull`, `partition` are prelude Veles generic over what the function does: they throw what it throws (`xs.map(a => try parse(a))` is a `Result` until `try`) and suspend only when it suspends (D116) — `xs.map(x => fetch(x))` waits for each in turn |
@@ -552,10 +568,10 @@ out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the s
 | `filterIs<V>()`, `filterNotNull()` | on a list of a sealed type: the elements of variant `V` as `List<V>`; on `List<T?>`: the present ones as `List<T>` |
 | `any(p)`, `all(p)`, `find(p)` | |
 | `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()` | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>` |
-| `enumerate()` | `List<(i64, T)>`: each element with its index, eager; `xs.iter().enumerate()` is the lazy form |
+| `enumerate()` | `List<(index: i64, value: T)>`: each element with its index, eager; `xs.iter().enumerate()` is the lazy form |
 | `sorted()`, `sortedDescending()`, `sortedBy(key)`, `sortedByDescending(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
 | `sortedWith(compare)`, `minWith(compare)`, `maxWith(compare)` | any order: `compare(a, b)` negative when `a` comes first; sorts are stable, O(n log n) |
-| `binarySearch(x)`, `binarySearchWith(compare)`, `binarySearchBy(key, target)` | `i64` index of the **first** match, −1 if absent, in O(log n). The list must already be in order; nothing checks, and a list that is not gives a wrong answer, never a panic. `compare(element)` says where the element sits relative to what is wanted |
+| `binarySearch(x)`, `binarySearchWith(compare)`, `binarySearchBy(key, target)` | `i64?` index of the **first** match, null if absent (D165), in O(log n). The list must already be in order; nothing checks, and a list that is not gives a wrong answer, never a panic. `compare(element)` says where the element sits relative to what is wanted |
 | `lowerBound(x)`, `upperBound(x)`, `partitionPoint(pred)` | `i64` insertion points: first index not less than `x`, first greater than `x`, and the general form — the first index where `pred` stops holding. `upperBound − lowerBound` is how many times `x` occurs |
 | `minBy(key)`, `maxBy(key)`, `distinctBy(key)` | `T?`, `T?`, `List<T>`; by a `Comparable` (or, for `distinctBy`, hashable) key |
 | `sum()` | `List<i64>` and `List<f64>` only |
@@ -595,7 +611,7 @@ one the compiler can run.
 | `getOrDefault(k, d)` | `V`: `get(k) ?: d`. A copy of the value. Where a key must be there, say why: `m.get(k) ?: panic("…")` |
 | `ref(k)` | `(*V)?`: a pointer to the stored value (`MutableMap` only): `m.ref(k)?.bump()`, `m.ref(k)?.n += 1`; `loop ((k, &v) in m)` visits every value by reference |
 | `containsKey(k)`, `len()`, `isEmpty()` | |
-| `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(K, V)>` in insertion order |
+| `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(key: K, value: V)>` in insertion order |
 | `toMap()`, `toMutable()` | copies |
 | `set(k, v)`, `remove(k): bool`, `clear()`, `reserve(n)` | `MutableMap` only; after `reserve(n)` inserting up to `n` entries never grows or rehashes (D105) |
 | `forEach((k, v) => ...)`, `mapValues(v => ...)`, `filter((k, v) => ...)` | iterate over the entries as they were when the call starts; new `Map`. Prelude Veles: they throw and suspend as the function does (D116) |
@@ -725,6 +741,43 @@ os.ioError(code: i64, path: string): IoError     // an IoError for a platform er
 `run` waits for the program, captures its standard output and lets its
 standard error through; a non-zero exit is reported in `Output.code` —
 only a program that cannot be started throws.
+
+## Module `cli` (D167)
+
+```veles
+// fragment
+use cli { Flag, Positional }
+cli.args<T>(): T                       // reads os.args(); --help/--version print and exit 0, a usage problem prints to stderr and exits 2
+cli.parse<T>(args: List<string>): T throws cli.Error   // the same, thrown: Error { kind: ErrorKind, text: string }
+// enum ErrorKind { Help, Version, Usage }
+// T: a struct that writes `implement cli.Args`, or a sealed trait whose variants do (subcommands, kebab case)
+@Flag(short: "v", name: "long-name", env: "VAR", hidden: true)   // every part optional
+@Positional                                                     // in field order; a List<T> takes the rest
+```
+
+A field is `--kebab-case`; `bool` a switch (`--no-x` turns it off), `T?`
+`null` when absent, `List<T>` every occurrence, no default and no `?`
+required; values are read with `Parsable`. The help comes from the doc
+comments of the struct and its fields, defaults included. Chapter 15 has
+the details and an example.
+
+## Module `build` (D160, D204)
+
+```veles
+// fragment
+use build
+build.target: build.Target        // Target { os: Os, arch: Arch, release: bool } — where the program will run
+build.program: build.Program      // Program { name: string, version: string } — from the veles.toml the build started from
+// enum Os { Windows, Linux, MacOS }; enum Arch { X64, Arm64 }
+```
+
+Both are constants, known while compiling: an `if` on one compiles only the
+branch taken, `static assert` and `@SkipIf` can test them, and they cost
+nothing when the program runs. `build.program` is the package being built,
+also when a library reads it; its `version` is `""` when the manifest gives
+none, and its `name` is the directory's when there is no manifest.
+(Per-OS files `_windows.vs`/`_linux.vs`/`_macos.vs`, the rest of D160, are
+plan P1.)
 
 ## Module `fs`
 
@@ -897,7 +950,7 @@ http.Cookie(name:, value:, path: "/", domain: null, maxAge: null /* Duration?, n
 resp.withCookie(c); resp.withoutCookie(name, path: "/", domain: null, secure: false); resp.cookies      // Max-Age=0 to forget
 req.cookie(name); req.cookies()                                                                         // string?; Map<string, string>, first of a repeated name
 // forms and query strings (D94): urlencoded, repeats kept
-try req.form<T>(keys: KeyStyle.AsWritten); try req.query<T>(keys:)    // T: Decodable, flat; 400 "invalid form:"/"invalid query:" + one line per problem; 415 for another content type
+try req.form<T>(keys: Case.AsWritten); try req.query<T>(keys:)    // T: Decodable, flat; 400 "invalid form:"/"invalid query:" + one line per problem; 415 for another content type
 try req.formFields(); req.queryFields(); req.rawQuery                 // http.Fields: pairs; .get(name) first; .all(name); .names(); Fields.parse(text)
 try req.formValue(name); try req.formValues(name)                     // string?; List<string>
 http.compress(minBytes: 1024, level: 6); http.decompressRequests(max: n)   // D124: gzip textual responses ≥ minBytes for Accept-Encoding: gzip (Vary, weak ETag, streams too); opens gzip request bodies up to max (413/400/415)
@@ -963,7 +1016,7 @@ use json
 try json.encode(x); try json.pretty(x)                 // T: Encodable → text; EncodeError for a NaN or infinity
 try json.decode<T>(text)                               // T: Decodable; DecodeError lists every problem with its path
 try json.parse(text): codec.Value; try json.toValue(x); try json.fromValue<T>(v)
-json.Options(keys: codec.KeyStyle.SnakeCase, enums: codec.EnumStyle.Number, durations: codec.DurationStyle.Iso8601, omitNulls: true, pretty: true, indent: "  ", maxDepth: 64, maxProblems: 100)
+json.Options(keys: Case.Snake, enums: codec.EnumStyle.Number, durations: codec.DurationStyle.Iso8601, omitNulls: true, pretty: true, indent: "  ", maxDepth: 64, maxProblems: 100)
 json.JsonEncoder(options); json.JsonDecoder.of(text, options)   // the Encoder / Decoder themselves
 ```
 
@@ -1018,7 +1071,7 @@ time.formatHttp(t): string            // Sun, 06 Nov 1994 08:49:37 GMT (IMF-fixd
 time.parseHttp(s): Timestamp?         // IMF-fixdate, RFC 850 and asctime (RFC 9110 §5.6.7)
 
 time.Stopwatch.start(): Stopwatch     // elapsed(): Duration, reset()
-time.Stopwatch.measure(f): (R, Duration)  // runs f, returns its result and the time; f's error passes through
+time.measure(f): (R, Duration)  // runs f, returns its result and the time; f's error passes through
 time.Deadline.after(d): Deadline      // remaining(): Duration (never negative), expired(), extend(d), earlier(other)
 time.monotonicNanos(): i64            // the raw reading, for a benchmark
 time.ticker(every: Duration): Ticker  // .ticks: Channel<Timestamp> (holds one; a slow reader misses ticks); Closeable: stops and closes ticks (D110)

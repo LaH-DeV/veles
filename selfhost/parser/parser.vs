@@ -10,16 +10,28 @@
 // The other files of this module extend `Parser`: decl.vs, types.vs,
 // stmt.vs, expr.vs and pattern.vs.
 use ast
-use lexer { Kind, Token, kindText, tokenize }
+use lexer { Comment, Kind, Token, kindText, tokenizeForParser }
 use source { Diagnostics, File, Span }
 
 /// Parses one file; problems go into `diags`.
-fun parseFile(file: File, diags: *Diagnostics): ast.SourceFile {
-  val scan = tokenize(file, diags)
-  var parser = Parser(file, toks: scan.tokens.toMutable(), diags)
+fun parseFile(file: File, diags: *Diagnostics): ast.SourceFile => parseFileLayout(file, diags).file
+
+/// What a tool that reproduces the source needs besides the tree (the
+/// formatter): the comments, and the expressions the author wrapped in
+/// parentheses, by the span of what is inside them.
+struct Layout {
+  file:     ast.SourceFile
+  comments: List<Comment>
+  parens:   List<Span>
+}
+
+/// Parses one file and keeps its layout; problems go into `diags`.
+fun parseFileLayout(file: File, diags: *Diagnostics): Layout {
+  val scan = tokenizeForParser(file, diags)
+  var parser = Parser(file, toks: scan.tokens, diags)
   var parsed = parser.parseFile()
   parsed.doc = scan.moduleDoc
-  parsed
+  Layout(file: parsed, comments: scan.comments, parens: parser.parens.toList())
 }
 
 // where a function is declared, which decides what it may be
@@ -77,6 +89,8 @@ struct Parser {
   // in a `race` arm's source: `as` names the arm's value (`ch.recv() as
   // msg =>`, D168), not the removed conversion; outside brackets only
   var raceHead: bool = false
+  // what the author wrote in parentheses, by the span inside them (Layout)
+  parens: MutableList<Span> = []
 
   // ---- tokens
 
@@ -322,6 +336,16 @@ struct Parser {
       }
       Kind.KwStruct => return this.parseStruct(head, false)
       Kind.Ident => {
+        if (this.atWord("indirect") && this.peek(1).kind == Kind.KwSealed) {
+          this.next()  // every variant behind a pointer (D198)
+          val d = this.parseTrait(head)
+          if (d is ast.TraitDecl) {
+            var decl = d
+            decl.indirect = true
+            return decl
+          }
+          return d
+        }
         if (this.atErrorDecl()) return this.parseErrorDecl(head)
         if (this.atAnnotationDecl()) return this.parseAnnotationDecl(head)
         if (this.atExecutorDecl()) {

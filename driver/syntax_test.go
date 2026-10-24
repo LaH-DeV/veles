@@ -12,6 +12,7 @@ import (
 // bit and wrapping compound assignments, and a string slice that never fails.
 // Run in a debug and a release build.
 func TestSyntaxAdditions(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}

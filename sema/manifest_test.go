@@ -58,7 +58,13 @@ func TestManifestRuntime(t *testing.T) {
 	for _, c := range []struct{ text, want string }{
 		{"[package]\nname = \"p\"\n[runtime]\nthreads = 0\n", "[runtime] threads is \"auto\" (one per core, the default) or a number from 1 to 256"},
 		{"[package]\nname = \"p\"\n[runtime]\nthreads = \"many\"\n", "[runtime] threads is \"auto\""},
-		{"[package]\nname = \"p\"\n[runtime]\nworkers = 2\n", "unknown [runtime] key \"workers\" (threads)"},
+		{"[package]\nname = \"p\"\n[runtime]\nworkers = 2\n", "unknown [runtime] key \"workers\" (threads, gc)"},
+		{"[package]\nname = \"p\"\n[runtime]\ngc.minHeap = \"512KiB\"\n", "[runtime] gc.minHeap is a size from \"1MiB\" to \"64GiB\""},
+		{"[package]\nname = \"p\"\n[runtime]\ngc.minHeap = 32\n", "[runtime] gc.minHeap is a size"},
+		{"[package]\nname = \"p\"\n[runtime]\ngc.minHeap = \"+3MiB\"\n", "[runtime] gc.minHeap is a size"},
+		{"[package]\nname = \"p\"\n[runtime]\ngc.goal = 5\n", "[runtime] gc.goal is the percent"},
+		{"[package]\nname = \"p\"\n[runtime]\ngc.pause = 1\n", "unknown [runtime] key \"gc.pause\" (gc.minHeap, gc.goal)"},
+		{"[package]\nname = \"p\"\n[runtime]\ngc = 1\n", "[runtime] gc is a table"},
 	} {
 		if _, err := read(c.text); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q: got %v, want %q", c.text, err, c.want)

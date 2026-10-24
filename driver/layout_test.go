@@ -14,6 +14,7 @@ import (
 // handle crosses by value as the integer it wraps. An over-aligned Veles
 // struct is aligned on the stack, in a list, and in a global.
 func TestCLayoutAgreesWithC(t *testing.T) {
+	t.Parallel()
 	clang, err := findClang()
 	if err != nil {
 		t.Skip("clang not available:", err)

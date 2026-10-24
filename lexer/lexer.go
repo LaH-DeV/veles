@@ -150,11 +150,29 @@ func (lx *Lexer) newline(start int) {
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
+// refuseInvalidUTF8: a file that is not UTF-8 does not compile (D199, as
+// Go). Every byte that does not decode is an error at its place, and
+// nothing of the file is lexed: what its tokens would be is anyone's guess.
+func (lx *Lexer) refuseInvalidUTF8() {
+	if utf8.ValidString(lx.src[lx.pos:]) {
+		return
+	}
+	for i := lx.pos; i < len(lx.src); {
+		r, size := utf8.DecodeRuneInString(lx.src[i:])
+		if r == utf8.RuneError && size == 1 {
+			lx.errorf(i, i+1, "the text is not valid UTF-8 here (byte 0x%02X): save the file as UTF-8", lx.src[i])
+		}
+		i += size
+	}
+	lx.pos = len(lx.src)
+}
+
 func (lx *Lexer) run() {
 	// a byte-order mark may begin a file, and means nothing there
 	if lx.pos == 0 && strings.HasPrefix(lx.src, string(rune(0xFEFF))) {
 		lx.pos = 3
 	}
+	lx.refuseInvalidUTF8()
 	for lx.pos < len(lx.src) {
 		c := lx.src[lx.pos]
 		start := lx.pos

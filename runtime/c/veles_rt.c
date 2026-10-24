@@ -316,6 +316,52 @@ bool veles_string_substring(veles_string *out, const char *s, int64_t len, int64
 veles_list *veles_list_new(veles_desc *desc, int64_t cap);
 void veles_list_push(veles_list *l, const void *item);
 
+/* veles_string_ascii_case: s with its ASCII letters in upper (or lower)
+ * case, in one copy; s itself when nothing changes (strings are immutable).
+ * Other bytes are kept, so UTF-8 stays UTF-8. */
+void veles_string_ascii_case(veles_string *out, const char *s, int64_t len, bool upper) {
+    int64_t first = 0;
+    for (; first < len; first++) {
+        unsigned char c = (unsigned char)s[first];
+        if (upper ? (c >= 'a' && c <= 'z') : (c >= 'A' && c <= 'Z')) break;
+    }
+    if (first == len) { out->data = s; out->len = len; return; }
+    char *buf = veles_alloc(len + 1);
+    memcpy(buf, s, (size_t)first);
+    for (int64_t i = first; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (upper && c >= 'a' && c <= 'z') c -= 32;
+        else if (!upper && c >= 'A' && c <= 'Z') c += 32;
+        buf[i] = (char)c;
+    }
+    out->data = buf;
+    out->len = len;
+}
+
+/* veles_string_replace: s with every occurrence of a non-empty old as repl,
+ * in one pass and one copy; s itself when old does not occur. */
+void veles_string_replace(veles_string *out, const char *s, int64_t len, const char *old, int64_t olen, const char *repl, int64_t rlen) {
+    int64_t count = 0;
+    for (int64_t i = 0; olen > 0 && i + olen <= len;) {
+        if (memcmp(s + i, old, (size_t)olen) == 0) { count++; i += olen; } else i++;
+    }
+    if (count == 0) { out->data = s; out->len = len; return; }
+    int64_t n = len + count * (rlen - olen);
+    char *buf = veles_alloc(n + 1);
+    int64_t w = 0, i = 0;
+    while (i < len) {
+        if (i + olen <= len && memcmp(s + i, old, (size_t)olen) == 0) {
+            memcpy(buf + w, repl, (size_t)rlen);
+            w += rlen;
+            i += olen;
+        } else {
+            buf[w++] = s[i++];
+        }
+    }
+    out->data = buf;
+    out->len = n;
+}
+
 /* veles_string_split: the parts of s between occurrences of a non-empty
  * sep, as strings that share s's bytes (D10: the collector follows an
  * interior pointer). Two passes — count, then fill a list of exactly that
@@ -816,6 +862,16 @@ static inline void list_writable(veles_list *l) {
     if (l->flags & LIST_FROZEN) frozen_panic("list");
 }
 
+/* veles_list_move moves count elements from index `from` to index `to`, the
+ * ranges overlapping as memmove allows: std's insert and removeAt, which
+ * check that both lie inside the list. A change of order (D102). */
+void veles_list_move(veles_list *l, int64_t from, int64_t to, int64_t count) {
+    list_writable(l);
+    if (count <= 0 || from == to) return;
+    memmove(l->data + to * l->elem, l->data + from * l->elem, (size_t)(count * l->elem));
+    l->mods++;
+}
+
 /* a write through an element place (set, an element assignment) */
 void veles_list_write_check(veles_list *l) {
     list_writable(l);
@@ -956,6 +1012,102 @@ void veles_string_join(veles_string *out, veles_list *l, const char *sep, int64_
     }
     out->data = buf;
     out->len = len;
+}
+
+/* In-place text edits on a list of u8, a StringBuilder's (D207); ASCII
+ * whitespace and case, as the string methods. */
+static inline bool ascii_space(unsigned char c) { return c == ' ' || (c >= 9 && c <= 13); }
+
+void veles_bytes_trim(veles_list *l) {
+    list_writable(l);
+    int64_t i = 0, j = l->len;
+    while (i < j && ascii_space((unsigned char)l->data[i])) i++;
+    while (j > i && ascii_space((unsigned char)l->data[j - 1])) j--;
+    if (i == 0 && j == l->len) return;
+    if (i > 0 && j > i) memmove(l->data, l->data + i, (size_t)(j - i));
+    l->len = j - i;
+    l->mods++;
+}
+
+void veles_bytes_ascii_case(veles_list *l, bool upper) {
+    list_writable(l);
+    unsigned char lo = upper ? 'a' : 'A', hi = upper ? 'z' : 'Z';
+    for (int64_t i = 0; i < l->len; i++) {
+        unsigned char c = (unsigned char)l->data[i];
+        if (c >= lo && c <= hi) l->data[i] = (char)(c ^ 0x20);
+    }
+}
+
+/* every occurrence of a non-empty old as repl: in place when repl is no
+ * longer than old, else into one new buffer of the final size */
+void veles_bytes_replace(veles_list *l, const char *old, int64_t olen, const char *repl, int64_t rlen) {
+    list_writable(l);
+    char *s = l->data;
+    int64_t len = l->len, count = 0;
+    for (int64_t i = 0; olen > 0 && i + olen <= len;) {
+        if (memcmp(s + i, old, (size_t)olen) == 0) { count++; i += olen; } else i++;
+    }
+    if (count == 0) return;
+    int64_t n = len + count * (rlen - olen);
+    char *out = s;
+    if (rlen > olen) {
+        int64_t ncap = n < 16 ? 16 : n;
+        out = veles_gc_alloc(l->desc, ncap);
+        l->cap = ncap;
+    }
+    int64_t w = 0, i = 0;
+    while (i < len) {
+        if (i + olen <= len && memcmp(s + i, old, (size_t)olen) == 0) {
+            memcpy(out + w, repl, (size_t)rlen);
+            w += rlen;
+            i += olen;
+        } else {
+            out[w++] = s[i++];
+        }
+    }
+    l->data = out;
+    l->len = n;
+    if (n != len) l->mods++;
+}
+
+/* n bytes at index at, which std checked is in 0..len on a character edge */
+void veles_bytes_insert(veles_list *l, int64_t at, const char *p, int64_t n) {
+    list_writable(l);
+    if (n == 0) return;
+    if (l->len + n > l->cap) {
+        int64_t ncap = l->cap * 2;
+        if (ncap < l->len + n) ncap = l->len + n;
+        if (ncap < 16) ncap = 16;
+        char *nd = veles_gc_alloc(l->desc, ncap);
+        if (l->len > 0) memcpy(nd, l->data, (size_t)l->len);
+        l->data = nd;
+        l->cap = ncap;
+    }
+    memmove(l->data + at + n, l->data + at, (size_t)(l->len - at));
+    memcpy(l->data + at, p, (size_t)n);
+    l->len += n;
+    l->mods++;
+}
+
+/* the bytes as text without a copy (`edit` on a string, D207): the string
+ * shares the storage and the list is frozen, so nothing can change it again;
+ * storage a pointer was made into is copied first, as by freeze. False
+ * when the bytes are not UTF-8. */
+bool veles_bytes_take_text(veles_string *out, veles_list *l) {
+    list_writable(l);
+    if (!veles_utf8_valid((const unsigned char *)l->data, l->len)) return false;
+    if (l->flags & LIST_EXPOSED) {
+        char *buf = veles_alloc(l->len + 1);
+        if (l->len > 0) memcpy(buf, l->data, (size_t)l->len);
+        out->data = buf;
+    } else {
+        out->data = l->data;
+    }
+    out->len = l->len;
+    l->cap = l->len;
+    l->flags |= LIST_FROZEN;
+    l->flags &= ~(int64_t)LIST_EXPOSED;
+    return true;
 }
 
 /* appends n bytes to a list of u8 (StringBuilder.append) */

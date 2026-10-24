@@ -17,7 +17,7 @@ fun main() {
     async boom(5)
     async fine()
   }
-  println("$a $b")
+  println("${a.toString()} ${b.toString()}")
   when (a) {
     is Ok(v)  => println("ok $v")
     is Err(e) => when (e) {

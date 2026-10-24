@@ -703,7 +703,7 @@ fun main() {
     loop (_ in 0..<iterations) fuzzHttp(&f, listener.port())
   }
   var failed = false
-  loop ((target, s) in f.stats.entries().sortedBy(e => e.0)) {
+  loop ((target, s) in f.stats.entries().sortedBy(e => e.key)) {
     println("$target: ${s.runs} runs, ${s.accepted} accepted, ${s.failures} failures")
     if (s.failures > 0) failed = true
   }

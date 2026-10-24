@@ -171,26 +171,26 @@ struct TodoFile {
   fun task(n: i64): *Task => this.tasks.ref(n - 1) ?: panic("todo: number() accepts only 1..len")
 
   /// The numbered tasks, open ones first by priority, then by due date, then by number.
-  fun listed(terms: List<string>, all: bool): List<(i64, Task)> {
-    val rows: MutableList<(i64, Task)> = []
+  fun listed(terms: List<string>, all: bool): List<(number: i64, task: Task)> {
+    val rows: MutableList<(number: i64, task: Task)> = []
     loop ((i, t) in this.tasks.iter().enumerate()) {
       if ((all || !t.done) && t.matches(terms)) rows.push((i + 1, t))
     }
     rows.sortedWith((a, b) => {
-      val (x, y) = (a.1, b.1)
+      val (x, y) = (a.task, b.task)
       if (x.done != y.done) return if (x.done) Ordering.Greater else Ordering.Less
       val pri = sortKey(x.priority).compareTo(sortKey(y.priority))
       if (pri != Ordering.Equal) return pri
       val due = (x.due() ?: "9999").compareTo(y.due() ?: "9999")
       if (due != Ordering.Equal) return due
-      a.0.compareTo(b.0)
+      a.number.compareTo(b.number)
     })
   }
 }
 
 fun sortKey(priority: string): string => if (priority.isEmpty()) "ZZ" else priority
 
-fun printRows(rows: List<(i64, Task)>, total: i64, width: i64) {
+fun printRows(rows: List<(number: i64, task: Task)>, total: i64, width: i64) {
   val now = today()
   loop ((n, t) in rows) {
     val due = t.due()
@@ -209,7 +209,7 @@ fun counts(tasks: List<Task>, pick: fun(Task): List<string>) {
       tally.set(tag, tally.getOrDefault(tag, 0) + 1)
     }
   }
-  loop ((tag, n) in tally.entries().sortedWith((a, b) => if (a.1 != b.1) b.1.compareTo(a.1) else a.0.compareTo(b.0))) {
+  loop ((tag, n) in tally.entries().sortedWith((a, b) => if (a.value != b.value) b.value.compareTo(a.value) else a.key.compareTo(b.key))) {
     println("${n:>3} $tag")
   }
 }
@@ -256,8 +256,8 @@ fun run(args: List<string>) throws UsageError | IoError {
       printRows(todo.listed(terms, rest.len() != terms.len()), todo.tasks.len(), width)
     }
     "due"                  => {
-      val rows = todo.listed([], false).filter(r => r.1.due() != null)
-      printRows(rows.sortedBy(r => r.1.due() ?: ""), todo.tasks.len(), width)
+      val rows = todo.listed([], false).filter(r => r.task.due() != null)
+      printRows(rows.sortedBy(r => r.task.due() ?: ""), todo.tasks.len(), width)
     }
     "done", "do"           => {
       if (rest.isEmpty()) throw UsageError(message: "done needs a task number")

@@ -1,9 +1,11 @@
 package sema
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/LaH-DeV/veles/ast"
+	"github.com/LaH-DeV/veles/lexer"
 	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
 )
@@ -22,6 +24,216 @@ type fieldHandle struct {
 	index int
 	fld   *types.Field
 	decl  *ast.Field // nil when the declaration is not at hand
+	// member is set instead of fld for `inline loop (m in T.members)`: an
+	// enum's member or a sealed family's variant (D203)
+	member *memberRef
+	// hover is what the editor shows on the loop's name, the same in
+	// every copy of the body
+	hover *Ref
+}
+
+// handleHover describes an inline loop's name for the editor: what it walks
+// and the fields (or members) it stands for, one copy each.
+func handleHover(name string, rt types.Type, what string, hs []*fieldHandle) *Ref {
+	var items []string
+	for _, h := range hs {
+		if h.member != nil {
+			items = append(items, h.member.name)
+		} else {
+			items = append(items, h.fld.Name+": "+h.fld.Type.String())
+		}
+	}
+	owner := "?"
+	if rt != nil {
+		owner = rt.String()
+	}
+	kind := "field"
+	if what == "members" {
+		kind = "member"
+	}
+	detail := fmt.Sprintf("inline loop (%s in %s.%s)", name, owner, what)
+	doc := fmt.Sprintf("`%s` stands for one %s of `%s` in each copy of the body — the loop is unrolled while compiling, so each copy has its own `%s.Type` (D174):\n\n", name, kind, owner, name)
+	for _, it := range items {
+		doc += "- `" + it + "`\n"
+	}
+	doc += "\nIt has `name`, `doc`, `index`" + map[bool]string{true: ", `Type` (a variant's), `has<A>()`, `attr<A>()`", false: ", `typeName`, `hasDefault`, `isOptional`, `isList`, `Type`, `Inner`, `get(x)`, `default()`, `has<A>()`, `attr<A>()`"}[kind == "member"] + "."
+	return &Ref{Kind: "var", Name: name, Detail: detail, Doc: doc}
+}
+
+// refHandle records the inline loop's name at span (its binding or a use)
+// once, whatever the number of copies.
+func (c *Checker) refHandle(span source.Span, r *Ref) {
+	if c.index == nil || r == nil || !span.IsValid() {
+		return
+	}
+	for i := len(c.index.Refs) - 1; i >= 0 && i >= len(c.index.Refs)-64; i-- {
+		if c.index.Refs[i].Span == span {
+			return // an earlier copy recorded it
+		}
+	}
+	ref := *r
+	ref.Span = span
+	c.index.Refs = append(c.index.Refs, ref)
+}
+
+// memberRef is one member of an enum or variant of a sealed family.
+type memberRef struct {
+	name, doc string
+	variant   *types.Struct // the variant's type (`m.Type`); nil for an enum member
+	node      any           // the declaration its annotations are kept by
+}
+
+// handleType is the type `f.Type` names: the field's, or the variant's; nil
+// for an enum member.
+func (h *fieldHandle) handleType() types.Type {
+	if h.member != nil {
+		if h.member.variant == nil {
+			return nil
+		}
+		return h.member.variant
+	}
+	return h.fld.Type
+}
+
+// handleName is the field's or member's name.
+func (h *fieldHandle) handleName() string {
+	if h.member != nil {
+		return h.member.name
+	}
+	return h.fld.Name
+}
+
+// memberHandles makes one handle per member of an enum or variant of a
+// sealed family; ok is false when rt is neither (reported), and abstract
+// when the type is not known yet.
+func (f *fnCtx) memberHandles(rt types.Type, span source.Span) (hs []*fieldHandle, abstract, ok bool) {
+	switch t := rt.(type) {
+	case *types.TypeParam:
+		return nil, true, true
+	case *types.Enum:
+		f.c.resolveEnum(t)
+		d, _ := t.Decl.(*ast.EnumDecl)
+		for i, m := range t.Members {
+			ref := &memberRef{name: m.Name}
+			if d != nil && i < len(d.Members) {
+				ref.doc, ref.node = d.Members[i].Doc, d.Members[i]
+			}
+			hs = append(hs, &fieldHandle{index: i, member: ref})
+		}
+		return hs, false, true
+	case *types.Sealed:
+		for i, v := range t.Variants {
+			ref := &memberRef{name: v.Name, variant: v, node: templateOf(v).Decl}
+			if sd, isDecl := templateOf(v).Decl.(*ast.StructDecl); isDecl {
+				ref.doc = sd.Doc
+			}
+			hs = append(hs, &fieldHandle{index: i, member: ref})
+		}
+		return hs, false, true
+	}
+	if !types.IsInvalid(rt) {
+		f.errorf(span, "'%s' has no members to read: 'members' lists an enum's members or a sealed family's variants; a struct has 'fields' (D203)", rt)
+	}
+	return nil, false, false
+}
+
+// membersList is `T.members`: a constant List<MemberInfo>.
+func (f *fnCtx) membersList(rt types.Type, e *ast.MemberExpr) Expr {
+	mi, _ := f.c.preludeType("MemberInfo").(*types.Struct)
+	list := &CList{T: &types.List{Elem: mi}}
+	hs, abstract, ok := f.memberHandles(rt, e.Pos)
+	if !ok {
+		return bad()
+	}
+	if abstract || mi == nil {
+		return constExpr(list)
+	}
+	owner := f.c.reflectMemberOwner(rt)
+	for _, h := range hs {
+		list.Elems = append(list.Elems, &CStruct{T: mi, Fields: []ConstVal{&CString{h.member.name}, &CString{h.member.doc}, i64Const(h.index), i64Const(owner)}})
+	}
+	return constExpr(list)
+}
+
+// reflectMemberOwner numbers an enum or sealed family, so a MemberInfo can
+// say whose member it is (for `m.has<A>()` in a `const fun`).
+func (c *Checker) reflectMemberOwner(t types.Type) int {
+	for i, o := range c.reflMembers {
+		if types.Identical(o, t) {
+			return i
+		}
+	}
+	c.reflMembers = append(c.reflMembers, t)
+	return len(c.reflMembers) - 1
+}
+
+// memberRefAt is member index of a reflected enum or sealed family.
+func (c *Checker) memberRefAt(t types.Type, index int) *memberRef {
+	switch t := t.(type) {
+	case *types.Enum:
+		if d, ok := t.Decl.(*ast.EnumDecl); ok && index < len(d.Members) {
+			return &memberRef{name: d.Members[index].Name.Name, node: d.Members[index]}
+		}
+	case *types.Sealed:
+		if index < len(t.Variants) {
+			v := t.Variants[index]
+			return &memberRef{name: v.Name, variant: v, node: templateOf(v).Decl}
+		}
+	}
+	return nil
+}
+
+// typeDoc is `T.doc`: the doc comment above a struct, enum or sealed trait,
+// a constant (D203, for a command's help). false for any other type, or
+// when the type has a static `doc` of its own.
+func (f *fnCtx) typeDoc(rt types.Type) (Expr, bool) {
+	doc := ""
+	switch t := rt.(type) {
+	case *types.TypeParam:
+		// the generic body is checked again for each type it is used with
+	case *types.Struct:
+		if _, own := f.c.staticVals[templateOf(t)]["doc"]; own {
+			return nil, false
+		}
+		if _, own := f.c.methods[templateOf(t)]["doc"]; own {
+			return nil, false
+		}
+		if sd, ok := templateOf(t).Decl.(*ast.StructDecl); ok {
+			doc = sd.Doc
+		}
+	case *types.Enum:
+		if d, ok := t.Decl.(*ast.EnumDecl); ok {
+			doc = d.Doc
+		}
+	case *types.Sealed:
+		if d, ok := sealedTemplate(t).Decl.(*ast.TraitDecl); ok {
+			doc = d.Doc
+		}
+	default:
+		return nil, false
+	}
+	return &StringConst{exprBase{types.TString}, doc}, true
+}
+
+// memberAnnotation is the use of annotation a on a member, or nil.
+func (c *Checker) memberAnnotation(m *memberRef, a *types.Struct) *AnnotationUse {
+	if m.node == nil {
+		return nil
+	}
+	for _, u := range c.annotations[m.node] {
+		if u.Type == a {
+			return u
+		}
+	}
+	return nil
+}
+
+// handleAnnotation is the use of annotation a on what h stands for.
+func (c *Checker) handleAnnotation(h *fieldHandle, a *types.Struct) *AnnotationUse {
+	if h.member != nil {
+		return c.memberAnnotation(h.member, a)
+	}
+	return c.annotationOnField(h.st, h.index, a)
 }
 
 // fieldDecls are the declared fields of a struct, in the order of its
@@ -113,12 +325,25 @@ func (f *fnCtx) fieldsExpr(rt types.Type, e *ast.MemberExpr) Expr {
 
 // reflectMember is `T.fields` where T is a type; false when e is not that.
 func (f *fnCtx) reflectMember(e *ast.MemberExpr) (Expr, bool) {
-	if e.Name.Name != "fields" || e.Safe {
+	if e.Name.Name != "fields" && e.Name.Name != "members" && e.Name.Name != "doc" || e.Safe {
 		return nil, false
 	}
 	rt := f.reflectTarget(e.X)
 	if rt == nil {
 		return nil, false
+	}
+	if e.Name.Name == "doc" {
+		return f.typeDoc(rt)
+	}
+	if e.Name.Name == "members" {
+		if _, isEnum := rt.(*types.Enum); !isEnum {
+			if _, isSealed := rt.(*types.Sealed); !isSealed {
+				if _, isParam := rt.(*types.TypeParam); !isParam {
+					return nil, false // a struct's own `members`, or none
+				}
+			}
+		}
+		return f.membersList(rt, e), true // D203
 	}
 	if st, ok := rt.(*types.Struct); ok {
 		// a `static val fields` of the type itself still wins
@@ -143,7 +368,9 @@ func (f *fnCtx) withHandle(name string, h *fieldHandle, body func()) {
 	for k, v := range saved.handles {
 		env.handles[k] = v
 	}
-	env.handles[name] = h.fld.Type
+	if t := h.handleType(); t != nil {
+		env.handles[name] = t
+	}
 	f.env = &env
 	body()
 	f.env = saved
@@ -152,6 +379,21 @@ func (f *fnCtx) withHandle(name string, h *fieldHandle, body func()) {
 
 // handleMember is `f.name`, `f.doc`, … on a handle: constants.
 func (f *fnCtx) handleMember(h *fieldHandle, e *ast.MemberExpr) Expr {
+	if n, ok := e.X.(*ast.NameExpr); ok {
+		f.c.refHandle(n.Pos, h.hover) // hover on the loop's name where it is used
+	}
+	if m := h.member; m != nil {
+		switch e.Name.Name {
+		case "name":
+			return &StringConst{exprBase{types.TString}, m.name}
+		case "doc":
+			return &StringConst{exprBase{types.TString}, m.doc}
+		case "index":
+			return &IntConst{exprBase{types.TI64}, uint64(h.index), false}
+		}
+		f.errorf(e.Name.Pos, "a member handle has name, doc, index and, for a variant, Type, and the methods has and attr; '%s' is none of them (D203)", e.Name.Name)
+		return bad()
+	}
 	switch e.Name.Name {
 	case "name":
 		return &StringConst{exprBase{types.TString}, h.fld.Name}
@@ -167,9 +409,85 @@ func (f *fnCtx) handleMember(h *fieldHandle, e *ast.MemberExpr) Expr {
 		return &BoolConst{exprBase{types.TBool}, h.fld.HasDefault}
 	case "index":
 		return &IntConst{exprBase{types.TI64}, uint64(h.index), false}
+	case "isOptional", "isList":
+		return &BoolConst{exprBase{types.TBool}, handleFlag(h, e.Name.Name)}
 	}
-	f.errorf(e.Name.Pos, "a field handle has name, doc, typeName, hasDefault, index and Type, and the methods get, has and attr; '%s' is none of them (D174)", e.Name.Name)
+	f.errorf(e.Name.Pos, "a field handle has name, doc, typeName, hasDefault, index, isOptional, isList, Type and Inner, and the methods get, default, has and attr; '%s' is none of them (D174, D203)", e.Name.Name)
 	return bad()
+}
+
+// handleFlag is `f.isOptional` (the field is a `T?`) or `f.isList` (a
+// `List<T>` or `MutableList<T>`), D203.
+func handleFlag(h *fieldHandle, name string) bool {
+	if h.fld == nil {
+		return false
+	}
+	switch types.Unaliased(h.fld.Type, false).(type) {
+	case *types.Nullable:
+		return name == "isOptional"
+	case *types.List:
+		return name == "isList"
+	}
+	return false
+}
+
+// handleInner is `f.Inner`: the `T` of a `T?` or `List<T>` field, or nil
+// for any other (D203).
+func handleInner(t types.Type) types.Type {
+	switch tt := types.Unaliased(t, false).(type) {
+	case *types.Nullable:
+		return tt.Elem
+	case *types.List:
+		return tt.Elem
+	}
+	return nil
+}
+
+// handleConst is a condition made of a handle's constants — `f.isOptional`,
+// `f.isList`, `f.hasDefault`, `f.has<A>()`, `f.name == "x"` — for an `if`
+// that keeps only the branch it decides (D203); not known for anything else.
+func (f *fnCtx) handleConst(cond ast.Expr) (value, known bool) {
+	handle := func(x ast.Expr) *fieldHandle {
+		n, ok := x.(*ast.NameExpr)
+		if !ok {
+			return nil
+		}
+		sym := f.lookup(n.Name)
+		if sym == nil || sym.Kind != SymFieldHandle {
+			return nil
+		}
+		return sym.Handle
+	}
+	switch c := cond.(type) {
+	case *ast.CallExpr:
+		return f.handleHas(c)
+	case *ast.MemberExpr:
+		h := handle(c.X)
+		if h == nil || c.Safe {
+			return false, false
+		}
+		switch c.Name.Name {
+		case "isOptional", "isList":
+			return handleFlag(h, c.Name.Name), true
+		case "hasDefault":
+			return h.fld != nil && h.fld.HasDefault, true
+		}
+	case *ast.BinaryExpr:
+		if c.Op != lexer.Eq && c.Op != lexer.NotEq {
+			return false, false
+		}
+		m, ok := c.L.(*ast.MemberExpr)
+		lit, isLit := c.R.(*ast.StringLit)
+		if !ok || !isLit || m.Name.Name != "name" || len(lit.Parts) != 1 || lit.Parts[0].Expr != nil {
+			return false, false
+		}
+		h := handle(m.X)
+		if h == nil {
+			return false, false
+		}
+		return (h.handleName() == lit.Parts[0].Text) == (c.Op == lexer.Eq), true
+	}
+	return false, false
 }
 
 // annotationArg resolves the annotation type argument of `has<A>()` and
@@ -223,11 +541,14 @@ func (f *fnCtx) handleHas(c *ast.CallExpr) (value, known bool) {
 	if a == nil || annotationOf(a) == nil {
 		return false, false // reported when the call itself is checked
 	}
-	return f.c.annotationOnField(sym.Handle.st, sym.Handle.index, a) != nil, true
+	return f.c.handleAnnotation(sym.Handle, a) != nil, true
 }
 
 // handleCall is `f.get(x)`, `f.has<A>()` and `f.attr<A>()` on a handle.
 func (f *fnCtx) handleCall(h *fieldHandle, callee *ast.MemberExpr, typeArgs []ast.Type, e *ast.CallExpr, want types.Type) Expr {
+	if n, ok := callee.X.(*ast.NameExpr); ok {
+		f.c.refHandle(n.Pos, h.hover)
+	}
 	var targs []types.Type
 	for _, ta := range typeArgs {
 		targs = append(targs, f.resolve(ta))
@@ -238,17 +559,37 @@ func (f *fnCtx) handleCall(h *fieldHandle, callee *ast.MemberExpr, typeArgs []as
 		if a == nil {
 			return bad()
 		}
-		return &BoolConst{exprBase{types.TBool}, f.c.annotationOnField(h.st, h.index, a) != nil}
+		return &BoolConst{exprBase{types.TBool}, f.c.handleAnnotation(h, a) != nil}
 	case "attr":
 		a := f.annotationArg(targs, e, "attr")
 		if a == nil {
 			return bad()
 		}
 		nt := &types.Nullable{Elem: a}
-		if u := f.c.annotationOnField(h.st, h.index, a); u != nil && u.Value != nil {
+		if u := f.c.handleAnnotation(h, a); u != nil && u.Value != nil {
 			return constExpr(&CSome{T: nt, V: u.Value})
 		}
 		return constExpr(&CNull{T: nt})
+	case "default", "get":
+		if h.member != nil {
+			f.errorf(callee.Name.Pos, "'%s' reads a field; a member handle has the methods has and attr (D203)", callee.Name.Name)
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+	}
+	switch callee.Name.Name {
+	case "default":
+		// the declared default, as the constructor gives it (D203)
+		if len(e.Args) != 0 {
+			f.errorf(e.Pos, "'default' takes no arguments: f.default() is the field's declared default (D203)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		if !h.fld.HasDefault {
+			f.errorf(callee.Name.Pos, "'%s' has no default: test 'f.hasDefault' before 'f.default()' (D203)", h.fld.Name)
+			return bad()
+		}
+		return f.fieldDefault(h.st, h.index)
 	case "get":
 		if len(e.Args) != 1 || e.Args[0].Name != nil {
 			f.errorf(e.Pos, "'get' takes the value to read the field from: f.get(x) (D174)")
@@ -268,7 +609,7 @@ func (f *fnCtx) handleCall(h *fieldHandle, callee *ast.MemberExpr, typeArgs []as
 		}
 		return f.checkExpr(&ast.MemberExpr{X: e.Args[0].Value, Name: ast.Ident{Name: h.fld.Name, Pos: callee.Name.Pos}, Pos: e.Pos}, want)
 	}
-	f.errorf(callee.Name.Pos, "a field handle has the methods get, has and attr; '%s' is none of them (D174)", callee.Name.Name)
+	f.errorf(callee.Name.Pos, "a field handle has the methods get, default, has and attr; '%s' is none of them (D174, D203)", callee.Name.Name)
 	f.checkArgsLoosely(e.Args)
 	return bad()
 }
@@ -318,18 +659,31 @@ func (f *fnCtx) inlineLoop(s *ast.LoopStmt) []Stmt {
 		return nil
 	}
 	m, ok := s.Iter.(*ast.MemberExpr)
-	if !ok || m.Name.Name != "fields" || f.reflectTarget(m.X) == nil {
-		f.errorf(s.Iter.Span(), "an inline loop walks the fields of a type: 'inline loop (f in T.fields)' (D174)")
+	if !ok || m.Name.Name != "fields" && m.Name.Name != "members" || f.reflectTarget(m.X) == nil {
+		f.errorf(s.Iter.Span(), "an inline loop walks the fields of a type or the members of an enum or sealed family: 'inline loop (f in T.fields)', 'inline loop (m in T.members)' (D174, D203)")
 		return nil
 	}
-	hs, abstract := f.handlesOf(f.reflectTarget(m.X), m.Pos)
+	var hs []*fieldHandle
+	var abstract bool
+	if m.Name.Name == "members" {
+		var known bool
+		hs, abstract, known = f.memberHandles(f.reflectTarget(m.X), m.Pos)
+		if !known {
+			return nil
+		}
+	} else {
+		hs, abstract = f.handlesOf(f.reflectTarget(m.X), m.Pos)
+	}
 	if abstract {
 		return nil // each type the generic body is used with is checked in its own copy
 	}
 	f.inlineBase = append(f.inlineBase, len(f.loops))
 	defer func() { f.inlineBase = f.inlineBase[:len(f.inlineBase)-1] }()
+	hover := handleHover(s.Var.Name.Name, f.reflectTarget(m.X), m.Name.Name, hs)
+	f.c.refHandle(s.Var.Name.Pos, hover)
 	var out []Stmt
 	for _, h := range hs {
+		h.hover = hover
 		f.withHandle(s.Var.Name.Name, h, func() {
 			out = append(out, f.checkBlock(s.Body, nil, false))
 		})
@@ -342,6 +696,10 @@ func (f *fnCtx) inlineLoop(s *ast.LoopStmt) []Stmt {
 func (f *fnCtx) inlineJump(span source.Span, what string) bool {
 	if n := len(f.inlineBase); n > 0 && len(f.loops) <= f.inlineBase[n-1] {
 		f.errorf(span, "'%s' cannot leave an inline loop: it is unrolled while compiling, one copy of the body per field (D174)", what)
+		return true
+	}
+	if n := len(f.blockLoops); n > 0 && len(f.loops) <= f.blockLoops[n-1] {
+		f.errorf(span, "'%s' cannot leave a receiver block: the block runs to its end; a loop inside it may use '%s' (D207)", what, what)
 		return true
 	}
 	return false
@@ -380,6 +738,16 @@ func (f *fnCtx) buildCall(callee *ast.MemberExpr, e *ast.CallExpr, want types.Ty
 			Name:  &ast.Ident{Name: h.fld.Name, Pos: lam.Params[0].Pos},
 			Value: &ast.BoundExpr{Param: lam.Params[0].Name.Name, Handle: h, Body: lam.Body, Pos: lam.Pos},
 		})
+	}
+	// in a trait default body the implementing type has opted in (it wrote
+	// `implement Trait`): its fields are set whatever their visibility, as
+	// `f.get(x)` reads them, so a library builds a struct of another package
+	if f.env != nil && f.env.self != nil {
+		if self, ok := f.c.hooks.Subst(f.env.self, f.subst).(*types.Struct); ok && templateOf(self) == templateOf(st) {
+			saved := f.reflectSelf
+			f.reflectSelf = self
+			defer func() { f.reflectSelf = saved }()
+		}
 	}
 	return f.constructStruct(st, args, e.Pos, want), true
 }
@@ -422,7 +790,8 @@ func (f *fnCtx) fieldInfoCall(callee *ast.MemberExpr, typeArgs []ast.Type, e *as
 		return nil, false
 	}
 	fi := f.c.fieldInfoStruct()
-	if st, ok := types.Unaliased(sym.Var.Type, false).(*types.Struct); !ok || st != fi {
+	mi, _ := f.c.preludeType("MemberInfo").(*types.Struct)
+	if st, ok := types.Unaliased(sym.Var.Type, false).(*types.Struct); !ok || st != fi && st != mi {
 		return nil, false
 	}
 	var targs []types.Type
@@ -449,6 +818,20 @@ func (f *fnCtx) fieldInfoCall(callee *ast.MemberExpr, typeArgs []ast.Type, e *as
 // field FieldInfo f describes, as an A?.
 func (ev *constEval) reflectAttr(fieldInfo ConstVal, nt *types.Nullable) ConstVal {
 	cs := fieldInfo.(*CStruct)
+	if mi, _ := ev.c.preludeType("MemberInfo").(*types.Struct); mi != nil && cs.T == mi {
+		// a MemberInfo (D203): name, doc, index, owner
+		index := int(cs.Fields[2].(*CInt).V.Int64())
+		owner := int(cs.Fields[3].(*CInt).V.Int64())
+		a, _ := nt.Elem.(*types.Struct)
+		if owner >= 0 && owner < len(ev.c.reflMembers) && a != nil {
+			if ref := ev.c.memberRefAt(ev.c.reflMembers[owner], index); ref != nil {
+				if u := ev.c.memberAnnotation(ref, a); u != nil && u.Value != nil {
+					return &CSome{nt, u.Value}
+				}
+			}
+		}
+		return &CNull{nt}
+	}
 	owner := int(cs.Fields[5].(*CInt).V.Int64())
 	index := int(cs.Fields[4].(*CInt).V.Int64())
 	a, _ := nt.Elem.(*types.Struct)
@@ -537,7 +920,7 @@ func (f *fnCtx) attrLetIf(e *ast.IfExpr, want types.Type, asValue bool) (Expr, b
 	if a == nil || annotationOf(a) == nil {
 		return nil, false // reported when the call is checked
 	}
-	use := f.c.annotationOnField(sym.Handle.st, sym.Handle.index, a)
+	use := f.c.handleAnnotation(sym.Handle, a)
 	if use == nil || use.Value == nil {
 		return f.staticIf(e, false, want, asValue), true
 	}

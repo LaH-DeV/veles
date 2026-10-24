@@ -98,6 +98,12 @@ type bareWalker struct {
 	bound   map[string]bool
 	rewrite bool
 	seen    map[uintptr]bool
+	// block: walking a block that runs on a receiver (D207) — a `this.name`
+	// written for an enclosing receiver steps out of this block too, unless
+	// this block's receiver has the member; local reports a name bound around
+	// the block, which a member does not hide
+	block bool
+	local func(name string) bool
 	// shadows is told of each bare member name before it is rewritten
 	shadows func(ne *ast.NameExpr, target string)
 }
@@ -115,6 +121,15 @@ func (w *bareWalker) walk(v reflect.Value, collect bool) {
 			return
 		}
 		if !collect && v.Type() == exprIface && v.CanSet() {
+			if me, ok := v.Interface().(*ast.MemberExpr); ok && w.block {
+				if self, ok := me.X.(*ast.SelfExpr); ok && self.Implicit {
+					if w.members[me.Name.Name] {
+						self.Outer = 0 // the innermost receiver has it
+					} else {
+						self.Outer++
+					}
+				}
+			}
 			if ne, ok := v.Interface().(*ast.NameExpr); ok && len(ne.TypeArgs) == 0 && w.statics[ne.Name] != "" && !w.members[ne.Name] && !w.bound[ne.Name] {
 				if w.shadows != nil {
 					w.shadows(ne, w.statics[ne.Name])
@@ -126,12 +141,12 @@ func (w *bareWalker) walk(v reflect.Value, collect bool) {
 				}))
 				return
 			}
-			if ne, ok := v.Interface().(*ast.NameExpr); ok && len(ne.TypeArgs) == 0 && w.members[ne.Name] && !w.bound[ne.Name] {
+			if ne, ok := v.Interface().(*ast.NameExpr); ok && len(ne.TypeArgs) == 0 && w.members[ne.Name] && !w.bound[ne.Name] && (w.local == nil || !w.local(ne.Name)) {
 				if w.shadows != nil {
 					w.shadows(ne, "this")
 				}
 				v.Set(reflect.ValueOf(&ast.MemberExpr{
-					X:    &ast.SelfExpr{Pos: ne.Pos},
+					X:    &ast.SelfExpr{Implicit: true, Pos: ne.Pos},
 					Name: ast.Ident{Name: ne.Name, Pos: ne.Pos},
 					Pos:  ne.Pos,
 				}))
@@ -176,4 +191,82 @@ func (w *bareWalker) walk(v reflect.Value, collect bool) {
 			w.walk(v.Index(i), collect)
 		}
 	}
+}
+
+// resolveBlockMembers is D158 for a block that runs on a receiver (D207):
+// in `server.apply({ port = 8080 })` a bare name that is a member of the
+// block's receiver — and is bound neither in the block nor around it —
+// becomes `this.name`, the block's `this`. A `this.name` written earlier for
+// an enclosing method's member the block's receiver lacks steps out of the
+// block to that receiver (SelfExpr.Outer); the innermost receiver that has
+// the member wins, as the innermost local does.
+func (f *fnCtx) resolveBlockMembers(e *ast.LambdaExpr, recv types.Type) {
+	if f.c.blockDone == nil {
+		f.c.blockDone = map[*ast.LambdaExpr]bool{}
+	}
+	if f.c.blockDone[e] {
+		return
+	}
+	f.c.blockDone[e] = true
+	members := map[string]bool{}
+	fields, methods := f.memberNames(recv)
+	for _, m := range append(fields, methods...) {
+		members[m] = true
+	}
+	bound := map[string]bool{}
+	for _, p := range e.Params {
+		bound[p.Name.Name] = true
+	}
+	w := &bareWalker{members: members, bound: bound, seen: map[uintptr]bool{}, block: true}
+	w.walk(reflect.ValueOf(&e.Body).Elem(), true)
+	w.rewrite, w.seen = true, map[uintptr]bool{}
+	w.local = func(name string) bool {
+		sym := f.scope.Lookup(name)
+		return sym != nil && sym.Kind == SymLocal
+	}
+	w.walk(reflect.ValueOf(&e.Body).Elem(), false)
+}
+
+// selfFor is the variable a `this` stands for: the innermost receiver, or
+// for a `this` the checker wrote before a member of an enclosing receiver,
+// that receiver (D207), captured into this function. The receivers,
+// innermost first: the blocks checked in place in each function, that
+// function's own (a receiver block's, or a method's), then its parent's.
+func (f *fnCtx) selfFor(e *ast.SelfExpr) *Var {
+	if e.Outer == 0 {
+		return f.selfRef()
+	}
+	k := e.Outer
+	for r := f; r != nil; r = r.parent {
+		for i := len(r.recvStack) - 1; i >= 0; i-- {
+			if k == 0 {
+				return f.capturedSelf(r.recvStack[i])
+			}
+			k--
+		}
+		if r.onBlock || !r.isLambda {
+			if k == 0 {
+				if r.selfVar == nil {
+					return nil
+				}
+				return f.capturedSelf(r.selfVar)
+			}
+			k--
+		}
+		if !r.isLambda {
+			return nil
+		}
+	}
+	return nil
+}
+
+// capturedSelf is a receiver variable of this function or an enclosing
+// one, as this function reaches it.
+func (f *fnCtx) capturedSelf(v *Var) *Var {
+	if f.owns(v) {
+		return v
+	}
+	inner := f.localVar(v)
+	inner.IsSelf = true
+	return inner
 }

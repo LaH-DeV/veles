@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -78,6 +79,11 @@ type ManifestRuntime struct {
 	// Threads is how many threads the default pool has: 0 for "auto" (one
 	// per core, the default); VELES_THREADS overrides it.
 	Threads int64
+	// GCMinHeap is `gc.minHeap` in bytes, GCGoal `gc.goal` in percent
+	// (D200); 0 keeps the runtime's default (8 MiB, 100), and
+	// VELES_GC_MIN_HEAP / VELES_GC_GOAL override them.
+	GCMinHeap int64
+	GCGoal    int64
 }
 
 // Dependency is one entry of `[dependencies]`. Exactly one of Path,
@@ -479,6 +485,49 @@ func (r *manifestReader) workspace(t *tomlTable) (*ManifestWorkspace, error) {
 	return w, nil
 }
 
+// runtimeGC reads one key of `[runtime] gc` (D200).
+func (r *manifestReader) runtimeGC(m *Manifest, key string, v *tomlVal) error {
+	switch key {
+	case "minHeap":
+		n, ok := int64(0), v.kind == tomlStr
+		if ok {
+			n, ok = parseHeapSize(v.str)
+		}
+		if !ok || n < 1<<20 || n > 64<<30 {
+			return r.fail(v, "[runtime] gc.minHeap is a size from \"1MiB\" to \"64GiB\": a whole number with B, KiB, MiB or GiB, e.g. gc.minHeap = \"32MiB\"")
+		}
+		m.Runtime.GCMinHeap = n
+	case "goal":
+		if v.kind != tomlInt || v.num < 10 || v.num > 1000 {
+			return r.fail(v, "[runtime] gc.goal is the percent the heap grows over the live data before the next collection, a number from 10 to 1000 (default 100), e.g. gc.goal = 200")
+		}
+		m.Runtime.GCGoal = v.num
+	default:
+		return r.fail(v, "unknown [runtime] key %q (gc.minHeap, gc.goal)", "gc."+key)
+	}
+	return nil
+}
+
+// parseHeapSize reads "32MiB", "512KiB", "1GiB" or "100B" (D200).
+func parseHeapSize(s string) (int64, bool) {
+	units := []struct {
+		suffix string
+		shift  uint
+	}{{"KiB", 10}, {"MiB", 20}, {"GiB", 30}, {"B", 0}}
+	for _, u := range units {
+		digits, ok := strings.CutSuffix(s, u.suffix)
+		if !ok {
+			continue
+		}
+		n, err := strconv.ParseInt(digits, 10, 64)
+		if err != nil || n < 0 || n > 1<<40 || digits != strconv.FormatInt(n, 10) {
+			return 0, false
+		}
+		return n << u.shift, true
+	}
+	return 0, false
+}
+
 // runtime reads `[runtime]` (D143): threads = "auto" or a count.
 func (r *manifestReader) runtime(m *Manifest, t *tomlTable) error {
 	for _, key := range t.keys() {
@@ -493,8 +542,17 @@ func (r *manifestReader) runtime(m *Manifest, t *tomlTable) error {
 			default:
 				return r.fail(v, "[runtime] threads is \"auto\" (one per core, the default) or a number from 1 to 256, e.g. threads = 4")
 			}
+		case "gc":
+			if v.kind != tomlTab {
+				return r.fail(v, "[runtime] gc is a table: gc.minHeap = \"32MiB\", gc.goal = 100")
+			}
+			for _, k := range v.tab.keys() {
+				if err := r.runtimeGC(m, k, v.tab.vals[k]); err != nil {
+					return err
+				}
+			}
 		default:
-			return r.fail(v, "unknown [runtime] key %q (threads)", key)
+			return r.fail(v, "unknown [runtime] key %q (threads, gc)", key)
 		}
 	}
 	return nil

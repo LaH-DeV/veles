@@ -286,6 +286,25 @@ func (c *Checker) notCodable(t types.Type) string {
 		return "is a task"
 	case *types.Nullable:
 		return c.notCodable(t.Elem)
+	case *types.Tuple:
+		// a wire shape names its fields; a tuple, labelled or not, has no
+		// keys to write (D166)
+		return "is a tuple, which has no wire form — make it a struct, whose fields carry the keys"
+	case *types.List:
+		if why := c.notCodable(t.Elem); why != "" {
+			return "holds elements that each " + why
+		}
+	case *types.Set:
+		if why := c.notCodable(t.Elem); why != "" {
+			return "holds elements that each " + why
+		}
+	case *types.Map:
+		if why := c.notCodable(t.Key); why != "" {
+			return "has keys that each " + why
+		}
+		if why := c.notCodable(t.Value); why != "" {
+			return "has values that each " + why
+		}
 	case *types.Struct:
 		switch t.Name {
 		case "Mutex", "Atomic", "RwLock", "Event", "Lazy", "Broadcast", "Subscription", "Watch":

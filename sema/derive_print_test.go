@@ -58,7 +58,7 @@ func TestDumpDerivedIsVeles(t *testing.T) {
 		"static fun decode(from: Decoder): Note throws DecodeError {",
 		// D125: the schema follows decode, with the same keys and the same
 		// per-format @key, and the default as text
-		"static fun schema(format: string, keys: KeyStyle): Schema {",
+		"static fun schema(format: string, keys: Case): Schema {",
 		"schema: i64.schema(format, keys), required: true, nullable: false, fallback: null)",
 		"  Schema.object(\"Note\", $fields.toList())",
 		"fallback: defaultText(<default of Note.tags>, format, keys))",

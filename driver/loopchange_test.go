@@ -13,6 +13,7 @@ import (
 // when it next steps, at the loop's line, in both profiles. Replacing an
 // element in place does not count.
 func TestLoopOverChangedCollection(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -49,6 +50,7 @@ fun main() {
 `, "main.vs:9:3"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(c.src), 0o644); err != nil {
 				t.Fatal(err)

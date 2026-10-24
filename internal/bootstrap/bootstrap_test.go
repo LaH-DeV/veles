@@ -11,6 +11,8 @@ import (
 	"github.com/LaH-DeV/veles/internal/buildtest"
 )
 
+func TestMain(m *testing.M) { buildtest.Main(m) }
+
 func TestFirstDifference(t *testing.T) {
 	if d := bootstrap.FirstDifference("a", "x\ny\n", "b", "x\ny\n"); d != "" {
 		t.Errorf("equal texts differ: %s", d)

@@ -76,6 +76,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			rt := &types.Nullable{Elem: rs}
 			return f.suspending(&Builtin{exprBase{rt}, "task.runWithin", args, e.Pos}, e.Pos, "runWithin")
 		}
+		if (callee.Name == "compilerTarget" || callee.Name == "compilerProgram") && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
+			return f.compilerFact(callee.Name, e) // std/build's constants (D160, D204)
+		}
 		if callee.Name == "listRawData" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
 			// std-only (D69): the storage of a list, for `withRaw` to lend C
 			// for the length of a closure — never a pointer user code holds
@@ -111,6 +114,20 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			}
 			return &Builtin{exprBase{types.TUnit}, "list.touch", []Expr{xs}, e.Pos}
 		}
+		if callee.Name == "listMove" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 4 {
+			// std-only: count elements moved within a list in one memmove
+			// (insert, removeAt) — the caller checks both ranges are inside
+			xs := f.checkExpr(e.Args[0].Value, nil)
+			if lt, ok := xs.Type().(*types.List); !ok || !lt.Mutable {
+				f.errorf(e.Pos, "listMove takes a MutableList")
+				return bad()
+			}
+			args := []Expr{xs}
+			for _, a := range e.Args[1:] {
+				args = append(args, f.checkExprTo(a.Value, types.TI64))
+			}
+			return &Builtin{exprBase{types.TUnit}, "list.move", args, e.Pos}
+		}
 		if callee.Name == "listAppendText" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
 			// std-only: a string's bytes onto a MutableList<u8> in one copy
 			// (StringBuilder.append), not a list of them pushed one by one
@@ -121,6 +138,32 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 				return bad()
 			}
 			return &Builtin{exprBase{types.TUnit}, "list.appendText", []Expr{xs, s}, e.Pos}
+		}
+		if op, ok := textListOps[callee.Name]; ok && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == len(op.args)+1 {
+			// std-only: StringBuilder's in-place text edits (D207)
+			xs := f.checkExpr(e.Args[0].Value, nil)
+			if lt, ok := xs.Type().(*types.List); !ok || !lt.Mutable || !types.Identical(lt.Elem, types.TU8) {
+				f.errorf(e.Pos, "%s takes a MutableList<u8>", callee.Name)
+				return bad()
+			}
+			args := []Expr{xs}
+			for i, t := range op.args {
+				args = append(args, f.checkExprTo(e.Args[i+1].Value, t))
+			}
+			return &Builtin{exprBase{op.ret}, op.op, args, e.Pos}
+		}
+		if callee.Name == "stringAsciiCase" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
+			// std-only: toLower/toUpper in one pass and one copy
+			s := f.checkExprTo(e.Args[0].Value, types.TString)
+			upper := f.checkExprTo(e.Args[1].Value, types.TBool)
+			return &Builtin{exprBase{types.TString}, "string.asciiCase", []Expr{s, upper}, e.Pos}
+		}
+		if callee.Name == "stringReplace" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 3 {
+			// std-only: replace in one pass and one copy (a non-empty old)
+			s := f.checkExprTo(e.Args[0].Value, types.TString)
+			old := f.checkExprTo(e.Args[1].Value, types.TString)
+			repl := f.checkExprTo(e.Args[2].Value, types.TString)
+			return &Builtin{exprBase{types.TString}, "string.replace", []Expr{s, old, repl}, e.Pos}
 		}
 		if callee.Name == "stringSplit" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
 			// std-only: String.split's loop in the runtime (a non-empty sep;
@@ -697,10 +740,30 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 	}
 	callArgs = append(callArgs, extra...) // C's variadic arguments, promoted (D123)
 	rt := fn.Sig.Ret
+	if len(m) > 0 {
+		// the instance holds no labels (D166): `entries().sortedBy(…)` is
+		// still a list of `(key: K, value: V)` to its caller
+		if lab := f.c.hooks.Subst(t.Sig.Ret, m); types.HasLabels(lab) && types.Identical(lab, rt) {
+			rt = lab
+		}
+	}
+	var okT types.Type
 	if fn.Sig.Effects.Throws {
+		if types.HasLabels(rt) {
+			okT = rt
+		}
 		rt = f.c.ResultType(fn.Sig.Ret, fn.Sig.Effects.Error)
 	}
-	return &Call{exprBase: exprBase{rt}, Fn: fn, Args: callArgs, Span: span}
+	return &Call{exprBase: exprBase{rt}, Fn: fn, Args: callArgs, Span: span, Ok: okT}
+}
+
+// okType is the success type of a Result value x of type rs: the payload's,
+// with the labels a throwing call's caller sees (D166).
+func okType(x Expr, rs *types.Sealed) types.Type {
+	if c, ok := x.(*Call); ok && c.Ok != nil {
+		return c.Ok
+	}
+	return rs.TypeArgs[0]
 }
 
 // defaultArg evaluates a parameter's default expression in the callee's
@@ -727,7 +790,7 @@ func (f *fnCtx) implements(t types.Type, trait *types.Trait) bool {
 		return f.c.tupleCompare(tt) != nil // lexicographic order (tuple_order.go)
 	}
 	if _, ok := t.(*types.Enum); ok && trait.Module == "std.prelude" {
-		return f.c.implementsPrelude(t, trait.Name) // Comparable, Display, Equatable, Hashable (enum.go)
+		return f.c.implementsPrelude(t, trait.Name) // Comparable, Display, Equatable, Hashable, Parsable (enum.go)
 	}
 	if f.findImpl(t, trait) != nil {
 		return true
@@ -777,12 +840,19 @@ func (f *fnCtx) inferStructArgs(t *types.Struct, args []ast.Arg, want types.Type
 	if initT := f.c.methods[t]["$init"]; initT != nil && initT.Sig != nil {
 		params = append(params, initT.Sig.Params...) // D73: `Boxed(value: 1)` infers T too
 	}
-	// a pun names its parameter (D28); constructStruct reports the rest
+	// a pun names its parameter (D28), and so does the one positional
+	// argument of a one-parameter constructor (D163): `Mutex(Notes())` is a
+	// `Mutex<Notes>`; constructStruct reports the rest
 	named := make([]ast.Arg, len(args))
 	for i, a := range args {
 		named[i] = a
-		if n, isName := a.Value.(*ast.NameExpr); a.Name == nil && isName && len(n.TypeArgs) == 0 && (hasField(t, n.Name) || f.c.hasInitParam(t, n.Name)) {
+		if a.Name != nil {
+			continue
+		}
+		if n, isName := a.Value.(*ast.NameExpr); isName && len(n.TypeArgs) == 0 && (hasField(t, n.Name) || f.c.hasInitParam(t, n.Name)) {
 			named[i].Name = &ast.Ident{Name: n.Name, Pos: n.Pos}
+		} else if p := f.soleParam(t); p != "" && len(args) == 1 {
+			named[i].Name = &ast.Ident{Name: p}
 		}
 	}
 	bound, ok := f.bindArgs(params, named, "struct '"+t.Name+"'", span)
@@ -900,7 +970,8 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	for i, fld := range st.Fields {
 		var v Expr
 		switch {
-		case (fld.Private && !inside || !fieldVisible(fld.Pub, fld.Internal, st.Module, f.module)) && fld.HasDefault && bound[i] != nil:
+		case (fld.Private && !inside || !fieldVisible(fld.Pub, fld.Internal, st.Module, f.module)) && fld.HasDefault && bound[i] != nil &&
+			!(f.reflectSelf != nil && templateOf(f.reflectSelf) == templateOf(st)):
 			// a private field with a default is the type's own state: from
 			// outside it takes its default (M5). One without a default is
 			// the initial state the constructor call must supply — nobody
@@ -936,11 +1007,8 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	}
 	var result Expr = lit
 	if initT != nil {
-		// `init { }`: the block runs on the freshly built value, then the
-		// value is the result (D28); its parameters are the arguments
-		// after the fields (D73)
-		built := f.newTemp(st)
-		args := []Expr{&AddrOf{exprBase{&types.Pointer{Elem: st}}, ref(built)}}
+		// its parameters are the arguments after the fields (D73)
+		var args []Expr
 		for j, p := range initFn.Sig.Params {
 			k := len(st.Fields) + j
 			switch {
@@ -953,15 +1021,150 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 				args = append(args, bad())
 			}
 		}
-		call := &Call{exprBase: exprBase{types.TUnit}, Fn: initFn, Args: args}
-		call.Recv, call.RecvRoot, call.RecvSpan, call.RecvType = RecvPlace, built, span, st
-		body := &Block{Stmts: []Stmt{&ExprStmt{X: call}}, Value: ref(built), Type: st}
-		result = &Let{exprBase{st}, built, lit, &BlockExpr{exprBase{st}, body}}
+		result = f.runInit(st, initFn, lit, args, span)
 	}
 	if st.Sealed != nil && !variantWanted(want, st) {
 		result = &MakeVariant{exprBase{st.Sealed}, st.Sealed, st, result}
 	}
 	return result
+}
+
+// runInit is lit with the `init { }` block run on it: the block runs on the
+// freshly built value, then the value is the result (D28); args are the
+// block's parameters (D73).
+func (f *fnCtx) runInit(st *types.Struct, initFn *Func, lit Expr, args []Expr, span source.Span) Expr {
+	built := f.newTemp(st)
+	args = append([]Expr{&AddrOf{exprBase{&types.Pointer{Elem: st}}, ref(built)}}, args...)
+	call := &Call{exprBase: exprBase{types.TUnit}, Fn: initFn, Args: args}
+	call.Recv, call.RecvRoot, call.RecvSpan, call.RecvType = RecvPlace, built, span, st
+	body := &Block{Stmts: []Stmt{&ExprStmt{X: call}}, Value: ref(built), Type: st}
+	return &Let{exprBase{st}, built, lit, &BlockExpr{exprBase{st}, body}}
+}
+
+// copyStruct lowers `v.copy(field: e, …)` (D164): a construction of v's
+// type in which every field not named keeps v's value. It is built like a
+// construction — `init` runs, so the fields it derives are computed again —
+// and names only what a construction from here could: not a field `init`
+// assigns, nor one this caller cannot see (M5, D142), which keeps its
+// value. v is evaluated once, before the arguments.
+func (f *fnCtx) copyStruct(recv Expr, st *types.Struct, callee *ast.MemberExpr, typeArgs []types.Type, e *ast.CallExpr) Expr {
+	refuse := func(format string, args ...any) Expr {
+		f.errorf(e.Pos, format, args...)
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	if len(typeArgs) != 0 {
+		return refuse("'copy' takes no type arguments (D164)")
+	}
+	if st.Union {
+		return refuse("an extern union has no 'copy': its fields share one place, so naming one says nothing about the others (D164)")
+	}
+	if f.c.taskHolding(st) {
+		return refuse("'%s' holds a running task, which a copy would duplicate; 'copy' is refused for task-holding types (D111, D164)", st.Name)
+	}
+	if r, _ := f.heldResource(callee.X); r != nil {
+		return refuse("'%s' is bound by 'with', which closes it when the block ends; a copy would be a second handle to the same resource (D100, D164)", srcText(callee.X))
+	}
+	initT := f.c.methods[templateOf(st)]["$init"]
+	var initFn *Func
+	if initT != nil {
+		initFn = f.c.instantiate(initT, substOf(st), nil, e.Pos)
+		if len(initFn.Sig.Params) > 0 {
+			return refuse("'%s' cannot be copied: its 'init' takes parameters, and a copy has no value to pass them; construct a new '%s' instead (D164)", st.Name, st.Name)
+		}
+	}
+	inside := f.insideType(st)
+	given := make([]ast.Expr, len(st.Fields))
+	ok := true
+	for _, a := range e.Args {
+		name := ""
+		switch n, isName := a.Value.(*ast.NameExpr); {
+		case a.Name != nil:
+			name = a.Name.Name
+		case isName && len(n.TypeArgs) == 0 && hasField(st, n.Name):
+			name = n.Name // a pun (D28)
+		default:
+			f.errorf(a.Value.Span(), "'copy' takes the fields it changes by name, e.g. '%s.copy(%s: %s)' (D164)", srcText(callee.X), firstNameable(st, inside, f.module), srcText(a.Value))
+			ok = false
+			continue
+		}
+		i := -1
+		for j, fld := range st.Fields {
+			if fld.Name == name {
+				i = j
+			}
+		}
+		switch {
+		case i < 0:
+			f.errorf(a.Value.Span(), "'%s' has no field '%s' for 'copy' to change", st.Name, name)
+			ok = false
+		case given[i] != nil:
+			f.errorf(a.Value.Span(), "'copy' changes field '%s' twice", name)
+			ok = false
+		case st.Fields[i].Init:
+			f.errorf(a.Value.Span(), "field '%s' is assigned by the 'init' block of '%s', which a copy runs again; it cannot be named (D164)", name, st.Name)
+			ok = false
+		case st.Fields[i].Private && !inside || !fieldVisible(st.Fields[i].Pub, st.Fields[i].Internal, st.Module, f.module):
+			f.errorf(a.Value.Span(), "field '%s' of '%s' is not visible here, so 'copy' cannot change it; it keeps its value (D164)", name, st.Name)
+			ok = false
+		default:
+			given[i] = a.Value
+		}
+	}
+	if !ok {
+		f.checkArgsLoosely(e.Args)
+		return bad()
+	}
+	f.c.refCopy(callee.Name.Pos, st, copyable(st, inside, f.module))
+	from := f.newTemp(st)
+	lit := &StructLit{exprBase{st}, st, make([]Expr, len(st.Fields))}
+	for i, fld := range st.Fields {
+		switch {
+		case given[i] != nil:
+			lit.Fields[i] = f.checkExprTo(given[i], fld.Type)
+		case fld.Init:
+			lit.Fields[i] = &Zero{exprBase{fld.Type}} // bound by `init`, never read before
+		default:
+			lit.Fields[i] = &FieldGet{exprBase{fld.Type}, ref(from), i, fld.Name}
+		}
+	}
+	var result Expr = lit
+	if initFn != nil {
+		result = f.runInit(st, initFn, lit, nil, e.Pos)
+	}
+	return &Let{exprBase{st}, from, recv, result}
+}
+
+// copyable lists the fields of st a `copy` from here may change: not one
+// `init` assigns, nor one the caller cannot see.
+func copyable(st *types.Struct, inside bool, from *Module) []string {
+	var names []string
+	for _, fld := range st.Fields {
+		if !fld.Init && !(fld.Private && !inside) && fieldVisible(fld.Pub, fld.Internal, st.Module, from) {
+			names = append(names, fld.Name)
+		}
+	}
+	return names
+}
+
+// firstNameable is the first field of st a `copy` from here may change, for
+// an example in a message.
+func firstNameable(st *types.Struct, inside bool, from *Module) string {
+	if names := copyable(st, inside, from); len(names) > 0 {
+		return names[0]
+	}
+	return "field"
+}
+
+// generatesCopy reports whether `copy` on st is the generated one (D164): a
+// hand-written `copy` replaces it (D58's rule for derived methods), and a
+// field named `copy` means there is none.
+func (f *fnCtx) generatesCopy(st *types.Struct) bool {
+	if hasField(st, "copy") {
+		return false
+	}
+	t, _, why := f.findMethod(st, "copy")
+	return t == nil && why == ""
 }
 
 // variantWanted reports a construction whose expected type is the variant
@@ -1002,16 +1205,52 @@ func (f *fnCtx) punFields(st *types.Struct, args []ast.Arg) ([]ast.Arg, bool) {
 			out[i].Name = &ident
 			continue
 		}
+		if p := f.soleParam(st); p != "" && len(args) == 1 {
+			// no position: nothing in the source is the field's label, so the
+			// index records no reference to it (a rename leaves the call be)
+			out[i].Name = &ast.Ident{Name: p}
+			continue
+		}
 		ok = false
 		if i < len(st.Fields) {
 			fld := st.Fields[i].Name
 			fix := fixReplace("Name the field", source.Span{File: a.Value.Span().File, Start: a.Value.Span().Start, End: a.Value.Span().Start}, fld+": ")
-			f.c.errorFix(a.Value.Span(), fix, "construct '%s' by field name: '%s: %s'; a bare name is accepted only for a variable named like the field (D28)", st.Name, fld, srcText(a.Value))
+			f.c.errorFix(a.Value.Span(), fix, "construct '%s' by field name: '%s: %s'; a bare argument is accepted only for a variable named like the field (D28), or alone when the constructor takes one parameter (D163)", st.Name, fld, srcText(a.Value))
 		} else {
 			f.errorf(a.Value.Span(), "construct '%s' by field name (D28)", st.Name)
 		}
 	}
 	return out, ok
+}
+
+// soleParam names the one parameter a construction of st takes from this
+// call site, when it takes exactly one (D163): a field the call may supply —
+// not one the `init` block assigns, nor one with a default this caller
+// cannot set (M5, D142) — or a parameter of `init` (D73). Such a
+// constructor has no order a reorder could change, so its argument may be
+// positional. "" when there are none or several, and for an `extern struct`
+// (a C layout is constructed by name, always).
+func (f *fnCtx) soleParam(st *types.Struct) string {
+	if st.Extern {
+		return ""
+	}
+	inside := f.insideType(st)
+	var names []string
+	for _, fld := range st.Fields {
+		if fld.Init || fld.HasDefault && (fld.Private && !inside || !fieldVisible(fld.Pub, fld.Internal, st.Module, f.module)) {
+			continue
+		}
+		names = append(names, fld.Name)
+	}
+	if initT := f.c.methods[templateOf(st)]["$init"]; initT != nil && initT.Sig != nil {
+		for _, p := range initT.Sig.Params {
+			names = append(names, p.Name)
+		}
+	}
+	if len(names) != 1 {
+		return ""
+	}
+	return names[0]
 }
 
 func hasField(st *types.Struct, name string) bool {
@@ -1138,6 +1377,18 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		viaPointer = true
 		recv = &Deref{exprBase{p.Elem}, recv}
 		rt = p.Elem
+	}
+	if isResultType(rt) && name == "toString" {
+		f.c.refBuiltin(callee.Name.Pos, rt, name)
+		if len(e.Args) != 0 || len(typeArgs) != 0 {
+			f.errorf(e.Pos, "'toString' on a Result takes no arguments or type arguments (D157)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		return f.toString(recv, e.Pos)
+	}
+	if st, isStruct := rt.(*types.Struct); isStruct && name == "copy" && f.generatesCopy(st) {
+		return f.copyStruct(recv, st, callee, typeArgs, e)
 	}
 	if lt, isList := rt.(*types.List); isList && name == "filterIs" {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
@@ -1328,6 +1579,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		return bad()
 	}
 	if len(found) == 1 {
+		f.traitMethodHidden(found[0], callee.Name.Pos)
 		return f.callMethod(found[0], foundSubst[0], typeArgs, recv, viaPointer, callee, e, want)
 	}
 	if len(exts) == 1 {
@@ -1357,6 +1609,12 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		if cmp := f.c.tupleCompare(tt); cmp != nil {
 			other := f.checkExprTo(e.Args[0].Value, tt)
 			return &Call{exprBase: exprBase{cmp.Sig.Ret}, Fn: cmp, Args: []Expr{recvArg(cmp, recv), other}}
+		}
+	}
+	if (name == "apply" || name == "edit") && len(typeArgs) == 0 && !types.IsInvalid(rt) {
+		if _, nullable := rt.(*types.Nullable); !nullable {
+			f.c.refBuiltin(callee.Name.Pos, rt, name)
+			return f.applyEdit(recv, callee, e) // D207: on any type without its own
 		}
 	}
 	switch tt := rt.(type) {
@@ -1554,7 +1812,25 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 					return bad()
 				}
 				return &Binary{exprBase{types.TBool}, OpEq, &Builtin{exprBase{types.TI64}, "string.len", []Expr{recv}, e.Pos}, &IntConst{exprBase{types.TI64}, 0, false}, e.Pos}
-			case "startsWith", "endsWith", "contains":
+			case "startsWith":
+				// D202: startsWith(prefix, startIndex = 0), a byte index; out of range is false
+				if len(e.Args) != 1 && len(e.Args) != 2 {
+					f.errorf(e.Pos, "startsWith takes a prefix and an optional startIndex, got %d %s: write s.startsWith(prefix) or s.startsWith(prefix, startIndex)", len(e.Args), plural(len(e.Args), "argument"))
+					f.checkArgsLoosely(e.Args)
+					return bad()
+				}
+				for i, want := range []string{"prefix", "startIndex"}[:len(e.Args)] {
+					if a := e.Args[i]; a.Name != nil && a.Name.Name != want {
+						f.errorf(a.Name.Pos, "startsWith has no parameter '%s' here: argument %d is '%s'", a.Name.Name, i+1, want)
+					}
+				}
+				arg := f.checkExprTo(e.Args[0].Value, types.TString)
+				if len(e.Args) == 1 {
+					return &Builtin{exprBase{types.TBool}, "string.startsWith", []Expr{recv, arg}, e.Pos}
+				}
+				at := f.checkExprTo(e.Args[1].Value, types.TI64)
+				return &Builtin{exprBase{types.TBool}, "string.startsWithAt", []Expr{recv, arg, at}, e.Pos}
+			case "endsWith", "contains":
 				if !nargs(1) {
 					return bad()
 				}
@@ -1837,9 +2113,22 @@ func (f *fnCtx) callValue(fnv Expr, ft *types.Func, args []ast.Arg, span source.
 		return bad()
 	}
 	var vals []Expr
+	var spill *Var // a receiver that is not a place, run on a copy
+	var spilled Expr
 	for i, a := range args {
 		if a.Name != nil {
 			f.errorf(a.Name.Pos, "named arguments apply only to direct calls of named functions, not function values (D28)")
+		}
+		if i == 0 && ft.On {
+			// D207: the receiver goes as a pointer to its place, as a
+			// method's (D22); the callee is not known, so it may keep it
+			x := f.checkExprTo(a.Value, ft.Params[0].Type.(*types.Pointer).Elem)
+			arg, tmp := f.receiverPlace(x, a.Value, fnv)
+			if tmp != nil {
+				spill, spilled = tmp, x
+			}
+			vals = append(vals, arg)
+			continue
 		}
 		vals = append(vals, f.checkExprTo(a.Value, ft.Params[i].Type))
 	}
@@ -1850,7 +2139,34 @@ func (f *fnCtx) callValue(fnv Expr, ft *types.Func, args []ast.Arg, span source.
 	if ft.Effects.Suspends {
 		f.refuseHeldSuspension(span, "this call")
 	}
-	return &CallIndirect{exprBase{rt}, fnv, vals}
+	call := &CallIndirect{exprBase{rt}, fnv, vals}
+	if spill != nil {
+		return &Let{exprBase{rt}, spill, spilled, call}
+	}
+	return call
+}
+
+// receiverPlace is the pointer the function fnv on a receiver gets (D207):
+// the address of x when it is a place, or of a fresh copy (tmp, non-nil)
+// when x is a value of its own. The variable moves to the heap unless fnv
+// provably does not keep the pointer (settleOnCalls).
+func (f *fnCtx) receiverPlace(x Expr, src ast.Expr, fnv Expr) (arg Expr, tmp *Var) {
+	pt := &types.Pointer{Elem: x.Type()}
+	if isPlaceExpr(x) && !inPacked(x) {
+		root := rootVar(x)
+		if root == nil {
+			return &AddrOf{exprBase{pt}, x}, nil // behind a pointer
+		}
+		if root.IsGlobal && !root.Mutable {
+			f.errorf(src.Span(), "'%s' is a global 'val', a constant every task shares; a function on it may change it — copy it first: 'var copy = %s' (D207)", root.Name, root.Name)
+		}
+		f.c.onCalls = append(f.c.onCalls, onCall{v: root, block: fnv})
+		f.invalidateVarPaths(root)
+		return &AddrOf{exprBase{pt}, x}, nil
+	}
+	tmp = f.newTemp(x.Type())
+	f.c.onCalls = append(f.c.onCalls, onCall{v: tmp, block: fnv})
+	return &AddrOf{exprBase{pt}, ref(tmp)}, tmp
 }
 
 // funcValue turns a named, non-generic function into a value; it captures
@@ -2418,4 +2734,19 @@ func (f *fnCtx) unmetThrough(t types.Type, trait *types.Trait) (types.Type, *typ
 		}
 	}
 	return nil, nil, ""
+}
+
+// textListOps are the std-only functions behind StringBuilder's in-place
+// text edits and `edit` on a string (D207): the list of bytes first, then
+// these arguments.
+var textListOps = map[string]struct {
+	op   string
+	args []types.Type
+	ret  types.Type
+}{
+	"listTrimText":    {"list.trimText", nil, types.TUnit},
+	"listAsciiCase":   {"list.asciiCase", []types.Type{types.TBool}, types.TUnit},
+	"listReplaceText": {"list.replaceText", []types.Type{types.TString, types.TString}, types.TUnit},
+	"listInsertText":  {"list.insertText", []types.Type{types.TI64, types.TString}, types.TUnit},
+	"listTakeText":    {"list.takeText", nil, &types.Nullable{Elem: types.TString}},
 }

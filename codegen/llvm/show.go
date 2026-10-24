@@ -32,7 +32,9 @@ func (g *gen) defineHelperEx(name, retLL string, params []string, attrs string, 
 		cleanups []sema.Expr
 		envSlot  string
 		mark     bool
-	}{g.fn, g.body.String(), g.allocas.String(), g.tmp, g.label, g.term, g.storage, g.loops, g.fnResult, g.coro, g.cleanups, g.envSlot, g.markLifetimes}
+		dbgSP    int
+		dbgLoc   string
+	}{g.fn, g.body.String(), g.allocas.String(), g.tmp, g.label, g.term, g.storage, g.loops, g.fnResult, g.coro, g.cleanups, g.envSlot, g.markLifetimes, g.dbgSP, g.dbgLoc}
 	g.resetFn(&sema.Func{Name: name, Sig: &types.Func{Ret: types.TUnit}})
 	body()
 	if attrs != "" {
@@ -50,6 +52,7 @@ func (g *gen) defineHelperEx(name, retLL string, params []string, attrs string, 
 	g.tmp, g.label, g.term, g.storage, g.loops, g.fnResult = saved.tmp, saved.label, saved.term, saved.storage, saved.loops, saved.result
 	g.coro, g.cleanups, g.envSlot = saved.coro, saved.cleanups, saved.envSlot
 	g.markLifetimes = saved.mark
+	g.dbgSP, g.dbgLoc = saved.dbgSP, saved.dbgLoc // a helper has no position of its own
 }
 
 // concat appends b to a (both %str values).
@@ -114,11 +117,14 @@ func (g *gen) show(t types.Type, v string) string {
 }
 
 func (g *gen) showHelper(t types.Type) string {
-	key := types.Key(t)
+	key := types.LabelKey(t) // a labelled tuple prints its labels (D166)
 	if name, ok := g.showFns[key]; ok {
 		return name
 	}
 	name := "show." + mangleType(t)
+	if types.HasLabels(t) {
+		name += fmt.Sprintf(".labelled%d", len(g.showFns))
+	}
 	g.showFns[key] = name
 	llt := g.vt(t)
 	g.pending = append(g.pending, func() {
@@ -172,8 +178,15 @@ func (g *gen) showBody(t types.Type, v string) string {
 	case *types.Tuple:
 		acc := g.stringConst("(")
 		for i, e := range tt.Elems {
+			sep := ""
 			if i > 0 {
-				acc = g.concat(acc, g.stringConst(", "))
+				sep = ", "
+			}
+			if tt.Labels != nil {
+				sep += tt.Labels[i] + ": "
+			}
+			if sep != "" {
+				acc = g.concat(acc, g.stringConst(sep))
 			}
 			el := g.part(tt, v, i, e)
 			acc = g.concat(acc, g.show(e, el))

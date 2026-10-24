@@ -296,10 +296,11 @@ func isMutableCollectionName(name string) bool {
 
 // movableField: D63's move for `acc.items`, a field of a struct local that
 // this function built and kept to itself. The struct may not be passed,
-// assigned, returned or have a method called on it (a method could keep its
-// receiver's field); the field may only be used the way a local collection
-// may, and be built fresh — by the constructor's argument or the declared
-// default — so no other name reaches the storage.
+// assigned or returned; a method may be called on it when its summary says it
+// keeps neither the struct nor the field's storage, and it does not use the
+// field after the move (D201, move_method.go). The field may only be used the
+// way a local collection may, and be built fresh — by the constructor's
+// argument or the declared default — so no other name reaches the storage.
 func (f *fnCtx) movableField(x Expr, span source.Span) bool {
 	fg, ok := x.(*FieldGet)
 	if !ok {
@@ -329,6 +330,8 @@ func (f *fnCtx) movableField(x Expr, span source.Span) bool {
 	handled := map[*ast.NameExpr]bool{}
 	allowed := map[*ast.MemberExpr]bool{}
 	var mentions []*ast.MemberExpr
+	methodCalls := map[*ast.MemberExpr]bool{}
+	var calls []*ast.MemberExpr
 	escaped := false
 
 	var visit func(n any) bool
@@ -350,6 +353,9 @@ func (f *fnCtx) movableField(x Expr, span source.Span) bool {
 				decl = n
 				declLoops = append([]*ast.LoopStmt(nil), loops...)
 			}
+			if me, ok := n.Value.(*ast.MemberExpr); ok && isFieldOf(me, v.Name, field) && copiesElements(n.Pattern) {
+				allowed[me] = true
+			}
 		case *ast.LoopStmt:
 			if me, ok := n.Iter.(*ast.MemberExpr); ok && isFieldOf(me, v.Name, field) {
 				if n.Var != nil && hasRefBinding(n.Var) {
@@ -370,6 +376,10 @@ func (f *fnCtx) movableField(x Expr, span source.Span) bool {
 			if m, ok := n.Fun.(*ast.MemberExpr); ok && !m.Safe {
 				if me, ok := m.X.(*ast.MemberExpr); ok && isFieldOf(me, v.Name, field) && moveMethods[m.Name.Name] {
 					allowed[me] = true
+				}
+				// a method of the struct, judged by its summary (D201)
+				if ne, ok := m.X.(*ast.NameExpr); ok && ne.Name == v.Name && !structHasField(st, m.Name.Name) && !n.Async && !n.Block {
+					methodCalls[m] = true
 				}
 			}
 			for i, a := range n.Args {
@@ -398,8 +408,10 @@ func (f *fnCtx) movableField(x Expr, span source.Span) bool {
 				}
 			case structHasField(st, n.Name.Name):
 				// another field: nothing to do with this one
+			case methodCalls[n]:
+				calls = append(calls, n)
 			default:
-				escaped = true // a method on the struct could keep its field
+				escaped = true // a method taken as a value holds the struct
 			}
 		case *ast.NameExpr:
 			if n.Name == v.Name && n.Pos.Start >= v.Span.End && !handled[n] {
@@ -414,6 +426,17 @@ func (f *fnCtx) movableField(x Expr, span source.Span) bool {
 	}
 	if !f.structBuiltFresh(decl, st, field) {
 		return false
+	}
+	// each method called on the struct keeps neither it nor the field's
+	// storage, and none after the move reads the field (D201)
+	for _, call := range calls {
+		facts := f.c.receiverSummary(st, call.Name.Name)
+		if facts == nil || facts.aliased[field] {
+			return false
+		}
+		if facts.used[field] && call.Pos.Start > conv.Pos.Start {
+			return false
+		}
 	}
 	for _, m := range mentions {
 		if !allowed[m] && !f.inReturnPositionExpr(m) {

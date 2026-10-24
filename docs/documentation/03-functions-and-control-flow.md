@@ -69,6 +69,44 @@ Output:
 
 If you dislike the bare `x` at the end, `return x` is equally valid.
 
+### Several results
+
+A function that computes several values returns them together as a
+**labelled tuple**: the labels name the results for the caller, who reads
+them by name or takes them apart by position (D166):
+
+```veles
+use io
+
+fun minMax(xs: List<i64>): (min: i64, max: i64)? {
+  val [first, ..rest] = xs else return null
+  var lo = first
+  var hi = first
+  loop (x in rest) {
+    if (x < lo) lo = x
+    if (x > hi) hi = x
+  }
+  (lo, hi)
+}
+
+fun main() {
+  val range = minMax([4, 9, 1, 7]) ?: return
+  io.println("${range.min}..${range.max} $range")
+  val (lo, hi) = minMax([3]) ?: return
+  io.println("$lo $hi")
+}
+```
+
+Output:
+```text
+1..9 (min: 1, max: 9)
+3 3
+```
+
+The body's `(lo, hi)` needs no labels: it takes them from the return
+type. Chapter 4 has the rest of what tuples do, and when a struct is the
+better choice.
+
 ## `if` is an expression
 
 ```veles

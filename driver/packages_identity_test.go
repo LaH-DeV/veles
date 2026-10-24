@@ -11,6 +11,7 @@ import (
 // it a third way) links one `util`, so its module-level state is shared; and
 // two packages with one name and one function name link side by side.
 func TestPackageIdentityRuns(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}

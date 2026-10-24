@@ -218,5 +218,5 @@ fun onExecutor(cpu: Executor): i64 throws Boom {
 }
 
 fun main() throws Boom {
-  io.println("${both()} ${overlapped()} ${branches(true)}")
+  io.println("${try both()} ${try overlapped()} ${try branches(true)}")
 }

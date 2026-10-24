@@ -200,7 +200,7 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 		if !need(0) {
 			return bad()
 		}
-		return &Builtin{exprBase{&types.List{Elem: &types.Tuple{Elems: []types.Type{mt.Key, mt.Value}}}}, "map.entries", []Expr{recv}, span}
+		return &Builtin{exprBase{&types.List{Elem: &types.Tuple{Elems: []types.Type{mt.Key, mt.Value}, Labels: []string{"key", "value"}}}}, "map.entries", []Expr{recv}, span}
 	case "isFrozen":
 		if !mt.Mutable {
 			f.errorf(span, "'isFrozen' needs a MutableMap: a Map is immutable by its type (D188)")

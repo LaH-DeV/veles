@@ -79,7 +79,7 @@ struct RowDecoder {
 
   implement codec.Decoder {
     fun format(): string => "db"
-    override fun keys(): codec.KeyStyle => codec.KeyStyle.SnakeCase
+    override fun keys(): Case => Case.Snake
 
     fun peek(): codec.Kind throws DecodeError {
       val s = this.state
@@ -257,9 +257,8 @@ fun decodeRows<T: Decodable>(rows: Rows): List<T> throws DecodeError {
 // `timestamp`, read as UTC) in RFC 3339 (`2026-10-05T12:34:56.789+02:00`).
 fun rfc3339(text: string, zoned: bool): string {
   val t = text.replace(" ", "T")
-  if (!t.contains("T")) return t  // infinity, -infinity
   // the zone, if any, starts at the first + or - after the time's 'T'
-  val at = t.indexOf("T")
+  val at = t.indexOf("T") ?: return t  // infinity, -infinity
   var zone = -1
   loop (i in (at + 1)..<t.len()) {
     val b = t.byteAt(i)

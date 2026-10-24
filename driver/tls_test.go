@@ -190,6 +190,7 @@ fun main() suspends {
 `
 
 func TestTLSClient(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}

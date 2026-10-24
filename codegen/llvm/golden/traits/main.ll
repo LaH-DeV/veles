@@ -9,14 +9,14 @@ entry:
   %a11 = alloca ptr
   %a13 = alloca ptr
   %a14 = alloca i64
-  %a33 = alloca { ptr, ptr }
-  %a47 = alloca i64
-  %a51 = alloca i64
-  %a56 = alloca [21 x i8]
-  %a61 = alloca %str
-  %a65 = alloca %str
-  %a73 = alloca %str
-  %a74 = alloca [5 x %str]
+  %a30 = alloca { ptr, ptr }
+  %a44 = alloca i64
+  %a48 = alloca i64
+  %a53 = alloca [21 x i8]
+  %a58 = alloca %str
+  %a62 = alloca %str
+  %a70 = alloca %str
+  %a71 = alloca [5 x %str]
   %t1 = call ptr @veles_list_new(ptr @adesc.Shape, i64 2)
   %t3 = insertvalue %S.main.Square undef, double 0x4000000000000000, 0
   %t4 = call ptr @veles_gc_alloc(ptr @desc.main.Square, i64 8)
@@ -58,105 +58,102 @@ idx.bad.6:
   unreachable
 idx.ok.5:
   %t27 = load ptr, ptr %t20
-  %t28 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t20, i32 0, i32 3
-  %t29 = load i64, ptr %t28
-  %t30 = mul i64 %t29, %t21
-  %t31 = getelementptr inbounds i8, ptr %t27, i64 %t30
-  %t32 = load { ptr, ptr }, ptr %t31
-  store { ptr, ptr } %t32, ptr %a33
-  %t34 = load { ptr, ptr }, ptr %a33
-  %t35 = extractvalue { ptr, ptr } %t34, 0
-  %t36 = extractvalue { ptr, ptr } %t34, 1
-  %t37 = getelementptr ptr, ptr %t36, i64 2
-  %t38 = load ptr, ptr %t37
-  %t39 = call %str %t38(ptr %t35)
-  %t40 = extractvalue %str { ptr @.str.2, i64 21 }, 0
-  %t41 = extractvalue %str { ptr @.str.2, i64 21 }, 1
-  call void @veles_call_push(ptr %t40)
-  call void @v_std.io.println(%str %t39)
+  %t28 = getelementptr inbounds [16 x i8], ptr %t27, i64 %t21
+  %t29 = load { ptr, ptr }, ptr %t28
+  store { ptr, ptr } %t29, ptr %a30
+  %t31 = load { ptr, ptr }, ptr %a30
+  %t32 = extractvalue { ptr, ptr } %t31, 0
+  %t33 = extractvalue { ptr, ptr } %t31, 1
+  %t34 = getelementptr ptr, ptr %t33, i64 2
+  %t35 = load ptr, ptr %t34
+  %t36 = call %str %t35(ptr %t32)
+  %t37 = extractvalue %str { ptr @.str.2, i64 21 }, 0
+  %t38 = extractvalue %str { ptr @.str.2, i64 21 }, 1
+  call void @veles_call_push(ptr %t37)
+  call void @v_std.io.println(%str %t36)
   call void @veles_call_pop()
   br label %loop.post.2
 loop.post.2:
-  %t42 = load i64, ptr %a14
-  %t43 = add i64 %t42, 1
-  store i64 %t43, ptr %a14
-  %t44 = load volatile i32, ptr @veles_attention_line, align 64
-  %t45 = icmp ne i32 %t44, 0
-  br i1 %t45, label %safepoint.7, label %safepoint.on.8, !prof !{!"branch_weights", i32 1, i32 100000}
+  %t39 = load i64, ptr %a14
+  %t40 = add i64 %t39, 1
+  store i64 %t40, ptr %a14
+  %t41 = load volatile i32, ptr @veles_attention_line, align 64
+  %t42 = icmp ne i32 %t41, 0
+  br i1 %t42, label %safepoint.7, label %safepoint.on.8, !prof !{!"branch_weights", i32 1, i32 100000}
 safepoint.7:
   call void @veles_backedge_plain()
   br label %safepoint.on.8
 safepoint.on.8:
   br label %loop.cond.1
 loop.end.3:
-  %t46 = call ptr @veles_list_new(ptr @adesc.i64, i64 3)
-  store i64 3, ptr %a47
-  call void @veles_list_push(ptr %t46, ptr %a47)
-  store i64 9, ptr %a47
-  call void @veles_list_push(ptr %t46, ptr %a47)
-  store i64 4, ptr %a47
-  call void @veles_list_push(ptr %t46, ptr %a47)
-  %t48 = extractvalue %str { ptr @.str.3, i64 21 }, 0
-  %t49 = extractvalue %str { ptr @.str.3, i64 21 }, 1
-  call void @veles_call_push(ptr %t48)
-  %t50 = call { i1, i64 } @v_main.largest__i64(ptr %t46)
+  %t43 = call ptr @veles_list_new(ptr @adesc.i64, i64 3)
+  store i64 3, ptr %a44
+  call void @veles_list_push(ptr %t43, ptr %a44)
+  store i64 9, ptr %a44
+  call void @veles_list_push(ptr %t43, ptr %a44)
+  store i64 4, ptr %a44
+  call void @veles_list_push(ptr %t43, ptr %a44)
+  %t45 = extractvalue %str { ptr @.str.3, i64 21 }, 0
+  %t46 = extractvalue %str { ptr @.str.3, i64 21 }, 1
+  call void @veles_call_push(ptr %t45)
+  %t47 = call { i1, i64 } @v_main.largest__i64(ptr %t43)
   call void @veles_call_pop()
-  %t53 = extractvalue { i1, i64 } %t50, 0
-  %t52 = xor i1 %t53, true
-  br i1 %t52, label %elvis.default.9, label %elvis.some.10
+  %t50 = extractvalue { i1, i64 } %t47, 0
+  %t49 = xor i1 %t50, true
+  br i1 %t49, label %elvis.default.9, label %elvis.some.10
 elvis.some.10:
-  %t54 = extractvalue { i1, i64 } %t50, 1
-  store i64 %t54, ptr %a51
+  %t51 = extractvalue { i1, i64 } %t47, 1
+  store i64 %t51, ptr %a48
   br label %elvis.end.11
 elvis.default.9:
-  store i64 0, ptr %a51
+  store i64 0, ptr %a48
   br label %elvis.end.11
 elvis.end.11:
-  %t55 = load i64, ptr %a51
-  %t57 = call i64 @veles_i64_format(ptr %a56, i64 %t55)
-  %t58 = insertvalue %str undef, ptr %a56, 0
-  %t59 = insertvalue %str %t58, i64 %t57, 1
-  %t60 = call ptr @veles_list_new(ptr @adesc.string, i64 2)
-  store %str { ptr @.str.4, i64 1 }, ptr %a61
-  call void @veles_list_push(ptr %t60, ptr %a61)
-  store %str { ptr @.str.5, i64 1 }, ptr %a61
-  call void @veles_list_push(ptr %t60, ptr %a61)
-  %t62 = extractvalue %str { ptr @.str.6, i64 21 }, 0
-  %t63 = extractvalue %str { ptr @.str.6, i64 21 }, 1
-  call void @veles_call_push(ptr %t62)
-  %t64 = call { i1, %str } @v_main.largest__string(ptr %t60)
+  %t52 = load i64, ptr %a48
+  %t54 = call i64 @veles_i64_format(ptr %a53, i64 %t52)
+  %t55 = insertvalue %str undef, ptr %a53, 0
+  %t56 = insertvalue %str %t55, i64 %t54, 1
+  %t57 = call ptr @veles_list_new(ptr @adesc.string, i64 2)
+  store %str { ptr @.str.4, i64 1 }, ptr %a58
+  call void @veles_list_push(ptr %t57, ptr %a58)
+  store %str { ptr @.str.5, i64 1 }, ptr %a58
+  call void @veles_list_push(ptr %t57, ptr %a58)
+  %t59 = extractvalue %str { ptr @.str.6, i64 21 }, 0
+  %t60 = extractvalue %str { ptr @.str.6, i64 21 }, 1
+  call void @veles_call_push(ptr %t59)
+  %t61 = call { i1, %str } @v_main.largest__string(ptr %t57)
   call void @veles_call_pop()
-  %t67 = extractvalue { i1, %str } %t64, 0
-  %t66 = xor i1 %t67, true
-  br i1 %t66, label %elvis.default.12, label %elvis.some.13
+  %t64 = extractvalue { i1, %str } %t61, 0
+  %t63 = xor i1 %t64, true
+  br i1 %t63, label %elvis.default.12, label %elvis.some.13
 elvis.some.13:
-  %t68 = extractvalue { i1, %str } %t64, 1
-  store %str %t68, ptr %a65
+  %t65 = extractvalue { i1, %str } %t61, 1
+  store %str %t65, ptr %a62
   br label %elvis.end.14
 elvis.default.12:
-  store %str { ptr @.str.7, i64 0 }, ptr %a65
+  store %str { ptr @.str.7, i64 0 }, ptr %a62
   br label %elvis.end.14
 elvis.end.14:
-  %t69 = load %str, ptr %a65
-  %t70 = insertvalue %S.main.Point undef, i64 1, 0
-  %t71 = insertvalue %S.main.Point %t70, i64 2, 1
-  %t72 = call %str @show.main.Point(%S.main.Point %t71)
-  %t75 = getelementptr [5 x %str], ptr %a74, i64 0, i64 0
-  store %str %t59, ptr %t75
-  %t76 = getelementptr [5 x %str], ptr %a74, i64 0, i64 1
-  store %str { ptr @.str.8, i64 1 }, ptr %t76
-  %t77 = getelementptr [5 x %str], ptr %a74, i64 0, i64 2
-  store %str %t69, ptr %t77
-  %t78 = getelementptr [5 x %str], ptr %a74, i64 0, i64 3
-  store %str { ptr @.str.8, i64 1 }, ptr %t78
-  %t79 = getelementptr [5 x %str], ptr %a74, i64 0, i64 4
-  store %str %t72, ptr %t79
-  call void @veles_string_concat_n(ptr %a73, ptr %a74, i64 5)
-  %t80 = load %str, ptr %a73
-  %t81 = extractvalue %str { ptr @.str.9, i64 20 }, 0
-  %t82 = extractvalue %str { ptr @.str.9, i64 20 }, 1
-  call void @veles_call_push(ptr %t81)
-  call void @v_std.io.println(%str %t80)
+  %t66 = load %str, ptr %a62
+  %t67 = insertvalue %S.main.Point undef, i64 1, 0
+  %t68 = insertvalue %S.main.Point %t67, i64 2, 1
+  %t69 = call %str @show.main.Point(%S.main.Point %t68)
+  %t72 = getelementptr [5 x %str], ptr %a71, i64 0, i64 0
+  store %str %t56, ptr %t72
+  %t73 = getelementptr [5 x %str], ptr %a71, i64 0, i64 1
+  store %str { ptr @.str.8, i64 1 }, ptr %t73
+  %t74 = getelementptr [5 x %str], ptr %a71, i64 0, i64 2
+  store %str %t66, ptr %t74
+  %t75 = getelementptr [5 x %str], ptr %a71, i64 0, i64 3
+  store %str { ptr @.str.8, i64 1 }, ptr %t75
+  %t76 = getelementptr [5 x %str], ptr %a71, i64 0, i64 4
+  store %str %t69, ptr %t76
+  call void @veles_string_concat_n(ptr %a70, ptr %a71, i64 5)
+  %t77 = load %str, ptr %a70
+  %t78 = extractvalue %str { ptr @.str.9, i64 20 }, 0
+  %t79 = extractvalue %str { ptr @.str.9, i64 20 }, 1
+  call void @veles_call_push(ptr %t78)
+  call void @v_std.io.println(%str %t77)
   call void @veles_call_pop()
   ret void
 }

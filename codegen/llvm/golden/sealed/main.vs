@@ -1,5 +1,6 @@
 // A sealed type through a pointer, dispatch by `when`, smart casts,
-// nullable values and results.
+// nullable values and results. `Expr` holds itself, so it is a tree and
+// `Add`, larger than a word, is stored behind a pointer (D198).
 use io
 
 sealed trait Expr {

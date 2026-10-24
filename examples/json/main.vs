@@ -271,7 +271,7 @@ fun compact(v: Json): string => when (v) {
   is JNum(value)  => number(value)
   is JStr(value)  => quote(value)
   is JArr(items)  => "[" + items.map(x => compact(x)).join(",") + "]"
-  is JObj(fields) => "{" + fields.entries().map(e => quote(e.0) + ":" + compact(e.1)).join(",") + "}"
+  is JObj(fields) => "{" + fields.entries().map(e => quote(e.key) + ":" + compact(e.value)).join(",") + "}"
 }
 
 fun pretty(v: Json, indent: i64 = 0): string {
@@ -281,7 +281,7 @@ fun pretty(v: Json, indent: i64 = 0): string {
     is JArr(items) if !items.isEmpty() =>
       "[\n" + items.map(x => pad + pretty(x, indent + 1)).join(",\n") + "\n$close]"
     is JObj(fields) if !fields.isEmpty() =>
-      "{\n" + fields.entries().map(e => pad + quote(e.0) + ": " + pretty(e.1, indent + 1)).join(",\n") + "\n$close}"
+      "{\n" + fields.entries().map(e => pad + quote(e.key) + ": " + pretty(e.value, indent + 1)).join(",\n") + "\n$close}"
     else => compact(v)
   }
 }

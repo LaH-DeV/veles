@@ -81,7 +81,7 @@
       "patterns": [
         {
           "comment": "fun name(",
-          "match": "\\b(public\\s+|private\\s+|internal\\s+)?(override\\s+)?(unsafe\\s+)?(static\\s+)?(fun)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(public\\s+|private\\s+|internal\\s+)?(override\\s+)?(unsafe\\s+)?(static\\s+)?(fun)\\s+(?!on\\s+[A-Za-z(])([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.modifier.veles" },
             "2": { "name": "storage.modifier.veles" },
@@ -90,6 +90,27 @@
             "5": { "name": "storage.type.function.veles" },
             "6": { "name": "entity.name.function.veles" }
           }
+        },
+        {
+          "comment": "annotation Name(params) on targets for Traits = wrapper (D174, D176): `on` and `for` are words of the declaration, to the end of the line",
+          "begin": "\\b(?:(public|internal)\\s+)?(annotation)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "beginCaptures": {
+            "1": { "name": "storage.modifier.veles" },
+            "2": { "name": "storage.type.veles" },
+            "3": { "name": "entity.name.type.veles" }
+          },
+          "end": "$",
+          "patterns": [
+            { "include": "#comments" },
+            { "comment": "`on field, enumMember`; a parameter named `on` is followed by `:`", "name": "keyword.other.on.veles", "match": "\\bon\\b(?=\\s+[A-Za-z])" },
+            { "comment": "the targets after `on` (D174, D178): words of the declaration, as `fun` and `struct` are", "name": "keyword.other.target.veles", "match": "(?<=\\bon\\s|,\\s|\\bon\\s\\s|,)\\b(field|struct|fun|trait|enum|enumMember|variant|test|suite)\\b(?!\\s*:)" },
+            { "name": "keyword.other.for.veles", "match": "\\bfor\\b" },
+            { "include": "#literals" },
+            { "include": "#strings" },
+            { "include": "#types" },
+            { "include": "#operators" },
+            { "include": "#punctuation" }
+          ]
         },
         {
           "comment": "struct / trait / sealed trait / error / enum / annotation (D174; contextual: a keyword only before a type name)",
@@ -193,6 +214,8 @@
       "patterns": [
         { "name": "keyword.control.conditional.veles", "match": "\\b(if|else|when|is)\\b" },
         { "comment": "inline loop (f in T.fields) { } (contextual: only directly before `loop`, D174)", "name": "keyword.control.loop.veles", "match": "(?<![.\\w])inline\\b(?=\\s+loop\\b)" },
+        { "comment": "indirect struct / inline struct / indirect sealed trait: where a variant is stored (contextual, D198)", "name": "storage.modifier.veles", "match": "(?<![.\\w])(indirect|inline)\\b(?=\\s+(struct|sealed)\\b)" },
+        { "comment": "fun on T(A): R, a receiver function type (contextual: only directly after `fun`, D207)", "match": "\\b(fun)\\s+(on)\\b(?=\\s+[A-Za-z(])", "captures": { "1": { "name": "storage.type.function.veles" }, "2": { "name": "keyword.other.on.veles" } } },
         { "name": "keyword.control.loop.veles", "match": "\\b(loop|break|continue|in)\\b" },
         { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|do|catch|with)\\b" },
         { "name": "keyword.control.concurrency.veles", "match": "\\b(async|await|scope|gather|race)\\b" },

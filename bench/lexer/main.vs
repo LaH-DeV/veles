@@ -77,7 +77,7 @@ fun main() {
   }
   val src = sb.toString()
 
-  val ((tokens, check), elapsed) = time.Stopwatch.measure(() => {
+  val ((tokens, check), elapsed) = time.measure(() => {
     var check: i64 = 0
     var tokens: i64 = 0
     loop (_ in 0..<3) {

@@ -71,7 +71,7 @@ fun oops(): i64 {
   inline loop (g in Options.fields) {
     val x = g // error: stands for a field of the type being walked
     val y = g.nope // error: a field handle has name, doc, typeName
-    val z = g.nope() // error: a field handle has the methods get, has and attr
+    val z = g.nope() // error: a field handle has the methods get, default, has and attr
     val w = g.get() // error: 'get' takes the value to read the field from
     val v = g.has<Plain>() // error: 'Plain' is not an annotation
     val u = g.has() // error: takes the annotation as its type argument

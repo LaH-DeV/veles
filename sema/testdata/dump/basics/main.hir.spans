@@ -27,6 +27,7 @@ fun v_main.Point.sum: fun(): i64  @main.vs:7:7-7:10
                   Index: 1
                   Name: "y"
               Span: 7:21-7:36
+          Pos: 7:21-7:36
       Type: Never
 fun v_main.add: fun(i64, i64): i64  @main.vs:10:5-10:8
   display: add
@@ -46,6 +47,7 @@ fun v_main.add: fun(i64, i64): i64  @main.vs:10:5-10:8
                 VarRef: i64
                   Var: b#1
               Span: 10:33-10:38
+          Pos: 10:33-10:38
       Type: Never
 fun v_main.main: fun()  @main.vs:12:5-12:9
   display: main
@@ -62,6 +64,7 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                   Value: 1
                 IntConst: i64
                   Value: 2
+          Pos: 13:3-13:28
         VarDecl
           Var: total#1
           Init:
@@ -82,8 +85,9 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                   Name: "y"
               Span: 14:15-14:28
               Recv: 0
+          Pos: 14:3-14:28
         VarDecl
-          Var: $tmp2#2
+          Var: $tmp9#2
           Init:
             RangeLit: Range<i64>
               Lo:
@@ -92,34 +96,38 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
               Hi:
                 IntConst: i64
                   Value: 3
+          Pos: 15:3-15:31
         VarDecl
-          Var: $tmp3#3
+          Var: $tmp10#3
           Init:
             FieldGet: i64
               X:
                 VarRef: Range<i64>
-                  Var: $tmp2#2
+                  Var: $tmp9#2
               Index: 0
               Name: "lo"
+          Pos: 15:3-15:31
         VarDecl
-          Var: $tmp4#4
+          Var: $tmp11#4
           Init:
             FieldGet: i64
               X:
                 VarRef: Range<i64>
-                  Var: $tmp2#2
+                  Var: $tmp9#2
               Index: 1
               Name: "hi"
+          Pos: 15:3-15:31
         VarDecl
-          Var: $tmp5#5
+          Var: $tmp12#5
           Init:
             BoolConst: bool
+          Pos: 15:3-15:31
         Loop
           Cond:
             If: bool
               Cond:
                 VarRef: bool
-                  Var: $tmp5#5
+                  Var: $tmp12#5
               Then:
                 Block
                   Value:
@@ -133,7 +141,7 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                         FieldGet: bool
                           X:
                             VarRef: Range<i64>
-                              Var: $tmp2#2
+                              Var: $tmp9#2
                           Index: 2
                           Name: "inclusive"
                       Then:
@@ -143,10 +151,10 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                               Op: <=
                               L:
                                 VarRef: i64
-                                  Var: $tmp3#3
+                                  Var: $tmp10#3
                               R:
                                 VarRef: i64
-                                  Var: $tmp4#4
+                                  Var: $tmp11#4
                               Span: 15:3-15:31
                           Type: bool
                       Else:
@@ -156,10 +164,10 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                               Op: <
                               L:
                                 VarRef: i64
-                                  Var: $tmp3#3
+                                  Var: $tmp10#3
                               R:
                                 VarRef: i64
-                                  Var: $tmp4#4
+                                  Var: $tmp11#4
                               Span: 15:3-15:31
                           Type: bool
                   Type: bool
@@ -170,7 +178,7 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                   Var: i#6
                   Init:
                     VarRef: i64
-                      Var: $tmp3#3
+                      Var: $tmp10#3
                 Assign
                   Target:
                     VarRef: i64
@@ -185,6 +193,7 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                         VarRef: i64
                           Var: i#6
                       Span: 15:21-15:31
+                  Pos: 15:21-15:31
               Type: ()
           Post:
             ExprStmt
@@ -197,7 +206,7 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                         FieldGet: bool
                           X:
                             VarRef: Range<i64>
-                              Var: $tmp2#2
+                              Var: $tmp9#2
                           Index: 2
                           Name: "inclusive"
                       R:
@@ -205,10 +214,10 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                           Op: ==
                           L:
                             VarRef: i64
-                              Var: $tmp3#3
+                              Var: $tmp10#3
                           R:
                             VarRef: i64
-                              Var: $tmp4#4
+                              Var: $tmp11#4
                           Span: 15:3-15:31
                       Span: 15:3-15:31
                   Then:
@@ -217,7 +226,7 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                         Assign
                           Target:
                             VarRef: bool
-                              Var: $tmp5#5
+                              Var: $tmp12#5
                           Value:
                             BoolConst: bool
                               Value: true
@@ -228,19 +237,20 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                         Assign
                           Target:
                             VarRef: i64
-                              Var: $tmp3#3
+                              Var: $tmp10#3
                           Value:
                             Binary: i64
                               Op: +%
                               L:
                                 VarRef: i64
-                                  Var: $tmp3#3
+                                  Var: $tmp10#3
                               R:
                                 IntConst: i64
                                   Value: 1
                               Span: 15:3-15:31
                       Type: ()
-          ID: 1
+          ID: 3
+          Pos: 15:3-15:31
         ExprStmt
           X:
             Call: ()
@@ -274,4 +284,5 @@ fun v_main.main: fun()  @main.vs:12:5-12:9
                               Pos: 16:26-16:27
               Span: 16:3-16:36
               Recv: 0
+          Pos: 16:3-16:36
       Type: ()

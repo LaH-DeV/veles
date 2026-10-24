@@ -71,7 +71,7 @@ public fun load<T: Decodable>(files: List<string> = [], prefix: string = ""): T 
 
 /// The variables `T` reads, in field order — for `--help` and documentation.
 public fun describe<T: Decodable>(prefix: string = ""): List<Variable> {
-  val schema = T.schema("env", codec.KeyStyle.UpperSnake)
+  val schema = T.schema("env", Case.ScreamingSnake)
   val out: MutableList<Variable> = []
   loop (leaf in leavesOf("config.describe", schema, prefix)) {
     out.push(Variable(name: leaf.name, what: leaf.schema.what, required: leaf.required, secret: leaf.schema.secret, default: leaf.field.fallback))
@@ -304,7 +304,7 @@ fun readLayers(files: List<string>, problems: MutableList<codec.Problem>): List<
 // `load` with the lookup of the environment passed in, which is how the tests
 // give it variables.
 fun loadWith<T: Decodable>(lookup: fun(string): string?, files: List<string>, prefix: string): T throws Error {
-  val schema = T.schema("env", codec.KeyStyle.UpperSnake)
+  val schema = T.schema("env", Case.ScreamingSnake)
   val leaves: MutableMap<string, Leaf> = [:]
   loop (leaf in leavesOf("config.load", schema, prefix)) {
     leaves.set(leaf.name, leaf)
@@ -313,7 +313,7 @@ fun loadWith<T: Decodable>(lookup: fun(string): string?, files: List<string>, pr
   val state = Load(lookup, layers: readLayers(files, problems), prefix)
   state.problems.addAll(problems)
   val tree = state.object(schema, prefix, [], true) ?: codec.VObject(fields: [:])
-  val decoder = codec.ValueDecoder.of(tree, format: "env", enums: codec.EnumStyle.Name, keys: codec.KeyStyle.UpperSnake, durations: codec.DurationStyle.Text)
+  val decoder = codec.ValueDecoder.of(tree, format: "env", enums: codec.EnumStyle.Name, keys: Case.ScreamingSnake, durations: codec.DurationStyle.Text)
   val decoded = T.decode(decoder)
   val found = when (decoded) {
     is Err(e) => e.problems

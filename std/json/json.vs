@@ -27,7 +27,7 @@ use utf8
 public struct Options {
   /// How field names are spelled as keys: `passwordHash`, `password_hash`
   /// or `passwordHash`; a `@key` the author wrote is never restyled.
-  public keys: codec.KeyStyle = codec.KeyStyle.AsWritten
+  public keys: Case = Case.AsWritten
   /// Enums as their names (`"Active"`) or their numbers (`1`).
   public enums: codec.EnumStyle = codec.EnumStyle.Name
   /// Durations as `"90.5s"` (the default), ISO 8601, the `Display` text, or
@@ -149,7 +149,7 @@ public struct JsonEncoder {
     fun format(): string => "json"
     override fun enums(): codec.EnumStyle => this.options.enums
     override fun durations(): codec.DurationStyle => this.options.durations
-    override fun keys(): codec.KeyStyle => this.options.keys
+    override fun keys(): Case => this.options.keys
 
     fun beginObject() throws EncodeError {
       try this.checkDepth()
@@ -475,7 +475,7 @@ public struct JsonDecoder {
     fun format(): string => "json"
     override fun enums(): codec.EnumStyle => this.options.enums
     override fun durations(): codec.DurationStyle => this.options.durations
-    override fun keys(): codec.KeyStyle => this.options.keys
+    override fun keys(): Case => this.options.keys
 
     fun peek(): codec.Kind throws DecodeError {
       this.skipSpace()

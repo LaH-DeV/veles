@@ -78,6 +78,10 @@ func lintFiles(t *testing.T) map[string]string {
 
 	srcText := readLF(t, "source/source.vs")
 	srcText = srcText[strings.Index(srcText, "/// One source file"):strings.Index(srcText, "enum Severity")]
+	// a rule runs in the compile-time evaluator, which hands it spans that
+	// hold their file by value; the front end shares one file behind a
+	// pointer (self-host plan §5), a representation a rule never sees
+	srcText = regexp.MustCompile(`(?m)^  file:  \(\*File\)\?.*$`).ReplaceAllString(srcText, "  file:  File?")
 
 	var nodes []string
 	for _, m := range lintStruct.FindAllStringSubmatch(ast, -1) {

@@ -26,20 +26,31 @@ struct Scan {
 /// Scans a whole file. Problems go into `diags`, and a character that
 /// belongs to no token becomes an Illegal one, so parsing can go on.
 fun tokenize(file: File, diags: *Diagnostics): Scan {
-  var lexer = Lexer(file, src: file.content, diags)
+  var lexer = Lexer(file: &file, src: file.content, diags)
   lexer.run()
   lexer.attachDocs()
-  Scan(tokens: lexer.tokens.toList(), moduleDoc: lexer.moduleDoc(), comments: lexer.comments.toList())
+  // read before the lists move out: moduleDoc() looks at the tokens
+  val moduleDoc = lexer.moduleDoc()
+  Scan(tokens: lexer.tokens, moduleDoc, comments: lexer.comments)
 }
 
-/// Scans `file.content[start, end)` with the file's own offsets: the
-/// expression inside an interpolated string, `${…}`.
-fun tokenizeRange(file: File, start: i64, end: i64, diags: *Diagnostics): List<Token> {
+/// `tokenize` for a parser, which owns the token list it is handed (it splits
+/// a `>>` that closes two type lists in place): no copy either way.
+fun tokenizeForParser(file: File, diags: *Diagnostics): (tokens: MutableList<Token>, moduleDoc: string, comments: List<Comment>) {
+  var lexer = Lexer(file: &file, src: file.content, diags)
+  lexer.run()
+  lexer.attachDocs()
+  (tokens: lexer.tokens, moduleDoc: lexer.moduleDoc(), comments: lexer.comments)
+}
+
+/// Scans `file.content[start, end)` with the file's own offsets, for the
+/// parser of the expression inside an interpolated string, `${…}`.
+fun tokenizeRange(file: File, start: i64, end: i64, diags: *Diagnostics): MutableList<Token> {
   // the cut is where a `${` or a `}` is, so not inside a character
   val src = file.content.substring(0, end) ?: panic("tokenizeRange: $end is not at a character's edge")
-  var lexer = Lexer(file, src, diags, pos: start)
+  var lexer = Lexer(file: &file, src, diags, pos: start)
   lexer.run()
-  lexer.tokens.toList()
+  lexer.tokens
 }
 
 // the operators, longest first where one is a prefix of another
@@ -105,7 +116,7 @@ fun dropSuffix(text: string, suffix: string): string =>
   if (text.endsWith(suffix)) text.substring(0, text.len() - suffix.len()) ?: text else text
 
 struct Lexer {
-  file:     File
+  file:     *File
   src:      string
   diags:    *Diagnostics
   var pos:  i64 = 0
@@ -148,15 +159,6 @@ struct Lexer {
   }
 
   fun peekByte(offset: i64): u8 => if (this.pos + offset < this.src.len()) this.src.byteAt(this.pos + offset) else 0
-
-  // whether src holds `text` at i
-  fun holdsAt(i: i64, text: string): bool {
-    if (i + text.len() > this.src.len()) return false
-    loop (k in 0..<text.len()) {
-      if (this.src.byteAt(i + k) != text.byteAt(k)) return false
-    }
-    true
-  }
 
   fun push(kind: Kind, start: i64) {
     this.tokens.push(Token(kind, text: this.cut(start, this.pos), span: this.span(start, this.pos)))
@@ -207,7 +209,7 @@ struct Lexer {
           i = end + 2
         }
         else => {
-          if (this.holdsAt(i, "?.") || this.holdsAt(i, "?:") || this.holdsAt(i, "?!") || this.holdsAt(i, "??")) return true
+          if (this.src.startsWith("?.", i) || this.src.startsWith("?:", i) || this.src.startsWith("?!", i) || this.src.startsWith("??", i)) return true
           return b == '.' && i + 1 < this.src.len() && this.src.byteAt(i + 1) != '.'
         }
       }
@@ -218,7 +220,7 @@ struct Lexer {
   // the first index at or after `from` where `text` is, or -1
   fun findFrom(from: i64, text: string): i64 {
     loop (i in from..(this.src.len() - text.len())) {
-      if (this.holdsAt(i, text)) return i
+      if (this.src.startsWith(text, i)) return i
     }
     -1
   }
@@ -229,9 +231,23 @@ struct Lexer {
     }
   }
 
+  // a file that is not UTF-8 does not compile (D199, as Go): every byte
+  // that does not decode is an error at its place, and nothing of the file
+  // is lexed
+  fun refuseInvalidUtf8() {
+    var refused = false
+    loop ((at, byte) in this.file.notUtf8) {
+      if (at < this.pos || at >= this.src.len()) continue
+      this.errorAt(at, at + 1, "the text is not valid UTF-8 here (byte 0x${byte:02X}): save the file as UTF-8")
+      refused = true
+    }
+    if (refused) this.pos = this.src.len()
+  }
+
   fun run() {
     // a byte-order mark may begin a file, and means nothing there
-    if (this.pos == 0 && this.holdsAt(0, "\u{FEFF}")) this.pos = 3
+    if (this.pos == 0 && this.src.startsWith("\u{FEFF}")) this.pos = 3
+    this.refuseInvalidUtf8()
     loop (this.pos < this.src.len()) {
       val b = this.src.byteAt(this.pos)
       val start = this.pos
@@ -289,10 +305,10 @@ struct Lexer {
     val start = this.pos
     var depth: i64 = 0
     loop (this.pos < this.src.len()) {
-      if (this.holdsAt(this.pos, "/*")) {
+      if (this.src.startsWith("/*", this.pos)) {
         depth += 1
         this.pos += 2
-      } else if (this.holdsAt(this.pos, "*/")) {
+      } else if (this.src.startsWith("*/", this.pos)) {
         depth -= 1
         this.pos += 2
         if (depth == 0) return
@@ -490,7 +506,7 @@ struct Lexer {
         inClass && b == '[' && this.peekByte(1) == ':' => {
           // [:alpha:] inside a class
           val end = this.src.indexOf(":]", this.pos + 2)
-          if (end >= 0 && !this.hasLineBreak(this.pos, end)) {
+          if (end != null && !this.hasLineBreak(this.pos, end)) {
             this.pos = end + 2
             continue
           }
@@ -594,7 +610,7 @@ struct Lexer {
           }
           this.pos += 1
         }
-        this.holdsAt(this.pos, "\"\"\"") => {
+        this.src.startsWith("\"\"\"", this.pos) => {
           closeAt = this.pos
         }
         else => {
@@ -705,14 +721,14 @@ struct Lexer {
     var i = start + 3
     var found = false
     loop (i + 3 <= this.src.len() && !found) {
-      if (this.holdsAt(i, "\"\"\"")) found = true else i += 1
+      if (this.src.startsWith("\"\"\"", i)) found = true else i += 1
     }
     this.pos = if (found) i + 3 else this.src.len()
     this.badString(start)
   }
 
   fun stringLit() {
-    if (this.holdsAt(this.pos, "\"\"\"")) {
+    if (this.src.startsWith("\"\"\"", this.pos)) {
       this.textBlock()
       return
     }
@@ -824,7 +840,7 @@ struct Lexer {
   fun operator() {
     val start = this.pos
     loop ((text, kind) in OPERATORS) {
-      if (this.holdsAt(this.pos, text)) {
+      if (this.src.startsWith(text, this.pos)) {
         this.pos += text.len()
         return this.push(kind, start)
       }

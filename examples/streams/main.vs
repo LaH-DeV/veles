@@ -48,11 +48,9 @@ fun main() throws IoError | io.TooLong {
   report("file", try summarize(f))
 
   with listener = try net.listen()
-  scope {
-    val server = async serve(listener, text)
-    with conn = try net.connect("127.0.0.1", listener.port())
-    report("socket", try summarize(conn))
-    await server
-  }
+  val server = async serve(listener, text)
+  with conn = try net.connect("127.0.0.1", listener.port())
+  report("socket", try summarize(conn))
+  await server
   try fs.remove(file)
 }

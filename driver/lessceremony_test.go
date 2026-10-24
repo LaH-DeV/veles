@@ -178,7 +178,11 @@ fun tracked(n: i64, started: Atomic<i64>, closed: Atomic<i64>, finished: Atomic<
 }
 
 // how many calls had started when the loop broke depends on scheduling;
-// that every one of them was closed when it ended does not
+// that every one of them was closed when it ended does not. The first call
+// ends at once, so the loop waits until a second one has started (the
+// calls run ahead, so one will): the break then always cancels a call
+// inside its 'with'. Without the wait a loaded machine could break before
+// any other call ran, and a call cancelled before it starts never runs.
 fun stopped(): string {
   val started: Atomic<i64> = Atomic(value: 0)
   val closed: Atomic<i64> = Atomic(value: 0)
@@ -186,6 +190,7 @@ fun stopped(): string {
   var got: i64 = 0
   loop (x in [1, 2, 3, 4, 5].iter().mapConcurrent(x => tracked(x, started, closed, finished), workers: 3)) {
     got = x
+    loop (started.load() < 2) await sleep(Duration.millis(1))
     break
   }
   val all = started.load() == closed.load() && started.load() >= 2

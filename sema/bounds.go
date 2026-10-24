@@ -96,7 +96,7 @@ func (f *fnCtx) indexBelow(arg ast.Expr, n int64) bool {
 func (f *fnCtx) boundsList(e ast.Expr) (*Var, *types.List) {
 	v := varOf(e, f)
 	if _, isSelf := e.(*ast.SelfExpr); isSelf {
-		v = f.selfRef() // `this.len()` in an `extend List`
+		v = f.selfFor(e.(*ast.SelfExpr)) // `this.len()` in an `extend List`
 	}
 	if v == nil || v.AddrTaken || v.Captured {
 		return nil, nil
@@ -141,6 +141,43 @@ func (f *fnCtx) lenCallOf(e ast.Expr) (*Var, *types.List) {
 		return nil, nil
 	}
 	return f.boundsList(m.X)
+}
+
+// listSearches are the members of the index-of family a list answers
+// (D165): an index they return non-null is one they found.
+var listSearches = map[string]bool{"indexOf": true, "indexOfFirst": true, "binarySearch": true, "binarySearchBy": true, "binarySearchWith": true}
+
+// foundIndexOf is the list a search looked in when e is
+// `xs.indexOf(…) ?: <leaves>` (D165): the index it gives is in range for
+// xs while xs is not changed. The right side must leave — `?: 0` could be
+// out of range of an empty list.
+func (f *fnCtx) foundIndexOf(e ast.Expr) (*Var, *types.List) {
+	el, ok := e.(*ast.ElvisExpr)
+	if !ok || !leaves(el.R) {
+		return nil, nil
+	}
+	c, ok := el.L.(*ast.CallExpr)
+	if !ok {
+		return nil, nil
+	}
+	m, ok := c.Fun.(*ast.MemberExpr)
+	if !ok || m.Safe || !listSearches[m.Name.Name] {
+		return nil, nil
+	}
+	return f.boundsList(m.X)
+}
+
+// leaves reports an expression that never gives a value: `return`,
+// `throw`, `break`, `continue`, a `panic(…)`.
+func leaves(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.ControlExpr:
+		return true
+	case *ast.CallExpr:
+		n, ok := e.Fun.(*ast.NameExpr)
+		return ok && n.Name == "panic"
+	}
+	return false
 }
 
 // intConst is the value of an integer literal, negated or not.
@@ -515,6 +552,11 @@ func (f *fnCtx) declFacts(v *Var, init ast.Expr) {
 	}
 	if k, ok := intConst(init); ok && k >= 0 {
 		f.narrow[nonNegKey(v)] = types.TUnit
+		return
+	}
+	if list, lt := f.foundIndexOf(init); list != nil {
+		f.narrow[nonNegKey(v)] = types.TUnit
+		f.narrow[inKey(v, list)] = lt
 		return
 	}
 	list, lt := f.lenCallOf(init)

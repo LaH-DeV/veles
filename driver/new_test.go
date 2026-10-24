@@ -18,6 +18,7 @@ import (
 // that does not exist, and never writes into a directory that has
 // something in it.
 func TestNew(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	dir := filepath.Join(root, "hello")
 	if code := New(dir, ""); code != 0 {
@@ -51,6 +52,7 @@ func TestNew(t *testing.T) {
 // tests, and serves: started with PORT=0 it says where, and /healthz
 // answers.
 func TestNewServer(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}

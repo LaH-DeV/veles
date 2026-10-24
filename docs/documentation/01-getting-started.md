@@ -111,6 +111,10 @@ path.
   (markdown), so write it the way you would a JSDoc or KDoc comment. A doc
   comment at the very top of a file, set off from the first declaration by
   a blank line, documents the **module** (shown when hovering its name).
+- A source file is UTF-8 text, as in Go: a file saved in another encoding
+  (Latin-1, Windows-1252) does not compile, and every byte that is not
+  UTF-8 is reported where it stands, comments included (D199). A
+  byte-order mark at the start is allowed.
 
 ## Setting up an editor
 

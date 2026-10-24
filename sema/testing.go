@@ -253,6 +253,12 @@ func (f *fnCtx) traceHelperCall(sym *Symbol, call Expr, e *ast.CallExpr) Expr {
 	if sym == nil || sym.Kind != SymFunc || !sym.Func.TestCode || !f.inTest() || e == f.launching {
 		return call
 	}
+	if f.fn == nil {
+		// no function: a constant, such as an annotation's argument
+		// (`@SkipIf(helper())`), which the compiler evaluates — there is no
+		// call stack to trace, and the call itself is what to report
+		return call
+	}
 	span := e.Pos
 	t := call.Type()
 	if types.IsInvalid(t) || t == types.TNever {
@@ -260,10 +266,10 @@ func (f *fnCtx) traceHelperCall(sym *Symbol, call Expr, e *ast.CallExpr) Expr {
 	}
 	prev := f.newTemp(types.TI64)
 	enter := &Builtin{exprBase{types.TI64}, "test.enter", nil, span}
-	leave := &ExprStmt{&Builtin{exprBase{types.TUnit}, "test.leave", []Expr{ref(prev)}, span}}
+	leave := &ExprStmt{X: &Builtin{exprBase{types.TUnit}, "test.leave", []Expr{ref(prev)}, span}}
 	var body Expr
 	if types.Identical(t, types.TUnit) {
-		body = &BlockExpr{exprBase{types.TUnit}, &Block{Stmts: []Stmt{&ExprStmt{call}, leave}, Type: types.TUnit}}
+		body = &BlockExpr{exprBase{types.TUnit}, &Block{Stmts: []Stmt{&ExprStmt{X: call}, leave}, Type: types.TUnit}}
 	} else {
 		r := f.newTemp(t)
 		body = &Let{exprBase{t}, r, call, &BlockExpr{exprBase{t}, &Block{Stmts: []Stmt{leave}, Value: ref(r), Type: t}}}

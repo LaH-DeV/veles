@@ -244,7 +244,7 @@ public struct Duration {
       }
     }
 
-    override static fun schema(format: string, keys: KeyStyle): Schema =>
+    override static fun schema(format: string, keys: Case): Schema =>
       Schema.leaf(SchemaKind.Text, "a duration like 30s, 5m or 1h30m")
   }
 }
@@ -332,8 +332,8 @@ fun parseIsoText(s: string): Duration? {
     if (fraction) return null  // a fraction is only allowed on the last component
     if (number.contains(".")) fraction = true
     val designator = s.byteAt(i)
-    val at = order.indexOf(s.substring(i, i + 1) ?: return null)
-    if (at < 0 || at < next) return null
+    val at = order.indexOf(s.substring(i, i + 1) ?: return null) ?: return null
+    if (at < next) return null
     if ((designator == 'D') == inTime) return null  // D before T, H/M/S after it
     if (fraction && designator != 'S') return null
     next = at + 1

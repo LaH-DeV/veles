@@ -15,6 +15,7 @@ import (
 // probe allocates one object of the wiping descriptor and one ordinary
 // object, drops both, collects, and reads the two slots back.
 func TestSecret(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}

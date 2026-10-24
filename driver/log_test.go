@@ -12,6 +12,7 @@ import (
 
 // std/log's own tests (formatting, levels) run as part of the suite.
 func TestStdLogUnitTests(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -26,6 +27,7 @@ func TestStdLogUnitTests(t *testing.T) {
 // included — VELES_LOG setting the starting level, and lines from many
 // threads never interleaved.
 func TestLogInAProgram(t *testing.T) {
+	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}

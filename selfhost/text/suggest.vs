@@ -102,7 +102,7 @@ fun longPrefix(a: string, b: string): bool {
 /// spells.
 fun isPlainName(name: string): bool {
   val first = utf8.decode(name, 0) ?: return false
-  isIDStart(first.code) && !name.startsWith("__") && name.indexOf("$") < 0
+  isIDStart(first.code) && !name.startsWith("__") && !name.contains("$")
 }
 
 fun codePoints(text: string): List<i64> {

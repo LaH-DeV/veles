@@ -12,7 +12,7 @@ fun onPool(cpu: Executor): i64 {
     async double(1)
     async double(2)
   }
-  io.println("${a} ${b}")
+  io.println("${a.toString()} ${b.toString()}")
   scope(on: cpu) {
     async double(3)
   }
