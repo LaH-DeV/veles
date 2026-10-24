@@ -231,9 +231,23 @@ struct Lexer {
     }
   }
 
+  // a file that is not UTF-8 does not compile (D199, as Go): every byte
+  // that does not decode is an error at its place, and nothing of the file
+  // is lexed
+  fun refuseInvalidUtf8() {
+    var refused = false
+    loop ((at, byte) in this.file.notUtf8) {
+      if (at < this.pos || at >= this.src.len()) continue
+      this.errorAt(at, at + 1, "the text is not valid UTF-8 here (byte 0x${byte:02X}): save the file as UTF-8")
+      refused = true
+    }
+    if (refused) this.pos = this.src.len()
+  }
+
   fun run() {
     // a byte-order mark may begin a file, and means nothing there
     if (this.pos == 0 && this.src.startsWith("\u{FEFF}")) this.pos = 3
+    this.refuseInvalidUtf8()
     loop (this.pos < this.src.len()) {
       val b = this.src.byteAt(this.pos)
       val start = this.pos

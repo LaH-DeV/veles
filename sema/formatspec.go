@@ -164,7 +164,16 @@ func (f *fnCtx) formatted(p ast.StringPart, x Expr) Expr {
 		if !sp.alt {
 			prefix = ""
 		}
-		digits := b.callArgs(b.member(checked(), "toString"), b.namedArg("radix", intLit(radix)))
+		// toString(radix:) is on i64 and u64: a narrower integer widens first
+		recv := checked()
+		switch u := types.Underlying(t).(*types.Basic); {
+		case u.Kind == types.I64 || u.Kind == types.U64:
+		case types.IsUnsigned(u):
+			recv = b.mcall(recv, "toU64")
+		default:
+			recv = b.mcall(recv, "toI64")
+		}
+		digits := b.callArgs(b.member(recv, "toString"), b.namedArg("radix", intLit(radix)))
 		return call("fmtNum", digits, b.str(sp.fill), intLit(alignCode(0)), intLit(signCode(sp.sign)), b.str(prefix),
 			b.boolLit(sp.zero), b.boolLit(sp.group), b.boolLit(sp.typ == 'X'), b.str(""), intLit(sp.width))
 	case types.IsFloat(t):

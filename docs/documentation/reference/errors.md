@@ -33,6 +33,15 @@ bracket continues on the next one.
 A tuple labels every element or none, each label once (D166): `(x: 1, 2)`
 and `(x: 1, x: 2)` are syntax errors.
 
+#### `the text is not valid UTF-8 here (byte 0xE9): save the file as UTF-8`
+
+A source file is UTF-8, as in Go (D199). A byte that does not decode —
+usually a file saved as Latin-1 or Windows-1252, where `é` is the one byte
+`0xE9` — is an error wherever it stands, in a comment or a string too, and
+each such byte is reported; nothing else in the file is checked until it is
+saved as UTF-8 (every editor can: "Save with encoding" or "Reopen with
+encoding", then UTF-8). A byte-order mark at the very start is allowed.
+
 ### removed-syntax
 
 **A spelling that Veles used to have, or that another language has.**

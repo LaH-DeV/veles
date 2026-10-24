@@ -1,6 +1,7 @@
 package lexer
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -262,5 +263,32 @@ func TestCompoundAssignmentTokens(t *testing.T) {
 				t.Errorf("%q: token %d is %v, want %v", c.src, i, got[i], c.want[i])
 			}
 		}
+	}
+}
+
+// A file that is not UTF-8 does not compile (D199, as Go): every byte that
+// does not decode is an error at its offset — in a comment, a string and
+// code alike, a surrogate, an overlong form and a truncated sequence
+// included — and nothing is lexed, so no token can carry such a byte.
+func TestNotUTF8(t *testing.T) {
+	src := "// caf\xe9\nval s = \"\xff\"\nval a\xc0\xaf = \xed\xa0\x80 \xe2\x82"
+	var diags source.Diagnostics
+	toks := Tokenize(source.NewFile("t.vs", src), &diags)
+	var at []int
+	for _, d := range diags.Items {
+		at = append(at, d.Span.Start)
+		if d.Span.End != d.Span.Start+1 || !strings.HasPrefix(d.Message, "the text is not valid UTF-8 here (byte 0x") || !strings.HasSuffix(d.Message, "): save the file as UTF-8") {
+			t.Errorf("diagnostic %+v", d)
+		}
+	}
+	want := []int{6, 17, 25, 26, 30, 31, 32, 34, 35}
+	if fmt.Sprint(at) != fmt.Sprint(want) {
+		t.Errorf("errors at %v, want %v", at, want)
+	}
+	if diags.Items[0].Message != "the text is not valid UTF-8 here (byte 0xE9): save the file as UTF-8" {
+		t.Errorf("first message %q", diags.Items[0].Message)
+	}
+	if len(toks) != 1 || toks[0].Kind != EOF {
+		t.Errorf("tokens %v, want only EOF", toks)
 	}
 }

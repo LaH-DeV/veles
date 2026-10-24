@@ -7918,7 +7918,11 @@ the self-hosted front end could not read such a file at all. The user:
   is reported, as Go does; a byte-order mark at the start stays allowed.
 - Both front ends report it the same way: the self-hosted one reads the
   file as bytes, reports these errors and lexes nothing more (gate G3 covers
-  the fuzz finding that holds such a byte).
+  the fuzz finding that holds such a byte). _(Built 2026-10-24: the Go
+  lexer lexes nothing more either, so the two agree byte for byte; a bad
+  byte is one error, in the steps of Go's `utf8.DecodeRune`; an excerpt
+  shows it as U+FFFD; the language server analyses the disk's bytes while
+  the editor's buffer is that file decoded with U+FFFD.)_
 
 Rejected: porting the self-hosted lexer to bytes to keep the lenient rule;
 leaving the two front ends to disagree.

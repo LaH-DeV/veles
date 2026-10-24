@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -323,8 +324,35 @@ func (s *Server) open(uri, text string) {
 		s.publish(uri, []lspDiagnostic{})
 		return
 	}
-	s.overlay[sema.OverlayKey(path)] = text
+	s.overlay[sema.OverlayKey(path)] = diskWhenNotUTF8(path, text)
 	s.analyze(d)
+}
+
+// diskWhenNotUTF8: an editor shows a file that is not UTF-8 with U+FFFD in
+// place of the bytes it cannot decode, and sends that text — valid UTF-8,
+// which would compile here while the file on disk does not (D199). While the
+// buffer is that file, unchanged but for those characters, the server
+// analyses the bytes on disk, so the editor shows the compiler's errors.
+func diskWhenNotUTF8(path, text string) string {
+	if !strings.ContainsRune(text, utf8.RuneError) {
+		return text
+	}
+	disk, err := os.ReadFile(path)
+	if err != nil || utf8.Valid(disk) {
+		return text
+	}
+	var decodable strings.Builder
+	for i := 0; i < len(disk); {
+		r, size := utf8.DecodeRune(disk[i:])
+		if r != utf8.RuneError || size > 1 {
+			decodable.Write(disk[i : i+size])
+		}
+		i += size
+	}
+	if strings.ReplaceAll(text, string(utf8.RuneError), "") != decodable.String() {
+		return text // edited since: the buffer is what the user means now
+	}
+	return string(disk)
 }
 
 // ---------------------------------------------------------------------------

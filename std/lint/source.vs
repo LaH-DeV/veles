@@ -6,6 +6,9 @@ public struct File {
   path:       string
   content:    string
   lineStarts: List<i64>
+  /// The bytes of a file that is not UTF-8 that do not decode, by offset
+  /// (D199); `content` holds a `?` in place of each, so offsets agree.
+  notUtf8: List<(at: i64, byte: u8)> = []
 
   /// Reads the line table of `content`. Lines end at `\n`; a `\r` before it
   /// belongs to the line (`line` drops it).

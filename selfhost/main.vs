@@ -22,7 +22,7 @@ use time
 use ast { dump, spans }
 use lexer { kindText, tokenize }
 use parser { parseFile, parseFileLayout }
-use source { Diagnostics, File, Span }
+use source { Diagnostics, File, Span, readSource }
 use text { quote }
 
 fun usage(): Never {
@@ -165,7 +165,7 @@ fun main() throws IoError {
     try benchParse(path)
     return
   }
-  val file = File.of(path, try fs.readFile(path))
+  val file = readSource(path, try fs.readBytes(path))
   val text = when (mode) {
     "--positions" => positions(file)
     "--lines"     => lines(file)

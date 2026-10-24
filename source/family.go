@@ -121,7 +121,7 @@ var families = []family{
 		`^'protected'`, `^'private protected'`, `^a field is`, `extend`, `extension`, `impl`, `^'main' must`, `infinite size`, `type alias`,
 		`^'const'`, `^a global cannot`, `^'%s' binding needs`, `^'suspends' must`),
 	fam("unused", `never used`, `must be used`),
-	fam("syntax", `escape`, `a binding in a condition`, `^expected`, `^unexpected`, `^unterminated`, `^empty type`, `^a tuple labels every element`, `is used twice in one tuple`),
+	fam("syntax", `escape`, `a binding in a condition`, `^expected`, `^unexpected`, `^unterminated`, `^empty type`, `^a tuple labels every element`, `is used twice in one tuple`, `not valid UTF-8`),
 }
 
 // FamilyOf names the family of a diagnostic message, or "" when none

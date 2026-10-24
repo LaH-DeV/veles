@@ -191,6 +191,25 @@ func caret(text string, at, width int) string {
 	return sb.String()
 }
 
+// shown is a source line as an excerpt prints it: a byte that is not UTF-8
+// (D199) is U+FFFD, one for each, so the caret below still lines up.
+func shown(text string) string {
+	if utf8.ValidString(text) {
+		return text
+	}
+	var sb strings.Builder
+	for i := 0; i < len(text); {
+		r, size := utf8.DecodeRuneInString(text[i:])
+		if r == utf8.RuneError && size == 1 {
+			sb.WriteRune(utf8.RuneError)
+		} else {
+			sb.WriteString(text[i : i+size])
+		}
+		i += size
+	}
+	return sb.String()
+}
+
 // Render formats every diagnostic with a source excerpt and caret.
 func (d *Diagnostics) Render() string {
 	var sb strings.Builder
@@ -200,7 +219,7 @@ func (d *Diagnostics) Render() string {
 		if it.Span.IsValid() {
 			line, col := it.Span.File.Position(it.Span.Start)
 			text := it.Span.File.Line(line)
-			sb.WriteString("  " + text + "\n")
+			sb.WriteString("  " + shown(text) + "\n")
 			sb.WriteString("  " + caret(text, col-1, it.Span.End-it.Span.Start) + "\n")
 		}
 	}

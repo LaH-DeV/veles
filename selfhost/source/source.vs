@@ -9,6 +9,9 @@ struct File {
   path:       string
   content:    string
   lineStarts: List<i64>
+  /// The bytes of a file that is not UTF-8 that do not decode, by offset
+  /// (D199); `content` holds a `?` in place of each, so offsets agree.
+  notUtf8: List<(at: i64, byte: u8)> = []
 
   /// Reads the line table of `content`. Lines end at `\n`; a `\r` before it
   /// belongs to the line (`line` drops it).
@@ -166,4 +169,52 @@ fun charSize(text: string, i: i64, limit: i64): i64 {
     else      => 1
   }
   if (i + size > limit) 1 else size
+}
+
+// how many bytes the UTF-8 sequence at i takes, or 0 when it does not decode
+// there: Go's `utf8.DecodeRune` rules, so overlong forms, surrogates and
+// code points past U+10FFFF are refused
+fun utf8Size(bytes: List<u8>, i: i64): i64 {
+  val b0 = bytes.at(i) ?: return 0
+  if (b0 < 0x80) return 1
+  // the second byte's range depends on the first; the rest are 0x80..0xBF
+  val (size, lo, hi) = when {
+    b0 in 0xC2..0xDF => (2, 0x80, 0xBF)
+    b0 == 0xE0       => (3, 0xA0, 0xBF)
+    b0 == 0xED       => (3, 0x80, 0x9F)
+    b0 in 0xE1..0xEF => (3, 0x80, 0xBF)
+    b0 == 0xF0       => (4, 0x90, 0xBF)
+    b0 in 0xF1..0xF3 => (4, 0x80, 0xBF)
+    b0 == 0xF4       => (4, 0x80, 0x8F)
+    else             => return 0
+  }
+  val b1 = (bytes.at(i + 1) ?: return 0).toI64()
+  if (b1 < lo || b1 > hi) return 0
+  loop (k in 2..<size) {
+    val b = bytes.at(i + k) ?: return 0
+    if (b < 0x80 || b > 0xBF) return 0
+  }
+  size
+}
+
+/// A file as read from disk (`File.of` is for text in memory). A file that
+/// is not UTF-8 keeps where each byte that does not decode is, in the steps
+/// Go's `utf8.DecodeRune` takes, for the lexer to refuse (D199).
+fun readSource(path: string, bytes: List<u8>): File {
+  if (val text = bytes.decodeUtf8()) return File.of(path, text)
+  val clean = bytes.toMutable()
+  val bad: MutableList<(at: i64, byte: u8)> = []
+  var i: i64 = 0
+  loop (i < bytes.len()) {
+    val size = utf8Size(bytes, i)
+    if (size == 0) {
+      bad.push((at: i, byte: bytes.at(i) ?: 0))
+      clean.set(i, '?')
+      i += 1
+    } else {
+      i += size
+    }
+  }
+  val file = File.of(path, clean.decodeUtf8() ?: panic("readSource: every byte that does not decode was replaced"))
+  File(path, content: file.content, lineStarts: file.lineStarts, notUtf8: bad)
 }

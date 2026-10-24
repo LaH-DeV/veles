@@ -1109,7 +1109,11 @@ S6–S12 (2026-10-14).
 - [x] P6 `Layout` (comments and parenthesised spans, for the formatter) and a
       dump that prints every span — `TestP6Layout` and the span gate
       `TestP6Spans` over the corpus (2026-10-23)
-- [ ] Files that are not valid UTF-8 in the corpus (decided: D199; plan S17)
+- [x] Files that are not valid UTF-8 in the corpus (D199, plan S17): both
+      lexers refuse every undecodable byte and lex nothing more; the
+      self-hosted front end reads bytes (`readSource`); four hand-written
+      files and every fuzz finding join the gates (the text-printing modes
+      skip them) (2026-10-24)
 
 ---
 
@@ -1596,10 +1600,14 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
   (D202 left it out until something needs it). (3) The Go front end's own
   lexer was not changed (its operator scan is `strings.HasPrefix` already).
   (4) macOS was not run.
-- [ ] **D199 (decided 2026-10-23), not built — plan S17.** Every byte
-  sequence that is not UTF-8 is an error in both front ends, comments
-  included; the self-hosted one reads bytes; the fuzz finding with such a
-  byte joins the gates.
+- [ ] **D199 (built 2026-10-24, plan S17), what is left.** (1) The gate
+  modes that print a file's text (`--lines`, `--render`, `--quote`) skip a
+  file that is not UTF-8: a Veles string cannot hold its bytes. (2) The
+  language server analyses the disk's bytes only while the editor's buffer
+  is that file with U+FFFD for each undecodable byte; an editor that
+  replaces a run of bad bytes with one U+FFFD (a truncated sequence) can
+  put a later column on that line off by one. (3) `benchParse` still reads
+  with `fs.readFile` (std is UTF-8). (4) macOS was not run.
 - [ ] **B22 left open (D166 built 2026-10-23).** (1) **Labels in a generic
   type's arguments are refused, not kept** (`Box<(lo: i64, hi: i64)>` is an
   error naming `Box<(i64, i64)>`): one struct or sealed instance serves every
