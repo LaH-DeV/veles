@@ -1109,7 +1109,7 @@ S6–S12 (2026-10-14).
 - [x] P6 `Layout` (comments and parenthesised spans, for the formatter) and a
       dump that prints every span — `TestP6Layout` and the span gate
       `TestP6Spans` over the corpus (2026-10-23)
-- [ ] Files that are not valid UTF-8 in the corpus (a decision first, §11)
+- [ ] Files that are not valid UTF-8 in the corpus (decided: D199; plan S17)
 
 ---
 
@@ -1355,6 +1355,12 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-20 | Syntax review (the user: "let's think about more places that syntax could be better … a lot of them … think them through and explain and ask"; prepared in `veles-syntax-ideas.md` and `veles-syntax-decisions.md`)                                                                                      | **Counter loops: two lints, no syntax (recommended). `x in c` / `x !in c`: the contains operator, with both a byte and a substring in a string ("like in js, no?" — Python's model; D189). `loop (val x = e)`: recommended (D190). Compound assignments: bit and wrapping (D191). `string.slice` (D192) and a look at views. Variants nested in a sealed trait (D193). Extension functions on enums (D194).** (user, recommended of 2–4 each, except `in`, where the user added the substring form, and `slice`, where the user added the view question). Generators (I1): "investigate problem further, give a lot of different examples" — `veles-research-generators.md`, open. Rejected: a step clause or C-style loop, `&&=`/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |     | =`, `u8 in string`as a method, the data-only variant short form,`implement Trait for Enum`. Lints built the same day (`redundant_discard`, `loop_is_range`, `continue_skips_step`, `else_if_ladder`). Not built: D189–D194. |
 | 2026-10-21 | Explicit scheduler yielding (D197)                                                                                                                                                                                                                                                                       | **Reserved statement `cede`; remove the executable prelude `yieldNow()` in the implementing migration** (user, recommended statement-only of 3, reserved of 2, scheduling opportunity of 2). No next-task/global-order guarantee; preserve inferred effects, cancellation, cleanup and executor affinity. Rejected: status quo helper, Unit-valued expression, contextual keyword, global round-robin promise. Specified in `veles-cede-spec.md`; **not implemented**, plan F20. Generator design I1 remains open and returns to planning next.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 2026-10-23 | `copy` (D164) on a type whose `init` takes parameters, and on an `extern union` (gaps found while building B21) | **Refused, both** (user, recommended of 4 and of 2; D164 addendum v0.105). Rejected: copying without running `init` (derived fields go stale); running `init` with the parameters' defaults (wrong input, silently); `init`'s parameters as required arguments of `copy` (a construction under another name; can be added later); for the union, writing the named field over the receiver's bytes. |
+| 2026-10-23 | Large sealed values (plan S7: `selfhost`'s `ast.Expr` was 180 bytes under D12's inline layout; Go's 16) | **Recursive sealed types box their variants automatically; `indirect struct` boxes one anywhere, `inline struct` keeps one in the value; a lint suggests `indirect` for a lopsided non-tree type** (user: "B + C with lint from A", target "more like golang, not 1.3x worse"; then the recommended of 3 for which types box, and of 2 for the opt-out; D198). Rejected: boxing by size in every sealed type (`Result<Big, E>` would allocate per call); D12 with only the lint (hand-written `data: *IfData` fields). |
+| 2026-10-23 | Source files that are not valid UTF-8 (plan S6: Go's front end accepted such a byte in a comment, the self-hosted one could not read the file) | **As Go: every undecodable sequence is an error, comments included; the file does not compile** (user: "make it work like Go", over the recommended "reject up front" with one error; D199). Rejected: a byte-level self-hosted lexer keeping the lenient rule; leaving the front ends to disagree. |
+
+| 2026-10-24 | How large the heap grows before the first collection (bench/parse: 32 MiB made the Windows parse ~5% faster; plan S16 leftovers) | **Defaults stay (8 MiB, goal 100); a `[runtime] gc.minHeap` / `gc.goal` setting and `VELES_GC_MIN_HEAP` / `VELES_GC_GOAL` overrides, D200** (user, recommended of 3). Rejected: a 32 MiB default (memory in every churning program for one benchmark); the environment variable alone. |
+| 2026-10-24 | D188's move for a field of a local whose methods were called (`Scan(tokens: lexer.tokens.toList(), …)` copied every token) | **The proof widens: methods whose summary says `this` is not kept, and no later use of the field, D201** (user, recommended of 3). Rejected: `freeze()` in the compiler's source; keeping the copy. |
+| 2026-10-24 | A prefix test at a byte offset (the lexer's operator scan, 19% of parse instructions, was a hand-written byte loop) | **`startsWith(prefix, startIndex = 0)`, Kotlin's spelling; `false` out of range, D202** (user, over the recommended `at:` of 3). Rejected: `matchesAt`; no API. |
 
 ## 11. Known limitations to revisit
 
@@ -1566,27 +1572,34 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
   would). (4) lldb on macOS was not run. (5) `--release` builds carry no
   line information (`-g` without `!dbg`). (6) Function types in the
   subprograms are empty (`!DISubroutineType(types: !{})`).
-- [ ] **Large sealed values (plan S7, open 2026-10-23; a decision about
-  D12).** A sealed value is an inline tagged union sized for its largest
-  variant (D12), so a compiler's tree pays for its biggest node everywhere:
-  in `selfhost/` an `ast.Expr` is 180 bytes, a `Stmt` 260, a `Decl` 348 —
-  copied on every return and boxed at full size behind every `*Expr` — where
-  Go's interface is 16 bytes. The self-hosted parser is 1.5–1.7× Go after
-  the S7 fixes; the target is 1.3×. Options: keep D12 and let large trees
-  box variants by hand (`*CallExpr`); box a sealed value behind the scenes
-  when its largest variant passes a size (value semantics kept: the box is
-  never written after it is made); or a declaration-site choice. The
-  user's.
-- [ ] **Source files that are not valid UTF-8 (plan S6, open 2026-10-23; a
-  decision).** The Go lexer reads the bytes: an undecodable byte is
-  "unexpected character U+FFFD" in code, "invalid UTF-8 in string literal"
-  in a string, and accepted silently in a comment. The self-hosted front end
-  cannot read such a file (`fs.readFile` refuses it; a Veles `string` is
-  UTF-8), so it and the one non-UTF-8 fuzz finding stay outside the gates.
-  Options: (a) a byte-level `File` in `selfhost/source` and lexer, matching
-  Go's messages; (b) both compilers refuse a non-UTF-8 file up front with one
-  diagnostic at the first bad byte — simpler for every tool, but a program
-  with a stray byte in a comment stops compiling. The user's to choose.
+- [ ] **D198 (built 2026-10-23, plan S16), what is left.** (1) A method
+  called on a narrowed boxed variant gets a fresh box as `this`; if the
+  method keeps that pointer (stores it somewhere), a later copy of the
+  sealed value shares the box and a write through the kept pointer is seen
+  by the copy. Every write through the value itself, `&value` included
+  (it points at the tag and pointer, not the box), copies first; the D188
+  escape summary would tell when a kept `this` needs a copy at assignment. (2) A box is copied on every write
+  through a narrowed variable, not once per value (no uniqueness is
+  tracked). (3) `bench/parse` was 1.1× Go on Windows (1.0–1.1× on Linux)
+  before the instruction-count pass of 2026-10-23 (progress log), which
+  found Veles executing ~40% fewer instructions than Go for the same work.
+  The three choices that were left were decided 2026-10-24 as D200 (a
+  `[runtime] gc` setting), D201 (a field moves out of a local whose methods
+  were called) and D202 (`startsWith(prefix, startIndex)`); plan S18–S20.
+  (4) macOS was not run.
+- [ ] **D200–D202 (built 2026-10-24, plan S18–S20), what is left.** (1)
+  D201's method summary is pessimistic where it cannot see: a method
+  reached through a trait (a default body), a decorated or extern one, and
+  a field mention it cannot classify (an index expression, a pointer taken
+  with `&`) keep everything; an element written through `ref` in a method
+  counts as handing out the storage. (2) `endsWith` has no index argument
+  (D202 left it out until something needs it). (3) The Go front end's own
+  lexer was not changed (its operator scan is `strings.HasPrefix` already).
+  (4) macOS was not run.
+- [ ] **D199 (decided 2026-10-23), not built — plan S17.** Every byte
+  sequence that is not UTF-8 is an error in both front ends, comments
+  included; the self-hosted one reads bytes; the fuzz finding with such a
+  byte joins the gates.
 - [ ] **B22 left open (D166 built 2026-10-23).** (1) **Labels in a generic
   type's arguments are refused, not kept** (`Box<(lo: i64, hi: i64)>` is an
   error naming `Box<(i64, i64)>`): one struct or sealed instance serves every
@@ -1620,7 +1633,7 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
   multicast, Unix-domain sockets or lookup API, and there is no file watching, memory-mapped
   file, terminal control, serial, HID, USB or Bluetooth module (D161, plan track P); the
   self-hosted parser is 1.5–1.7× slower than Go's on std after S7's first pass (2026-10-23;
-  was 3.0× by `bench/parse`, see "Large sealed values" above); `veles fmt` spreads a
+  was 3.0× by `bench/parse`, D198, plan S16, closes the rest); `veles fmt` spreads a
   one-call `unsafe { f() }` over three lines (73 sites in std; plan B18).
 - **D168/D169 (decided 2026-10-15/16, built 2026-10-16, plan B23/B24); left out:** a
   first-_success_ race (errors ignored unless every contestant fails — the user: "`race try`

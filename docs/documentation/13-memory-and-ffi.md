@@ -62,8 +62,25 @@ Output:
 ```
 
 Run it with `VELES_GC_TRACE=1` in the environment to see the collections
-happen. `VELES_GC_THRESHOLD=<bytes>` lowers the trigger, which is how
-the collector's own tests stress it, and `VELES_GC_MARKERS=<n>` sets how
+happen.
+
+Two numbers decide when the collector runs, and the program's `veles.toml`
+sets them (D200):
+
+```toml
+[runtime]
+gc.minHeap = "32MiB"   # no collection before the heap holds this much; default "8MiB"
+gc.goal = 100          # the heap grows this % over the live data before the next one; default 100
+```
+
+The defaults are close to Go's (4 MB, `GOGC=100`) and suit most programs. A
+program that churns a lot of short-lived memory — a compiler, a parser, a
+batch job — runs faster with a larger `minHeap`, at the price of that much
+memory; a smaller `goal` keeps the heap tighter and collects more often.
+`VELES_GC_MIN_HEAP=<size>` (bytes, or `32MiB`-style) and `VELES_GC_GOAL=<n>`
+override both at run time without a rebuild; a small `VELES_GC_MIN_HEAP` is
+how the collector's own tests stress it (`VELES_GC_THRESHOLD` is its older
+name). `VELES_GC_MARKERS=<n>` sets how
 many threads mark and sweep (1: the collecting thread alone; with it set,
 the helpers take part in every collection, however small the heap).
 `VELES_GC_CONCURRENT=0` keeps the marking in one pause everywhere; `=1`

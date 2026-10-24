@@ -317,7 +317,12 @@ type StructDecl struct {
 	// ImpliedVariant: its `: Trait` clause was not written but supplied.
 	Nested         bool
 	ImpliedVariant bool
-	Pos            source.Span
+	// Indirect: `indirect struct` — the variant is stored behind a pointer
+	// in its sealed value; Inline: `inline struct` — kept in the value even
+	// in a recursive sealed type (D198)
+	Indirect bool
+	Inline   bool
+	Pos      source.Span
 }
 
 type AssocTypeDecl struct {
@@ -341,6 +346,9 @@ type TraitDecl struct {
 	// Variants are the structs declared in the body of a sealed trait (D193). Each
 	// is also in the file's list of declarations, as the separate form would be.
 	Variants []*StructDecl
+	// Indirect: `indirect sealed trait` — every variant is stored behind a
+	// pointer (D198)
+	Indirect bool
 	Pos      source.Span
 }
 

@@ -3596,7 +3596,31 @@ fun mapped(): Map<string, i64> {
   m.set("a", 1)
   m
 }
-fun main() { io.println("${filled(2)} ${filledTwice()} ${collected()} ${fromLiteral()} ${constructed()} ${repeated(2)} ${mapped()}") }`)
+// D201: methods that keep neither the struct nor the field's storage, the
+// field's own reader called before the move, a bare member, recursion
+struct Lexer {
+  src:          string
+  var pos:      i64 = 0
+  tokens:       MutableList<string> = []
+  comments:     MutableList<string> = []
+  fun run() {
+    loop (this.pos < this.src.len()) this.step()
+  }
+  fun step() {
+    val b = this.src.byteAt(this.pos)
+    if (b == '#') comments.push("#") else this.tokens.push(this.src.slice(this.pos, this.pos + 1))
+    this.pos += 1
+    if (this.pos < this.src.len() && this.src.byteAt(this.pos) == ' ') this.step()
+  }
+  fun first(): string => this.tokens.at(0) ?: ""
+}
+fun scan(src: string): (List<string>, string, List<string>) {
+  var lexer = Lexer(src)
+  lexer.run()
+  val head = lexer.first()
+  (lexer.tokens, head, lexer.comments)
+}
+fun main() { io.println("${filled(2)} ${filledTwice()} ${collected()} ${fromLiteral()} ${constructed()} ${repeated(2)} ${mapped()} ${scan("a #b")}") }`)
 
 	for _, c := range []struct{ name, src string }{
 		{"parameter", `fun f(xs: MutableList<i64>): List<i64> => xs`},
@@ -3676,13 +3700,79 @@ fun f(shared: MutableList<i64>): List<i64> {
   val acc = Acc(items: shared)
   acc.items
 }`},
-		{"field of a struct with a method called on it", `struct Acc {
+		// D201: a method may be called when its summary keeps nothing
+		{"field read by a method called after the move", `struct Acc {
+  items: MutableList<i64> = []
+  fun add(x: i64) { this.items.push(x) }
+  fun count(): i64 => this.items.len()
+}
+fun f(): (List<i64>, i64) {
+  var acc = Acc()
+  acc.add(1)
+  val xs: List<i64> = acc.items
+  (xs, acc.count())
+}`},
+		{"field handed out by a method", `struct Acc {
+  items: MutableList<i64> = []
+  fun storage(): MutableList<i64> => this.items
+}
+fun f(): List<i64> {
+  val acc = Acc()
+  val other = acc.storage()
+  acc.items
+}`},
+		{"field handed out by a method it calls", `struct Acc {
+  items: MutableList<i64> = []
+  fun storage(): MutableList<i64> => items
+  fun touch() { val _ = this.storage() }
+}
+fun f(): List<i64> {
+  val acc = Acc()
+  acc.touch()
+  acc.items
+}`},
+		{"field replaced by a method", `struct Acc {
+  var items: MutableList<i64> = []
+  fun adopt(xs: MutableList<i64>) { this.items = xs }
+}
+fun f(other: MutableList<i64>): List<i64> {
+  var acc = Acc()
+  acc.adopt(other)
+  acc.items
+}`},
+		{"a method that keeps this in a lambda", `struct Acc {
+  items: MutableList<i64> = []
+  fun later(): fun(): i64 => () => this.items.len()
+}
+fun f(): List<i64> {
+  val acc = Acc()
+  val g = acc.later()
+  acc.items
+}`},
+		{"a method that passes this on", `struct Acc { items: MutableList<i64> = []
+  fun register(all: MutableList<*Acc>) { all.push(&this) }
+}
+fun f(all: MutableList<*Acc>): List<i64> {
+  var acc = Acc()
+  acc.register(all)
+  acc.items
+}`},
+		{"a method taken as a value", `struct Acc {
   items: MutableList<i64> = []
   fun add(x: i64) { this.items.push(x) }
 }
 fun f(): List<i64> {
+  var acc = Acc()
+  val add = acc.add
+  add(1)
+  acc.items
+}`},
+		{"a trait's default method", `trait Counted { fun size(): i64; fun twice(): i64 => this.size() * 2 }
+struct Acc { items: MutableList<i64> = [] }
+implement Counted for Acc { fun size(): i64 => this.items.len() }
+fun f(): List<i64> {
   val acc = Acc()
-  acc.add(1)
+  val n = acc.twice()
   acc.items
 }`},
 		{"field used after", `struct Acc { items: MutableList<i64> = [] }

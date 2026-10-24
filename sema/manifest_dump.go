@@ -70,7 +70,7 @@ func ManifestDump(path, text string) string {
 		w("policy-require %s %d", strconv.Quote(k), m.Policy.Require[k])
 	}
 	w("registry url=%s key=%s", strconv.Quote(m.Registry.URL), strconv.Quote(m.Registry.Key))
-	w("runtime threads=%d", m.Runtime.Threads)
+	w("runtime threads=%d gc-min-heap=%d gc-goal=%d", m.Runtime.Threads, m.Runtime.GCMinHeap, m.Runtime.GCGoal)
 	return sb.String()
 }
 

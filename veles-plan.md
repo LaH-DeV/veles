@@ -86,7 +86,7 @@ order: **B26** (D174 annotations, decided 2026-10-18, before C9), **B19** (D157,
 **B22** (D166), the F19 migration left in checklist §11, then **S6–S8** (finish the front
 end, its speed, debug info), **C9** (`std/cli`, before the driver is ported), then
 **S9–S12**. Track P (D159–D162) runs beside S from P1. Checklist §9 is empty again.
-_(2026-10-23: B26, B19, B21, B22 and the F19 migration are done; next are S6–S8.)_
+_(2026-10-23: B26, B19, B21, B22, the F19 migration and S6–S8 are done but for D199's part of S6; D198 and D199 were decided the same day, and S16 (D198) is built. 2026-10-24: D200–D202 decided and built (S18–S20; bench/parse 0.7–0.9× Go) — next is **S17** (D199), then C9.)_
 
 ---
 
@@ -216,7 +216,7 @@ steps first; the sizes are today's Go: `sema` 35 000 lines, `codegen/llvm` 9 000
 | #    | Task                                                                                                                                                                                                                                                                                                               | Acceptance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | S6   | **Built 2026-10-23 except non-UTF-8 input** (progress log; that part waits for a decision, checklist §11). **Finish E4**: P6 `Layout`, a dump that prints every span, files that are not valid UTF-8                                                                                                                                                                                                                          | G2 compares spans; the `Layout` of every corpus file agrees with Go's; the lexer reads bytes (`fs.readBytes`), so the fuzz findings and the non-UTF-8 files join the corpus; checklist §8b ticked                                                                                                                                                                                                                                                                                                                                                                             |
-| S7   | **In progress 2026-10-23: `bench/parse` added, 3.0× → 1.5–1.7× Go** (progress log); the rest waits on the D12 question in checklist §11. **Front-end speed, as a finding about the language** (3 MB of std: Veles 1.3 s, Go 0.55 s)                                                                                                                                                                                                                         | profile (`bench/parse` added: the self-hosted parser over std), fix what is the compiler's or the runtime's (not the port's), record in `bench/results.md`; target ≤ 1.3× Go. The port is not rewritten to allocate less (self-host plan §5)                                                                                                                                                                                                                                                                                                                                  |
+| S7   | **Done 2026-10-23 with S16: `bench/parse` 3.0× → 1.0–1.1× Go on Linux, 1.1× on Windows** (progress log; the target became Go's speed, D198). **Front-end speed, as a finding about the language** (3 MB of std: Veles 1.3 s, Go 0.55 s)                                                                                                                                                                                                                         | profile (`bench/parse` added: the self-hosted parser over std), fix what is the compiler's or the runtime's (not the port's), record in `bench/results.md`; target ≤ 1.3× Go. The port is not rewritten to allocate less (self-host plan §5)                                                                                                                                                                                                                                                                                                                                  |
 | S8   | **Built 2026-10-23** (progress log; DWARF on Windows too — the target is `windows-gnu`; what is left: checklist §11). **Debug info**: LLVM `!dbg` line tables and locals in debug builds (DWARF on Linux, CodeView on Windows)                                                                                                                                                                                                           | `gdb`/`lldb` and the VS Code C++ debugger stop at a Veles `file:line`, step, and show locals of scalar and struct types in a probe; a codegen golden; docs chapter 13. A compiler written in Veles needs a debugger                                                                                                                                                                                                                                                                                                                                                           |
 | S9   | **The formatter in Veles** (`selfhost/format`), the next slice with a free oracle                                                                                                                                                                                                                                  | needs S6's `Layout`; `veles fmt --stdout` byte-identical with the Veles formatter over the whole corpus (gate G5); the Veles sources stay idiomatic (self-host plan §11)                                                                                                                                                                                                                                                                                                                                                                                                      |
 | S10  | **First cut built 2026-10-19** (progress log; what is left: checklist §11). **Oracles for `sema`**: stable text dumps of each phase                                                                                                                                                                                | `veles check --dump=names                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | types  | hir`(resolution, every expression's type, the lowered HIR) deterministic across runs and platforms, golden-tested; this is what a Veles`sema`is gated against, phase by phase, as the parser was against`veles parse` |
@@ -233,6 +233,11 @@ go through `veles-decide` first. (Operator overloading already exists: D71 `Adda
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | S14 | **Harness built 2026-10-19** (`internal/bootstrap`, progress log); the gate itself waits for S11's `selfhost/compiler`. **Bootstrap fixpoint test**: stage0 (Go) builds stage1 (Veles compiler), stage1 builds stage2 | `veles build` of the Veles compiler by stage1 and by stage2 produce byte-identical IR/binaries; a driver test and a CI line; the proof that the compiler is self-hosted. Needs S11's port; the harness (a stage runner, an IR diff) can be written earlier against the front end                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | S15 | **Backend decision for a self-hosted compiler**: keep textual LLVM IR + clang, or add a small second backend                                                                                                          | a short write-up (via `veles-decide`): what a Veles-written compiler depends on (clang on PATH), what a second backend would cost, what the wasm target (G1 below) needs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| S16 | **Built 2026-10-23** (progress log; `bench/parse` at Go's speed on Linux, 1.1× on Windows; what is left: checklist §11). **D198: trees are boxed** (decided 2026-10-23; from S7) — recursive sealed types box their variants, `indirect struct` / `inline struct`, the lopsided-variant lint | sema: recursion found through pointers, collections, nullables and other types' fields; a boxed variant's layout (tag + one word) in `types/layout.go`; codegen: construction allocates the variant, `when`/`is`/field reads load through the pointer, a write through a narrowed `var` copies the box first, equality/hash/order/show/`Codable` and the constant evaluator unchanged in result; GC descriptors; parser, formatter, self-hosted parser, editor grammar and hover for `indirect`/`inline` (contextual words before `struct` in a sealed trait's body); the lint with its fix (family performance); conformance `D198-*` and a driver test of value semantics under boxing (debug and release, 1–8 threads); a codegen golden; `bench/parse` against Go's speed (the target the user set: Go, not 1.3×), `trees`, `ast` and the whole suite no slower; `selfhost/ast` marks nothing it does not need; docs chapter 9 and chapter 13 (layout), the cheat sheet. Windows and WSL green |
+| S17 | **D199: a source file must be valid UTF-8** (decided 2026-10-23; finishes S6) | Go lexer: every undecodable sequence an error at its position, comments included (message in D199), family syntax; the self-hosted front end reads bytes (`fs.readBytes`), reports the same errors and lexes nothing more; the non-UTF-8 fuzz finding and a hand-written file (a stray byte in a comment, a string and code) join the corpus under G1–G3; conformance file; errors reference; LSP shows the diagnostic. Windows and WSL green |
+| S18 | **Built 2026-10-24** (progress log). **D202: `string.startsWith(prefix, startIndex)`** (decided 2026-10-24) | builtin signature + check (named and positional), runtime compare with the out-of-range rule, hover/builtin docs, cheat sheet; a test of the edges (negative, past the end, empty prefix); the self-hosted lexer's `holdsAt` replaced; bench/parse re-measured |
+| S19 | **Built 2026-10-24** (progress log). **D200: `[runtime] gc.minHeap` / `gc.goal`** (decided 2026-10-24) | manifest reader (Go and self-hosted test) with the errors in D200; start-up code passes them to the collector; `VELES_GC_MIN_HEAP` / `VELES_GC_GOAL` (and `VELES_GC_THRESHOLD`) override; a driver test runs one program under each; manifest docs; bench/parse sets 32 MiB |
+| S20 | **Built 2026-10-24** (progress log). **D201: a field moves out of a local whose methods were called** (decided 2026-10-24) | per-method summaries (keeps `this`, fields used) in sema; the move rule of D201 with each refusal reason pinned by a conformance test; hover and `redundant_copy`; the self-hosted lexer's `Scan(…)` moves its lists and the parser stops copying them back (`>>` split without `insert`); instruction counts re-measured on Linux |
 | G1  | **Gap list from the 2026-10-19 review**, each asked before built                                                                                                                                                      | **SIMD, D181** (`Vector128/256/512<T>`, `Simd<T, bits>`, lane aliases; codegen to LLVM vectors, sema rules for `T` and width, std type, docs, a `bench/` dot product and byte scan against scalar); **a WebAssembly target, D180**; **`std/regex`, D182 — built 2026-10-19, what is left is in checklist §11** (the `/…/flags` literal in the Go and `selfhost/` lexers, parser, formatter, LSP and editor grammar; the engine in Veles; compile-time check of literals through the const evaluator; string extensions; tests, docs, a log-analyser example, a `bench/` run against Go's `regexp`); `BigInt`/`Decimal`/`Vec`/`Mat` on D71's operator traits (A44, A60); `std/regex` (the `regex"…"` tag); `std/bigint`/`std/decimal`; Unicode normalization and grapheme segmentation; property-based and snapshot tests in `veles test`; runnable doc-comment examples; `veles test --coverage` and a profiler command; `veles apidiff` on module interfaces (S12); CSV/TOML/YAML/URL/MIME/archive modules |
 
 ## P — Platform APIs: the low level reached from Veles, a high level on top (decided 2026-10-14: D159–D162)
@@ -466,6 +471,133 @@ on Linux).
 ## Progress log
 
 Older entries: `archive/progress-log-2026-09.md`.
+
+### 2026-10-24 — S18–S20 / D200–D202: the three choices left by the parse work
+
+Decided by the user the same day (recommended for D200 and D201; Kotlin's
+`startIndex` over the recommended `at:` for D202), then built:
+
+- **D202** `string.startsWith(prefix, startIndex)`: checked in sema (named
+  or positional; a wrong name or count is an error naming the form), folded
+  in constants, and emitted **inline** — a bounds test, a first-byte
+  compare, `memcmp` for the rest. A runtime call per try was tried first and
+  made the parse *slower* (616M → 679M instructions: the lexer tries 59
+  operators at a position, and the hand loop it replaced rejected on the
+  first byte inline). The self-hosted lexer's `holdsAt` is gone.
+- **D200** `[runtime] gc.minHeap` / `gc.goal` (also as `[runtime.gc]`):
+  both manifest readers with the same refusals (gate R1 has the cases),
+  passed to `veles_runtime_gc` at start-up, `VELES_GC_MIN_HEAP` /
+  `VELES_GC_GOAL` override (`VELES_GC_THRESHOLD` kept as the old name), the
+  goal now a percent in `set_goal`. `TestRuntimeGCManifest` counts
+  collections (default 9, 1 GiB none, goal 1000 vs 10: 4 vs 25).
+  `selfhost/veles.toml` sets `gc.minHeap = "32MiB"`.
+- **D201** a field moves out of a local whose methods were called:
+  `sema/move_method.go` summarises each method from its source (keeps
+  `this`? which fields it uses, which it may hand out), the union over the
+  methods it reaches; `movableField` consults it. A list pattern that binds
+  no rest now counts as reading elements (for locals too). Accepted and
+  refused cases are in `TestMutableToImmutableMove`. The self-hosted lexer
+  hands the parser its token list (`tokenizeForParser`, a labelled tuple)
+  and both copies per file are gone; `redundant_copy` found two more.
+
+**Measured.** Self-hosted parse of std 616M → **507M** instructions (Go's
+front end: 1,024M). `bench/parse` **0.7–0.9× Go on Windows** (four runs,
+loaded machine; was 1.1×), **0.7× on Linux**. Windows and WSL suites green.
+macOS not run. Left: checklist §11 (D200–D202).
+
+### 2026-10-23 — The Windows gap on `bench/parse`, measured by instructions
+
+The machine was loaded (a game) while this was done, so wall-clock numbers
+were compared only interleaved (a scratchpad tool runs binaries in turn
+and reports min and median) and the work was guided by instruction counts:
+valgrind's callgrind, unpacked into the WSL home like perf, is the same
+however loaded the machine is.
+
+**What the counts said.** The self-hosted parse of std is 616M
+instructions; the Go front end doing the same work is 1,024M (its operator
+scan alone, with `memeq`, ~230M against our 118M). Veles is not slower by
+code — it is ~40% leaner. Where its time goes: the lexer's operator scan
+19%, `memcpy` 12% (two whole-list copies of the tokens per file — the
+port's `toList()`/`toMutable()` — 7%, and list growth 5%), allocation 13%,
+marking 10%.
+
+**Changed (compiler and runtime only).**
+- A list element's address uses the element type's size, known at compile
+  time, instead of loading the stride from the header and multiplying.
+- The sweep reads a dead object only when its span may hold a `Secret`'s
+  bytes or poisoning is on (`span.wipes`), and clears the marks with one
+  `memset`.
+- `veles_gc_alloc` reads the thread's block once, not four times; a reused
+  slot of a small class is cleared with a constant-size `memset` (a few
+  stores). `veles_gc_alloc`'s own instructions 71M → 40M.
+- Tried and reverted: a word-at-a-time search for a free slot (more
+  instructions — the runs are short); `memory(read, inaccessiblemem:
+  readwrite)` on the back-edge poll's call (LLVM hoisted nothing and the
+  scan grew).
+
+Interleaved on Windows: 3–4% faster (min 114 → 110 ms under that load).
+The Windows ratio to Go could not be measured cleanly under the load (the
+runner showed 0.6–0.9×, Go suffering more). What remains, by experiment:
+with a 32 MiB collection threshold, or none, the parse is ~5% faster —
+Go marks on other cores, a Veles collection of a heap this small marks in
+a pause. Left for the user (checklist §11): a larger minimum heap (memory
+for speed in every program), D188's move extended to a field of a dead
+local (removes the two token-list copies, 7%), and a std `startsWith(at:)`
+the lexer could use.
+
+### 2026-10-23 — S16 / D198: trees are boxed
+
+**Syntax.** `indirect struct` and `inline struct` in a sealed trait's body,
+`indirect sealed trait` before a declaration — contextual words, in the Go
+and self-hosted parsers (`StructDecl.Indirect/Inline`, `TraitDecl.Indirect`),
+`veles parse`, the formatter, the editor grammar; `std/lint/ast.vs` and the
+span walker regenerated.
+
+**Checking.** `markRecursive` (`sema/boxed.go`) sets `Sealed.Recursive` on a
+sealed type one of whose variants reaches it again through a pointer, a
+collection, a nullable, a tuple or array, another struct's fields or
+another sealed type's variants (`Stmt` → `Block` → `List<Stmt>` included).
+The rule for which variants are boxed lives in `types.Layout`
+(`VariantBoxed`, `SealedPayloadWords`), shared by the checker and codegen:
+`indirect`, or larger than a word in a tree unless `inline`. Lint
+`large_variant` (registry, both sides) warns of a non-tree, non-generic
+sealed type whose largest variant is over four words and over twice the
+next, with a fix that writes `indirect`; it fires nowhere in std,
+examples or selfhost. Hover says `indirect`/`inline`, or "boxed: 'Expr' is
+a tree".
+
+**Codegen** (`codegen/llvm/boxed.go`). Every sealed value is built and read
+through `makeTaggedT`/`extractTaggedT`, so a boxed variant is allocated
+there (its own descriptor and size) and loaded through the pointer; the
+payload words are conservatively traced already. A place reached through
+a narrowed boxed variant (`placeAs` of a `VariantCast`) loads the pointer;
+for a write or a pointer that outlives the access it copies the box first
+and stores the copy in the value — unless the variant has no `var` field,
+when nothing can be written. A probe's output is identical with the HEAD
+compiler (markers removed).
+
+**Speed.** Every `selfhost` AST union is now `{ i32, [1 x i64] }` (16
+bytes; `Expr` was 180, `Decl` 348). The parse alone did not move at first
+(≈85 ms on Windows): the parser's functions dropped out of the profile
+(`parsePostfixOp` 7% → 1%), and what was left was the lexer and the
+collector. On Linux that is parity: 63–70 ms against Go's 64–65. On
+Windows it was 78–80 ms against 61: the write-watch concurrent marking,
+which started at 4 MiB live, cost a fast-allocating program ~10 ms (with
+`VELES_GC_CONCURRENT=0`, 69 ms). `CONCURRENT_FROM` is 16 MiB now — a pause
+marks that much in about a millisecond — and the Windows parse is 69–74 ms,
+1.1×. `gcpause`'s longest pause is unchanged (1.39–1.42 ms at 4 MiB,
+1.32–1.45 ms at 16 MiB, same session); `ast` and `json`, A/B against HEAD
+alternately, within noise.
+
+Tests: conformance `D198-boxed-variants` (the lint, `indirect`, `inline`,
+`indirect sealed trait`), `D198-boxed-syntax`; `driver/boxed_test.go`
+(value semantics — a write through a narrowed copy, equality, a set,
+printing, an `indirect` variant written through a `var` — and deep trees
+built in tasks under `VELES_GC_THRESHOLD=65536`, debug and release, 1 and
+4 threads); `parser/boxed_test.go`; formatter round trip; `lsp/boxed_test.go`;
+codegen golden `boxed` (the box allocated, read through, copied before a
+write). Docs: chapter 9 "Trees: where a variant is stored", cheat sheet,
+errors reference.
 
 ### 2026-10-23 — S8: debug information
 

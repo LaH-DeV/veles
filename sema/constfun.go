@@ -78,7 +78,7 @@ func (ev *constEval) callIndirect(e *CallIndirect) ConstVal {
 // memory.
 var constBuiltins = map[string]bool{
 	"string.len": true, "string.byteAt": true, "string.substring": true, "string.bytes": true,
-	"string.chars": true, "string.charCount": true, "string.startsWith": true, "string.endsWith": true,
+	"string.chars": true, "string.charCount": true, "string.startsWith": true, "string.startsWithAt": true, "string.endsWith": true,
 	"string.contains": true, "string.split": true, "string.toInt": true,
 	"list.len": true, "list.get": true, "list.ref": true, "list.push": true, "list.pop": true,
 	"list.clear": true, "list.copy": true, "list.addAll": true, "list.slice": true, "list.reserve": true,
@@ -420,6 +420,12 @@ func (ev *constEval) builtinMore(e *Builtin) (ConstVal, bool) {
 		return i64v(int64(n)), true
 	case "string.startsWith":
 		return &CBool{strings.HasPrefix(ev.str(e, 0), ev.str(e, 1))}, true
+	case "string.startsWithAt":
+		s, at := ev.str(e, 0), ev.intArg(e, 2)
+		if at.Sign() < 0 || at.Cmp(big.NewInt(int64(len(s)))) > 0 {
+			return &CBool{false}, true
+		}
+		return &CBool{strings.HasPrefix(s[at.Int64():], ev.str(e, 1))}, true
 	case "string.endsWith":
 		return &CBool{strings.HasSuffix(ev.str(e, 0), ev.str(e, 1))}, true
 	case "string.contains":

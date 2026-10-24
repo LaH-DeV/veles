@@ -55,7 +55,7 @@ var builtinDocs = []BuiltinDoc{
 	{"Result", "toString", "(): string", "Explicitly formats the Result, including its Ok or Err wrapper. Unlike interpolation, this deliberately prints an unhandled result (D157)."},
 	{"string", "len", "(): i64", "Length in bytes."},
 	{"string", "isEmpty", "(): bool", "True when the length is zero."},
-	{"string", "startsWith", "(prefix: string): bool", "True when the text begins with `prefix`."},
+	{"string", "startsWith", "(prefix: string, startIndex: i64 = 0): bool", "True when the bytes from `startIndex` on begin with `prefix` (one memory compare). `startIndex` is a byte index, like `indexOf(from:)`; one below 0 or past `len()` answers `false` (D202)."},
 	{"string", "endsWith", "(suffix: string): bool", "True when the text ends with `suffix`."},
 	{"string", "contains", "(part: string): bool", "True when `part` occurs anywhere in the text."},
 	{"string", "charCount", "(): i64", "Number of Unicode code points (not bytes)."},

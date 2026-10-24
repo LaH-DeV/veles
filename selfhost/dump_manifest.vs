@@ -36,7 +36,7 @@ fun manifestDump(path: string, text: string): string {
   loop (name in policy.trust.keys().sorted()) out.appendLine("policy-trust ${quote(name)} ${quote(policy.trust.get(name) ?: "")}")
   loop (name in policy.require.keys().sorted()) out.appendLine("policy-require ${quote(name)} ${policy.require.get(name) ?: 0}")
   out.appendLine("registry url=${quote(manifest.registry.url)} key=${quote(manifest.registry.key)}")
-  out.appendLine("runtime threads=${manifest.threads ?: 0}")
+  out.appendLine("runtime threads=${manifest.runtime.threads ?: 0} gc-min-heap=${manifest.runtime.gcMinHeap ?: 0} gc-goal=${manifest.runtime.gcGoal ?: 0}")
   out.toString()
 }
 

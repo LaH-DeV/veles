@@ -278,6 +278,9 @@ func (g *gen) tagOf(t types.Type, v string) string {
 // makeTaggedT builds the value of the sealed type or error union t that
 // holds payload (a value of payloadT) under tag.
 func (g *gen) makeTaggedT(t types.Type, tag int, payloadT types.Type, payload string) string {
+	if v, ok := g.boxedVariant(t, payloadT); ok {
+		return g.makeBoxed(t, tag, v, payload) // D198
+	}
 	if !g.isMem(t) {
 		return g.makeTagged(g.llType(t), tag, g.llType(payloadT), payload)
 	}
@@ -292,6 +295,9 @@ func (g *gen) makeTaggedT(t types.Type, tag int, payloadT types.Type, payload st
 // extractTaggedT reads the payload of the tagged value v of type t as a
 // value of payloadT.
 func (g *gen) extractTaggedT(t types.Type, v string, payloadT types.Type) string {
+	if variant, ok := g.boxedVariant(t, payloadT); ok {
+		return g.extractBoxed(t, v, variant) // D198
+	}
 	if !g.isMem(t) {
 		return g.extractTagged(g.llType(t), v, g.llType(payloadT))
 	}

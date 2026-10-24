@@ -106,6 +106,7 @@ declare i64 @veles_race_wait(ptr, ptr)
 declare i64 @veles_race_closed(ptr)
 declare void @veles_run(ptr)
 declare void @veles_runtime_threads(i64)
+declare void @veles_runtime_gc(i64, i64)
 declare i64 @veles_task_panicked(ptr)
 declare ptr @veles_task_panic_msg(ptr, ptr)
 declare ptr @veles_task_panic_loc(ptr, ptr)
@@ -1739,5 +1740,8 @@ func (g *gen) startTaskHow(task string, fn *sema.Func, argTypes []types.Type, ar
 func (g *gen) runtimeConfig() {
 	if g.prog.Threads > 0 {
 		g.emit("call void @veles_runtime_threads(i64 %d)", g.prog.Threads)
+	}
+	if g.prog.GCMinHeap > 0 || g.prog.GCGoal > 0 {
+		g.emit("call void @veles_runtime_gc(i64 %d, i64 %d)", g.prog.GCMinHeap, g.prog.GCGoal)
 	}
 }

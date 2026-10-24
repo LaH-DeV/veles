@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.105** — decisions D1–D197. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.107** — decisions D1–D202. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -246,7 +246,7 @@ struct Circle : Shape { radius: f64 }
 struct Rect   : Shape { w: f64, h: f64 }
 ```
 
-- **Sealing is a layout feature, not just an exhaustiveness feature.** Under D9 a trait object boxes implicitly; a plain open trait would heap-allocate every sum value, including every `Option<T>`. A closed variant set lets the compiler compute a maximum size and lay the value out inline as a tagged union.
+- **Sealing is a layout feature, not just an exhaustiveness feature.** Under D9 a trait object boxes implicitly; a plain open trait would heap-allocate every sum value, including every `Option<T>`. A closed variant set lets the compiler compute a maximum size and lay the value out inline as a tagged union. _(v0.106, D198: a recursive sealed type — a tree — boxes its variants behind a hidden pointer, `indirect` boxes one anywhere, `inline` keeps one in the value.)_
 - Variants must be declared in the **same module** as the trait. If a `public` sealed trait could be extended elsewhere in the package (reachable under M5), exhaustiveness checking would break across modules.
 - Variant names are **scoped and importable**: `Shape.Circle` by default, bare `Circle` after explicit import. Top-level variants were rejected — `Loading`, `Error`, `Empty`, `Pending` collide across any two sealed traits in one module.
 - **All variant fields must be named.** No positional `Circle(f64)`. This was originally forced by the absence of destructuring; D13 has since added it, but named fields are retained on their own merits and destructuring binds by field name.
@@ -7846,6 +7846,184 @@ a contextual keyword, `yield suspend`/`await cede` ceremony, and a global
 round-robin promise. Separating scheduler ceding from generator yielding
 does not decide generators; I1 remains open and is the next planning topic.
 
+### D198 — Trees are boxed: recursive sealed types, `indirect`, `inline` (v0.106; amends D12)
+
+Q from plan S7 (2026-10-23). D12 lays a sealed value out inline, sized for
+its largest variant, so a syntax tree paid for its biggest node everywhere:
+in `selfhost/` an `ast.Expr` was 180 bytes, a `Decl` 348, copied on every
+return and boxed at full size behind every `*Expr`; Go's interface is 16
+bytes. The user chose automatic boxing together with an explicit marker and
+the lint ("B + C with lint from A"), with the target "more like golang, not
+1.3x worse"; then, of the two follow-ups, the recommended rule for which
+types are boxed and the opt-out.
+
+```veles
+sealed trait Expr {                     // recursive: a variant holds *Expr
+  struct NameExpr { name: string; pos: Span }
+  struct IfExpr { cond: *Expr; then: Block; orElse: Block?; pos: Span }
+  inline struct NullLit { pos: Span }   // kept in the value: no allocation
+}
+// an Expr is a tag and a pointer, 16 bytes; IfExpr and NameExpr live on the heap
+
+sealed trait Message {                  // not recursive: inline, as D12
+  struct Ping { at: i64 }
+  indirect struct Upload { name: string; body: List<u8>; headers: Map<string, string>; meta: Meta }
+}
+```
+
+- **Automatic, for trees.** A sealed type is *recursive* when one of its
+  variants holds the type itself — directly, behind a pointer, in a
+  collection or a nullable, or through another type's field (`*Expr`,
+  `List<Stmt>` in `Block` in a `Stmt`). In a recursive sealed type every
+  variant larger than one word is stored behind a hidden pointer, so the
+  value is its tag and one word. Non-recursive sealed types — `Result`,
+  `Message` above — stay inline exactly as D12 says.
+- **`indirect struct V`** in a sealed trait's body (or `indirect sealed trait
+  T` for all its variants) boxes that variant in any sealed type.
+- **`inline struct V`** keeps a variant in the value in a type that would
+  box it (low-level control: a hot, small node); the value is then sized for
+  the largest inline variant.
+- **Nothing else changes in the source.** Construction, `when`, `is`, field
+  reads, equality, hashing, ordering, printing and `Codable` read and write
+  as before. Value semantics hold: the box is shared until a write through
+  a narrowed variable (`var c = s; if (c is Circle) c.r = 10`), which copies
+  it first. Construction of a boxed variant allocates once.
+- **The lint `large_variant` (a warning, family sealed-types; a package may
+  silence it or make it an error, D177):** a non-recursive, non-generic
+  sealed type whose largest variant is more than twice the next and more
+  than four words: "variant 'Upload' is 9 words, the others at most 1 word:
+  mark it 'indirect' so values of 'Message' are not sized for it (D198)",
+  with a fix inserting `indirect` (a variant declared outside the trait's
+  body is told to move there). Not for a variant already marked either way.
+- **FFI:** a sealed value never crosses to C (D69), so the hidden pointer
+  changes no C layout. Hover shows `indirect`/`inline` as written and says
+  "boxed (recursive)" for an automatic one.
+
+Rejected: boxing by size in every sealed type (a throwing function returning
+a big struct would allocate on every call, through `Result`); keeping D12
+with only the lint (every tree node written through a `data: *IfData` field
+by hand).
+
+### D199 — A source file must be valid UTF-8, as in Go (v0.106)
+
+Q from plan S6 (2026-10-23). The Go front end accepted an undecodable byte
+in a comment and reported others one way in code and another in a string;
+the self-hosted front end could not read such a file at all. The user:
+"make it work like Go".
+
+- Every byte sequence that is not UTF-8 is an error at its position — in
+  code, a string, a character literal or a comment alike — and the file does
+  not compile: `main.vs:3:7: the text is not valid UTF-8 here (byte 0xE9):
+  save the file as UTF-8` (Go: `illegal UTF-8 encoding`). Each bad sequence
+  is reported, as Go does; a byte-order mark at the start stays allowed.
+- Both front ends report it the same way: the self-hosted one reads the
+  file as bytes, reports these errors and lexes nothing more (gate G3 covers
+  the fuzz finding that holds such a byte).
+
+Rejected: porting the self-hosted lexer to bytes to keep the lenient rule;
+leaving the two front ends to disagree.
+
+### D200 — The collector's two numbers are a `[runtime]` setting (v0.107)
+
+From the bench/parse work (2026-10-23): the collector waits for 8 MiB of
+heap before its first collection and then lets the heap grow to twice the
+live data; only an undocumented environment variable changed it. Parsing
+`std` on Windows ran about 5% faster with 32 MiB. The user chose the
+setting over a larger default (2026-10-24).
+
+```toml
+[runtime]
+threads = "auto"
+gc.minHeap = "32MiB"   # no collection before the heap holds this much; default "8MiB"
+gc.goal = 100          # the heap grows this % over the live data before the next collection (Go's GOGC); default 100
+```
+
+- `gc.minHeap` is a size: a whole number with `B`, `KiB`, `MiB` or `GiB`, from
+  `1MiB` to `64GiB`. `gc.goal` is a whole number from 10 to 1000. Anything
+  else is a manifest error that names the form and an example.
+- The defaults stay as they were (8 MiB, 100), close to Go's (4 MB,
+  GOGC=100): a program that never churns more than that behaves the same.
+- At run time `VELES_GC_MIN_HEAP` (bytes, or the same suffixed form) and
+  `VELES_GC_GOAL` override the manifest, for measuring without a rebuild;
+  `VELES_GC_THRESHOLD` stays as an alias of the first. `VELES_GC_OFF` is
+  unchanged.
+- The values are baked into the program's start-up code, like `threads`;
+  a library's manifest does not set them (only the program's does).
+
+The remaining pause cost is fixed separately by marking concurrently on
+Linux and macOS as Windows does (checklist §11).
+
+Rejected: a 32 MiB default (peak memory of every churning small service
+quadruples for one benchmark's 5%; Go chose the small default); leaving the
+environment variable as the only control.
+
+### D201 — A field moves out of a local whose methods were called (v0.107; amends D188)
+
+D188 moves `acc.items` out of a fresh `val acc = Acc()` without a copy only
+when nothing but field access is used on `acc`. The self-hosted lexer fills
+its fields through methods and then hands them out, so every token was
+copied (20.6M instructions per parse of `std`):
+
+```veles
+var lexer = Lexer(file, src, diags)
+lexer.run()
+val moduleDoc = lexer.moduleDoc()   // reads this.tokens: before the move
+Scan(tokens: lexer.tokens, moduleDoc, comments: lexer.comments)   // both moved, no copy
+```
+
+The rule: `local.field` where a `List`/`Map`/`Set` is expected moves the
+field's storage at its last use (as D188; an explicit `.toList()` stays a
+copy, and the lint `redundant_copy` offers to drop it) when
+
+1. `local` is a local built in this function by its type's constructor, and
+   the field was built fresh (its default or a literal argument; the type has
+   no `init { }`);
+2. every use of `local` is field access or a call of one of its own methods
+   whose summary says it **keeps nothing**: `this` is not returned, stored,
+   passed on, captured by a lambda, handed to a task (`async`), or taken as a
+   method value, and the field's storage is not handed out or replaced —
+   each mention of the field is a receiver of the collection's own methods,
+   a `loop` that binds no pointer, an argument to a function that does not
+   keep it (D188), or a list pattern that copies elements out and binds no
+   rest (`val [.., last] = this.tokens else …`);
+3. no method called after the move uses the field.
+
+A method's summary is computed from its source, bare member names read as
+`this.name` (D158), and is the union over every method it reaches through
+`this` — recursion included — so it is one summary for every instantiation
+of a generic type. A method without a body of its own (a trait's default, an
+extern, a decorated one) keeps everything. Refused, the move falls back to
+the D188 error and its two fixes (`.toList()`, `.freeze()`). Hover on the
+conversion says whether it moves.
+
+The same list-pattern reading is accepted for a plain local and a field of a
+local (D188's own rule).
+
+Rejected: `freeze()` in the compiler's own source (a runtime-checked escape
+where a proof exists); keeping the copy.
+
+### D202 — `string.startsWith(prefix, startIndex)` (v0.107)
+
+The self-hosted lexer tests each operator at a position with a hand-written
+byte loop (19% of parse instructions) because `startsWith` only looked at
+the start of the text. The user chose Kotlin's spelling (2026-10-24):
+
+```veles
+public fun startsWith(prefix: string, startIndex: i64 = 0): bool
+if (this.src.startsWith(text, i)) …           // or startIndex: i
+```
+
+- True when the bytes from `startIndex` on begin with `prefix`; one memory
+  compare. `startIndex` is a byte index, like `indexOf(from:)`.
+- A `startIndex` below 0 or above `len()` answers `false` (no panic, D62);
+  an empty `prefix` at `0...len()` answers `true`.
+- `endsWith` is unchanged.
+
+Java (`startsWith(prefix, toffset)`), JS (`startsWith(s, position)`) and
+Kotlin (`startsWith(prefix, startIndex)`) spell it the same way.
+
+Rejected: a separate `matchesAt` (a second name for one idea); no API (the
+byte loop, or codegen recognising `slice(i, i + n) == t`).
 ### I1 — generators: investigated, not decided
 
 The user (2026-10-20): "investigate problem further, give a lot of different examples from other languages and how could we benefit from each viable approach". `veles-research-generators.md` compares hand-written iterators, `yield` functions, sequence builders, internal iteration (Go's range-over-func), fibers, tasks with channels and lazy data, on four programs. Open.

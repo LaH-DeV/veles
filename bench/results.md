@@ -569,3 +569,51 @@ The whole suite after `byteAt` inline and the allocator change (before the `Span
 | strings | 1000000 | 53.57ms | 49.44ms | 1.1× |
 | suscall | 10000000 | 118.57ms | 5.87ms | 20.2× |
 | trees | 14592688 | 171.71ms | 305.08ms | 0.6× |
+
+## 2026-10-23 — go1.23.2, windows/amd64 (HEAD de836bb, plus the working tree): S16 / D198
+
+Trees boxed (D198) and concurrent marking from 16 MiB live instead of 4. `parse` 69–74 ms
+against Go 61–64 (1.1×; Linux 63–70 against 64–65, parity). The Go column of this run is
+noisy (`parse` 112 ms, `trees` 472 ms); `ast` and `json`, A/B against HEAD three times
+alternately, within noise (ast 36–42 vs 37–41 ms, json 38–58 vs 40–56 ms). `gcpause`'s longest
+pause 1.32–1.45 ms over four runs, as at 4 MiB in the same session.
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| adapters | 24000000 | 52.15ms | 35.36ms | 1.5× |
+| ast | 861841 | 44.43ms | 42.51ms | 1.0× |
+| awaitall | 50000 | 38.82ms | 60.56ms | 0.6× |
+| awaitscope | 50000 | 42.65ms | 62.32ms | 0.7× |
+| channels | 200000 | 6.29ms | 10.69ms | 0.6× |
+| emit | 1000000 | 70.16ms | 52.9ms | 1.3× |
+| emptycoll | 2000000 | 26.68ms | 19.39ms | 1.4× |
+| gcpause | 20000000 | 457.86ms | 613.05ms | 0.7× |
+| gunzip | 16777232 | 76.08ms | 59.1ms | 1.3× |
+| gzip | 2097154 | 143.62ms | 138.6ms | 1.0× |
+| httphello | 16000 | 184.16ms | 494.28ms | 0.4× |
+| idle | 100000 | 94.73ms | 399.27ms | 0.2× |
+| intern | 1000000 | 37.74ms | 39.9ms | 0.9× |
+| json | 40000 | 59.61ms | 59.72ms | 1.0× |
+| lexer | 2100000 | 58.23ms | 128.01ms | 0.5× |
+| maps | 2000000 | 61.58ms | 78.44ms | 0.8× |
+| parallel | 64 | 5.07ms | 12.17ms | 0.4× |
+| parse | 155 | 70.88ms | 111.7ms | 0.6× |
+| pipes | 1600000 | 26.71ms | 69.01ms | 0.4× |
+| sha256 | 16 | 63.32ms | 9.28ms | 6.8× |
+| sort | 900000 | 38.8ms | 54.56ms | 0.7× |
+| spawn | 100000 | 36.56ms | 30.99ms | 1.2× |
+| strings | 1000000 | 55.68ms | 51.96ms | 1.1× |
+| suscall | 10000000 | 126.02ms | 5.97ms | 21.1× |
+| trees | 14592688 | 166.03ms | 472.46ms | 0.4× |
+| benchmark | Veles bytes/op | Go bytes/op | Veles / Go |
+|---|---:|---:|---:|
+| idle | 249 | 8709 | 0.03× |
+| benchmark | Veles longest pause | Go longest pause |
+|---|---:|---:|
+| gcpause | 1.37ms | 1.53ms |
+
+## 2026-10-24 02:26 — go1.23.2, windows/amd64 (HEAD de836bb, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| parse | 155 | 52.01ms | 62.46ms | 0.8× |

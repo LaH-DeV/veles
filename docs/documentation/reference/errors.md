@@ -737,6 +737,16 @@ A sealed trait is a closed set of variants declared in its module (D12).
 Build a variant, and match on the variants with `when` to reach what only
 some of them have.
 
+#### `variant 'Upload' is 9 words, the others at most 1 word: mark it 'indirect'` (a warning)
+
+A sealed value is sized for its largest variant, so a type that is mostly
+small values with one large variant carries that room in every value — in
+every list and map of them too. Mark the large one `indirect struct` in the
+trait's body (the fix does it): it moves to the heap and the value shrinks
+to a tag and a pointer for it (D198). A tree — a sealed type that holds
+itself — is boxed already and never warned. Silence it in `veles.toml`
+with `[lint] large_variant = "allow"` when the size is what you want.
+
 #### `variant 'Rect' of 'Shape' does not implement 'area'`
 
 A method the sealed trait declares without a body is written by every

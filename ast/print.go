@@ -228,6 +228,12 @@ func (p *printer) decl(d Decl) {
 		if d.Extern {
 			p.w("extern ")
 		}
+		if d.Indirect {
+			p.w("indirect ")
+		}
+		if d.Inline {
+			p.w("inline ")
+		}
 		p.w(d.Name.Name)
 		p.typeParams(d.TypeParams)
 		if d.Variant != nil {
@@ -309,6 +315,9 @@ func (p *printer) decl(d Decl) {
 		p.open("trait ")
 		if d.Pub {
 			p.w("public ")
+		}
+		if d.Indirect {
+			p.w("indirect ")
 		}
 		if d.Sealed {
 			p.w("sealed ")

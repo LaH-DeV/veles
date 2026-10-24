@@ -493,6 +493,14 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 	case lexer.KwStruct:
 		return p.parseStruct(attrs, pub, false, start)
 	case lexer.Ident:
+		if p.cur().Text == "indirect" && p.peek(1).Kind == lexer.KwSealed {
+			p.next() // every variant behind a pointer (D198)
+			d := p.parseTrait(attrs, pub, start)
+			if td, ok := d.(*ast.TraitDecl); ok {
+				td.Indirect = true
+			}
+			return d
+		}
 		if p.atErrorDecl() {
 			return p.parseErrorDecl(attrs, pub, start)
 		}
@@ -1245,6 +1253,18 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 		p.skipSemis()
 		for !p.at(lexer.RBrace, lexer.EOF) {
 			mattrs := p.parseAttributes()
+			if p.at(lexer.Ident) && (p.cur().Text == "indirect" || p.cur().Text == "inline") && p.peek(1).Kind == lexer.KwStruct {
+				// `indirect struct` / `inline struct`: where the variant is stored (D198)
+				word := p.next()
+				p.parseNestedVariant(d, mattrs)
+				if n := len(d.Variants); n > 0 {
+					d.Variants[n-1].Indirect = word.Text == "indirect"
+					d.Variants[n-1].Inline = word.Text == "inline"
+					d.Variants[n-1].Pos = word.Span.To(d.Variants[n-1].Pos)
+				}
+				p.parseMemberSeparator()
+				continue
+			}
 			if p.at(lexer.KwStruct) {
 				p.parseNestedVariant(d, mattrs)
 				p.parseMemberSeparator()

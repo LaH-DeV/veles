@@ -58,13 +58,18 @@ Output:
   hands it over without a copy (D63). "Nobody else" still holds while you
   hand the list to a function that only reads or fills it (it does not
   store it, return it or capture it), and for a field of a struct you
-  built in the same function and kept to yourself (D188):
+  built in the same function and kept to yourself (D188) — also when you
+  call its methods, as long as they only fill and read the field and keep
+  neither it nor the struct, and none that reads the field runs after the
+  move (D201):
 
 ```veles
 use io
 
 struct Report {
   lines: MutableList<string> = []
+
+  fun add(line: string) { this.lines.push(line) }
 }
 
 fun addLines(out: MutableList<string>, n: i64) {
@@ -78,8 +83,8 @@ fun report(n: i64): List<string> {
 }
 
 fun summary(): List<string> {
-  val r = Report()
-  r.lines.push("a")
+  var r = Report()
+  r.add("a")        // a method that only fills the field
   r.lines.push("b")
   r.lines  // a field of a struct built here
 }
@@ -95,7 +100,8 @@ Output:
 ```
 
   Where the compiler cannot show that (the list is a parameter, or goes
-  through a method, a closure or a function that keeps it), the error says
+  through a method, a closure or a function that keeps it, or a method that
+  reads it runs after the move), the error says
   so and `.toList()` is the copy. A `.toList()` on a list that is not used
   afterwards is a warning (`redundant_copy`) with a fix: the move needs no
   copy. The editor marks every move with an inlay hint after the

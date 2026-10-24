@@ -134,7 +134,11 @@ public sealed trait Decl {
     // `: Trait` clause may have been supplied rather than written
     public var nested:         bool = false
     public var impliedVariant: bool = false
-    public var pos:            Span = Span.none()
+    // `indirect struct`: stored behind a pointer in its sealed value;
+    // `inline struct`: kept in the value even in a tree (D198)
+    public var indirect: bool = false
+    public var isInline: bool = false
+    public var pos:      Span = Span.none()
   }
   /// `trait Name { type Item; fun m() }`, or `sealed trait Name`.
   struct TraitDecl {
@@ -151,6 +155,7 @@ public sealed trait Decl {
     // the structs declared in the body of a sealed trait (D193); each is also
     // in the file's declarations, as the separate form would be
     public var variants: List<StructDecl> = []
+    public var indirect: bool = false  // `indirect sealed trait`: every variant behind a pointer (D198)
     public var pos:      Span = Span.none()
   }
   /// `implement<T> Trait for Type { }`, or `extend<T> Type { }` (D23).

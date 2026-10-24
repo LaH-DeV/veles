@@ -451,7 +451,7 @@ extend Parser {
         continue
       }
       val toks = tokenizeRange(this.file, part.span.start, part.span.end, this.diags)
-      var sub = Parser(file: this.file, toks: toks.toMutable(), diags: this.diags)
+      var sub = Parser(file: this.file, toks, diags: this.diags)
       val e = sub.parseExpr()
       sub.skipSemis()
       if (!sub.at(Kind.EOF)) sub.errorAt(sub.span(), "unexpected ${sub.cur().describe()} in string interpolation")
@@ -599,7 +599,7 @@ extend Parser {
       return ast.TupleExpr(elems: elems.toList(), labels: this.tupleLabels(labels, missing), pos: this.spanFrom(start))
     }
     val [only] = elems else return ast.TupleExpr(elems: elems.toList(), pos: this.spanFrom(start))
-    if (trailingComma) return ast.TupleExpr(elems: elems.toList(), pos: this.spanFrom(start))
+    if (trailingComma) return ast.TupleExpr(elems, pos: this.spanFrom(start))
     this.parens.push(ast.exprSpan(only))
     // parentheses end a `?.` chain (D70)
     when (only) {

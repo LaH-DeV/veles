@@ -237,6 +237,7 @@ struct Printer {
         this.attrs(d.attrs)
         this.open("trait ")
         if (d.pub) this.write("public ")
+        if (d.indirect) this.write("indirect ")
         if (d.isSealed) this.write("sealed ")
         this.write(d.name.name)
         this.typeParams(d.typeParams)
@@ -317,6 +318,8 @@ struct Printer {
     })
     if (d.pub) this.write("public ")
     if (d.isExtern) this.write("extern ")
+    if (d.indirect) this.write("indirect ")
+    if (d.isInline) this.write("inline ")
     this.write(d.name.name)
     this.typeParams(d.typeParams)
     if (val variant = d.variant) {

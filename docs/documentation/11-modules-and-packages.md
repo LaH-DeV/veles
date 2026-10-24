@@ -190,6 +190,8 @@ static-libs = ["z"]           # C libraries the package's extern blocks need (ch
 
 [runtime]
 threads = "auto"              # the default pool's threads: "auto" (one per core) or 1 to 256
+gc.minHeap = "8MiB"           # no collection before the heap holds this much (1MiB to 64GiB)
+gc.goal = 100                 # % the heap grows over the live data before the next one (10 to 1000)
 ```
 
 - What other packages may import is written in source, not here: see

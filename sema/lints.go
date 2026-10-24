@@ -69,6 +69,7 @@ var Lints = []LintInfo{
 	{"count_loop", "a loop that only counts is written `iter.len()`", LintWarn},
 	{"else_if_ladder", "three or more `else if` branches in a row are a `when { }`", LintWarn},
 	{"inline_implement", "an `implement` beside a type can be written inside its body", LintWarn},
+	{"large_variant", "a variant much larger than the others of a sealed type that is not a tree, which every value is sized for: mark it `indirect`", LintWarn},
 	{"long_line", "a line longer than `max_width` columns (default 120); the formatter never reflows", LintAllow},
 	{"loop_is_range", "a counting loop that is `loop (i in a..<b)` written by hand", LintWarn},
 	{"loop_true", "`loop (true)` is written `loop { }`", LintWarn},

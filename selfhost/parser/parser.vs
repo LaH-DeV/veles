@@ -10,7 +10,7 @@
 // The other files of this module extend `Parser`: decl.vs, types.vs,
 // stmt.vs, expr.vs and pattern.vs.
 use ast
-use lexer { Comment, Kind, Token, kindText, tokenize }
+use lexer { Comment, Kind, Token, kindText, tokenizeForParser }
 use source { Diagnostics, File, Span }
 
 /// Parses one file; problems go into `diags`.
@@ -27,8 +27,8 @@ struct Layout {
 
 /// Parses one file and keeps its layout; problems go into `diags`.
 fun parseFileLayout(file: File, diags: *Diagnostics): Layout {
-  val scan = tokenize(file, diags)
-  var parser = Parser(file, toks: scan.tokens.toMutable(), diags)
+  val scan = tokenizeForParser(file, diags)
+  var parser = Parser(file, toks: scan.tokens, diags)
   var parsed = parser.parseFile()
   parsed.doc = scan.moduleDoc
   Layout(file: parsed, comments: scan.comments, parens: parser.parens.toList())
@@ -336,6 +336,16 @@ struct Parser {
       }
       Kind.KwStruct => return this.parseStruct(head, false)
       Kind.Ident => {
+        if (this.atWord("indirect") && this.peek(1).kind == Kind.KwSealed) {
+          this.next()  // every variant behind a pointer (D198)
+          val d = this.parseTrait(head)
+          if (d is ast.TraitDecl) {
+            var decl = d
+            decl.indirect = true
+            return decl
+          }
+          return d
+        }
         if (this.atErrorDecl()) return this.parseErrorDecl(head)
         if (this.atAnnotationDecl()) return this.parseAnnotationDecl(head)
         if (this.atExecutorDecl()) {

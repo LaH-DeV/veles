@@ -48,6 +48,9 @@ type Program struct {
 	// Threads is the program's `[runtime] threads` (D143): the default
 	// pool's size, 0 for one per core.
 	Threads int64
+	// GCMinHeap (bytes) and GCGoal (percent) are `[runtime] gc` (D200);
+	// 0 keeps the runtime's default.
+	GCMinHeap, GCGoal int64
 	// ResultType instantiates the prelude Result<T, E> for the backend.
 	ResultType func(ok, err types.Type) types.Type
 	// Custom maps types.Key of a struct or sealed type to the prelude-trait

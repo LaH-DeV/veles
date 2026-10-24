@@ -659,3 +659,12 @@ func TestLabelledTupleRoundTrips(t *testing.T) {
 		t.Errorf("labelled tuples changed:\n%s\n--- want ---\n%s", out, src)
 	}
 }
+
+// D198: `indirect` and `inline` print where they were written.
+func TestBoxedVariantWordsRoundTrip(t *testing.T) {
+	src := "indirect sealed trait Shape {\n  struct Circle {\n    r: f64\n  }\n}\n\n" +
+		"sealed trait Expr {\n  indirect struct Add {\n    a: i64\n  }\n  inline struct Hole { }\n}\n"
+	if out := checkRoundTrip(t, "boxed.vs", src); out != src {
+		t.Errorf("changed:\n%s\n--- want ---\n%s", out, src)
+	}
+}

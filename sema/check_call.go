@@ -1775,7 +1775,25 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 					return bad()
 				}
 				return &Binary{exprBase{types.TBool}, OpEq, &Builtin{exprBase{types.TI64}, "string.len", []Expr{recv}, e.Pos}, &IntConst{exprBase{types.TI64}, 0, false}, e.Pos}
-			case "startsWith", "endsWith", "contains":
+			case "startsWith":
+				// D202: startsWith(prefix, startIndex = 0), a byte index; out of range is false
+				if len(e.Args) != 1 && len(e.Args) != 2 {
+					f.errorf(e.Pos, "startsWith takes a prefix and an optional startIndex, got %d %s: write s.startsWith(prefix) or s.startsWith(prefix, startIndex)", len(e.Args), plural(len(e.Args), "argument"))
+					f.checkArgsLoosely(e.Args)
+					return bad()
+				}
+				for i, want := range []string{"prefix", "startIndex"}[:len(e.Args)] {
+					if a := e.Args[i]; a.Name != nil && a.Name.Name != want {
+						f.errorf(a.Name.Pos, "startsWith has no parameter '%s' here: argument %d is '%s'", a.Name.Name, i+1, want)
+					}
+				}
+				arg := f.checkExprTo(e.Args[0].Value, types.TString)
+				if len(e.Args) == 1 {
+					return &Builtin{exprBase{types.TBool}, "string.startsWith", []Expr{recv, arg}, e.Pos}
+				}
+				at := f.checkExprTo(e.Args[1].Value, types.TI64)
+				return &Builtin{exprBase{types.TBool}, "string.startsWithAt", []Expr{recv, arg, at}, e.Pos}
+			case "endsWith", "contains":
 				if !nargs(1) {
 					return bad()
 				}

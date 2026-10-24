@@ -193,6 +193,7 @@
       "patterns": [
         { "name": "keyword.control.conditional.veles", "match": "\\b(if|else|when|is)\\b" },
         { "comment": "inline loop (f in T.fields) { } (contextual: only directly before `loop`, D174)", "name": "keyword.control.loop.veles", "match": "(?<![.\\w])inline\\b(?=\\s+loop\\b)" },
+        { "comment": "indirect struct / inline struct / indirect sealed trait: where a variant is stored (contextual, D198)", "name": "storage.modifier.veles", "match": "(?<![.\\w])(indirect|inline)\\b(?=\\s+(struct|sealed)\\b)" },
         { "name": "keyword.control.loop.veles", "match": "\\b(loop|break|continue|in)\\b" },
         { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|do|catch|with)\\b" },
         { "name": "keyword.control.concurrency.veles", "match": "\\b(async|await|scope|gather|race)\\b" },

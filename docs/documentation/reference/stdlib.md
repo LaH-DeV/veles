@@ -485,6 +485,7 @@ opens them. Both kinds are called the same way.
 | `chars()` | `List<string>`, one string per code point |
 | `isEmpty()` | `bool` |
 | `startsWith(s)`, `endsWith(s)`, `contains(s)` | `bool` |
+| `startsWith(s, startIndex)` | `bool`: `s` at that byte index; `false` when the index is below 0 or past `len()` (D202) |
 | `indexOf(part, from: 0)`, `lastIndexOf(part)` | `i64?` byte index, null if absent (D165) |
 | `substring(from, to)` | `string?` — byte offsets; null if a boundary splits a character |
 | `byteAt(i)`, `bytes()` | `u8` (panics out of range), `List<u8>` |

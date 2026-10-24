@@ -1033,6 +1033,11 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	} else if d.Internal {
 		p.w("internal ")
 	}
+	if d.Indirect {
+		p.w("indirect ") // D198
+	} else if d.Inline {
+		p.w("inline ")
+	}
 	switch {
 	case d.Error:
 		p.w("error ")
@@ -1279,6 +1284,9 @@ func (p *printer) traitDecl(d *ast.TraitDecl) {
 		p.w("public ")
 	} else if d.Internal {
 		p.w("internal ")
+	}
+	if d.Indirect {
+		p.w("indirect ") // D198
 	}
 	if d.Sealed {
 		p.w("sealed ")

@@ -16,6 +16,7 @@ import (
 
 type Checker struct {
 	paramState   map[paramKey]int8 // which parameters a function keeps (escape.go, D188)
+	receiverFacts map[*ast.FunDecl]*methodFacts // what a method does with `this` (move_method.go, D201)
 	ladderSeen   map[*ast.IfExpr]bool // the links of an else-if chain whose head was looked at (lint_style.go)
 	namedImports []namedImport // every bound name of a braced import (D85)
 	rounds       int           // inference rounds run so far (D45), for the effects dump
@@ -454,6 +455,8 @@ func (c *Checker) collect() {
 	for _, s := range c.sealeds {
 		c.resolveSealed(s)
 	}
+	c.markRecursive() // D198: which sealed types are trees, before any is laid out
+	c.lintLargeVariants()
 	c.checkLayouts()
 	for _, t := range c.traits {
 		c.resolveTrait(t)
@@ -1598,6 +1601,10 @@ func (c *Checker) resolveStruct(s *types.Struct) {
 				s.Sealed = tmpl
 				s.Tag = len(tmpl.Variants)
 				tmpl.Variants = append(tmpl.Variants, s)
+				// where the variant is stored (D198)
+				td, _ := tmpl.Decl.(*ast.TraitDecl)
+				s.Indirect = d.Indirect || td != nil && td.Indirect && !d.Inline
+				s.Inline = d.Inline
 			}
 		}
 	}
@@ -2785,6 +2792,8 @@ func (c *Checker) runRound() *Program {
 		c.prog.Root = c.pkg.Root
 		if c.pkg.Manifest != nil {
 			c.prog.Threads = c.pkg.Manifest.Runtime.Threads
+			c.prog.GCMinHeap = c.pkg.Manifest.Runtime.GCMinHeap
+			c.prog.GCGoal = c.pkg.Manifest.Runtime.GCGoal
 		}
 	}
 	c.prog.ResultType = func(ok, err types.Type) types.Type { return c.ResultType(ok, err) }

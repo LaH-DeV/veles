@@ -889,6 +889,12 @@ func structHead(st *types.Struct) string {
 		}
 		pub, internal = d.Pub, d.Internal
 	}
+	switch {
+	case tmpl.Indirect:
+		head = "indirect " + head // where the variant is stored (D198)
+	case tmpl.Inline:
+		head = "inline " + head
+	}
 	head = visPrefix(pub, internal, false) + head
 	if len(st.TypeParams) > 0 && len(st.TypeArgs) == 0 {
 		head += st.Name + typeParamList(st.TypeParams)
@@ -897,6 +903,13 @@ func structHead(st *types.Struct) string {
 	}
 	if st.Sealed != nil {
 		head += " : " + st.Sealed.Name
+		if !tmpl.Indirect && !tmpl.Inline && st.Sealed.IsRecursive() && len(st.TypeArgs) == len(st.TypeParams) {
+			lay := &types.Layout{}
+			lay.Sealed = func(s *types.Sealed) int { return 8 + 8*lay.SealedPayloadWords(s) }
+			if lay.VariantBoxed(st) {
+				head += " — boxed: '" + st.Sealed.Name + "' is a tree"
+			}
+		}
 	}
 	return head
 }

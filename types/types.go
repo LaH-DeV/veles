@@ -677,8 +677,13 @@ type Struct struct {
 	Fields      []*Field
 	Sealed      *Sealed // the sealed trait this struct is a variant of
 	Tag         int     // variant index within Sealed
-	Instances   map[string]*Struct
-	Methods     map[string]any // *sema.Func; opaque here to avoid a cycle
+	// D198: `indirect struct` stores the variant behind a pointer in its
+	// sealed value, `inline struct` keeps it in the value; neither, and the
+	// sealed type decides (Layout.VariantBoxed). Read on the template.
+	Indirect  bool
+	Inline    bool
+	Instances map[string]*Struct
+	Methods   map[string]any // *sema.Func; opaque here to avoid a cycle
 	// Decl is the declaring AST node (opaque).
 	Decl any
 }
@@ -700,6 +705,18 @@ type Sealed struct {
 	Instances  map[string]*Sealed
 	Trait      *Trait // the trait half: methods declared on the sealed trait
 	Decl       any
+	// Recursive: a variant holds the type itself, through a pointer, a
+	// collection, a nullable or another type's field — a tree (D198). Set
+	// on the template by the checker.
+	Recursive bool
+}
+
+// IsRecursive reports D198's recursion, read on the declaration.
+func (s *Sealed) IsRecursive() bool {
+	if s.Template != nil {
+		return s.Template.Recursive
+	}
+	return s.Recursive
 }
 
 func (s *Sealed) String() string {

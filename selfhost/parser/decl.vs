@@ -161,6 +161,17 @@ extend Parser {
       val variants: MutableList<ast.StructDecl> = []
       loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
         val memberAttrs = this.parseAttributes()
+        if ((this.atWord("indirect") || this.atWord("inline")) && this.peek(1).kind == Kind.KwStruct) {
+          // where the variant is stored (D198)
+          val word = this.next()
+          var variant = this.parseNestedVariant(d, memberAttrs)
+          variant.indirect = word.text == "indirect"
+          variant.isInline = word.text == "inline"
+          variant.pos = word.span.to(variant.pos)
+          variants.push(variant)
+          this.parseMemberSeparator()
+          continue
+        }
         if (this.at(Kind.KwStruct)) {
           variants.push(this.parseNestedVariant(d, memberAttrs))
           this.parseMemberSeparator()
