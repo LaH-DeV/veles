@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.107** — decisions D1–D202. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.111** — decisions D1–D208. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -6786,6 +6786,51 @@ Rejected: a builder API (untyped values read by name, and a second
 description of what the struct already says); leaving it to packages (every
 tool, the compiler's driver included, needs it).
 
+_Names confirmed 2026-10-24 (v0.108; plan C9), the user choosing one
+annotation over five._ Under D174 the annotations are ordinary UpperCamel
+annotations declared in `std/cli`:
+
+```veles
+public annotation Flag(short: string = "", name: string = "", env: string = "", hidden: bool = false) on field for Args
+public annotation Positional on field for Args
+
+struct Options {
+  /// The directory to scan.
+  @Positional
+  dir: string
+  /// How many files to hash at once.
+  @Flag(short: "w", env: "WORKERS")
+  workers: i64 = 4
+  implement cli.Args
+}
+
+fun main() {
+  val opts = cli.args<Options>()      // reads os.args(); --help / --version print and exit 0, a usage error exits 2
+}
+```
+
+- **Entry points.** `cli.parse<T: Args>(args: List<string>): T throws
+  cli.Error` throws, as `config.load` and `json.decode` do — for tests and
+  programs that decide themselves; `cli.args<T: Args>(): T` reads
+  `os.args()`, and on a `cli.Error` prints its text (to stdout for help and
+  version, to stderr for a usage error) and exits 0 or 2. D167's
+  `tryParse` is not used: in std a `try…` name means "answers null instead
+  of blocking or failing" (`tryLock`, `tryRecv`).
+- **`@Flag(…)`**: `short` a one-letter `-v`, `name` the long flag instead of
+  the field's kebab-case name, `env` a variable to fall back on, `hidden`
+  left out of the help; each optional, so `@Flag(short: "v")` is common.
+  `@Positional` stays on its own.
+- **The trait and the error.** `implement cli.Args`; subcommands are a
+  sealed trait whose variants implement it. `cli.Error` has `kind`
+  (`ErrorKind.Help`, `Version`, `Usage`) and `text`, everything to print —
+  every problem, then the usage. Exit codes: 0 for help and version, 2 for
+  usage (clap's and GNU's convention).
+
+Rejected now: D167's `parse`/`tryParse` pair (a second meaning of `try`);
+only a throwing `parse` (every program writes the exit itself); five
+annotations `@Short`/`@Name`/`@Env`/`@Hidden` (the user chose one);
+`@Long`; `cli.Command`; exit 64 (sysexits).
+
 ### D168 — Racing computations: `async` arms, `awaitFirst`, `src as name =>` (v0.83)
 
 Q44 (user, 2026-10-15, two rounds). Found in the idioms review
@@ -8028,6 +8073,248 @@ Kotlin (`startsWith(prefix, startIndex)`) spell it the same way.
 
 Rejected: a separate `matchesAt` (a second name for one idea); no API (the
 byte loop, or codegen recognising `slice(i, i + n) == t`).
+
+### D203 — Reflection for libraries: defaults, optional and list fields, `T.members`, enums are `Parsable` (v0.108; amends D174)
+
+Found while starting plan C9: `std/cli`, written on D174, could not fill an
+absent flag with its declared default, tell `i64?` from `i64`, parse an
+enum, or list a sealed family's variants (subcommands). The user, 2026-10-24,
+recommended of 3, 3, 2 and 2.
+
+```veles
+trait Args {
+  static fun fromFlags(given: Map<string, List<string>>): This throws Problems => This.build(f => {
+    val texts = given.get(f.name) ?: []
+    if (f.isOptional) decode<f.Inner>(texts)               // T?: null when absent
+    else if (f.isList) decodeAll<f.Inner>(texts)           // List<T>: every occurrence
+    else if (texts.isEmpty() && f.hasDefault) f.default()  // the declared default
+    else try required<f.Type>(f.name, texts)
+  })
+}
+```
+
+- **`f.default()`** on a field handle (an unrolled body, a `T.build`
+  lambda) is the field's declared default, evaluated as the constructor
+  would; on a field without one it is a compile error naming the field.
+- **`f.isOptional`, `f.isList`** are constant `bool`s (the field's type is
+  `T?`, or `List<T>`/`MutableList<T>`); **`f.Inner`** is that `T`, usable as
+  a type and a receiver like `f.Type` — an error on any other field.
+- **Constant branches in unrolled code.** An `if` whose condition is a
+  constant built only from handle constants (`f.isOptional`,
+  `f.hasDefault`, `f.has<A>()`, `f.name == "x"`, combined with `!`, `&&`,
+  `||`) keeps only the branch it decides, so the other is not checked for
+  this field (`f.has<A>()` alone did this before).
+- **`T.members`** is, for an enum, its members and, for a sealed family, its
+  variants, in declaration order: a constant list for a `const fun` and an
+  `inline loop (m in T.members)` with `m.name`, `m.doc`, `m.index`, the
+  annotations (`m.has<A>()`, `m.attr<A>()`) and, for a variant, `m.Type`
+  (a type and a receiver). This was planned by D174 and is now built.
+- **Every enum implements `Parsable`** through the `parse(name)` it already
+  has (the member's name as written), so generic code — `std/cli`, `config`
+  — reads enums like any other value.
+
+Rejected: `T.build` treating a `null` answer as "use the default" (a mistaken
+`null` silently becomes the default); building from a defaulted instance
+(fails on a required field); traits implemented for `T?` (a wider change for
+one need); no `T?` flags (D167 lists them); special-casing enums in
+`std/cli`; subcommands later.
+
+_Built 2026-10-24 (plan C9)._ As written, and a subject-less `when { }`
+prunes like an `if`. Also built for `std/cli`, its name **not yet confirmed
+by the user**: `T.doc`, the doc comment of a struct, enum or sealed trait,
+as a constant (a type's own static `doc` wins). And `T.build` in a trait's
+default body sets the implementing type's fields whatever their visibility
+— the counterpart of `f.get(x)` reading them — so a library builds a struct
+of another package. Not built: `has<A>()`/`attr<A>()` on a `MemberInfo`
+value in a `const fun` (checklist §11).
+
+### D204 — `build.program`: the program's name and version (v0.108; with D160)
+
+Plan C9's `--version` needed the program's version. The user, 2026-10-24,
+asked that it fit the build information discussed before ("maybe
+PROGRAM.package and PROGRAM.build or something?"); shown D160, the choice was
+the `build` module (recommended of 3).
+
+```veles
+use build
+
+io.println("${build.program.name} ${build.program.version}")
+if (build.target.os == build.Os.Windows) { … }       // D160
+```
+
+- The **`build`** std module (D160) holds what the compiler knows about the
+  build, all constants (D113): `build.target` (D160) and **`build.program`**,
+  a `build.Program { name: string, version: string }` from the manifest of
+  the package being built — the program, also when a library reads it.
+  `version` is `""` when the manifest gives none.
+- `std/cli` prints `build.program.name` and `.version` for `--version`, and
+  has no `--version` when the version is empty.
+- A library's own version (a User-Agent) is not this; it is asked when
+  something needs it.
+
+Rejected: a prelude `PROGRAM.package` / `PROGRAM.build` (duplicates D160's
+module, upper case for compiler facts); a separate `package` module (D160
+rejected `package.target`).
+
+_Built 2026-10-24 (plan C9)_, with D160's `build.target`, `Os` and `Arch`;
+a program without a manifest is named after its directory. D160's per-OS
+files are plan P1.
+
+### D205 — Enums as text, both ways: `Case`, `parse(text, case:)`, `toString(case:)`, the `Enumerated` trait (v0.109; amends D57, D58)
+
+The user, 2026-10-24, on `std/build`'s hand-written mapping
+(`const fun osNamed(name: string): Os => when (name) { "windows" => Os.Windows … }`):
+"we should have a built-in parsables (from any casing - configurable) and
+formatting it into strings out of the box". Of the options: built in, with
+a casing enum — "but the default should be exact"; the casing asked for by
+`case: Case.Any` (recommended of 2).
+
+```veles
+Os.parse("MacOS")                          // Os.MacOS: the name as written, exactly (the default)
+Os.parse("mac-os", case: Case.Any)         // any casing, `-` `_` and spaces ignored: "macos", "MAC_OS", "macOS"
+Os.parse("mac-os", case: Case.Kebab)       // only that form
+Os.MacOS.toString()                        // "MacOS" — interpolation and Display, unchanged
+Os.MacOS.toString(case: Case.Kebab)        // "mac-os"
+```
+
+- **`Case`** (prelude): `AsWritten`, `Any`, `Lower`, `Upper`, `Camel`,
+  `Pascal`, `Snake`, `Kebab`, `ScreamingSnake`. Words are split at a
+  lower-to-upper change, before the last capital of a run of capitals
+  (`HTTPServer` is `http` `server`), and at `-` `_` and spaces. `Any` reads
+  any of them; written out it is `AsWritten`.
+- **It replaces `codec.KeyStyle`** (`AsWritten`, `SnakeCase`, `CamelCase`,
+  `UpperSnake` become `AsWritten`, `Snake`, `Camel`, `ScreamingSnake`): one
+  casing enum for keys and enum text. `KeyStyle` keeps parsing, as an error
+  whose fix writes `Case`.
+- **`Enumerated`** (prelude) is the trait every enum implements without
+  writing anything: `static fun values(): List<This>`, `static fun
+  parse(text: string, case: Case = Case.AsWritten): This?`, `fun
+  toString(case: Case): string`; it requires `Display`, `Parsable` and
+  `Comparable`. Generic code asks `V implements Enumerated` (`std/cli`
+  lists an enum flag's choices with it).
+- **Overriding.** An enum may write `implement Enumerated for Os { … }` and
+  override `parse` or `toString(case:)` (D57's "no implement" is lifted for
+  this one trait); `values` stays the compiler's.
+- **Names that collide** under `Case.Any` (`Ok` and `OK`, `MacOS` and
+  `Mac_OS`) are an error at the enum, so a forgiving parse is never
+  ambiguous.
+
+Rejected: a forgiving default (the user: exact); `ignoreCase: true` (one
+switch cannot ask for one form); a per-member spelling annotation (`@key`
+already renames a member on the wire); an opt-in `@Text(case:)` on the enum
+(nothing out of the box).
+
+_Built 2026-10-24 (plan C10)._ The word rule above is the agent's (the
+user chose the casing names, not how a name splits); with `KeyStyle` gone,
+`styleKey` follows it too, so a field `userID` is `user_id` in snake case
+(it was `user_i_d`). `Enumerated` does not list `Parsable` as a supertrait
+(both declare a `parse`); every enum implements both.
+
+### D206 — An enum member's predicate: `os.isWindows()` (v0.109)
+
+The user, 2026-10-24, on `if (build.target.os == build.Os.Windows)` and
+`target.os != osNamed("windows")`: "I feel like the code quality is not
+good … `target.os.isWindows()`"; of the options, "isMember() on enums";
+whether it is overridable, settled with D205 (recommended): the trait's
+methods are, the predicates are not.
+
+```veles
+if (build.target.os.isWindows()) "\\" else "/"
+if (!target.os.isMacOS()) …
+```
+
+- Every member `M` of an enum gives its values a method `isM(): bool` — the
+  member's name as declared after `is` — true for that member alone. It is
+  a constant where the value is (`build.target.os.isWindows()` folds, so a
+  constant branch compiles one side).
+- A predicate is generated, never written: an enum cannot override it, and
+  an extension function of the same name on that enum is an ambiguity
+  error, as any duplicate is.
+
+Rejected: `build.target.isWindows` constants in `std/build` only (every
+other enum keeps the long form); Swift's `.Windows` shorthand (a line
+starting with `.` continues the previous one in Veles); predicates an enum
+may write itself.
+
+### D207 — Blocks on a receiver: `fun on T()`, `apply` and `edit` (v0.110)
+
+The user, 2026-10-24, on `this.trim().toLower().replace(" ", "-")` copying
+the text at each step: "maybe we could have a mechanism that would 'open
+edit' and apply different changes … not only for strings"; then "more of a
+Kotlin apply is what we want (maybe it could also work like in kotlin +
+what we want?)". Of the parts (recommended, except trailing blocks): the
+type `fun on T(): R`; no trailing blocks; `apply` and `edit`; `apply` on a
+`val` refused.
+
+```veles
+val slug = name.edit({
+  trim()
+  toLower()
+  replace(" ", "-")
+})                                        // string: one mutable copy, edited, made a string again
+val ranked = scores.edit({
+  sortDescending()
+  removeAt(0)
+})                                        // List: one copy (toMutable, the block, moved back, D188)
+var server = Server(port: 80)
+server.apply({
+  port = 8080
+})                                        // changed in place
+fun buildString(body: fun on StringBuilder()): string { … }
+```
+
+- **The type** `fun on T(): R` (and `fun on T(A, B): R`) is a function whose
+  `this` is a `T`: in its body the receiver's members are reached bare
+  (D158) or as `this.x`. A lambda takes that type from where it goes: a
+  block `{ … }` where a `fun on T()` is expected, or `(a, b) => { … }`
+  for one with parameters.
+- **No trailing blocks**: the block is an argument, `x.apply({ … })`; a `{`
+  after a call stays what it is today.
+- **`apply`** on a value the caller owns — a `var`, a field it may assign, a
+  pointer — runs the block on it in place and gives it back. On a `val` it
+  is an error whose fix writes `edit`; nothing copies by surprise.
+- **`edit`** gives an edited copy of an immutable value, with one copy at
+  most: `string` (on a mutable text — the `StringBuilder` with in-place
+  `trim`, `toLower`, `toUpper`, `replace`, `insert`, …), `List`, `Map` and
+  `Set` (on their `Mutable` forms, moved back without a second copy) and a
+  struct (on a copy of it). The block's receiver cannot escape it, so the
+  move back is always proven.
+
+Rejected: Kotlin's `T.() -> R` (a second spelling of function types);
+trailing blocks (the user: none); Kotlin's whole set `let`/`run`/`also` (they
+overlap a plain lambda); `apply` copying a `val` (the same as `edit`, by
+surprise).
+
+### D208 — A test that can run in the compiler runs there too (v0.111; amends D78)
+
+The user, 2026-10-24: "we should be able to test `const fun`s etc no? maybe
+we should allow tests to run in the compiler?" A `const fun` runs on two
+engines — compiled code, and the checker's interpreter with its own
+built-ins (`string.replace` is C in a program and Go in a constant) — and
+nothing checked that they agree. Of four options the user chose the
+automatic one (over the recommended `const test` keyword).
+
+```veles
+test "slug lowercases and joins words" {     // nothing in it needs the program: it runs both ways
+  expect("  Hello World ".slug() == "hello-world")
+}
+```
+
+- **Which tests.** A test whose body the compiler can run — everything it
+  calls is a `const fun` or such a test helper, and it does no I/O, starts
+  no task and stays within the step limit (`--const-steps`) — runs in the
+  compiler as well as in the program, under `veles test`. Any other test
+  runs in the program only, as before; `veles check` runs no tests.
+- **Test helpers** (`test fun`, D78) follow the same rule: one whose body
+  the compiler can run may be called from a constant, so
+  `@SkipIf(helper())` works.
+- **Reporting.** The report marks a test that also ran in the compiler
+  (`… ok (also in the compiler)`), so which tests were checked both ways
+  is never hidden. A test that passes on one side and fails on the other is
+  a failure that names the side: the two engines disagree.
+
+Rejected: a `const test` keyword (the user chose no new syntax); tests in
+the compiler only (the two engines never compared); helpers only.
 ### I1 — generators: investigated, not decided
 
 The user (2026-10-20): "investigate problem further, give a lot of different examples from other languages and how could we benefit from each viable approach". `veles-research-generators.md` compares hand-written iterators, `yield` functions, sequence builders, internal iteration (Go's range-over-func), fibers, tasks with channels and lazy data, on four programs. Open.

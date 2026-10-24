@@ -2,7 +2,7 @@
 /// `Decoder` a format implements, the dynamic `Value` tree (`VNull`,
 /// `VBool`, `VInt`, `VFloat`, `VString`, `VList`, `VObject`) with the
 /// `ValueEncoder`/`ValueDecoder` that convert to and from it, the styles a
-/// format may be asked for (`KeyStyle`, `EnumStyle`, `DurationStyle`) and
+/// format may be asked for (`Case`, `EnumStyle`, `DurationStyle`) and
 /// the `Problems` a decoder records.
 ///
 /// Deriving needs none of it: `implement Codable` works without an import,

@@ -4068,7 +4068,7 @@ fun main() {
   val e = codec.ValueEncoder.of()
   val _ = Pt(x: 1).encode(e)
   val d = recursion.Depth(limit: 3)
-  io.println("${e.value()} ${d.limit} ${recursion.maxRecursionDepth} ${codec.KeyStyle.SnakeCase}")
+  io.println("${e.value()} ${d.limit} ${recursion.maxRecursionDepth} ${Case.Snake}")
 }`)
 	expectClean(t, prelude+`struct Pt {
   x: i64

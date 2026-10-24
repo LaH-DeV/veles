@@ -9,7 +9,7 @@ fun produce(ch: Channel<i64>) {
 
 fun main() {
   val ch = Channel<i64>(capacity: 64)
-  val (sum, elapsed) = time.Stopwatch.measure(() => {
+  val (sum, elapsed) = time.measure(() => {
     var sum: i64 = 0
     scope {
       async produce(ch)

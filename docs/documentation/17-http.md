@@ -609,7 +609,7 @@ age: expected an integer, found "old"
   body, `invalid query:` for a query string. Another content type is a
   **415**. The body is bounded by `Limits.bodyBytes` like any other.
 - A form is flat: a nested struct, or a list of lists, is a problem.
-  `req.form<T>(keys: KeyStyle.SnakeCase)` reads `first_name` into
+  `req.form<T>(keys: Case.Snake)` reads `first_name` into
   `firstName`.
 - `req.query` (the field) is still the last value of each name;
   `req.query<T>()` (the method) is the typed reader, and both exist.

@@ -103,7 +103,7 @@ fun main() throws EncodeError | DecodeError {
     is Ok(s)  => println("unexpected: $s")
     is Err(e) => println("shape: ${e.message()}")
   }
-  println(try json.encode(Page(items: [Version(major: 1, minor: 2)], total: 1), json.Options(keys: codec.KeyStyle.SnakeCase)))
+  println(try json.encode(Page(items: [Version(major: 1, minor: 2)], total: 1), json.Options(keys: Case.Snake)))
 
   // enums by name or by number: the format's choice
   println(try json.encode([Role.Admin, Role.Member]))

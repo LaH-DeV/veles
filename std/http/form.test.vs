@@ -41,7 +41,7 @@ struct Nested {
   implement Decodable
 }
 
-test fun profile(text: string): Profile throws DecodeError => try decodeFields<Profile>(Fields.parse(text), codec.KeyStyle.AsWritten)
+test fun profile(text: string): Profile throws DecodeError => try decodeFields<Profile>(Fields.parse(text), Case.AsWritten)
 
 test "fields keep their order and repeats" {
   val f = Fields.parse("a=1&b=x%20y&a=3&flag&&c=+")
@@ -118,26 +118,26 @@ test "several values where one is asked for is a problem" {
 }
 
 test "a u64 refuses a negative number" {
-  val ok = require(decodeFields<Sized>(Fields.parse("count=5"), codec.KeyStyle.AsWritten))
+  val ok = require(decodeFields<Sized>(Fields.parse("count=5"), Case.AsWritten))
   expect(ok.count == 5)
-  val bad = decodeFields<Sized>(Fields.parse("count=-1"), codec.KeyStyle.AsWritten)
+  val bad = decodeFields<Sized>(Fields.parse("count=-1"), Case.AsWritten)
   expect(bad is Err)
 }
 
 test "an enum is read by name" {
-  val f = require(decodeFields<Feeling>(Fields.parse("mood=Sad"), codec.KeyStyle.AsWritten))
+  val f = require(decodeFields<Feeling>(Fields.parse("mood=Sad"), Case.AsWritten))
   expect(f.mood == Mood.Sad)
-  expect(decodeFields<Feeling>(Fields.parse("mood=Angry"), codec.KeyStyle.AsWritten) is Err)
+  expect(decodeFields<Feeling>(Fields.parse("mood=Angry"), Case.AsWritten) is Err)
 }
 
 test "nothing nested exists in a form" {
-  expect(decodeFields<Nested>(Fields.parse("name=a&inner=b"), codec.KeyStyle.AsWritten) is Err)
+  expect(decodeFields<Nested>(Fields.parse("name=a&inner=b"), Case.AsWritten) is Err)
 }
 
 test "a key style renames the fields the struct is read from" {
-  val p = require(decodeFields<Profile>(Fields.parse("name=a&age=1&NICKNAME=x"), codec.KeyStyle.AsWritten))
+  val p = require(decodeFields<Profile>(Fields.parse("name=a&age=1&NICKNAME=x"), Case.AsWritten))
   expect(p.nickname == null)
-  val s = require(decodeFields<Snake>(Fields.parse("first_name=Ada"), codec.KeyStyle.SnakeCase))
+  val s = require(decodeFields<Snake>(Fields.parse("first_name=Ada"), Case.Snake))
   expect(s.firstName == "Ada")
 }
 

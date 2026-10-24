@@ -31,7 +31,7 @@ fun main() {
     stream.push(pool.at((x & 0x7fffffff) % 50000) ?: "")
   }
 
-  val (check, elapsed) = time.Stopwatch.measure(() => {
+  val (check, elapsed) = time.measure(() => {
     var check: i64 = 0
     var interner = Interner()
     loop (s in stream) check += interner.intern(s)

@@ -9,7 +9,8 @@
 // against it in the same process and prints the exchange; it is how the
 // test suite runs this program.
 //
-//   httpd [<dir>] [--host H] [--port N] [--check]
+// The arguments are read by std/cli from Options: `httpd --help`.
+use cli { Flag, Positional }
 use fs
 use http
 use io { println }
@@ -21,39 +22,19 @@ error UsageError {
   message: string
 }
 
+/// A small web server: static files and a JSON notes API.
 struct Options {
-  var dir:   string = "public"
-  var host:  string = "127.0.0.1"
-  var port:  i64 = 8080
-  var check: bool = false
-
-  static fun parse(args: List<string>): Options throws UsageError {
-    var opts = Options()
-    var dirGiven = false
-    var i = 0
-    loop (i < args.len()) {
-      val arg = args.at(i)
-      when (arg) {
-        "--port"  => {
-          opts.port = args.at(i + 1)?.toInt() ?: throw UsageError(message: "--port needs a number")
-          i += 1
-        }
-        "--host"  => {
-          opts.host = args.at(i + 1) ?: throw UsageError(message: "--host needs an address")
-          i += 1
-        }
-        "--check" => opts.check = true
-        else      => {
-          if (arg.startsWith("-")) throw UsageError(message: "unknown option '$arg'")
-          if (dirGiven) throw UsageError(message: "one directory at a time")
-          opts.dir = arg
-          dirGiven = true
-        }
-      }
-      i += 1
-    }
-    opts
-  }
+  /// The directory of files to serve.
+  @Positional
+  dir: string = "public"
+  /// The address to listen on.
+  host: string = "127.0.0.1"
+  /// The port to listen on.
+  @Flag(short: "p")
+  port: i64 = 8080
+  /// Serve on a free port, play a scripted client against it and print the exchange.
+  check: bool = false
+  implement cli.Args
 }
 
 // ---------------------------------------------------------------------------
@@ -283,8 +264,7 @@ fun check(handler: http.Handler) throws IoError | EncodeError | io.TooLong {
 
 // ---------------------------------------------------------------------------
 
-fun run(args: List<string>) throws UsageError | IoError | EncodeError | io.TooLong {
-  val opts = try Options.parse(args)
+fun run(opts: Options) throws UsageError | IoError | EncodeError | io.TooLong {
   if (!fs.isDir(opts.dir)) throw UsageError(message: "'${opts.dir}' is not a directory (the files to serve)")
   val handler = app(opts.dir)
   if (opts.check) {
@@ -299,7 +279,7 @@ fun run(args: List<string>) throws UsageError | IoError | EncodeError | io.TooLo
 }
 
 fun main() {
-  when (val result = run(os.args())) {
+  when (val result = run(cli.args<Options>())) {
     is Err => {
       println("httpd: ${result.message()}")
       os.exit(if (result is UsageError) 2 else 1)

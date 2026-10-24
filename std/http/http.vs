@@ -192,7 +192,7 @@ public struct Request {
   /// struct Search { q: string, page: i64 = 1, tags: List<string> = [] }
   /// val s = try req.query<Search>()   // /find?q=veles&tags=a&tags=b
   /// ```
-  public fun query<T: Decodable>(keys: codec.KeyStyle = codec.KeyStyle.AsWritten): T throws Fail =>
+  public fun query<T: Decodable>(keys: Case = Case.AsWritten): T throws Fail =>
     when (decodeFields<T>(this.queryFields(), keys)) {
       is Ok(v)  => v
       is Err(e) => throw badRequest("invalid query:\n" + e.message())
@@ -223,7 +223,7 @@ public struct Request {
   /// struct Signup { name: string, age: i64, newsletter: bool = false }
   /// val s = try req.form<Signup>()
   /// ```
-  public fun form<T: Decodable>(keys: codec.KeyStyle = codec.KeyStyle.AsWritten): T suspends throws Fail | IoError =>
+  public fun form<T: Decodable>(keys: Case = Case.AsWritten): T suspends throws Fail | IoError =>
     when (decodeFields<T>(try this.formFields(), keys)) {
       is Ok(v)  => v
       is Err(e) => throw badRequest("invalid form:\n" + e.message())

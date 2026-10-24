@@ -76,6 +76,9 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			rt := &types.Nullable{Elem: rs}
 			return f.suspending(&Builtin{exprBase{rt}, "task.runWithin", args, e.Pos}, e.Pos, "runWithin")
 		}
+		if (callee.Name == "compilerTarget" || callee.Name == "compilerProgram") && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
+			return f.compilerFact(callee.Name, e) // std/build's constants (D160, D204)
+		}
 		if callee.Name == "listRawData" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
 			// std-only (D69): the storage of a list, for `withRaw` to lend C
 			// for the length of a closure — never a pointer user code holds
@@ -135,6 +138,19 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 				return bad()
 			}
 			return &Builtin{exprBase{types.TUnit}, "list.appendText", []Expr{xs, s}, e.Pos}
+		}
+		if callee.Name == "stringAsciiCase" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
+			// std-only: toLower/toUpper in one pass and one copy
+			s := f.checkExprTo(e.Args[0].Value, types.TString)
+			upper := f.checkExprTo(e.Args[1].Value, types.TBool)
+			return &Builtin{exprBase{types.TString}, "string.asciiCase", []Expr{s, upper}, e.Pos}
+		}
+		if callee.Name == "stringReplace" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 3 {
+			// std-only: replace in one pass and one copy (a non-empty old)
+			s := f.checkExprTo(e.Args[0].Value, types.TString)
+			old := f.checkExprTo(e.Args[1].Value, types.TString)
+			repl := f.checkExprTo(e.Args[2].Value, types.TString)
+			return &Builtin{exprBase{types.TString}, "string.replace", []Expr{s, old, repl}, e.Pos}
 		}
 		if callee.Name == "stringSplit" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
 			// std-only: String.split's loop in the runtime (a non-empty sep;
@@ -761,7 +777,7 @@ func (f *fnCtx) implements(t types.Type, trait *types.Trait) bool {
 		return f.c.tupleCompare(tt) != nil // lexicographic order (tuple_order.go)
 	}
 	if _, ok := t.(*types.Enum); ok && trait.Module == "std.prelude" {
-		return f.c.implementsPrelude(t, trait.Name) // Comparable, Display, Equatable, Hashable (enum.go)
+		return f.c.implementsPrelude(t, trait.Name) // Comparable, Display, Equatable, Hashable, Parsable (enum.go)
 	}
 	if f.findImpl(t, trait) != nil {
 		return true
@@ -941,7 +957,8 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 	for i, fld := range st.Fields {
 		var v Expr
 		switch {
-		case (fld.Private && !inside || !fieldVisible(fld.Pub, fld.Internal, st.Module, f.module)) && fld.HasDefault && bound[i] != nil:
+		case (fld.Private && !inside || !fieldVisible(fld.Pub, fld.Internal, st.Module, f.module)) && fld.HasDefault && bound[i] != nil &&
+			!(f.reflectSelf != nil && templateOf(f.reflectSelf) == templateOf(st)):
 			// a private field with a default is the type's own state: from
 			// outside it takes its default (M5). One without a default is
 			// the initial state the constructor call must supply — nobody
@@ -1549,6 +1566,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		return bad()
 	}
 	if len(found) == 1 {
+		f.traitMethodHidden(found[0], callee.Name.Pos)
 		return f.callMethod(found[0], foundSubst[0], typeArgs, recv, viaPointer, callee, e, want)
 	}
 	if len(exts) == 1 {

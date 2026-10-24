@@ -253,6 +253,12 @@ func (f *fnCtx) traceHelperCall(sym *Symbol, call Expr, e *ast.CallExpr) Expr {
 	if sym == nil || sym.Kind != SymFunc || !sym.Func.TestCode || !f.inTest() || e == f.launching {
 		return call
 	}
+	if f.fn == nil {
+		// no function: a constant, such as an annotation's argument
+		// (`@SkipIf(helper())`), which the compiler evaluates — there is no
+		// call stack to trace, and the call itself is what to report
+		return call
+	}
 	span := e.Pos
 	t := call.Type()
 	if types.IsInvalid(t) || t == types.TNever {

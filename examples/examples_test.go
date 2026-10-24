@@ -109,6 +109,14 @@ const runTimeout = 2 * time.Minute
 // runOnce runs the program and returns its standard output and exit code.
 func runOnce(t *testing.T, exe string, args, env []string, dir string, stdin []byte) (string, int) {
 	t.Helper()
+	stdout, _, code := runStreams(t, exe, args, env, dir, stdin)
+	return stdout, code
+}
+
+// runStreams runs the program and returns both of its output streams and
+// its exit code.
+func runStreams(t *testing.T, exe string, args, env []string, dir string, stdin []byte) (string, string, int) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 	run := exec.CommandContext(ctx, exe, args...)
@@ -138,7 +146,7 @@ func runOnce(t *testing.T, exe string, args, env []string, dir string, stdin []b
 	} else if err != nil {
 		t.Fatalf("running: %v", err)
 	}
-	return stdout.String(), code
+	return stdout.String(), stderr.String(), code
 }
 
 // runScript drives a command-line program: every non-blank line of
@@ -146,7 +154,8 @@ func runOnce(t *testing.T, exe string, args, env []string, dir string, stdin []b
 // word is the program (`NAME=value` words before it set the environment).
 // All invocations share a fresh temporary working directory, seeded with a
 // copy of the example's fixtures/ directory when it has one. The transcript
-// echoes each command as `$ line`, then its output, then `exit=N`.
+// echoes each command as `$ line`, then its output and its error stream,
+// then `exit=N`.
 func runScript(t *testing.T, exe, example, script string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -170,8 +179,13 @@ func runScript(t *testing.T, exe, example, script string) string {
 		if len(words) == 0 {
 			t.Fatalf("commands.txt: no program on line %q", line)
 		}
-		stdout, code := runOnce(t, exe, words[1:], env, dir, nil)
-		out.WriteString("$ " + line + "\n" + stdout + "exit=" + strconv.Itoa(code) + "\n")
+		stdout, stderr, code := runStreams(t, exe, words[1:], env, dir, nil)
+		// what a terminal shows: the error stream after the output (a usage
+		// error of std/cli goes there)
+		if *sanitize {
+			stderr = ""
+		}
+		out.WriteString("$ " + line + "\n" + stdout + stderr + "exit=" + strconv.Itoa(code) + "\n")
 	}
 	return out.String()
 }

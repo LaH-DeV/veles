@@ -86,7 +86,7 @@ order: **B26** (D174 annotations, decided 2026-10-18, before C9), **B19** (D157,
 **B22** (D166), the F19 migration left in checklist §11, then **S6–S8** (finish the front
 end, its speed, debug info), **C9** (`std/cli`, before the driver is ported), then
 **S9–S12**. Track P (D159–D162) runs beside S from P1. Checklist §9 is empty again.
-_(2026-10-23: B26, B19, B21, B22, the F19 migration and S6–S8 are done but for D199's part of S6; D198 and D199 were decided the same day, and S16 (D198) is built. 2026-10-24: D200–D202 decided and built (S18–S20; bench/parse 0.7–0.9× Go), and S17 (D199) built — next is **C9**.)_
+_(2026-10-23: B26, B19, B21, B22, the F19 migration and S6–S8 are done but for D199's part of S6; D198 and D199 were decided the same day, and S16 (D198) is built. 2026-10-24: D200–D202 decided and built (S18–S20; bench/parse 0.7–0.9× Go), and S17 (D199) built; C9 built the same day (D167 names, D203, D204, `std/build`, `std/cli`) — next are **S9–S12**, with track P from P1.)_
 
 ---
 
@@ -171,12 +171,20 @@ In this order, because each unblocks the next real program:
    `http.Client`; `io.Stream` (D128) first, so TLS (E1) plugs in.
 8. **Done 2026-10-04.** **Template literals** (D129 part 1) — the language feature (`@template`,
    `tag"…"`), before E2 needs it.
-9. **`std/cli` (D167, decided 2026-10-14; after B26 — its `@positional`, `@short`, `@name`, `@env`,
+9. **Built 2026-10-24** (progress log; `examples/todo` stays on its own parser, checklist §11). **`std/cli` (D167, decided 2026-10-14; after B26 — its `@positional`, `@short`, `@name`, `@env`,
    `@hidden` become annotations declared in `std/cli` on D174's mechanism, not compiler code)** — the derive, `cli.parse<T>`/`tryParse<T>`,
    help from doc comments, subcommands as a sealed trait, typo suggestions, every problem at
    once; tests in `std/cli/*.test.vs`; `examples/dedup`, `httpd`, `todo` moved to it (their
    `commands.txt` outputs updated with `-update` where help/usage text changes); docs chapter
-   15 and the reference. The names of attributes and functions confirmed with the user first.
+   15 and the reference. Names confirmed 2026-10-24 (D167 addendum): `cli.parse<T>` throws,
+   `cli.args<T>()` prints and exits; `@Flag(short:, name:, env:, hidden:)` and `@Positional`;
+   `cli.Args`, `cli.Error` (`kind` Help/Version/Usage), exit 0 / 2.
+   **Built first, in this order (decided 2026-10-24):** (a) the `build` module (D160:
+   `build.target`, `Os`, `Arch`; D204: `build.program`), constants filled by the compiler from
+   the target and the manifest, with tests and the D160 constant-branch rule; (b) D203's
+   reflection — `f.default()`, `f.isOptional`/`f.isList`/`f.Inner`, pruning of `if`s on handle
+   constants, `T.members` (enum members, sealed variants: name, doc, index, annotations,
+   `Type`), every enum `Parsable` — each with conformance tests; (c) `std/cli` on them.
 
 ## D — Decisions to ask (checklist §9)
 
@@ -471,6 +479,93 @@ on Linux).
 ## Progress log
 
 Older entries: `archive/progress-log-2026-09.md`.
+
+### 2026-10-24 — C12: tests that can run in the compiler run there too (D208) — decided
+
+Acceptance: the checker decides per test (and per `test fun`) whether the
+compiler can run it — the `const fun` rules, inferred, no keyword;
+`veles test` evaluates those in the interpreter and runs them in the
+program, one report: `… ok (also in the compiler)`, a one-sided failure
+naming the side and the first `expect` that differs; `@SkipIf` accepts a
+helper the compiler can run (the D113/D78 error stays for one it cannot,
+saying why); the step limit as for constants; tests (a test that diverges on
+purpose through an evaluator hook, a test that cannot run in the compiler,
+a helper in `@SkipIf`); std's const helpers exercised both ways by their
+existing tests; docs (chapter 14, errors reference).
+
+### 2026-10-24 — C11: blocks on a receiver (D207) — decided, after C10
+
+Acceptance: the type `fun on T(...): R` in both parsers, the formatter,
+hover; a `{ … }` lambda (or `(a) => { … }`) checked with `this` the
+receiver, bare members reaching it (D158); std `apply` (in place; a `val`
+refused with a fix to `edit`) and `edit` for string (a mutable text with
+in-place `trim`/`toLower`/`toUpper`/`replace`/`insert`), List, Map, Set
+and structs, one copy each (measured); conformance and runtime tests; docs
+(closures chapter, reference, cheat sheet); the self-hosted front end.
+
+### 2026-10-24 — C10: enums as text and predicates (D205, D206) — built
+
+Built as accepted below: `std/prelude/case.vs` (`Case`, `Enumerated`, the
+casing helpers, in Veles), `sema/enum.go` (`parse` with a case through
+`enumPick`, `toString(case:)`, `isM()`, overrides through `implement
+Enumerated for E` — its receiver passed as a method's, which a first try got
+wrong and crashed — collisions under `Case.Any`), `KeyStyle` → `Case` by a
+scratchpad tool over std, examples and docs (`KeyStyle.SnakeCase`,
+`codec.KeyStyle` and the type are errors with fixes, `sema/removed.go`),
+`std/build` reading the compiler's words with `Case.Any`, `std/cli` reading
+enum flags in any spelling and listing their choices. Tests: two conformance
+files, `std/prelude/case.test.vs`, the KeyStyle conformance file, a cli test.
+The same day, decision-free: `toLower`/`toUpper`/`replace` copy once (or not
+at all), hover on built-in generics and an inline loop's name, keyword hover
+for `implements` and `test fun`, annotation targets highlighted.
+`std/time/stopwatch.test.vs` was updated to the user's staged change making
+`measure` a free function.
+
+Acceptance: prelude `Case` and `Enumerated`; `E.parse(text, case:)` (exact
+default, `Any`, one form), `e.toString(case:)`, `e.isM()` folding to a
+constant; collisions under `Any` refused; `implement Enumerated for E`
+overriding `parse`/`toString(case:)`; `KeyStyle` → `Case` across std, docs,
+examples, with the old name an error and a fix; `std/build` without
+`osNamed`/`archNamed`, its tests with `isWindows()`; `std/cli` reading enum
+flags with `Case.Any` and listing their choices in kebab case; conformance
+and runtime tests; docs (enums chapter, reference, cheat sheet).
+
+### 2026-10-24 — C9: `std/cli`, on `std/build` and D203's reflection
+
+The user confirmed D167's names (one `@Flag(short:, name:, env:, hidden:)`
+over five annotations; `cli.parse<T>` throws, `cli.args<T>()` prints and
+exits 0/2) and, when starting showed D174 could not serve it, decided D203
+and D204. Built in that order:
+
+- **`std/build`** (D160's module, D204): `build.target` (`Os`, `Arch`,
+  `release`) and `build.program` (`name`, `version` from the manifest),
+  constants from two std-only compiler calls (`sema/buildinfo.go`).
+  `@SkipIf(build.target.os == …)` works. Found on the way: an annotation
+  argument that calls a `const fun` crashed the compiler (the instance table
+  did not exist yet while declarations were collected) — fixed.
+- **D203** (`sema/reflect.go`): `f.default()`, `f.isOptional`, `f.isList`,
+  `f.Inner`; `if` and subject-less `when { }` keep only the branch handle
+  constants decide (`f.name == "x"` too); `T.members` for enums and sealed
+  families (`MemberInfo`, and `m.Type`/annotations in an `inline loop`);
+  every enum `Parsable`; `T.doc` for a type's doc comment. `T.build` in a
+  trait default body now sets the implementing type's non-visible fields,
+  as `f.get` reads them (a library could not build a user's struct). The
+  parser kept no doc comment on a variant nested in a sealed trait (Go and
+  `selfhost/`, so hover lost it too) — fixed in both.
+- **`std/cli`** in Veles: flags in kebab case, switches with `--no-`, `T?`,
+  `List<T>`, positionals (a list takes the rest), short groups and attached
+  values, `--`, environment fallback, every problem at once with the
+  nearest flag or command, help from doc comments with defaults, `--version`
+  from `build.program`, subcommands as a sealed family. Tests:
+  `std/cli/cli.test.vs` (10), `TestCliProgram` (another package, exit codes,
+  stderr, env), `TestReflectionForLibraries`, `TestBuildModule`, the D203
+  conformance file. `examples/dedup` and `httpd` moved to it (their
+  transcripts gained `--help` and a typo; the example runner now shows
+  stderr after stdout); `todo` did not fit (checklist §11). Chapter 15 has a
+  section, the stdlib reference two modules.
+- **Std tests in the suite**: ten std modules' `*.test.vs` (prelude,
+  crypto, toml, config, …) were run by nobody; `TestStdModuleTests` now runs
+  every module's that has no test of its own.
 
 ### 2026-10-24 — A flaky driver test under load: `TestLessCeremony`
 

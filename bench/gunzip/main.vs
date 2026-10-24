@@ -23,7 +23,7 @@ fun text(size: i64): List<u8> {
 fun main() {
   val data = text(2097152).toList()
   val packed = compress.gzip(data, 6)
-  val (back, elapsed) = time.Stopwatch.measure(() => {
+  val (back, elapsed) = time.measure(() => {
     var back: List<u8> = []
     loop (_ in 0..<8) back = compress.gunzip(packed) ?? []
     back

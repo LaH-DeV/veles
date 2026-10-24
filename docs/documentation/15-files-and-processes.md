@@ -399,6 +399,109 @@ On Windows a `.bat`/`.cmd` file is refused, because `cmd.exe` re-reads its
 arguments by rules no quoting survives; an argument holding a NUL byte is
 refused everywhere (`IoKind.InvalidInput`).
 
+## Command-line arguments
+
+`os.args()` is the raw list; `std/cli` reads it into a struct (D167). Each
+field is a flag named in kebab case (`nonBlank` is `--non-blank`), its doc
+comment is its line in the help, and its default is the value when the
+flag is not given. A `bool` is a switch, a `T?` is `null` when absent, a
+`List<T>` collects every occurrence, a field with neither a default nor `?`
+is required, and any other type is read with its `Parsable` — numbers,
+`string`, `Duration` (`5s`), enums by member name.
+
+```veles
+use io
+use cli { Flag, Positional }
+
+/// Count the lines of files.
+struct Options {
+  /// The files to count.
+  @Positional
+  files: List<string> = []
+  /// Count only lines that are not blank.
+  @Flag(short: "b")
+  nonBlank: bool = false
+  /// Stop after this many files.
+  limit: i64? = null
+  /// Wait at most this long for a slow disk.
+  timeout: Duration = Duration.seconds(5)
+  implement cli.Args
+}
+
+fun main() throws cli.Error {
+  val o = try cli.parse<Options>(["-b", "--limit", "2", "a.txt", "b.txt"])
+  io.println("${o.files} ${o.nonBlank} ${o.limit} ${o.timeout}")
+  val wrong = cli.parse<Options>(["--limt", "x"]) catch (e) {
+    return io.println(e.text.lines().first() ?: "")
+  }
+  io.println("unreachable: ${wrong.files}")
+}
+```
+
+Output:
+```text
+[a.txt, b.txt] true 2 5s
+error: unknown flag '--limt'; did you mean '--limit'?
+```
+
+In `main`, `cli.args<Options>()` is the usual form: it reads `os.args()`,
+prints the help for `--help` and `-h` (and `name version` for `--version`
+when `veles.toml` gives a version, D204) and exits 0, or prints every
+problem and the usage to the error stream and exits 2. `cli.parse<T>(args)`
+throws a `cli.Error` instead — its `kind` is `Help`, `Version` or `Usage`
+and its `text` what to print — for tests and programs that decide
+themselves. The help is built from the doc comments:
+
+```text
+Count the lines of files.
+
+Usage: wc [options] [files...]
+
+Arguments:
+  <files>...  The files to count.
+
+Options:
+  -b, --non-blank          Count only lines that are not blank.
+      --limit <LIMIT>      Stop after this many files.
+      --timeout <TIMEOUT>  Wait at most this long for a slow disk. (default: 5s)
+  -h, --help               Print this help
+```
+
+`@Flag(short: "b", name: "blank", env: "WC_BLANK", hidden: true)` spells a
+flag differently — any part on its own: a one-letter short form, a long
+name in place of the field's, an environment variable to fall back on, or
+left out of the help. Short switches group (`-bv`), a value may be attached
+(`--limit=2`, `-l2`), `--no-non-blank` turns a switch off, and `--` ends the
+flags. Every problem is reported at once, a mistyped flag with the nearest
+one.
+
+A sealed trait whose variants implement `cli.Args` is a set of subcommands:
+the first argument names the variant in kebab case, and each has its own
+flags and help.
+
+```veles
+// fragment
+/// Builds and tests packages.
+sealed trait Command {
+  /// Compile a package.
+  struct Build {
+    release: bool = false
+    implement cli.Args
+  }
+  /// Run the tests.
+  struct RunTests {
+    @Positional
+    filters: List<string> = []
+    implement cli.Args
+  }
+}
+
+when (val c = cli.args<Command>()) {   // `tool build --release`, `tool run-tests parse`
+  is Build    => build(c.release)
+  is RunTests => test(c.filters)
+}
+```
+
 ## Time and randomness
 
 ```veles

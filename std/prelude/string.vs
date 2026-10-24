@@ -110,12 +110,11 @@ extend string {
     out
   }
 
-  /// The text with every occurrence of `old` replaced by `new`.
+  /// The text with every occurrence of `old` replaced by `new`: one pass and
+  /// one copy, or the text itself when `old` does not occur.
   public const fun replace(old: string, new: string): string {
     if (old.isEmpty()) return this
-    val parts = this.split(old)
-    if (parts.len() == 1) return this
-    parts.join(new)
+    stringReplace(this, old, new)
   }
 
   /// The text repeated `n` times (empty for `n <= 0`).
@@ -127,23 +126,13 @@ extend string {
     out.decodeUtf8() ?: ""
   }
 
-  /// Copy with ASCII letters upper-cased.
-  public const fun toUpper(): string {
-    var out: MutableList<u8> = []
-    loop (b in this.bytes()) {
-      out.push(b.toAsciiUpper())
-    }
-    out.decodeUtf8() ?: this
-  }
+  /// Copy with ASCII letters upper-cased — one copy, or the text itself when
+  /// nothing changes.
+  public const fun toUpper(): string => stringAsciiCase(this, true)
 
-  /// Copy with ASCII letters lower-cased.
-  public const fun toLower(): string {
-    var out: MutableList<u8> = []
-    loop (b in this.bytes()) {
-      out.push(b.toAsciiLower())
-    }
-    out.decodeUtf8() ?: this
-  }
+  /// Copy with ASCII letters lower-cased — one copy, or the text itself when
+  /// nothing changes.
+  public const fun toLower(): string => stringAsciiCase(this, false)
 
   /// Copy with the first ASCII letter upper-cased, the rest unchanged.
   public const fun capitalize(): string {

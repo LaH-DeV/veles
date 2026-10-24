@@ -363,14 +363,45 @@ What you get without writing anything:
 | `p.toString()`, `"$p"` | the member's name, `"Amber"` |
 | `Phase.values()` | every member in declaration order |
 | `Phase.fromValue(n)` | the member with that number, or `null` |
-| `Phase.parse("Amber")` | the member with that name, or `null` |
+| `Phase.parse("Amber")` | the member with that name, exactly, or `null` |
+| `Phase.parse("amber", case: Case.Any)` | the member in any spelling (`AMBER`, `am-ber`), or `null` (D205) |
+| `p.toString(case: Case.Kebab)` | the name in a `Case`: `Lower`, `Upper`, `Camel`, `Pascal`, `Snake`, `Kebab`, `ScreamingSnake` |
+| `p.isAmber()` | true for that member alone, one predicate per member (D206) |
 | `==`, `<`, `sorted()`, map keys | by the number; an enum is `Comparable` and `Hashable` |
 
 An enum compares with its own base type — `level == 10`, `level < 5` —
 but never converts to or from it: a `u8` is not a `Level` (say
 `Level.fromValue(n)`), and a `Level` is not a `u8` (say `.value`). It has
-no fields, no `implement` blocks and cannot be generic: an enum is a set of
-values. Behaviour that needs one goes in a function that takes it, like
+no fields and cannot be generic: an enum is a set of values. Every enum is
+`Enumerated` (`values`, `parse(text, case:)`, `toString(case:)`), so generic
+code reads any of them; two members that are one name in another spelling
+(`Ok` and `OK`) are refused, so a `Case.Any` parse is never ambiguous. The
+one `implement` an enum may write is `Enumerated`'s, to give `parse` or
+`toString(case:)` a meaning of its own:
+
+```veles
+use io
+
+enum Arch { X64, Arm64 }
+
+implement Enumerated for Arch {
+  static fun parse(text: string, case: Case): Arch? => when (text) {
+    "x86_64", "amd64" => Arch.X64
+    "aarch64"         => Arch.Arm64
+    else              => null
+  }
+}
+
+fun main() {
+  val arch = Arch.parse("x86_64") ?: Arch.Arm64
+  io.println("${arch} ${arch.isX64()} ${Arch.Arm64.toString(case: Case.Lower)}")
+}
+```
+
+Output:
+```text
+X64 true arm64
+``` Behaviour that needs one goes in a function that takes it, like
 `next` above, or in an **extension function** (`extend Level { … }`, or
 `extend Level with fun next(): Level? => …`), which reads as a method:
 
@@ -399,7 +430,7 @@ wrn true false
 ```
 
 The extension cannot reuse a built-in name (`value`, `toString`, `values`,
-`fromValue`, `parse`), and from another module it is brought in with the
+`fromValue`, `parse`, a member's `is…`), and from another module it is brought in with the
 `use … extend` clause like any extension function. When the alternatives
 start to carry data, you have outgrown the enum and want a sealed trait.
 

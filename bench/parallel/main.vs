@@ -24,7 +24,7 @@ fun worker(seed: i64, out: Channel<i64>) {
 
 fun main() {
   val out = Channel<i64>(capacity: 64)
-  val (sum, elapsed) = time.Stopwatch.measure(() => {
+  val (sum, elapsed) = time.measure(() => {
     var sum: i64 = 0
     scope {
       loop (s in 0..<64) async worker(s, out)

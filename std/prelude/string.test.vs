@@ -28,6 +28,31 @@ test "slice moves a bound inside a character outward to its edge" {
   expect("日本語".slice(4, 8) == "本語")
 }
 
+// toLower, toUpper and replace: one pass, one copy (or none)
+
+test "case mapping changes ASCII letters only" {
+  expect("Hello, World".toLower() == "hello, world")
+  expect("Hello, World".toUpper() == "HELLO, WORLD")
+  expect("ÉtÉ Ab".toLower() == "ÉtÉ ab")  // non-ASCII bytes are kept
+  expect("already".toLower() == "already")
+  expect("".toUpper() == "")
+}
+
+test "replace takes every occurrence, left to right" {
+  expect("a b c".replace(" ", "-") == "a-b-c")
+  expect("aXa".replace("a", "bb") == "bbXbb")
+  expect("aaa".replace("aa", "b") == "ba")
+  expect("abc".replace("x", "y") == "abc")
+  expect("aa".replace("aa", "") == "")
+  expect("abc".replace("", "z") == "abc")
+}
+
+const SLUG: string = "  Hello World ".trim().toLower().replace(" ", "-")
+
+test "the same in a constant" {
+  expect(SLUG == "hello-world")
+}
+
 // string.startsWith(prefix, startIndex) (D202)
 
 test "startsWith at a byte index compares from there" {

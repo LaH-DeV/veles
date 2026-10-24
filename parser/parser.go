@@ -1255,8 +1255,9 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 			mattrs := p.parseAttributes()
 			if p.at(lexer.Ident) && (p.cur().Text == "indirect" || p.cur().Text == "inline") && p.peek(1).Kind == lexer.KwStruct {
 				// `indirect struct` / `inline struct`: where the variant is stored (D198)
+				doc := p.takeDoc() // on the word, before it is taken
 				word := p.next()
-				p.parseNestedVariant(d, mattrs)
+				p.parseNestedVariant(d, mattrs, doc)
 				if n := len(d.Variants); n > 0 {
 					d.Variants[n-1].Indirect = word.Text == "indirect"
 					d.Variants[n-1].Inline = word.Text == "inline"
@@ -1266,7 +1267,7 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 				continue
 			}
 			if p.at(lexer.KwStruct) {
-				p.parseNestedVariant(d, mattrs)
+				p.parseNestedVariant(d, mattrs, p.takeDoc())
 				p.parseMemberSeparator()
 				continue
 			}
@@ -1986,12 +1987,13 @@ func (p *Parser) peekIdentAfterTypeParams() string {
 // an ordinary struct that is a variant of the trait. Its visibility is the
 // trait's; for a trait without type parameters the `: Trait` clause is
 // supplied, for a generic one it must be written.
-func (p *Parser) parseNestedVariant(d *ast.TraitDecl, attrs []*ast.Attribute) {
+func (p *Parser) parseNestedVariant(d *ast.TraitDecl, attrs []*ast.Attribute, doc string) {
 	start := p.span()
 	sd, _ := p.parseStruct(attrs, d.Pub, false, start).(*ast.StructDecl)
 	if sd == nil {
 		return
 	}
+	sd.Doc = doc // as a top-level declaration's: shown on hover, read by `T.members`
 	if !d.Sealed {
 		p.errorf(sd.Name.Pos, "only a sealed trait declares its variants: write 'sealed trait %s { struct %s … }' (D193)", d.Name.Name, sd.Name.Name)
 	}

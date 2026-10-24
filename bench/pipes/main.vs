@@ -18,7 +18,7 @@ fun consume(ch: Channel<i64>): i64 {
 }
 
 fun main() {
-  val (total, elapsed) = time.Stopwatch.measure(() => {
+  val (total, elapsed) = time.measure(() => {
     var total: i64 = 0
     scope {
       val sums: MutableList<Task<i64>> = []

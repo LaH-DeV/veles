@@ -76,6 +76,7 @@ type Checker struct {
 	annWrappers map[*types.Struct]*annWrapper                 // the wrapper function of each decorator annotation, once resolved (D176)
 	reflOwners  []*types.Struct                            // the structs whose fields were reflected, numbered for FieldInfo.owner (D174)
 	reflIndex   map[*types.Struct]int
+	reflMembers []types.Type // the enums and sealed families whose members were reflected, for MemberInfo.owner (D203)
 	readsAnn    map[*Func]bool // a `const fun` that reads annotations (memoized)
 	globals     map[*Global]*ast.ValDecl
 	// executors (D150): their declarations, the global holding each, and
@@ -1193,9 +1194,16 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 	case *ast.ResolvedType:
 		return t.T.(types.Type) // synthesized by the compiler (D58)
 	case *ast.NamedType:
-		if len(t.Path) == 2 && t.Path[1].Name == "Type" && len(t.Args) == 0 {
+		if len(t.Path) == 2 && (t.Path[1].Name == "Type" || t.Path[1].Name == "Inner") && len(t.Args) == 0 {
 			if ft, ok := env.handles[t.Path[0].Name]; ok {
-				return ft // `f.Type`: the type of the field an inline loop is at (D174)
+				if t.Path[1].Name == "Type" {
+					return ft // `f.Type`: the type of the field an inline loop is at (D174)
+				}
+				if inner := handleInner(ft); inner != nil {
+					return inner // `f.Inner`: the T of a T? or List<T> field (D203)
+				}
+				c.errorf(t.Path[1].Pos, "'%s.Inner' is the type inside a 'T?' or 'List<T>' field, and this one is a '%s': test '%s.isOptional' or '%s.isList' first (D203)", t.Path[0].Name, ft, t.Path[0].Name, t.Path[0].Name)
+				return types.TInvalid
 			}
 		}
 		if len(t.Path) == 1 {
@@ -1225,59 +1233,9 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 			if sym, _ := c.lookupTypeName(env, t.Path); sym != nil && sym.Kind == SymType && c.universe.LookupLocal(name) != sym {
 				name = ""
 			}
-			switch name {
-			case "List", "MutableList":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "%s takes exactly one type argument", name)
-					return types.TInvalid
-				}
-				return &types.List{Elem: c.resolveType(env, t.Args[0]), Mutable: name == "MutableList"}
-			case "Array":
-				if len(t.Args) != 2 {
-					c.errorf(t.Pos, "Array takes an element type and a length: 'Array<u8, 16>' (D121)")
-					return types.TInvalid
-				}
-				return c.arrayType(c.resolveType(env, t.Args[0]), c.resolveTypeArg(env, t.Args[1], true), t.Pos)
-			case "Range":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "Range takes exactly one type argument")
-					return types.TInvalid
-				}
-				return &types.Range{Elem: c.resolveType(env, t.Args[0])}
-			case "Option":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "Option takes exactly one type argument")
-					return types.TInvalid
-				}
-				return &types.Nullable{Elem: c.resolveType(env, t.Args[0])}
-			case "Map", "MutableMap":
-				if len(t.Args) != 2 {
-					c.errorf(t.Pos, "%s takes two type arguments", name)
-					return types.TInvalid
-				}
-				k := c.resolveType(env, t.Args[0])
-				c.checkHashable(k, t.Args[0].Span())
-				return &types.Map{Key: k, Value: c.resolveType(env, t.Args[1]), Mutable: name == "MutableMap"}
-			case "Channel":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "Channel takes one type argument")
-					return types.TInvalid
-				}
-				return &types.Channel{Elem: c.resolveType(env, t.Args[0])}
-			case "Task":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "Task takes one type argument")
-					return types.TInvalid
-				}
-				return &types.Task{Result: c.resolveType(env, t.Args[0])}
-			case "Set", "MutableSet":
-				if len(t.Args) != 1 {
-					c.errorf(t.Pos, "%s takes one type argument", name)
-					return types.TInvalid
-				}
-				k := c.resolveType(env, t.Args[0])
-				c.checkHashable(k, t.Args[0].Span())
-				return &types.Set{Elem: k, Mutable: name == "MutableSet"}
+			if bt := c.builtinGeneric(env, t, name); bt != nil {
+				c.refBuiltinType(t.Path[0].Pos, name, bt) // hover on `List`, `Array`, … (built in)
+				return bt
 			}
 		}
 		if tp, ok := env.tps[t.Path[0].Name]; ok && len(t.Path) > 1 {
@@ -1311,9 +1269,25 @@ func (c *Checker) resolveType(env *typeEnv, t ast.Type) types.Type {
 			}
 			return base
 		}
+		if len(t.Path) == 2 && t.Path[0].Name == "codec" && t.Path[1].Name == "KeyStyle" {
+			// D205: the type became the prelude's `Case`
+			c.errorFix(t.Pos, fixReplace("Replace with 'Case'", t.Pos, "Case"), "'KeyStyle' was replaced by 'Case' (D205): write 'Case'")
+			if ct := c.preludeType("Case"); ct != nil {
+				return ct
+			}
+			return types.TInvalid
+		}
 		sym, _ := c.lookupTypeName(env, t.Path)
 		if sym == nil && c.pathReported {
 			c.pathReported = false // the path already said what is wrong with it
+			return types.TInvalid
+		}
+		if sym == nil && t.Path[len(t.Path)-1].Name == "KeyStyle" && (len(t.Path) == 1 || len(t.Path) == 2 && t.Path[0].Name == "codec") {
+			// D205: the type became the prelude's `Case`
+			c.errorFix(t.Pos, fixReplace("Replace with 'Case'", t.Pos, "Case"), "'KeyStyle' was replaced by 'Case' (D205): write 'Case'")
+			if ct := c.preludeType("Case"); ct != nil {
+				return ct
+			}
 			return types.TInvalid
 		}
 		if sym == nil {
@@ -2115,8 +2089,8 @@ func (c *Checker) declareImpl(m *Module, f *ast.File, d *ast.ImplDecl) {
 	if types.IsInvalid(impl.Target) {
 		return
 	}
-	if en, ok := impl.Target.(*types.Enum); ok && !d.Derived {
-		c.errorf(d.Target.Span(), "cannot implement '%s' for enum '%s': an enum is a set of values with no methods of its own; it already compares, hashes, orders, prints and encodes by itself (D57, D58)", trait.Name, en.Name)
+	if en, ok := impl.Target.(*types.Enum); ok && !d.Derived && !isEnumeratedTrait(trait) {
+		c.errorf(d.Target.Span(), "cannot implement '%s' for enum '%s': an enum is a set of values with no methods of its own; it already compares, hashes, orders, prints and encodes by itself — only 'Enumerated' may be implemented, to give 'parse' or 'toString(case:)' a meaning of its own (D57, D58, D205)", trait.Name, en.Name)
 		return
 	}
 	if sealedFor != nil {
@@ -2342,6 +2316,14 @@ func (c *Checker) checkSealedVariants() {
 func (c *Checker) checkImplComplete(d *ast.ImplDecl, impl *Impl, trait *types.Trait) {
 	if c.deriveFailed[impl] {
 		return // the reason was reported
+	}
+	if isEnumeratedTrait(trait) {
+		// an enum's Enumerated is the compiler's; an implement overrides
+		// parse or toString(case:), never the members (D205)
+		if t, ok := impl.Methods["values"]; ok && t.Decl != nil {
+			c.errorf(t.Decl.Name.Pos, "'values' of an enum is always its members in order; an implement of 'Enumerated' may override 'parse' and 'toString(case:)' (D205)")
+		}
+		return
 	}
 	var missing, stubs []string
 	for _, name := range trait.MethodList {
@@ -3028,6 +3010,11 @@ func (c *Checker) instantiate(t *FuncTemplate, ownerSubst map[*types.TypeParam]t
 	fn.subst = m
 	fn.Const = t.Decl != nil && t.Decl.Const
 	t.Instances[key] = fn
+	if c.instances == nil {
+		// an annotation's argument (D174) is evaluated while declarations
+		// are collected, before the first round makes this table
+		c.instances = map[string]*Func{}
+	}
 	c.instances[fn.Name] = fn
 	c.funcs = append(c.funcs, fn)
 	if t.InferRet {

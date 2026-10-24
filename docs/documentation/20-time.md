@@ -276,7 +276,7 @@ false  true
 ```
 
 `Stopwatch.start()` then `sw.elapsed()` is the whole of measuring; to time one
-piece of work, `val (rows, took) = time.Stopwatch.measure(() => load())` runs
+piece of work, `val (rows, took) = time.measure(() => load())` runs
 it and returns its result with the time (an error the work throws passes
 through, so write `try` before the call when it can fail).
 `Deadline.after(d)` is the whole of a timeout: `remaining()` (never

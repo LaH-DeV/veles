@@ -5,7 +5,9 @@
 // results by content. Nothing is deleted; the report says what is
 // duplicated and how much space it costs.
 //
-//   dedup <dir> [--workers N] [--min-size BYTES] [--verbose]
+// The arguments are read by std/cli from the doc comments of Options:
+// `dedup --help` prints them.
+use cli { Flag, Positional }
 use fs
 use io { println }
 use os
@@ -55,45 +57,29 @@ fun hashFile(file: string, verbose: bool): Hashed throws IoError {
   Hashed(file, size: bytes.len(), hash: fnv1a(bytes))
 }
 
+/// Find duplicate files under a directory.
+///
+/// Files are hashed a few at a time and grouped by size and hash; nothing is
+/// deleted.
 struct Options {
-  var dir:     string
-  var workers: i64 = 4
-  var minSize: i64 = 1
-  var verbose: bool = false
-
-  static fun parse(args: List<string>): Options throws UsageError {
-    var dir: string? = null
-    var opts = Options(dir: "")
-    var i = 0
-    loop (i < args.len()) {
-      val arg = args.at(i)
-      when (arg) {
-        "--workers", "--min-size" => {
-          val value = args.at(i + 1)?.toInt() ?: throw UsageError(message: "$arg needs a number")
-          if (arg == "--workers") {
-            if (value < 1) throw UsageError(message: "--workers must be at least 1")
-            opts.workers = value
-          } else opts.minSize = value
-          i += 1
-        }
-        "--verbose", "-v"         => opts.verbose = true
-        else                      => {
-          if (arg.startsWith("-")) throw UsageError(message: "unknown option '$arg'")
-          if (dir != null) throw UsageError(message: "one directory at a time")
-          dir = arg
-        }
-      }
-      i += 1
-    }
-    opts.dir = dir ?: throw UsageError(message: "usage: dedup <dir> [--workers N] [--min-size BYTES] [--verbose]")
-    opts
-  }
+  /// The directory to scan.
+  @Positional
+  dir: string
+  /// How many files to hash at once.
+  @Flag(short: "w")
+  workers: i64 = 4
+  /// Smallest file to consider, in bytes.
+  minSize: i64 = 1
+  /// Say which file is hashed.
+  @Flag(short: "v")
+  verbose: bool = false
+  implement cli.Args
 }
 
 fun plural(n: i64, word: string): string => "$n $word${if (n == 1) "" else "s"}"
 
-fun run(args: List<string>) throws UsageError | IoError {
-  val opts = try Options.parse(args)
+fun run(opts: Options) throws UsageError | IoError {
+  if (opts.workers < 1) throw UsageError(message: "--workers must be at least 1")
   if (!fs.isDir(opts.dir)) throw UsageError(message: "'${opts.dir}' is not a directory")
 
   val files = try fs.walk(opts.dir)  // every file below, in a stable order
@@ -132,7 +118,7 @@ fun run(args: List<string>) throws UsageError | IoError {
 }
 
 fun main() {
-  when (val r = run(os.args())) {
+  when (val r = run(cli.args<Options>())) {
     is Err => {
       println("dedup: ${r.message()}")
       os.exit(if (r is UsageError) 2 else 1)

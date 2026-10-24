@@ -471,9 +471,14 @@ func (s *Server) refAt(params json.RawMessage) (*sema.Ref, *source.File) {
 }
 
 func (s *Server) hover(params json.RawMessage) any {
-	ref, _ := s.refAt(params)
+	ref, f := s.refAt(params)
 	if ref == nil {
-		return nil
+		if f == nil {
+			return nil
+		}
+		var p positionParams
+		json.Unmarshal(params, &p)
+		return keywordHover(f, positionToOffset(f, p.Position)) // a keyword: what it does
 	}
 	head, shape := ref.Detail, ref.Shape
 	if shape != "" && (shape == head || strings.HasPrefix(shape, head+" {")) {

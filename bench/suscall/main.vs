@@ -16,7 +16,7 @@ fun top(i: i64): i64 => middle(i) + 1
 
 fun main() {
   val n: i64 = 10000000
-  val (sum, elapsed) = time.Stopwatch.measure(() => {
+  val (sum, elapsed) = time.measure(() => {
     var sum: i64 = 0
     loop (i in 0..<n) sum += top(i)
     sum

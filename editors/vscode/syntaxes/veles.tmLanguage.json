@@ -92,6 +92,27 @@
           }
         },
         {
+          "comment": "annotation Name(params) on targets for Traits = wrapper (D174, D176): `on` and `for` are words of the declaration, to the end of the line",
+          "begin": "\\b(?:(public|internal)\\s+)?(annotation)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "beginCaptures": {
+            "1": { "name": "storage.modifier.veles" },
+            "2": { "name": "storage.type.veles" },
+            "3": { "name": "entity.name.type.veles" }
+          },
+          "end": "$",
+          "patterns": [
+            { "include": "#comments" },
+            { "comment": "`on field, enumMember`; a parameter named `on` is followed by `:`", "name": "keyword.other.on.veles", "match": "\\bon\\b(?=\\s+[A-Za-z])" },
+            { "comment": "the targets after `on` (D174, D178): words of the declaration, as `fun` and `struct` are", "name": "keyword.other.target.veles", "match": "(?<=\\bon\\s|,\\s|\\bon\\s\\s|,)\\b(field|struct|fun|trait|enum|enumMember|variant|test|suite)\\b(?!\\s*:)" },
+            { "name": "keyword.other.for.veles", "match": "\\bfor\\b" },
+            { "include": "#literals" },
+            { "include": "#strings" },
+            { "include": "#types" },
+            { "include": "#operators" },
+            { "include": "#punctuation" }
+          ]
+        },
+        {
           "comment": "struct / trait / sealed trait / error / enum / annotation (D174; contextual: a keyword only before a type name)",
           "match": "\\b(public\\s+)?(extern\\s+)?(sealed\\s+)?(struct|trait|error|enum|union|annotation)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {

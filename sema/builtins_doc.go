@@ -490,3 +490,19 @@ var variantCtorDocs = map[string][3]string{
 
 // panicDoc is the hover of the built-in `panic`.
 const panicDoc = "Stops the task with `message` and the call's `file:line:col` (D64). For a bug — a state the program's own logic rules out — not for a failure the caller could handle: that is `throws` (D4)."
+
+// refBuiltinType records the name of a built-in generic in a type position
+// (`List<string>`, `Array<u8, 16>`) for the editor: the hover shows the
+// family's header and description.
+func (c *Checker) refBuiltinType(span source.Span, name string, t types.Type) {
+	if c.index == nil || !span.IsValid() || types.IsInvalid(t) {
+		return
+	}
+	for _, fam := range builtinFamilies {
+		if fam.family == name {
+			c.index.Refs = append(c.index.Refs, Ref{Span: span, Kind: "type", Name: name, Type: t,
+				Detail: fam.header + "  (built in)", Doc: fam.doc})
+			return
+		}
+	}
+}

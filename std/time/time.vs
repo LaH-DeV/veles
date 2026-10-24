@@ -280,7 +280,7 @@ public struct Timestamp {
       Timestamp.epoch
     }
 
-    override static fun schema(format: string, keys: codec.KeyStyle): codec.Schema =>
+    override static fun schema(format: string, keys: Case): codec.Schema =>
       codec.Schema.leaf(codec.SchemaKind.Text, "an RFC 3339 timestamp like 2026-10-04T12:00:00Z")
   }
 }
@@ -793,15 +793,15 @@ public struct Stopwatch {
   public fun reset() {
     this.startedAt = monotonicNanos()
   }
+}
 
-  /// Measures the time `f` takes to run, returning its result and the
-  /// elapsed time: `val (rows, took) = time.Stopwatch.measure(() => load())`.
-  /// An error `f` throws passes through, and no time is returned for it.
-  public static fun measure<R, E>(f: fun(): R suspends throws E): (R, Duration) throws E {
-    val start = monotonicNanos()
-    val result = try f()
-    (result, Duration.nanos(monotonicNanos() - start))
-  }
+/// Measures the time `f` takes to run, returning its result and the
+/// elapsed time: `val (rows, took) = time.measure(() => load())`.
+/// An error `f` throws passes through, and no time is returned for it.
+public fun measure<R, E>(f: fun(): R suspends throws E): (R, Duration) throws E {
+  val start = monotonicNanos()
+  val result = try f()
+  (result, Duration.nanos(monotonicNanos() - start))
 }
 
 /// A point on the monotonic clock by which something has to be done.

@@ -5,3 +5,5 @@ dedup fixtures --workers 1 --verbose
 dedup fixtures --workers 0
 dedup nowhere
 dedup
+dedup --help
+dedup fixtures --wrkers 2

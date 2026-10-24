@@ -11,7 +11,7 @@ struct Record {
 }
 
 fun main() {
-  val (sum, elapsed) = time.Stopwatch.measure(() => {
+  val (sum, elapsed) = time.measure(() => {
     var sum: i64 = 0
     loop (i in 0..<2000000) {
       val r = Record()

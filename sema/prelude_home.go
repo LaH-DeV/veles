@@ -11,7 +11,7 @@ import "github.com/LaH-DeV/veles/source"
 var preludeHomes = map[string]string{
 	// the codec machinery
 	"Problem": "codec", "Problems": "codec", "EnumStyle": "codec", "DurationStyle": "codec",
-	"KeyStyle": "codec", "styleKey": "codec", "Kind": "codec", "Encoder": "codec",
+	"styleKey": "codec", "Kind": "codec", "Encoder": "codec",
 	"Decoder": "codec", "childPath": "codec", "indexPath": "codec", "joinPath": "codec",
 	"finish": "codec", "Value": "codec", "VNull": "codec", "VBool": "codec", "VInt": "codec",
 	"VFloat": "codec", "VString": "codec", "VList": "codec", "VObject": "codec",

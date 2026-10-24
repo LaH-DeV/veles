@@ -3,3 +3,4 @@
 httpd fixtures/public --check
 httpd nowhere --check
 httpd --port
+httpd --help

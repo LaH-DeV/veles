@@ -244,7 +244,7 @@ public struct Duration {
       }
     }
 
-    override static fun schema(format: string, keys: KeyStyle): Schema =>
+    override static fun schema(format: string, keys: Case): Schema =>
       Schema.leaf(SchemaKind.Text, "a duration like 30s, 5m or 1h30m")
   }
 }

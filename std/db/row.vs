@@ -79,7 +79,7 @@ struct RowDecoder {
 
   implement codec.Decoder {
     fun format(): string => "db"
-    override fun keys(): codec.KeyStyle => codec.KeyStyle.SnakeCase
+    override fun keys(): Case => Case.Snake
 
     fun peek(): codec.Kind throws DecodeError {
       val s = this.state

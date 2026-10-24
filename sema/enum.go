@@ -3,6 +3,7 @@ package sema
 import (
 	"math/big"
 	"strconv"
+	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/lexer"
@@ -57,11 +58,16 @@ func (c *Checker) resolveEnum(e *types.Enum) {
 	next := big.NewInt(0)
 	byValue := map[string]*ast.EnumMember{}
 	byName := map[string]bool{}
+	byFold := map[string]string{} // D205: a forgiving parse must never be ambiguous
 	for i, md := range d.Members {
 		if byName[md.Name.Name] {
 			c.errorf(md.Name.Pos, "duplicate member '%s' in enum '%s'", md.Name.Name, e.Name)
 			continue
 		}
+		if other, ok := byFold[caseFolded(md.Name.Name)]; ok {
+			c.errorf(md.Name.Pos, "members '%s' and '%s' of enum '%s' are the same name in another spelling: 'parse(text, case: Case.Any)' could not tell them apart; rename one (D205)", other, md.Name.Name, e.Name)
+		}
+		byFold[caseFolded(md.Name.Name)] = md.Name.Name
 		c.attrsOf(md.Attrs, "member")
 		byName[md.Name.Name] = true
 		v := next
@@ -359,6 +365,11 @@ func (f *fnCtx) enumStaticCall(e *types.Enum, callee *ast.MemberExpr, call *ast.
 		return bad()
 	}
 	f.c.refBuiltin(callee.Name.Pos, e, name)
+	if name == "parse" {
+		if x := f.enumParse(e, callee, call); x != nil {
+			return x
+		}
+	}
 	fn := f.c.enumFunc(e, name)
 	bound, ok := f.bindArgs(fn.Sig.Params, call.Args, "'"+e.Name+"."+name+"'", call.Pos)
 	if !ok {
@@ -375,6 +386,19 @@ func (f *fnCtx) enumStaticCall(e *types.Enum, callee *ast.MemberExpr, call *ast.
 // value; nil when name is neither.
 func (f *fnCtx) enumMethodCall(recv Expr, e *types.Enum, callee *ast.MemberExpr, call *ast.CallExpr) Expr {
 	name := callee.Name.Name
+	if m := enumPredicate(e, name); m != nil {
+		// `os.isWindows()`: true for that member alone (D206)
+		if len(call.Args) != 0 {
+			f.errorf(call.Pos, "'%s' takes no arguments: it says whether the value is %s.%s (D206)", name, e.Name, m.Name)
+			f.checkArgsLoosely(call.Args)
+			return bad()
+		}
+		f.c.refBuiltin(callee.Name.Pos, e, name)
+		return &Binary{exprBase{types.TBool}, OpEq, recv, enumConst(e, m), call.Pos}
+	}
+	if name == "toString" && len(call.Args) == 1 {
+		return f.enumToStringCase(recv, e, callee, call) // D205
+	}
 	switch name {
 	case "toString", "compareTo":
 	default:
@@ -446,3 +470,140 @@ func enumExample(e *types.Enum) string {
 	}
 	return e.Name + "." + e.Members[0].Name
 }
+
+// isEnumeratedTrait recognises the prelude's `Enumerated` (D205), the one
+// trait an enum may implement.
+func isEnumeratedTrait(trait *types.Trait) bool {
+	return trait != nil && trait.Name == "Enumerated" && trait.Module == "std.prelude"
+}
+
+// enumOverride is the method an `implement Enumerated for E` writes in place
+// of the compiler's (`parse`, `toString`), with the substitution that calls
+// it; nil when the enum writes none.
+func (f *fnCtx) enumOverride(e *types.Enum, name string) (*FuncTemplate, map[*types.TypeParam]types.Type) {
+	trait := f.c.traitNamed("Enumerated")
+	if trait == nil {
+		return nil, nil
+	}
+	for _, impl := range f.c.impls[trait] {
+		if !types.Identical(impl.Target, e) {
+			continue
+		}
+		if t, ok := impl.Methods[name]; ok && t.Decl != nil {
+			return t, map[*types.TypeParam]types.Type{selfParamOf(trait): e}
+		}
+	}
+	return nil, nil
+}
+
+// enumPredicate is the member a predicate name asks about: `isWindows` on an
+// enum with a member `Windows` (D206); nil for any other name.
+func enumPredicate(e *types.Enum, name string) *types.EnumMember {
+	if len(name) <= 2 || !strings.HasPrefix(name, "is") {
+		return nil
+	}
+	return e.MemberByName(name[2:])
+}
+
+// enumParse checks `E.parse(text, case: c)` (D205): with a case it reads the
+// member `text` names in that spelling; with none it is nil, and the
+// compiler's exact `parse` is called. An `implement Enumerated` that writes
+// `parse` is called instead, with or without a case.
+func (f *fnCtx) enumParse(e *types.Enum, callee *ast.MemberExpr, call *ast.CallExpr) Expr {
+	caseT := f.c.preludeType("Case")
+	if caseT == nil {
+		return nil
+	}
+	if t, subst := f.enumOverride(e, "parse"); t != nil {
+		f.c.refFunc(callee.Name.Pos, t)
+		args := call.Args
+		if len(args) == 1 && len(t.Decl.Params) == 2 && t.Decl.Params[1].Default == nil {
+			// the trait's default, `case: Case.AsWritten`, where the
+			// override does not repeat it
+			b := &synth{sp: call.Pos}
+			asWritten := &ast.MemberExpr{X: &ast.TypeExpr{Type: &ast.ResolvedType{T: caseT, Pos: b.sp}, Pos: b.sp}, Name: ast.Ident{Name: "AsWritten", Pos: b.sp}, Pos: b.sp}
+			args = append(append([]ast.Arg(nil), args...), ast.Arg{Value: asWritten})
+		}
+		return f.callTemplateRecv(t, subst, nil, nil, args, call.Pos, nil)
+	}
+	params := []types.Param{{Name: "text", Type: types.TString}, {Name: "case", Type: caseT, HasDefault: true}}
+	bound, ok := f.bindArgs(params, call.Args, "'"+e.Name+".parse'", call.Pos)
+	if !ok {
+		return bad()
+	}
+	if bound[1] == nil {
+		return nil // exact: the compiler's own parse
+	}
+	b := &synth{sp: call.Pos}
+	var names []ast.Expr
+	for _, m := range e.Members {
+		names = append(names, b.str(m.Name))
+	}
+	values := &ast.CallExpr{Fun: &ast.MemberExpr{X: &ast.TypeExpr{Type: &ast.ResolvedType{T: e, Pos: b.sp}, Pos: b.sp}, Name: ast.Ident{Name: "values", Pos: b.sp}, Pos: b.sp}, Pos: b.sp}
+	pick := b.call(b.prelude("enumPick"), values, &ast.ListLit{Elems: names, Pos: b.sp}, bound[0], bound[1])
+	return f.checkExpr(pick, &types.Nullable{Elem: e})
+}
+
+// enumToStringCase checks `x.toString(case: c)` (D205): the member's name
+// spelled in `c`, or what an `implement Enumerated` writes for it.
+func (f *fnCtx) enumToStringCase(recv Expr, e *types.Enum, callee *ast.MemberExpr, call *ast.CallExpr) Expr {
+	if t, subst := f.enumOverride(e, "toString"); t != nil {
+		f.c.refFunc(callee.Name.Pos, t)
+		// a method: the receiver is passed as a method's is (by address)
+		return f.callMethod(t, subst, nil, recv, false, callee, call, nil)
+	}
+	caseT := f.c.preludeType("Case")
+	if caseT == nil {
+		return nil
+	}
+	f.c.refBuiltin(callee.Name.Pos, e, "toString")
+	bound, ok := f.bindArgs([]types.Param{{Name: "case", Type: caseT}}, call.Args, "'toString'", call.Pos)
+	if !ok {
+		return bad()
+	}
+	fn := f.c.enumFunc(e, "toString")
+	name := &Call{exprBase: exprBase{types.TString}, Fn: fn, Args: []Expr{recv}}
+	b := &synth{sp: call.Pos}
+	return f.checkExpr(b.call(b.prelude("caseSpelled"), &ast.CheckedExpr{X: name, Pos: b.sp}, bound[0]), types.TString)
+}
+
+// caseWords splits a name into lower-case words as the prelude's `Case`
+// does (D205): at a lower case letter or digit followed by a capital, before
+// the last capital of a run followed by a lower case letter, and at `-`,
+// `_` and spaces.
+func caseWords(name string) []string {
+	var words []string
+	start := -1
+	for i := 0; i < len(name); i++ {
+		b := name[i]
+		if b == '-' || b == '_' || b == ' ' {
+			if start >= 0 {
+				words = append(words, strings.ToLower(name[start:i]))
+			}
+			start = -1
+			continue
+		}
+		if start >= 0 && b >= 'A' && b <= 'Z' {
+			before := name[i-1]
+			var after byte
+			if i+1 < len(name) {
+				after = name[i+1]
+			}
+			lower := func(c byte) bool { return c >= 'a' && c <= 'z' }
+			if lower(before) || before >= '0' && before <= '9' || before >= 'A' && before <= 'Z' && lower(after) {
+				words = append(words, strings.ToLower(name[start:i]))
+				start = i
+			}
+		}
+		if start < 0 {
+			start = i
+		}
+	}
+	if start >= 0 {
+		words = append(words, strings.ToLower(name[start:]))
+	}
+	return words
+}
+
+// caseFolded is the form two spellings of one name share under `Case.Any`.
+func caseFolded(name string) string { return strings.Join(caseWords(name), "") }

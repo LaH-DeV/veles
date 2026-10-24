@@ -17,7 +17,7 @@ func (c *Checker) deriveSchema(b *synth, impl *Impl) (*ast.FunDecl, string) {
 		return nil, ""
 	}
 	schemaT := c.preludeType("Schema")
-	params := []ast.Param{b.param("format", types.TString), b.param("keys", c.preludeType("KeyStyle"))}
+	params := []ast.Param{b.param("format", types.TString), b.param("keys", c.preludeType("Case"))}
 	format := func() ast.Expr { return b.name("format") }
 	keys := func() ast.Expr { return b.name("keys") }
 	build := func(name string, args ...ast.Expr) ast.Expr {

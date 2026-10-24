@@ -80,7 +80,7 @@ fun v_main.main: fun()
                   Name: "y"
               Recv: 0
         VarDecl
-          Var: $tmp2#2
+          Var: $tmp9#2
           Init:
             RangeLit: Range<i64>
               Lo:
@@ -90,25 +90,25 @@ fun v_main.main: fun()
                 IntConst: i64
                   Value: 3
         VarDecl
-          Var: $tmp3#3
+          Var: $tmp10#3
           Init:
             FieldGet: i64
               X:
                 VarRef: Range<i64>
-                  Var: $tmp2#2
+                  Var: $tmp9#2
               Index: 0
               Name: "lo"
         VarDecl
-          Var: $tmp4#4
+          Var: $tmp11#4
           Init:
             FieldGet: i64
               X:
                 VarRef: Range<i64>
-                  Var: $tmp2#2
+                  Var: $tmp9#2
               Index: 1
               Name: "hi"
         VarDecl
-          Var: $tmp5#5
+          Var: $tmp12#5
           Init:
             BoolConst: bool
         Loop
@@ -116,7 +116,7 @@ fun v_main.main: fun()
             If: bool
               Cond:
                 VarRef: bool
-                  Var: $tmp5#5
+                  Var: $tmp12#5
               Then:
                 Block
                   Value:
@@ -130,7 +130,7 @@ fun v_main.main: fun()
                         FieldGet: bool
                           X:
                             VarRef: Range<i64>
-                              Var: $tmp2#2
+                              Var: $tmp9#2
                           Index: 2
                           Name: "inclusive"
                       Then:
@@ -140,10 +140,10 @@ fun v_main.main: fun()
                               Op: <=
                               L:
                                 VarRef: i64
-                                  Var: $tmp3#3
+                                  Var: $tmp10#3
                               R:
                                 VarRef: i64
-                                  Var: $tmp4#4
+                                  Var: $tmp11#4
                           Type: bool
                       Else:
                         Block
@@ -152,10 +152,10 @@ fun v_main.main: fun()
                               Op: <
                               L:
                                 VarRef: i64
-                                  Var: $tmp3#3
+                                  Var: $tmp10#3
                               R:
                                 VarRef: i64
-                                  Var: $tmp4#4
+                                  Var: $tmp11#4
                           Type: bool
                   Type: bool
           Body:
@@ -165,7 +165,7 @@ fun v_main.main: fun()
                   Var: i#6
                   Init:
                     VarRef: i64
-                      Var: $tmp3#3
+                      Var: $tmp10#3
                 Assign
                   Target:
                     VarRef: i64
@@ -191,7 +191,7 @@ fun v_main.main: fun()
                         FieldGet: bool
                           X:
                             VarRef: Range<i64>
-                              Var: $tmp2#2
+                              Var: $tmp9#2
                           Index: 2
                           Name: "inclusive"
                       R:
@@ -199,17 +199,17 @@ fun v_main.main: fun()
                           Op: ==
                           L:
                             VarRef: i64
-                              Var: $tmp3#3
+                              Var: $tmp10#3
                           R:
                             VarRef: i64
-                              Var: $tmp4#4
+                              Var: $tmp11#4
                   Then:
                     Block
                       Stmts:
                         Assign
                           Target:
                             VarRef: bool
-                              Var: $tmp5#5
+                              Var: $tmp12#5
                           Value:
                             BoolConst: bool
                               Value: true
@@ -220,18 +220,18 @@ fun v_main.main: fun()
                         Assign
                           Target:
                             VarRef: i64
-                              Var: $tmp3#3
+                              Var: $tmp10#3
                           Value:
                             Binary: i64
                               Op: +%
                               L:
                                 VarRef: i64
-                                  Var: $tmp3#3
+                                  Var: $tmp10#3
                               R:
                                 IntConst: i64
                                   Value: 1
                       Type: ()
-          ID: 1
+          ID: 3
         ExprStmt
           X:
             Call: ()

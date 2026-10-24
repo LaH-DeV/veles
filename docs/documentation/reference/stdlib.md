@@ -190,12 +190,27 @@ inline loop (f in T.fields) { … }    // unrolled once per field; f is a handle
 //   f.Type                                             the field's type, in a type position or as a receiver
 //   f.get(x)                                           x.name, read with the field's own type
 //   f.has<A>(), f.attr<A>()                            constants; `if (f.has<A>())` and `if (val a = f.attr<A>())` keep one branch
+//   f.default()                                        the declared default; an error on a field without one (D203)
+//   f.isOptional, f.isList                             constants: the field is a T?, or a List<T> (D203)
+//   f.Inner                                            that T, as a type or a receiver (D203)
 T.build(f => value)                  // a T made field by field; the body is checked once per field
+
+public struct MemberInfo { public name: string; public doc: string = ""; public index: i64 = 0 }
+T.members: List<MemberInfo>          // a constant: an enum's members, or a sealed family's variants (D203)
+inline loop (m in T.members) { … }   // m.name, m.doc, m.index, m.has<A>(), m.attr<A>(); m.Type for a variant
 ```
+
+An `if` or a `when { }` whose conditions are made of a handle's constants
+(`f.isOptional`, `f.isList`, `f.hasDefault`, `f.has<A>()`, `f.name == "x"`,
+with `!`, `&&`, `||`) checks and compiles only the branch it takes, so the
+other may use what this field does not have (`f.Inner`, `f.default()`).
+Every enum is `Parsable`: `E.parse(name)` is its member named so, and a
+generic function asking `V implements Parsable` reads enums like numbers
+(D203).
 
 Annotations and the reflection that reads them are
 [chapter 14](../14-attributes-and-testing.md#annotations-of-your-own); the
-decision is D174.
+decisions are D174 and D203.
 
 ### Panics (D52)
 
@@ -330,7 +345,7 @@ by hand); an enum cannot implement it (D57).
 ```veles
 // fragment
 public trait Encodable { fun encode(to: codec.Encoder) throws EncodeError }
-public trait Decodable { static fun decode(from: codec.Decoder): This throws DecodeError; static fun schema(format: string, keys: codec.KeyStyle): codec.Schema }   // schema: derived beside a derived decode (D125); the default is one opaque value
+public trait Decodable { static fun decode(from: codec.Decoder): This throws DecodeError; static fun schema(format: string, keys: Case): codec.Schema }   // schema: derived beside a derived decode (D125); the default is one opaque value
 public trait Codable : Encodable + Decodable { }   // `implement Codable` in a struct body derives both; `implement Codable for pkg.T` at top level
 public error EncodeError { message, path }; public error DecodeError { problems: List<codec.Problem> }
 ```
@@ -351,7 +366,7 @@ use codec
 public trait Encoder { format(); enums(); keys(); beginObject(); key(name); endObject(); beginList(); endList(); writeI64/U64/F64/Bool/String/Null(v) }
 public trait Decoder { format(); enums(); keys(); peek(): Kind; beginObject(); nextKey(): string?; endObject(); beginList(); hasNext(); endList(); readI64/U64/F64/Bool/String/Null(); skip(); path(); problem(msg); problemAt(path, msg); problems() }
 public struct Problem { path, message; pointer() }; public struct Problems   // what a decoder records
-public enum EnumStyle { Name, Number }; public enum DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }; public enum KeyStyle { AsWritten, SnakeCase, CamelCase, UpperSnake }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
+public enum EnumStyle { Name, Number }; public enum DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }; public enum Case { AsWritten, SnakeCase, CamelCase, UpperSnake }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
 public sealed trait Value   // VNull, VBool, VInt, VFloat, VString, VList, VObject; get(k), at(i), asString/asI64/asF64/asBool(), isNull()
 ValueEncoder.of(format, enums, keys, durations); ValueDecoder.of(v, format, enums, keys, durations)   // a Value as the sink / the source
 public struct Schema { kind: SchemaKind, what: string, secret: bool, fields: List<SchemaField>; element(): Schema?; asSecret() }   // the shape of a Decodable (D125): what `config` asks for by name
@@ -361,7 +376,7 @@ public enum SchemaKind { Bool, Int, Float, Text, List, Object, Opaque, Unsupport
 
 A program imports `codec` to walk a document whose shape it does not know
 (`codec.Value`), to pick a style (`json.Options(keys:
-codec.KeyStyle.SnakeCase)`), or to write a format of its own.
+Case.Snake)`), or to write a format of its own.
 
 ### StringBuilder
 
@@ -727,6 +742,43 @@ os.ioError(code: i64, path: string): IoError     // an IoError for a platform er
 standard error through; a non-zero exit is reported in `Output.code` —
 only a program that cannot be started throws.
 
+## Module `cli` (D167)
+
+```veles
+// fragment
+use cli { Flag, Positional }
+cli.args<T>(): T                       // reads os.args(); --help/--version print and exit 0, a usage problem prints to stderr and exits 2
+cli.parse<T>(args: List<string>): T throws cli.Error   // the same, thrown: Error { kind: ErrorKind, text: string }
+// enum ErrorKind { Help, Version, Usage }
+// T: a struct that writes `implement cli.Args`, or a sealed trait whose variants do (subcommands, kebab case)
+@Flag(short: "v", name: "long-name", env: "VAR", hidden: true)   // every part optional
+@Positional                                                     // in field order; a List<T> takes the rest
+```
+
+A field is `--kebab-case`; `bool` a switch (`--no-x` turns it off), `T?`
+`null` when absent, `List<T>` every occurrence, no default and no `?`
+required; values are read with `Parsable`. The help comes from the doc
+comments of the struct and its fields, defaults included. Chapter 15 has
+the details and an example.
+
+## Module `build` (D160, D204)
+
+```veles
+// fragment
+use build
+build.target: build.Target        // Target { os: Os, arch: Arch, release: bool } — where the program will run
+build.program: build.Program      // Program { name: string, version: string } — from the veles.toml the build started from
+// enum Os { Windows, Linux, MacOS }; enum Arch { X64, Arm64 }
+```
+
+Both are constants, known while compiling: an `if` on one compiles only the
+branch taken, `static assert` and `@SkipIf` can test them, and they cost
+nothing when the program runs. `build.program` is the package being built,
+also when a library reads it; its `version` is `""` when the manifest gives
+none, and its `name` is the directory's when there is no manifest.
+(Per-OS files `_windows.vs`/`_linux.vs`/`_macos.vs`, the rest of D160, are
+plan P1.)
+
 ## Module `fs`
 
 Every call that can fail throws `IoError` (below).
@@ -898,7 +950,7 @@ http.Cookie(name:, value:, path: "/", domain: null, maxAge: null /* Duration?, n
 resp.withCookie(c); resp.withoutCookie(name, path: "/", domain: null, secure: false); resp.cookies      // Max-Age=0 to forget
 req.cookie(name); req.cookies()                                                                         // string?; Map<string, string>, first of a repeated name
 // forms and query strings (D94): urlencoded, repeats kept
-try req.form<T>(keys: KeyStyle.AsWritten); try req.query<T>(keys:)    // T: Decodable, flat; 400 "invalid form:"/"invalid query:" + one line per problem; 415 for another content type
+try req.form<T>(keys: Case.AsWritten); try req.query<T>(keys:)    // T: Decodable, flat; 400 "invalid form:"/"invalid query:" + one line per problem; 415 for another content type
 try req.formFields(); req.queryFields(); req.rawQuery                 // http.Fields: pairs; .get(name) first; .all(name); .names(); Fields.parse(text)
 try req.formValue(name); try req.formValues(name)                     // string?; List<string>
 http.compress(minBytes: 1024, level: 6); http.decompressRequests(max: n)   // D124: gzip textual responses ≥ minBytes for Accept-Encoding: gzip (Vary, weak ETag, streams too); opens gzip request bodies up to max (413/400/415)
@@ -964,7 +1016,7 @@ use json
 try json.encode(x); try json.pretty(x)                 // T: Encodable → text; EncodeError for a NaN or infinity
 try json.decode<T>(text)                               // T: Decodable; DecodeError lists every problem with its path
 try json.parse(text): codec.Value; try json.toValue(x); try json.fromValue<T>(v)
-json.Options(keys: codec.KeyStyle.SnakeCase, enums: codec.EnumStyle.Number, durations: codec.DurationStyle.Iso8601, omitNulls: true, pretty: true, indent: "  ", maxDepth: 64, maxProblems: 100)
+json.Options(keys: Case.Snake, enums: codec.EnumStyle.Number, durations: codec.DurationStyle.Iso8601, omitNulls: true, pretty: true, indent: "  ", maxDepth: 64, maxProblems: 100)
 json.JsonEncoder(options); json.JsonDecoder.of(text, options)   // the Encoder / Decoder themselves
 ```
 
@@ -1019,7 +1071,7 @@ time.formatHttp(t): string            // Sun, 06 Nov 1994 08:49:37 GMT (IMF-fixd
 time.parseHttp(s): Timestamp?         // IMF-fixdate, RFC 850 and asctime (RFC 9110 §5.6.7)
 
 time.Stopwatch.start(): Stopwatch     // elapsed(): Duration, reset()
-time.Stopwatch.measure(f): (R, Duration)  // runs f, returns its result and the time; f's error passes through
+time.measure(f): (R, Duration)  // runs f, returns its result and the time; f's error passes through
 time.Deadline.after(d): Deadline      // remaining(): Duration (never negative), expired(), extend(d), earlier(other)
 time.monotonicNanos(): i64            // the raw reading, for a benchmark
 time.ticker(every: Duration): Ticker  // .ticks: Channel<Timestamp> (holds one; a slow reader misses ticks); Closeable: stops and closes ticks (D110)

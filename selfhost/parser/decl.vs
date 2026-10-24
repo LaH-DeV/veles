@@ -162,9 +162,10 @@ extend Parser {
       loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
         val memberAttrs = this.parseAttributes()
         if ((this.atWord("indirect") || this.atWord("inline")) && this.peek(1).kind == Kind.KwStruct) {
-          // where the variant is stored (D198)
+          // where the variant is stored (D198); its doc is on the word, taken first
+          val doc = this.takeDoc()
           val word = this.next()
-          var variant = this.parseNestedVariant(d, memberAttrs)
+          var variant = this.parseNestedVariant(d, memberAttrs, doc)
           variant.indirect = word.text == "indirect"
           variant.isInline = word.text == "inline"
           variant.pos = word.span.to(variant.pos)
@@ -173,7 +174,7 @@ extend Parser {
           continue
         }
         if (this.at(Kind.KwStruct)) {
-          variants.push(this.parseNestedVariant(d, memberAttrs))
+          variants.push(this.parseNestedVariant(d, memberAttrs, this.takeDoc()))
           this.parseMemberSeparator()
           continue
         }
@@ -205,9 +206,9 @@ extend Parser {
   /// is a variant of the trait. Its visibility is the trait's; for a trait
   /// without type parameters the `: Trait` clause is supplied, for a generic
   /// one it must be written.
-  fun parseNestedVariant(d: ast.TraitDecl, attrs: List<ast.Attribute>): ast.StructDecl {
+  fun parseNestedVariant(d: ast.TraitDecl, attrs: List<ast.Attribute>, doc: string): ast.StructDecl {
     val start = this.span()
-    var sd = this.parseStruct(DeclHead(attrs, doc: "", pub: d.pub, isInternal: false, start), false)
+    var sd = this.parseStruct(DeclHead(attrs, doc, pub: d.pub, isInternal: false, start), false)
     if (!d.isSealed) this.errorAt(sd.name.pos, "only a sealed trait declares its variants: write 'sealed trait ${d.name.name} { struct ${sd.name.name} … }' (D193)")
     sd.nested = true
     sd.isInternal = d.isInternal

@@ -14,7 +14,7 @@ fun pair(i: i64): i64 => scope {
 }
 
 fun main() {
-  val (sum, elapsed) = time.Stopwatch.measure(() => {
+  val (sum, elapsed) = time.measure(() => {
     var sum: i64 = 0
     loop (i in 0..<50000) sum += pair(i)
     sum

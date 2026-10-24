@@ -3,6 +3,7 @@ base64/base64.vs: const fun write(bytes: List<u8>, alphabet: string, pad: bool):
 base64/base64.vs: public const fun encode(bytes: List<u8>): string
 base64/base64.vs: public const fun encodeUrl(bytes: List<u8>): string
 base64/base64.vs: public const fun encodedLen(n: i64, pad: bool = true): i64
+cli/cli.vs: const fun kebab(name: string): string
 hex/hex.vs: const fun digit(nibble: u8, upper: bool): u8
 hex/hex.vs: const fun write(bytes: List<u8>, upper: bool): string
 hex/hex.vs: public const fun encode(bytes: List<u8>): string
@@ -41,6 +42,12 @@ prelude/builder.vs: public const fun isEmpty(): bool
 prelude/builder.vs: public const fun len(): i64
 prelude/builder.vs: public const fun reserve(n: i64)
 prelude/builder.vs: public const fun toString(): string
+prelude/case.vs: const fun capitalised(word: string): string
+prelude/case.vs: const fun caseFolded(name: string): string
+prelude/case.vs: const fun caseIndex(names: List<string>, text: string, case: Case): i64?
+prelude/case.vs: const fun caseSpelled(name: string, case: Case): string
+prelude/case.vs: const fun caseWords(name: string): List<string>
+prelude/case.vs: const fun enumPick<E>(values: List<E>, names: List<string>, text: string, case: Case): E?
 prelude/duration.vs: const fun compareTo(other: Duration): Ordering
 prelude/duration.vs: const fun decimal(whole: i64, frac: i64, digits: i64): string
 prelude/duration.vs: const fun dividedBy(other: i64): Duration

@@ -435,7 +435,7 @@ func (f *fnCtx) checkExprInner(e ast.Expr, want types.Type) Expr {
 		b := f.checkBlock(e.Block, want, true)
 		return &BlockExpr{exprBase{b.Type}, b}
 	case *ast.TryExpr:
-		return f.tryExpr(e)
+		return f.tryExpr(e, want)
 	case *ast.IsExpr:
 		return f.isExpr(e)
 	case *ast.ImplementsExpr:
@@ -755,6 +755,9 @@ func narrowReaches(from, to types.Type) bool {
 }
 
 func (f *fnCtx) memberExpr(e *ast.MemberExpr, want types.Type) Expr {
+	if x, ok := f.removedKeyStyle(e); ok {
+		return x // `KeyStyle.SnakeCase` is `Case.Snake` (D205)
+	}
 	if info := f.execRef(e.X); info != nil && !e.Safe {
 		if x := f.execMember(info, e); x != nil {
 			return x // an executor's state or function (D150)
@@ -1904,11 +1907,18 @@ func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
 	return bad()
 }
 
-func (f *fnCtx) tryExpr(e *ast.TryExpr) Expr {
+func (f *fnCtx) tryExpr(e *ast.TryExpr, want types.Type) Expr {
 	if x, done := f.tryChain(e); done {
 		return x
 	}
-	x := f.checkExpr(e.X, nil)
+	// a call's type parameters may come from what the `try` is expected to
+	// give (`val n: i64 = try required(text)`): the expected type is the
+	// value's, which is what a throwing function declares as its result
+	var hint types.Type
+	if _, isCall := e.X.(*ast.CallExpr); isCall {
+		hint = want
+	}
+	x := f.checkExpr(e.X, hint)
 	return f.tryOn(x, e.Pos)
 }
 

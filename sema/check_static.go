@@ -215,7 +215,23 @@ func (f *fnCtx) staticCall(rt types.Type, callee *ast.MemberExpr, typeArgs []typ
 	if inherent && !declVisible(t.Pub, t.Internal, false, t.Module.Path, f.module.Path) {
 		f.errorf(callee.Name.Pos, "static function '%s' is private to module '%s'%s (M5)", name, t.Module.Path, privateHint(t.Module.Path))
 	}
+	f.traitMethodHidden(t, callee.Name.Pos)
 	return f.callTemplateRecv(t, subst, typeArgs, nil, e.Args, e.Pos, want)
+}
+
+// traitMethodHidden reports a trait's default method written `internal` or
+// `private`, called from outside the trait's module: it is the module's
+// own hook (`cli.Args.readArgs`), not part of what the trait offers its
+// implementers' callers, though every implementing type carries it.
+func (f *fnCtx) traitMethodHidden(t *FuncTemplate, span source.Span) {
+	if t.Trait == nil || t.Decl == nil || !(t.Decl.Internal || t.Decl.Private) || t.Module == nil || t.Module.Path == f.module.Path {
+		return
+	}
+	word := "internal"
+	if t.Decl.Private {
+		word = "private"
+	}
+	f.errorf(span, "'%s' is %s to module '%s', where trait '%s' is declared: it serves that module, not the trait's users (M5)", t.Name, word, t.Module.Path, t.Trait.Name)
 }
 
 // findStatic finds the static function `name` for a type in the struct
@@ -330,7 +346,20 @@ func (f *fnCtx) moduleTypeNamed(x ast.Expr) types.Type {
 	}
 	sym := f.lookup(n.Name)
 	if sym != nil && sym.Kind == SymFieldHandle && m.Name.Name == "Type" {
-		return sym.Handle.fld.Type // `f.Type.default()`: the field's type as a receiver (D174)
+		if t := sym.Handle.handleType(); t != nil {
+			return t // `f.Type.default()`: the field's (or variant's) type as a receiver (D174, D203)
+		}
+		f.errorf(m.Name.Pos, "'%s' is an enum's member, which has no type of its own; 'Type' is a field's or a variant's (D203)", n.Name)
+		return types.TInvalid
+	}
+	if sym != nil && sym.Kind == SymFieldHandle && m.Name.Name == "Inner" {
+		if t := sym.Handle.handleType(); t != nil && sym.Handle.member == nil {
+			if inner := handleInner(t); inner != nil {
+				return inner // `f.Inner.parse(s)`: the T of a T? or List<T> field (D203)
+			}
+		}
+		f.errorf(m.Name.Pos, "'%s.Inner' is the type inside a 'T?' or 'List<T>' field, and this is not one: test '%s.isOptional' or '%s.isList' first (D203)", n.Name, n.Name, n.Name)
+		return types.TInvalid
 	}
 	if sym == nil || sym.Kind != SymModule {
 		return nil

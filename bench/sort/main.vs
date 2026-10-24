@@ -12,7 +12,7 @@ fun main() {
     xs.push((x % 1000000).wrapI64())
   }
   val input = xs.toList()
-  val (check, elapsed) = time.Stopwatch.measure(() => {
+  val (check, elapsed) = time.measure(() => {
     var check: i64 = 0
     loop (_ in 0..<3) {
       val s = input.sorted()

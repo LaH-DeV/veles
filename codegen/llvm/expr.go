@@ -2066,6 +2066,27 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = call i64 @veles_string_char_count(ptr %s, i64 %s)", v, sp, sl)
 		return v
+	case "string.asciiCase":
+		s := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(s)
+		upper := g.expr(e.Args[1])
+		out := g.alloca(strType)
+		g.emit("call void @veles_string_ascii_case(ptr %s, ptr %s, i64 %s, i1 %s)", out, sp, sl, upper)
+		v := g.newTmp()
+		g.emit("%s = load %s, ptr %s", v, strType, out)
+		return v
+	case "string.replace":
+		s := g.expr(e.Args[0])
+		sp, sl := g.strPtrLen(s)
+		old := g.expr(e.Args[1])
+		op, ol := g.strPtrLen(old)
+		repl := g.expr(e.Args[2])
+		rp, rl := g.strPtrLen(repl)
+		out := g.alloca(strType)
+		g.emit("call void @veles_string_replace(ptr %s, ptr %s, i64 %s, ptr %s, i64 %s, ptr %s, i64 %s)", out, sp, sl, op, ol, rp, rl)
+		v := g.newTmp()
+		g.emit("%s = load %s, ptr %s", v, strType, out)
+		return v
 	case "string.split":
 		s := g.expr(e.Args[0])
 		sp, sl := g.strPtrLen(s)

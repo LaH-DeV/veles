@@ -316,6 +316,52 @@ bool veles_string_substring(veles_string *out, const char *s, int64_t len, int64
 veles_list *veles_list_new(veles_desc *desc, int64_t cap);
 void veles_list_push(veles_list *l, const void *item);
 
+/* veles_string_ascii_case: s with its ASCII letters in upper (or lower)
+ * case, in one copy; s itself when nothing changes (strings are immutable).
+ * Other bytes are kept, so UTF-8 stays UTF-8. */
+void veles_string_ascii_case(veles_string *out, const char *s, int64_t len, bool upper) {
+    int64_t first = 0;
+    for (; first < len; first++) {
+        unsigned char c = (unsigned char)s[first];
+        if (upper ? (c >= 'a' && c <= 'z') : (c >= 'A' && c <= 'Z')) break;
+    }
+    if (first == len) { out->data = s; out->len = len; return; }
+    char *buf = veles_alloc(len + 1);
+    memcpy(buf, s, (size_t)first);
+    for (int64_t i = first; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (upper && c >= 'a' && c <= 'z') c -= 32;
+        else if (!upper && c >= 'A' && c <= 'Z') c += 32;
+        buf[i] = (char)c;
+    }
+    out->data = buf;
+    out->len = len;
+}
+
+/* veles_string_replace: s with every occurrence of a non-empty old as repl,
+ * in one pass and one copy; s itself when old does not occur. */
+void veles_string_replace(veles_string *out, const char *s, int64_t len, const char *old, int64_t olen, const char *repl, int64_t rlen) {
+    int64_t count = 0;
+    for (int64_t i = 0; olen > 0 && i + olen <= len;) {
+        if (memcmp(s + i, old, (size_t)olen) == 0) { count++; i += olen; } else i++;
+    }
+    if (count == 0) { out->data = s; out->len = len; return; }
+    int64_t n = len + count * (rlen - olen);
+    char *buf = veles_alloc(n + 1);
+    int64_t w = 0, i = 0;
+    while (i < len) {
+        if (i + olen <= len && memcmp(s + i, old, (size_t)olen) == 0) {
+            memcpy(buf + w, repl, (size_t)rlen);
+            w += rlen;
+            i += olen;
+        } else {
+            buf[w++] = s[i++];
+        }
+    }
+    out->data = buf;
+    out->len = n;
+}
+
 /* veles_string_split: the parts of s between occurrences of a non-empty
  * sep, as strings that share s's bytes (D10: the collector follows an
  * interior pointer). Two passes — count, then fill a list of exactly that

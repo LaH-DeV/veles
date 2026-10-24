@@ -79,7 +79,7 @@ func (ev *constEval) callIndirect(e *CallIndirect) ConstVal {
 var constBuiltins = map[string]bool{
 	"string.len": true, "string.byteAt": true, "string.substring": true, "string.bytes": true,
 	"string.chars": true, "string.charCount": true, "string.startsWith": true, "string.startsWithAt": true, "string.endsWith": true,
-	"string.contains": true, "string.split": true, "string.toInt": true,
+	"string.contains": true, "string.split": true, "string.toInt": true, "string.asciiCase": true, "string.replace": true,
 	"list.len": true, "list.get": true, "list.ref": true, "list.push": true, "list.pop": true,
 	"list.clear": true, "list.copy": true, "list.addAll": true, "list.slice": true, "list.reserve": true,
 	"list.touch": true, "list.mods": true, "list.checkMods": true, "list.appendText": true, "list.move": true,
@@ -234,7 +234,12 @@ func (ev *constEval) call(e *Call) ConstVal {
 		return ev.extern(e)
 	}
 	if !runsInCompiler(fn) {
-		ev.errorf(e.Span, "a constant cannot call '%s': it is not a 'const fun'; mark it 'const fun' if the compiler can run it, or compute the value at run time with 'val' (D113)", fn.Display)
+		if fn.tmpl != nil && fn.tmpl.TestCode {
+			// a test helper runs with the tests, and cannot be a const fun
+			ev.errorf(e.Span, "a constant cannot call '%s': it is a test helper, which runs with the tests; move it to a module file as a 'const fun' (D113, D78)", fn.Display)
+		} else {
+			ev.errorf(e.Span, "a constant cannot call '%s': it is not a 'const fun'; mark it 'const fun' if the compiler can run it, or compute the value at run time with 'val' (D113)", fn.Display)
+		}
 	}
 	args := make([]ConstVal, len(e.Args))
 	for i, a := range e.Args {
@@ -430,6 +435,20 @@ func (ev *constEval) builtinMore(e *Builtin) (ConstVal, bool) {
 		return &CBool{strings.HasSuffix(ev.str(e, 0), ev.str(e, 1))}, true
 	case "string.contains":
 		return &CBool{strings.Contains(ev.str(e, 0), ev.str(e, 1))}, true
+	case "string.asciiCase":
+		s := []byte(ev.str(e, 0))
+		upper := ev.expr(e.Args[1]).(*CBool).V
+		for i, b := range s {
+			switch {
+			case upper && b >= 'a' && b <= 'z':
+				s[i] = b - 32
+			case !upper && b >= 'A' && b <= 'Z':
+				s[i] = b + 32
+			}
+		}
+		return &CString{string(s)}, true
+	case "string.replace":
+		return &CString{strings.ReplaceAll(ev.str(e, 0), ev.str(e, 1), ev.str(e, 2))}, true
 	case "string.split":
 		s, sep := ev.str(e, 0), ev.str(e, 1)
 		out := &CList{T: e.Type().(*types.List)}

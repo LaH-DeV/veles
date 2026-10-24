@@ -21,7 +21,7 @@ fun emitFunction(sb: StringBuilder, index: i64) {
 }
 
 fun main() {
-  val ((lines, check), elapsed) = time.Stopwatch.measure(() => {
+  val ((lines, check), elapsed) = time.measure(() => {
     var check: i64 = 0
     var lines: i64 = 0
     loop (_ in 0..<4) {

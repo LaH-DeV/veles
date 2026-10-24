@@ -1358,7 +1358,7 @@ func TestCompletionOfPreludeHomes(t *testing.T) {
 	}
 	// `codec.V|` on line 3
 	res, _ := c.call("textDocument/completion", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": 3, "character": 16}})
-	if got := completionLabels(res); !has(got, "Value") || !has(got, "ValueEncoder") || !has(got, "KeyStyle") {
+	if got := completionLabels(res); !has(got, "Value") || !has(got, "ValueEncoder") || !has(got, "styleKey") {
 		t.Errorf("codec. offered %v", got)
 	}
 	// a bare name at the start of line 4: global names, not the machinery

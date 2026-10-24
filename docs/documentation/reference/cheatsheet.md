@@ -166,7 +166,8 @@ struct Neg : Expr { e: *Expr }  // Expr holds itself: a tree — variants over a
 
 enum Phase : u8 { Red = 1, Amber, Green = 10 }   // closed set of VALUES of one integer type (D57); i64 when unsaid; +1 from the previous
 val ph = Phase.Amber            // ph.value == 2, "$ph" == "Amber", ph.toString(); ph == 2, ph < Phase.Green (compares with the base type, never converts)
-Phase.values(); Phase.fromValue(10); Phase.parse("Red")   // List<Phase>; Phase?; Phase?  — no fields or impls (extension functions only); Comparable + Hashable for free
+Phase.values(); Phase.fromValue(10); Phase.parse("Red")   // List<Phase>; Phase?; Phase? (exact) — no fields (extension functions only); Comparable + Hashable + Enumerated for free
+Phase.parse("red", case: Case.Any); ph.toString(case: Case.Kebab); ph.isAmber()   // any spelling; "amber"; a predicate per member (D205, D206); implement Enumerated to override parse/toString(case:)
 when (ph) { Phase.Red => ...; Phase.Amber => ...; Phase.Green => ... }   // exhaustive by member (D13)
 
 trait Iterator { type Item; fun next(): Item? }   // associated type
