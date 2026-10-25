@@ -68,10 +68,57 @@ public fun field<T: Encodable>(key: string, value: T): Field {
 fun readable(encoded: string): string {
   if (!encoded.startsWith("\"")) return encoded
   val plain = json.decode<string>(encoded) ?? encoded
-  if (plain.isEmpty() || plain.contains(" ") || plain.contains("=") || plain.contains("\"") || plain.contains("\n")) {
+  if (plain.isEmpty() || plain.contains(" ") || plain.contains("=") || plain.contains("\"") || hasControl(plain)) {
     return encoded
   }
   plain
+}
+
+// A text line goes to a terminal, so a control character in it is written as
+// its escape (`\n`, `\r`, `\t`, `\u{1b}`): text from outside — a path, a
+// header, a user name — cannot end the line and forge another one, rewrite
+// what is on the screen, or send the terminal a command (CWE-117, CWE-150).
+// The controls are C0, DEL and C1 (U+0080–U+009F, two bytes from 0xC2, where
+// 0x9B is a terminal's CSI). A JSON line needs none of this: its encoding
+// escapes C0, and a reader parses it rather than showing it.
+fun printable(s: string): string {
+  if (!hasControl(s)) return s
+  val out = StringBuilder()
+  var i = 0
+  loop (i < s.len()) {
+    val b = s.byteAt(i)
+    when {
+      b == '\n' => out.append("\\n")
+      b == '\r' => out.append("\\r")
+      b == '\t' => out.append("\\t")
+      b < 32 || b == 127 => appendEscape(out, b.toI64())
+      b == 0xC2 && i + 1 < s.len() && s.byteAt(i + 1) >= 0x80 && s.byteAt(i + 1) <= 0x9F => {
+        i += 1
+        appendEscape(out, s.byteAt(i).toI64())
+      }
+      else => out.appendByte(b)
+    }
+    i += 1
+  }
+  out.toString()
+}
+
+fun hasControl(s: string): bool {
+  loop (i in 0..<s.len()) {
+    val b = s.byteAt(i)
+    if (b < 32 || b == 127) return true
+    if (b == 0xC2 && i + 1 < s.len() && s.byteAt(i + 1) >= 0x80 && s.byteAt(i + 1) <= 0x9F) return true
+  }
+  false
+}
+
+const HEX: string = "0123456789abcdef"
+
+fun appendEscape(out: StringBuilder, c: i64) {
+  out.append("\\u{")
+  if (c >= 16) out.appendByte(HEX.byteAt(c >> 4))
+  out.appendByte(HEX.byteAt(c & 15))
+  out.append("}")
 }
 
 fun levelFromName(name: string): Level? => when (name.toLower()) {
@@ -187,12 +234,12 @@ fun textLine(now: string, level: Level, text: string, fields: List<Field>): stri
   out.append(" ")
   out.append(level.toString().toUpper().padEnd(5))
   out.append(" ")
-  out.append(text)
+  out.append(printable(text))
   loop (f in fields) {
     out.append(" ")
-    out.append(f.key)
+    out.append(printable(f.key))
     out.append("=")
-    out.append(f.text)
+    out.append(printable(f.text))
   }
   out.toString()
 }

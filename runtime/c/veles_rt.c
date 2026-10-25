@@ -18,6 +18,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <time.h>
 #if defined(_WIN32)
 #include <windows.h>
 #include <fcntl.h> /* _O_BINARY */
@@ -66,6 +67,8 @@ void veles_sync_init(void);
  * a million of them take a tenth of the time. */
 static int flush_lines = 1;
 
+void veles_hash_init(void); /* the maps' hash key, below */
+
 void veles_rt_init(int32_t argc, char **argv) {
     veles_sync_init(); /* the per-thread block's slot first: everything else uses it */
     g_argc = argc;
@@ -90,6 +93,7 @@ void veles_rt_init(int32_t argc, char **argv) {
     SetConsoleCP(CP_UTF8);
 #endif
     veles_gc_init();
+    veles_hash_init(); /* its key comes from the heap-allocating veles_random_bytes */
     veles_task_init(); /* the executor's lock, before any channel or task */
     veles_ffi_init();
 }
@@ -1306,19 +1310,144 @@ typedef struct {
     int64_t flags; /* LIST_EXPOSED / LIST_FROZEN (D188) */
 } veles_map;
 
-int64_t veles_hash_bytes(const char *p, int64_t len) {
-    uint64_t h = 1469598103934665603ULL;
-    for (int64_t i = 0; i < len; i++) {
-        h ^= (unsigned char)p[i];
-        h *= 1099511628211ULL;
-    }
-    return (int64_t)h;
+/* Hashing is keyed with a secret drawn from the operating system at start-up,
+ * so keys cannot be chosen ahead of time to collide: a JSON object, a form or
+ * a header block of colliding names would make every insert probe all the
+ * others, quadratic time from one request (hash flooding, "HashDoS"). Go's
+ * runtime and Rust's HashMap seed the same way. Nothing a program sees
+ * depends on the hashes — maps keep insertion order (D25) and `hash()` of a
+ * built-in type cannot be called — so only timing changes from run to run.
+ * The function is Go's memhash fallback (wyhash's structure): a 64×64→128
+ * multiply folded to 64 bits per 16 input bytes. */
+static uint64_t hash_key[4];
+
+int64_t veles_random_bytes(int64_t n, veles_string *out); /* veles_os.c */
+
+#define HASH_M1 0xa0761d6478bd642fULL
+#define HASH_M2 0xe7037ed1a0b428dbULL
+#define HASH_M3 0x8ebc6af09c88c6e3ULL
+#define HASH_M4 0x589965cc75374cc3ULL
+#define HASH_M5 0x1d8e4e27c47d124fULL
+
+static inline uint64_t hash_mum(uint64_t a, uint64_t b) {
+    __uint128_t r = (__uint128_t)a * b;
+    return (uint64_t)r ^ (uint64_t)(r >> 64);
 }
 
+static inline uint64_t hash_r8(const unsigned char *p) {
+    uint64_t v;
+    memcpy(&v, p, 8);
+    return v;
+}
+
+static inline uint64_t hash_r4(const unsigned char *p) {
+    uint32_t v;
+    memcpy(&v, p, 4);
+    return v;
+}
+
+/* The key, from the system's secure generator. Without one (it has never been
+ * seen to fail) the clock and addresses ASLR placed stand in: weaker, but a
+ * program that cannot hash cannot run at all. */
+void veles_hash_init(void) {
+    veles_string s;
+    if (veles_random_bytes((int64_t)sizeof hash_key, &s) == 0) {
+        memcpy(hash_key, s.data, sizeof hash_key);
+        return;
+    }
+    uint64_t x = (uint64_t)time(NULL) ^ (uint64_t)(uintptr_t)&s ^ ((uint64_t)(uintptr_t)hash_key << 17) ^ (uint64_t)clock();
+    for (int i = 0; i < 4; i++) {
+        x += 0x9e3779b97f4a7c15ULL; /* splitmix64 */
+        uint64_t z = x;
+        z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+        hash_key[i] = z ^ (z >> 31);
+    }
+}
+
+int64_t veles_hash_bytes(const char *src, int64_t len) {
+    const unsigned char *p = (const unsigned char *)src;
+    uint64_t s = (uint64_t)len, a, b;
+    uint64_t seed = hash_key[0] ^ HASH_M1;
+    if (s == 0) return (int64_t)seed;
+    if (s < 4) {
+        a = (uint64_t)p[0] | (uint64_t)p[s >> 1] << 8 | (uint64_t)p[s - 1] << 16;
+        b = 0;
+    } else if (s == 4) {
+        a = b = hash_r4(p);
+    } else if (s < 8) {
+        a = hash_r4(p);
+        b = hash_r4(p + s - 4);
+    } else if (s == 8) {
+        a = b = hash_r8(p);
+    } else if (s <= 16) {
+        a = hash_r8(p);
+        b = hash_r8(p + s - 8);
+    } else {
+        uint64_t l = s;
+        if (l > 48) {
+            uint64_t seed1 = seed, seed2 = seed;
+            for (; l > 48; l -= 48) {
+                seed = hash_mum(hash_r8(p) ^ hash_key[1] ^ HASH_M2, hash_r8(p + 8) ^ seed);
+                seed1 = hash_mum(hash_r8(p + 16) ^ hash_key[2] ^ HASH_M3, hash_r8(p + 24) ^ seed1);
+                seed2 = hash_mum(hash_r8(p + 32) ^ hash_key[3] ^ HASH_M4, hash_r8(p + 40) ^ seed2);
+                p += 48;
+            }
+            seed ^= seed1 ^ seed2;
+        }
+        for (; l > 16; l -= 16) {
+            seed = hash_mum(hash_r8(p) ^ hash_key[1] ^ HASH_M2, hash_r8(p + 8) ^ seed);
+            p += 16;
+        }
+        /* the last 16 bytes, overlapping what the loops read: s > 16 */
+        a = hash_r8(p + l - 16);
+        b = hash_r8(p + l - 8);
+    }
+    return (int64_t)hash_mum(HASH_M5 ^ s, hash_mum(a ^ hash_key[1] ^ HASH_M2, b ^ seed));
+}
+
+/* Combines a running hash with the next part's (tuples, structs, lists,
+ * variants). Keyed as well: an unkeyed combine can be solved for a second
+ * part that cancels the first, so (a, b) keys would collide at will. */
 int64_t veles_hash_mix(int64_t a, int64_t b) {
-    uint64_t h = (uint64_t)a * 0x9E3779B97F4A7C15ULL;
-    h ^= (uint64_t)b + 0x7F4A7C15ULL + (h << 6) + (h >> 2);
-    return (int64_t)h;
+    return (int64_t)hash_mum((uint64_t)a ^ hash_key[2] ^ HASH_M3, (uint64_t)b ^ hash_key[3] ^ HASH_M4);
+}
+
+/* A hash as a map keeps it. An integer key's hash is the integer itself, and
+ * a user `hash()` is whatever it returns, so it is scrambled with the key too
+ * (Go's memhash64): keys that differ only above the index's bits — multiples
+ * of 1024, say — would otherwise all start probing at one slot. The public
+ * entry points (find, insert, remove, const_hash) scramble the hash they are
+ * given, once; the metadata holds the scrambled value, so a rebuild or a copy
+ * reuses it and everything below takes it as it is. */
+static inline uint64_t map_slot(int64_t hash) {
+    uint64_t h = (uint64_t)hash;
+    return hash_mum(HASH_M5 ^ 8, hash_mum(h ^ hash_key[1] ^ HASH_M2, h ^ hash_key[0] ^ HASH_M1));
+}
+
+/* Test hooks (driver TestHashFlooding). The longest probe run that n integer
+ * keys i * stride make in an index sized as a map sizes it: under the
+ * unkeyed slot (hash & mask) a stride of 2^20 put every key on one slot. */
+int64_t veles_hash_test_probes(int64_t n, int64_t stride) {
+    int64_t icap = 16;
+    while (n * 2 >= icap) icap *= 2;
+    bool *used = calloc((size_t)icap, 1);
+    uint64_t mask = (uint64_t)icap - 1;
+    int64_t worst = 0;
+    for (int64_t k = 0; k < n; k++) {
+        uint64_t i = map_slot((int64_t)((uint64_t)k * (uint64_t)stride)) & mask;
+        int64_t run = 0;
+        while (used[i]) i = (i + 1) & mask, run++;
+        used[i] = true;
+        if (run > worst) worst = run;
+    }
+    free(used);
+    return worst;
+}
+
+/* the hash of one string, which differs from run to run */
+int64_t veles_hash_test_string(void) {
+    return veles_hash_bytes("veles", 5);
 }
 
 static void map_index_insert(veles_map *m, int64_t hash, int64_t entry) {
@@ -1334,6 +1463,17 @@ static void map_rebuild(veles_map *m, int64_t icap) {
     for (int64_t e = 0; e < m->used; e++) {
         if (m->meta[e].live) map_index_insert(m, m->meta[e].hash, e);
     }
+}
+
+/* A constant Map or Set (D113) is laid out by the compiler with its entries,
+ * but its hashes depend on this run's key: veles_init_const_maps stores each
+ * entry's hash, then this builds the index over them. */
+void veles_map_const_hash(veles_map *m, int64_t e, int64_t hash) {
+    m->meta[e].hash = (int64_t)map_slot(hash);
+}
+
+void veles_map_const_index(veles_map *m) {
+    for (int64_t e = 0; e < m->used; e++) map_index_insert(m, m->meta[e].hash, e);
 }
 
 veles_map *veles_map_new(veles_desc *keyDesc, veles_desc *valDesc) {
@@ -1413,7 +1553,8 @@ int64_t veles_map_mods(veles_map *m) {
     return m->mods;
 }
 
-int64_t veles_map_find(veles_map *m, int64_t hash, const void *key, veles_eq_fn eq) {
+/* hash is scrambled (map_slot) */
+static int64_t map_find(veles_map *m, int64_t hash, const void *key, veles_eq_fn eq) {
     if (m->icap == 0) { /* small: scan the entries */
         for (int64_t e = 0; e < m->used; e++) {
             if (m->meta[e].live && m->meta[e].hash == hash && (m->keySize == 0 || eq(key, m->keys + e * m->keySize))) return e;
@@ -1431,6 +1572,10 @@ int64_t veles_map_find(veles_map *m, int64_t hash, const void *key, veles_eq_fn 
         }
         i = (i + 1) & mask;
     }
+}
+
+int64_t veles_map_find(veles_map *m, int64_t hash, const void *key, veles_eq_fn eq) {
+    return map_find(m, (int64_t)map_slot(hash), key, eq);
 }
 
 static void map_compact(veles_map *m) {
@@ -1487,7 +1632,8 @@ static int64_t map_append(veles_map *m, int64_t hash, const void *key, const voi
 /* insert or overwrite; returns the entry index */
 int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void *val, veles_eq_fn eq) {
     map_writable(m);
-    int64_t e = veles_map_find(m, hash, key, eq);
+    hash = (int64_t)map_slot(hash);
+    int64_t e = map_find(m, hash, key, eq);
     if (e >= 0) {
         if (m->valSize) memcpy(m->vals + e * m->valSize, val, (size_t)m->valSize);
         return e;
@@ -1497,8 +1643,9 @@ int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void
 
 bool veles_map_remove(veles_map *m, int64_t hash, const void *key, veles_eq_fn eq) {
     map_writable(m);
+    hash = (int64_t)map_slot(hash);
     if (m->icap == 0) { /* small: no index to update */
-        int64_t e = veles_map_find(m, hash, key, eq);
+        int64_t e = map_find(m, hash, key, eq);
         if (e < 0) return false;
         m->meta[e].live = false;
         m->len--;

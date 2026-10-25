@@ -50,6 +50,16 @@ text line a string is written bare unless it would run into the next field
 (a space or an `=` in it), then it is quoted. A value that cannot be encoded
 is logged as `null` rather than failing the call: logging never throws.
 
+A text line is one line whatever it carries. A control character in the
+message, a key or a value — a line break, a carriage return, an escape
+sequence — is written as its escape (`\n`, `\r`, `\u{1b}`), so a request
+path or a user name cannot end the line and forge another one, or send the
+terminal a command:
+
+```text
+2026-09-29T10:15:03.123Z WARN  login failed user="bob\nINFO  login ok"
+```
+
 ## The level
 
 The threshold starts at `info`. Set it for a run with the environment,

@@ -452,6 +452,35 @@ f()).g()` warns that the inner `try` is redundant, with a fix; the `(try f()).g(
 - [x] Integer conversions between widths: `toT()` is checked (`T?`), `wrapT()` is the explicit
       truncation, a literal that cannot fit is a compile error (D86, 2026-09-29;
       `examples/conversions`, conform `D86-conversions`, golden `arith`)
+- [x] Hash flooding (HashDoS, 2026-10-25): maps hashed strings with unkeyed
+      FNV-1a and started probing at `hash & mask`, where an integer's hash
+      is the integer — 200 000 keys `i * 2^20` all started at slot 0 and took
+      24.6 s to insert (0.28 s now), and a JSON object, form or header block
+      of chosen names would do the same from one request. The runtime now
+      draws a 256-bit key from the OS generator at start-up
+      (`veles_hash_init`, a splitmix of clock and addresses if the generator
+      fails); strings hash with Go's keyed memhash fallback (wyhash
+      structure), the combine for tuples/structs/lists is keyed (the old one
+      could be solved for a cancelling second part), and every hash is
+      scrambled with the key once at the map's entry points (Go's memhash64),
+      the scrambled value kept in the metadata. Constant maps are hashed at
+      start-up (`veles_init_const_maps`, D113 addendum). Nothing observable
+      changes (insertion order; built-in `hash()` is not callable). Driver
+      `TestHashFlooding` (longest probe run under strides 1…2^32, two runs
+      hash a string differently, constant maps incl. struct keys and one read
+      by a global initializer). Measured: `bench/maps` 58 → 74 ms (Go 87 ms):
+      the benchmark's keys, a Weyl sequence, spread almost perfectly under
+      the old identity slot, which no keyed hash keeps — a one-multiply
+      scramble measured the same, so the two-multiply one stays; `intern`
+      and `json` unchanged within noise. Open: §11 (a user `hash()`)
+- [x] Log lines cannot be forged (2026-10-25): a text log line (on a
+      terminal, D91) wrote the message raw and let `\r`, ESC, DEL and C1
+      through in values, so a logged path or name could end the line and
+      print a fake one, or send the terminal escape sequences (CWE-117,
+      CWE-150). Message, keys and values now write every C0, DEL and C1
+      control as an escape (`\n`, `\r`, `\t`, `\u{1b}`), and a value holding
+      one is quoted. JSON lines were already safe. std/log tests, docs
+      chapter 21
 - [x] Constant-time comparison primitive in `std/crypto`: `Digest`'s `==`, and
       `crypto.equalBytes` for raw bytes. Structural `==` on `List<u8>`
       short-circuits, so a MAC is compared as a `Digest`, never as bytes (D59)
@@ -1140,6 +1169,14 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
   yet… probably nothing is better"; no code. Considered: an inferred `panics`
   effect shown by the editor like `suspends` (deliberate panics only), a
   written marker, a name convention (removed in D62).
+
+- Q58: integer overflow in release builds (reopens D21, from the security
+  review of 2026-10-25). Today `+ - *`, unary `-`, `abs` and `MIN / -1` panic
+  in debug and wrap silently in release, so a size or limit computation from
+  outside input that a test would catch wraps in production (CWE-190; D21's
+  own "known wart"). Prepared with measurements and three options: keep D21,
+  checked in every build (Swift; `+%` and the `wrapping…` methods stay the
+  explicit wrap), or checked in every build plus a per-build opt-out.
 
 (2026-10-14: Q32–Q43, prepared in `veles-direction-2026-10-14.md`, were decided the same day:
 Q32 D157, Q33 D158, Q42 D159, Q39 D160, Q40 + Q41 D161, Q43 D162, Q34 D163, Q36 D164,
@@ -2111,3 +2148,24 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
 - **Typed decorators (D176, built 2026-10-18): what is left.** Hover on a decorated function does not name the wrapper, and a backtrace shows the lambda frame the rewrite adds; `veles doc` does not mark a decorated function; a decorator on a trait method that has a default is rewritten for the default only (an `implement` that overrides it is not wrapped); the second wrapper shape cannot wrap a function with a variadic parameter; the arguments of an annotation that has a wrapper are checked where the annotation stands, so they cannot name the function's parameters; a bare argument (`@Retry(3)`) needs exactly one parameter until D163 is built, so a decorator with a defaulted second parameter is written `@Retry(times: 3)`.
 - **Lint levels and formatter options (D177, parts 1–2 built 2026-10-18, plan B27): what is left.** Part 3 (rules written in Veles: `std/lint`, the reflected AST, the evaluator's speed measured first) is not built. `[lint.forbid]` is not built. Library lints cannot be named yet: the TOML reader has no dotted keys, so they will be written as quoted keys (`"acme.no_sleep" = "warn"`) or move with `package.vs` (D131); the manifest says "not available yet". The warnings now all have registry names (stale-reference, parameter-copy and self-address added 2026-10-18); still outside it are `implicit_return` (an error with its own setting) and the removed-syntax errors in `lint_index.go`, which are not lints. `long_line` counts text blocks (`"""…"""`) and comments like any other line, and a tab as four columns. `trailing_commas` covers parameter lists and broken lists/arguments/literals; a `when` arm's pattern list and `use { }` lists are unaffected (the latter never had one). `line_endings = "auto"` decides per file from its content; a new empty file gets LF.
 - **Lint rules written in Veles (D177, plan B27 part 3, built 2026-10-19): what is left.** Built: the evaluator holds sealed variants and `*T` fields while it runs a `const fun` (`CVariant`; a _result_ still cannot be sealed), `std/lint` (`Rule`, `Visitor` with an `on<Node>` callback per `selfhost/ast` struct, `Context.report(span, message, fix:)`, `Fix`; `ast.vs`, `kind.vs`, `source.vs`, `visitor.vs` are generated from `selfhost/` by `go test ./selfhost -run LintAPI -update`), the Go-to-Veles tree reflector and runner (`sema/lintrules.go`, fields matched by name, `ruleFieldAlias` for the spelled-around ones, tested by `TestRuleASTFields`), `[lint] dep.rule = "warn"` (bare dotted, table or quoted keys; bare dotted keys now parse anywhere in `veles.toml`), the dependency's root module loaded for it, `veles check --fix`, `examples/lintrules`. Measured: 8,600 lines / 260 KB with three rules (one with five node callbacks) 0.22 s -> 0.29 s; the evaluator itself runs ~2.8 us per node per pass (294k-node probe), mostly allocation (a `big.Int` per integer, a map per call), and was not tuned. Not built: (a) `[lint.forbid]` (TOML shape undecided: `veles-decide`); (b) type-aware rules: a rule sees the parser's tree only; (c) exit callbacks (`Visitor` enters nodes only); (d) `Rule.level` is not read yet and `veles lint --list` does not list a dependency's rules; (e) the package key is the dependency alias, which is an identifier (D177's `acme-lints.` hyphen cannot be written); (f) the checker's own tree nodes (`ResolvedType`, `CheckedExpr`, …) reach a rule as the family's `Bad` node, and a missing one (a Type or Pattern family without a `Bad` node) fails the rule's run with a message; (g) `rules()` runs once per module of the package and the reflection is per file, with no per-file cache and no run in the language server's fast path; (h) rules from git/registry dependencies load through the same resolver but are untested; (i) evaluator speed (`big.Int` -> unboxed small integers, slot-indexed frames) would help every `const fun` and rule sets far bigger than the probe.
+- **Security review (2026-10-25): what it left open.** Vulnerability classes were checked against the tree
+  (Log4Shell-style lookups, deserialization gadgets, SQL/command injection, memory safety, ReDoS, path traversal,
+  request smuggling, decompression bombs, TLS defaults, secrets, Trojan Source, supply chain — all closed by design or
+  by earlier fixes, §2). Fixed here: hash flooding and forged log lines (§2). Left:
+  (a) **Integer overflow wraps silently in release (D21)** — the CWE-190 class behind many size-calculation CVEs;
+  Swift traps in every build. A design decision, prepared through `veles-decide`, measured before it is changed.
+  (b) **A user `hash()` is not keyed.** The map scrambles whatever it returns, which defeats keys that differ only in
+  high bits, but a user hash with full 64-bit collisions (e.g. `x * 31 + y` over chosen `x`, `y`) still floods. A
+  keyed `Hasher` passed to `hash` (Rust's shape), or deriving `Hashable` from the fields through the keyed combine,
+  would close it — public API, needs a decision.
+  (c) **XSS**: `html"…"` that escapes (D129, listed above) is not built; HTML assembled from strings can be injected.
+  (d) **SSRF**: the HTTP client has no opt-in refusal of loopback/private/link-local addresses (checked after DNS,
+  on every redirect) for servers that fetch URLs a user gives them — public API, needs a decision.
+  (e) **Rules for features not built yet**: an XML reader never resolves external entities or fetches a DTD (XXE); any
+  std archive unpacker (zip, tar) applies `fetch`'s refusals (`..`, links, `:`/`\`, case-only duplicates, sizes —
+  zip slip); every new parser ships with size and depth limits and a fuzz target.
+  (f) JSON log lines and `json.encode` leave DEL and C1 (U+007F–U+009F) unescaped — valid JSON, but `cat` of a log
+  file sends them to the terminal; escaping them changes `json.encode`'s output.
+  (g) The hash key falls back to clock and ASLR addresses when the OS generator fails (never seen); a WebAssembly
+  target (D180) needs `__int128` (clang provides it there) or a 32-bit `hash_mum`.
+  (h) The security guidance page (§7, `[~]`) should gather these: secrets, TLS defaults, limits, hashing, logging.

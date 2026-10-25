@@ -57,6 +57,8 @@ type gen struct {
 	descOut       strings.Builder
 	consts        map[sema.ConstVal]string // constant tables (consts.go)
 	emptyShared   map[string]string        // the shared empty List/Map/Set, by descriptors (consts.go)
+	constMaps     []constMapRef            // constant maps and sets, hashed at start-up (consts.go)
+	constAtEntry  int                      // how many existed when the entry point was emitted
 	lay           *types.Layout            // sizes, alignments, offsets (D120)
 	fieldMap      map[string][]int         // struct field → LLVM index, for padded struct types
 	overAlign     map[string]int           // LLVM struct type → alignment above LLVM's own
@@ -161,6 +163,8 @@ func Generate(prog *sema.Program) string {
 	g.entryPoint()
 	g.flushPending()
 	g.traitTables()
+	g.flushPending()
+	g.constMapsInit()
 	g.flushPending()
 	g.typeInfoGlobals()
 
@@ -1175,6 +1179,10 @@ func (g *gen) entryPoint() {
 	main := g.prog.Main
 	g.resetFn(&sema.Func{Name: "main", Sig: &types.Func{Ret: types.TUnit}})
 	g.emit("call void @veles_rt_init(i32 %%argc, ptr %%argv)")
+	g.constAtEntry = len(g.constMaps)
+	if g.constAtEntry > 0 {
+		g.emit("call void @veles_init_const_maps()") // before any global initializer reads one
+	}
 	g.runtimeConfig()
 	g.emit("call void @veles_init_globals()")
 	if g.prog.TestMode {

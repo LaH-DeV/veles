@@ -3782,6 +3782,17 @@ compiler synthesizes for an enum (`values`, `parse`, `toString`, `compareTo`,
 `equals`/`hash`/`toString` on user types, most of the prelude's collection
 helpers, and `const fun` in the other std modules.
 
+_Addendum (2026-10-25, a security fix; no semantics changed) — a constant `Map`/`Set` is hashed at start-up._ Map
+hashing is now keyed by a secret the runtime draws from the operating system at start-up (hash flooding: unkeyed FNV-1a and
+an index slot of `hash & mask` let a request full of chosen keys make every insert probe all the others; checklist §2). The
+compiler can no longer know a key's hash, so the "hashed by a Go copy of the runtime's hash" choice above is gone: the
+entries and the header stay `constant` as before, while the metadata and the index are internal writable globals that
+`veles_init_const_maps` fills — each key hashed by the same generated code as at run time, then the index built — as the
+first thing `veles_main` does after `veles_rt_init`, before any global initializer. A constant map therefore costs one
+hash per entry at start-up (a constant `List` or `Array` still costs nothing); the Go copy of the hash is deleted, and the
+test that every key is found at run time stays. Programs see no difference: iteration is insertion order (D25) and `hash()` of a built-in
+type cannot be called.
+
 ### D114 — No global switch for bounds checks; an unchecked access in `unsafe` (v0.62)
 
 Bounds checks stay on in every profile; there is no `--release-unchecked`. The

@@ -8,8 +8,8 @@
 @const.main.NESTED = private unnamed_addr constant { ptr, i64, i64, i64, ptr, i64, i64 } { ptr @const.main.NESTED.data, i64 2, i64 2, i64 8, ptr @adesc.List_u8_, i64 0, i64 0 }
 @const.main.WORDS.keys = private unnamed_addr constant [2 x %str] [%str { ptr @.str.1, i64 3 }, %str { ptr @.str.2, i64 3 }]
 @const.main.WORDS.vals = private unnamed_addr constant [2 x i64] [i64 1, i64 2]
-@const.main.WORDS.meta = private unnamed_addr constant [2 x { i64, i8 }] [{ i64, i8 } { i64 4044999173930542849, i8 1 }, { i64, i8 } { i64 -7621125959628391285, i8 1 }]
-@const.main.WORDS.index = private unnamed_addr constant [16 x i64] [i64 0, i64 1, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0, i64 2, i64 0, i64 0, i64 0, i64 0]
+@const.main.WORDS.meta = internal global [2 x { i64, i8 }] [{ i64, i8 } { i64 0, i8 1 }, { i64, i8 } { i64 0, i8 1 }]
+@const.main.WORDS.index = internal global [16 x i64] zeroinitializer
 @const.main.WORDS = private unnamed_addr constant { ptr, ptr, ptr, ptr, ptr, ptr, i64, i64, i64, i64, i64, i64, i64, i64 } { ptr @const.main.WORDS.keys, ptr @const.main.WORDS.vals, ptr @const.main.WORDS.meta, ptr @adesc.string, ptr @adesc.i64, ptr @const.main.WORDS.index, i64 16, i64 2, i64 2, i64 2, i64 16, i64 8, i64 0, i64 0 }
 define i64 @v_main.size() {
 entry:

@@ -17,6 +17,23 @@ test "a text field with a space or an equals sign is quoted" {
   expect(line == "t WARN  m who=\"a b\" eq=\"x=y\" empty=\"\"")
 }
 
+test "a text line cannot be broken or sent terminal commands from its text" {
+  // a forged second line, a carriage return over the line, an escape
+  // sequence, DEL and C1's CSI (U+009B), in the message, a key and a value
+  val line = textLine("t", Level.Info, "login bob\nt INFO  login admin\r\u{1b}[2J", [
+    field("who\u{1b}]0;x\u{7}", "a\u{9b}31m"),
+    field("tab", "x\ty"),
+    field("del", "z\u{7f}"),
+  ])
+  expect(line == "t INFO  login bob\\nt INFO  login admin\\r\\u{1b}[2J who\\u{1b}]0;x\\u{7}=\"a\\u{9b}31m\" tab=\"x\\ty\" del=\"z\\u{7f}\"")
+  expect(!line.contains("\n") && !line.contains("\r") && !line.contains("\u{1b}") && !line.contains("\u{9b}"))
+}
+
+test "text without controls is written as it is" {
+  expect(printable("café — /x?a=b") == "café — /x?a=b")
+  expect(printable("\u{a0}©") == "\u{a0}©")  // 0xC2 that starts a printable character
+}
+
 test "a JSON line keeps a value's type and escapes the message" {
   val line = jsonLine("t", Level.Error, "say \"hi\"", [field("n", 3), field("ok", true), field("s", "x")])
   expect(line == "{\"time\":\"t\",\"level\":\"error\",\"msg\":\"say \\\"hi\\\"\",\"n\":3,\"ok\":true,\"s\":\"x\"}")
