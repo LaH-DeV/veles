@@ -253,10 +253,6 @@ func (g *gen) expr(e sema.Expr) string {
 			g.emit("%s = fneg %s %s", v, g.llType(e.Type()), x)
 			return v
 		}
-		if g.prog.Release {
-			g.emit("%s = sub %s 0, %s", v, g.llType(e.Type()), x)
-			return v
-		}
 		return g.checkedArith("ssub", g.llType(e.Type()), "0", x, g.where(e.Span))
 	case *sema.Cast:
 		return g.cast(e)
@@ -882,11 +878,7 @@ func (g *gen) binary(e *sema.Binary) string {
 		signed := types.IsSigned(t)
 		switch e.Op {
 		case sema.OpAdd, sema.OpSub, sema.OpMul:
-			if g.prog.Release {
-				op := map[sema.BinOp]string{sema.OpAdd: "add", sema.OpSub: "sub", sema.OpMul: "mul"}[e.Op]
-				g.emit("%s = %s %s %s, %s", v, op, llt, l, r)
-				return v
-			}
+			// checked in every build (D209); `+%` is the wrapping spelling
 			intr := map[sema.BinOp]string{sema.OpAdd: "add", sema.OpSub: "sub", sema.OpMul: "mul"}[e.Op]
 			if signed {
 				intr = "s" + intr
@@ -916,23 +908,6 @@ func (g *gen) binary(e *sema.Binary) string {
 			}
 			if signed {
 				op = "s" + op[1:]
-			}
-			if signed && g.prog.Release {
-				// MIN / -1 is undefined for sdiv (a trap on x86); D21 says a
-				// release build wraps, so divide by 1 instead and negate
-				isNeg1 := g.newTmp()
-				g.emit("%s = icmp eq %s %s, -1", isNeg1, llt, r)
-				safe := g.newTmp()
-				g.emit("%s = select i1 %s, %s 1, %s %s", safe, isNeg1, llt, llt, r)
-				q := g.newTmp()
-				g.emit("%s = %s %s %s, %s", q, op, llt, l, safe)
-				alt := "0"
-				if e.Op == sema.OpDiv {
-					alt = g.newTmp()
-					g.emit("%s = sub %s 0, %s", alt, llt, l)
-				}
-				g.emit("%s = select i1 %s, %s %s, %s %s", v, isNeg1, llt, alt, llt, q)
-				return v
 			}
 			g.emit("%s = %s %s %s, %s", v, op, llt, l, r)
 		default:
@@ -996,8 +971,8 @@ func (g *gen) divCheck(llt, l, r string, signed bool, where string) {
 	g.placeLabel(bad)
 	g.panicAt("division by zero", where)
 	g.placeLabel(ok)
-	if signed && !g.prog.Release {
-		// MIN / -1 overflows
+	if signed {
+		// MIN / -1 overflows (and is undefined for sdiv: a trap on x86)
 		bits := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}[llt]
 		min := fmt.Sprintf("-%d", uint64(1)<<(bits-1))
 		a := g.newTmp()
@@ -1721,17 +1696,15 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		if types.IsUnsigned(e.Type()) {
 			return x
 		}
-		if !g.prog.Release {
-			// MIN has no positive counterpart: an overflow, like `-x` (D21)
-			bits := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}[ty]
-			isMin := g.newTmp()
-			g.emit("%s = icmp eq %s %s, -%d", isMin, ty, x, uint64(1)<<(bits-1))
-			bad, ok := g.newLabel("overflow"), g.newLabel("abs.ok")
-			g.emitTerm("br i1 %s, label %%%s, label %%%s", isMin, bad, ok)
-			g.placeLabel(bad)
-			g.panicAt("integer overflow", g.where(e.Span))
-			g.placeLabel(ok)
-		}
+		// MIN has no positive counterpart: an overflow, like `-x` (D21, D209)
+		bits := map[string]int{"i8": 8, "i16": 16, "i32": 32, "i64": 64}[ty]
+		isMin := g.newTmp()
+		g.emit("%s = icmp eq %s %s, -%d", isMin, ty, x, uint64(1)<<(bits-1))
+		bad, ok := g.newLabel("overflow"), g.newLabel("abs.ok")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", isMin, bad, ok)
+		g.placeLabel(bad)
+		g.panicAt("integer overflow", g.where(e.Span))
+		g.placeLabel(ok)
 		v := g.newTmp()
 		g.emit("%s = call %s @llvm.abs.%s(%s %s, i1 false)", v, ty, ty, ty, x)
 		return v

@@ -28,8 +28,8 @@ const nanosMax: i64 = 9223372036854775807
 ///
 /// The unit inside is nanoseconds, so the range is ±292 years and a
 /// microbenchmark and a cache lifetime are the same type. A constructor
-/// handed more than the range holds overflows, which is checked in a debug
-/// build and wraps in release (D21).
+/// handed more than the range holds overflows, which panics in every build
+/// (D209).
 ///
 /// The operators work on it (D71): `a + b`, `a - b`, `d * 3`, `d / 4`,
 /// `-d`, and `+=`/`-=`; `a.over(b)` is how many times `b` fits in `a`. The

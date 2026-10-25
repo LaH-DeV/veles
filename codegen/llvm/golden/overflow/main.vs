@@ -1,8 +1,8 @@
-// D21 per build profile. This source is two fixtures: `overflow` builds it
-// as debug — an overflow panics, and `gather` turns the panic into a value
-// (D52) — and `overflow-release` as release, where `+` wraps. In both, `+%`
-// wraps, `as` truncates only where it is written, and an inclusive range
-// ends at the type's maximum.
+// D21 and D209 in both build profiles. This source is two fixtures:
+// `overflow` builds it as debug and `overflow-release` as release, and in
+// both an overflow panics (`gather` turns the panic into a value, D52). In
+// both, `+%` wraps, `as` truncates only where it is written, and an
+// inclusive range ends at the type's maximum.
 use io
 
 fun add(a: i8, b: i8): i8 => a + b

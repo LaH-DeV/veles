@@ -66,9 +66,9 @@ define void @v_main.main() {
 entry:
   %a2 = alloca i64
   %a3 = alloca ptr
-  %a14 = alloca [21 x i8]
-  %a18 = alloca %str
-  %a19 = alloca [3 x %str]
+  %a21 = alloca [21 x i8]
+  %a25 = alloca %str
+  %a26 = alloca [3 x %str]
   %t1 = call ptr @veles_list_new(ptr @adesc.i64, i64 3)
   store i64 3, ptr %a2
   call void @veles_list_push(ptr %t1, ptr %a2)
@@ -82,26 +82,39 @@ entry:
   %t6 = call i64 @v_main.get(ptr %t5, i64 0)
   %t7 = load ptr, ptr %a3
   %t8 = call i64 @v_main.get(ptr %t7, i64 2)
-  %t9 = add i64 %t6, %t8
-  call void @v_main.put(ptr %t4, i64 1, i64 %t9)
-  %t10 = load ptr, ptr %a3
-  %t11 = call %str @show.MutableList_i64_(ptr %t10)
-  %t12 = call i8 @v_main.byte(%str { ptr @.str.1, i64 5 }, i64 1)
-  %t13 = zext i8 %t12 to i64
-  %t15 = call i64 @veles_u64_format(ptr %a14, i64 %t13)
-  %t16 = insertvalue %str undef, ptr %a14, 0
-  %t17 = insertvalue %str %t16, i64 %t15, 1
-  %t20 = getelementptr [3 x %str], ptr %a19, i64 0, i64 0
-  store %str %t11, ptr %t20
-  %t21 = getelementptr [3 x %str], ptr %a19, i64 0, i64 1
-  store %str { ptr @.str.2, i64 1 }, ptr %t21
-  %t22 = getelementptr [3 x %str], ptr %a19, i64 0, i64 2
-  store %str %t17, ptr %t22
-  call void @veles_string_concat_n(ptr %a18, ptr %a19, i64 3)
-  %t23 = load %str, ptr %a18
-  call void @v_std.io.println(%str %t23)
+  %t10 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t6, i64 %t8)
+  %t11 = extractvalue { i64, i1 } %t10, 0
+  %t12 = extractvalue { i64, i1 } %t10, 1
+  br i1 %t12, label %overflow.1, label %arith.ok.2
+overflow.1:
+  %t13 = extractvalue %str { ptr @.str.1, i64 16 }, 0
+  %t14 = extractvalue %str { ptr @.str.1, i64 16 }, 1
+  %t15 = extractvalue %str { ptr @.str.2, i64 13 }, 0
+  %t16 = extractvalue %str { ptr @.str.2, i64 13 }, 1
+  call void @veles_panic_at(ptr %t13, i64 %t14, ptr %t15, i64 %t16)
+  unreachable
+arith.ok.2:
+  call void @v_main.put(ptr %t4, i64 1, i64 %t11)
+  %t17 = load ptr, ptr %a3
+  %t18 = call %str @show.MutableList_i64_(ptr %t17)
+  %t19 = call i8 @v_main.byte(%str { ptr @.str.3, i64 5 }, i64 1)
+  %t20 = zext i8 %t19 to i64
+  %t22 = call i64 @veles_u64_format(ptr %a21, i64 %t20)
+  %t23 = insertvalue %str undef, ptr %a21, 0
+  %t24 = insertvalue %str %t23, i64 %t22, 1
+  %t27 = getelementptr [3 x %str], ptr %a26, i64 0, i64 0
+  store %str %t18, ptr %t27
+  %t28 = getelementptr [3 x %str], ptr %a26, i64 0, i64 1
+  store %str { ptr @.str.4, i64 1 }, ptr %t28
+  %t29 = getelementptr [3 x %str], ptr %a26, i64 0, i64 2
+  store %str %t24, ptr %t29
+  call void @veles_string_concat_n(ptr %a25, ptr %a26, i64 3)
+  %t30 = load %str, ptr %a25
+  call void @v_std.io.println(%str %t30)
   ret void
 }
 
-@.str.1 = private unnamed_addr constant [6 x i8] c"veles\00"
-@.str.2 = private unnamed_addr constant [2 x i8] c" \00"
+@.str.1 = private unnamed_addr constant [17 x i8] c"integer overflow\00"
+@.str.2 = private unnamed_addr constant [14 x i8] c"main.vs:23:14\00"
+@.str.3 = private unnamed_addr constant [6 x i8] c"veles\00"
+@.str.4 = private unnamed_addr constant [2 x i8] c" \00"

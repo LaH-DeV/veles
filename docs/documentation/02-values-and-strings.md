@@ -99,8 +99,9 @@ says to use `wrapU8()` if the low bits are what you want).
 
 ### Overflow is an error, unless you ask for wrapping
 
-`i32` cannot hold 2147483648. In a debug build `2147483647 + 1` panics
-at run time; in a `--release` build the check is dropped. When wrapping
+`i32` cannot hold 2147483648, so `2147483647 + 1` panics at run time — in
+every build, `--release` included, so a size or a limit computed from
+input never wraps silently into a small number that passes a check. When wrapping
 is what you want — hashes, counters, checksums — the wrapping operators
 `+%`, `-%`, `*%` say so in the source:
 

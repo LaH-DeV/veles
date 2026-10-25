@@ -1,10 +1,10 @@
-127 + 1 (i8) = -128
-0 - 1 (u8) = 255
-MIN * -1 = -9223372036854775808
--MIN (i32) = -2147483648
-MIN / -1 = -9223372036854775808
-MIN.abs() (i16) = -32768
-x += 1 at 127 (i8) = -128
+127 + 1 (i8): integer overflow
+0 - 1 (u8): integer overflow
+MIN * -1: integer overflow
+-MIN (i32): integer overflow
+MIN / -1: integer overflow
+MIN.abs() (i16): integer overflow
+x += 1 at 127 (i8): integer overflow
 127 +% 1 (i8) = -128
 300 as u8 = 44, -1 as u8 = 255
 sum of 250..255 (u8) = 1515

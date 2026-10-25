@@ -123,8 +123,8 @@ public fun civilFromDays(days: i64): (i64, i64, i64) {
 // fields goes through `instantOf`, which checks against these *before* it
 // multiplies — a year read out of a JSON body or an `If-Modified-Since`
 // header is a number someone else chose, and `+999999-01-01T00:00:00Z` is
-// 3.2e19 microseconds, which is not a panic a server may have (D21 checks
-// the overflow in a debug build and wraps in release; neither is an answer).
+// 3.2e19 microseconds, which is not a panic a server may have (D209 makes
+// the overflow a panic in every build, which is no answer either).
 const maxSeconds: i64 = 9223372036854  // i64 microseconds, floored
 const maxDays: i64 = maxSeconds / 86400
 

@@ -89,7 +89,7 @@ The other commands you will use:
 | `veles check <dir>` | type-check without compiling; `--fix` applies lint corrections; `--dump names\|types\|hir` prints a stable text dump of what the checker made (the package's own symbols, `--dump-std` adds the standard library's), `--dump modules\|scopes\|decls\|effects` of what it holds between its passes (the module graph; the declarations before any body is checked; the resolved declarations; what each function throws and whether it suspends, with the rounds it took), `--dump-spans` adds where each thing is written — the oracles a checker written in Veles is compared against |
 | `veles explain <family>` | what a kind of error means and how to fix it (the `see:` line) |
 | `veles test <dir>` | run every `test "..." { }` (chapter 14), several at once (`--jobs 1`: one at a time) |
-| `veles build <dir> --release` | optimise, and drop integer overflow checks |
+| `veles build <dir> --release` | optimise (every check stays: overflow, bounds, division by zero) |
 | `veles build <dir> --sanitize` | the C runtime and the link under AddressSanitizer and UBSan (chapter 13) |
 | `veles build <dir> --timings` | how long each phase took, and the modules that cost the most to check — for a build that feels slow |
 

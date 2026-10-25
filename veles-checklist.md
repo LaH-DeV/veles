@@ -353,6 +353,13 @@ f()).g()` warns that the inner `try` is redundant, with a fix; the `(try f()).g(
       now; `MIN.abs()` returned MIN silently in debug — now an overflow
       panic like `-MIN`. `pow` panics on overflow in both profiles, as its
       doc says
+- [x] Overflow is checked in release too (D209, 2026-10-25, from the
+      security review): `+ - *`, unary `-`, `abs` and `MIN / -1` panic in
+      every profile, at the operator's `file:line:col`. The golden
+      `overflow` now prints the same lines in both profiles, `unchecked`'s
+      release IR checks its `+ 1`; docs chapters 1 and 2, the `Duration`
+      and `time` comments. Measured on the built change: the 25-benchmark
+      suite within run-to-run noise of the wrapping build
 - [ ] Generic prelude bodies are checked only when instantiated: a call
       to a method the element type lacks (`this.isEmpty()` inside a
       `List<T>` extend) compiles until something uses it. Checking bodies
@@ -1170,13 +1177,7 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
   effect shown by the editor like `suspends` (deliberate panics only), a
   written marker, a name convention (removed in D62).
 
-- Q58: integer overflow in release builds (reopens D21, from the security
-  review of 2026-10-25). Today `+ - *`, unary `-`, `abs` and `MIN / -1` panic
-  in debug and wrap silently in release, so a size or limit computation from
-  outside input that a test would catch wraps in production (CWE-190; D21's
-  own "known wart"). Prepared with measurements and three options: keep D21,
-  checked in every build (Swift; `+%` and the `wrapping…` methods stay the
-  explicit wrap), or checked in every build plus a per-build opt-out.
+(2026-10-25: Q58, integer overflow in release, from the security review: D209.)
 
 (2026-10-14: Q32–Q43, prepared in `veles-direction-2026-10-14.md`, were decided the same day:
 Q32 D157, Q33 D158, Q42 D159, Q39 D160, Q40 + Q41 D161, Q43 D162, Q34 D163, Q36 D164,
@@ -1410,6 +1411,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-24 | Editing a value in several steps with one copy (user, on `this.trim().toLower().replace(…)`: "maybe we could have a mechanism that would 'open edit' …"; then "more of a Kotlin apply") | **Receiver function types `fun on T(): R`; a block `{ … }` takes that type where one is expected; no trailing blocks (`x.apply({ … })`); std `apply` (in place, on what the caller owns; a `val` refused with a fix to `edit`) and `edit` (an edited copy of an immutable value: string, List, Map, Set, structs; one copy), D207** (user, recommended for the type, the functions and `val`; no trailing blocks over the recommended). Rejected: `T.() -> R`; trailing blocks; `let`/`run`/`also`; `apply` copying a `val`. The same day, decision-free: `toLower`/`toUpper`/`replace` copy once (or not at all). |
 | 2026-10-24 | Trailing receiver blocks (user: "The syntax could be `apply { ... }` … it is important that the dev experience is good and performance is great") | **D207 amended: `{ … }` whose `this` is a value is a _receiver block_ (type: a _receiver function_); a same-line `{` after a call or method name is its last argument, filling a `fun on T()` or a plain `fun()`; a block has no parameters (`(a) => { … }` for `fun on T(A)`); `apply` and `edit` stay two names** (user, recommended of 4 on each). Rejected: only `x.apply({ … })`; trailing blocks for receiver functions only; `{ a -> … }`; `copy { … }` for `edit`. |
 | 2026-10-24 | Testing in the compiler (user: "we should be able to test `const fun`s etc no? maybe we should allow tests to run in the compiler?") | **Automatic: a test whose body the compiler can run runs there too, under `veles test`; test helpers likewise (so `@SkipIf(helper())` works); the report marks it and a one-sided failure names the side, D208** (user, over the recommended `const test` keyword). Rejected: `const test`; the compiler only; helpers only. |
+| 2026-10-25 | Q58: integer overflow in release builds (security review) | **Checked in every build** (user, recommended of 3; spec D209, amends D21): `+ - *`, unary `-`, `abs`, `MIN / -1` panic in release too; `+%` and the `wrapping…`/`checked…`/`saturating…` methods are the explicit choices; no opt-out switch. Measured first: typically +5% (an `adapters` +31% did not reproduce on the built change). Rejected: keep D21 (debug and release mean different things); checked plus a project-level `overflow = "wrap"` (a global switch that changes meaning, as Q11 refused for bounds). |
 
 ## 11. Known limitations to revisit
 
@@ -2152,8 +2154,7 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
   (Log4Shell-style lookups, deserialization gadgets, SQL/command injection, memory safety, ReDoS, path traversal,
   request smuggling, decompression bombs, TLS defaults, secrets, Trojan Source, supply chain — all closed by design or
   by earlier fixes, §2). Fixed here: hash flooding and forged log lines (§2). Left:
-  (a) **Integer overflow wraps silently in release (D21)** — the CWE-190 class behind many size-calculation CVEs;
-  Swift traps in every build. A design decision, prepared through `veles-decide`, measured before it is changed.
+  (a) ~~Integer overflow wraps silently in release (D21)~~ — decided 2026-10-25: checked in every build (D209).
   (b) **A user `hash()` is not keyed.** The map scrambles whatever it returns, which defeats keys that differ only in
   high bits, but a user hash with full 64-bit collisions (e.g. `x * 31 + y` over chosen `x`, `y`) still floods. A
   keyed `Hasher` passed to `hash` (Rust's shape), or deriving `Hashable` from the fields through the keyed combine,

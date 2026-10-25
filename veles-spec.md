@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.111** — decisions D1–D208. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.112** — decisions D1–D209. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -351,11 +351,11 @@ Because the GC means there is no drop glue to run, a cheaper option is available
 
 _Amended (v0.23) — bitwise operators._ Integers have `&`, `|`, `^`, `<<`, `>>` and unary `~`, with Go's grouping (`&`, `<<`, `>>` at the level of `*`; `|`, `^` at the level of `+`). A shift count may be any integer type; a count at or beyond the width yields 0 (the sign fill for a signed `>>`), never undefined behaviour. Literals may be hexadecimal (`0xFF`) or binary (`0b1010`).
 
-Rust's model, plus an explicit operator. `+` is checked in debug builds and wraps in release. `+%` means "I intend wrapping, in every build" — Rust's `wrapping_add`, promoted to an operator.
+_(Amended by D209, 2026-10-25: `+` is checked in every build.)_ Rust's model, plus an explicit operator. ~~`+` is checked in debug builds and wraps in release.~~ `+%` means "I intend wrapping, in every build" — Rust's `wrapping_add`, promoted to an operator.
 
-_Known wart:_ overflow behaves differently between builds, so a bug that panics loudly in tests can wrap silently in production.
+~~_Known wart:_ overflow behaves differently between builds, so a bug that panics loudly in tests can wrap silently in production.~~ (D209 removed it.)
 
-_Resolves the D20 interaction:_ release builds have no overflow checks, so no landing pads on arithmetic.
+~~_Resolves the D20 interaction:_ release builds have no overflow checks, so no landing pads on arithmetic.~~
 
 _Default integer type:_ an integer literal with no expected type is `i64`, and so are lengths, indices and counts. There are no implicit widenings (a `T` is never silently an `i64`), so having one default everywhere is what keeps ordinary code cast-free; the narrower types are for layout, C interop and bit work, and a literal adapts to them wherever one is expected.
 
@@ -8375,6 +8375,57 @@ the compiler only (the two engines never compared); helpers only.
 Built 2026-10-24 (plan C12). A test over the step limit runs in the program
 only; a test that uses `try`, or one under a suite's `skip`/`skipIf` gate,
 does not run in the compiler yet (checklist §11).
+
+### D209 — Integer overflow is checked in every build (v0.112; amends D21)
+
+Decided 2026-10-25 (Q58, from the security review; user, recommended of 3).
+D21 checked `+ - *` in debug builds and wrapped in release, and named the
+cost itself: "a bug that panics loudly in tests can wrap silently in
+production". A size or limit computed from outside input is where that
+bites (CWE-190):
+
+```veles
+// A request says how many records it will send; each takes 16 bytes.
+fun fitsBudget(count: i64, budget: i64): bool {
+  val bytes = count * 16        // count = 2^60: was 0 in release, "fits"
+  return bytes <= budget
+}
+```
+
+- **The rule.** `+`, `-`, `*`, unary `-`, `abs()` and `MIN / -1` (and `%`)
+  panic `integer overflow` at the operator in **every** build profile, as
+  bounds checks do (D114) and as constant evaluation already refused in every
+  profile (D113). A release panic prints the operator's `file:line:col`; a
+  debug build adds the call chain (D81).
+- **Wrapping is spelled.** `+%`, `-%`, `*%` (and `+%=`…) and `wrappingAdd`/
+  `wrappingSub`/`wrappingMul` wrap in every build; `checkedAdd…` give `T?`,
+  `saturating…` stop at the bounds; `wrapT()` truncates a conversion (D86).
+  Hashes, checksums, PRNGs and ring indices use these.
+- **Unchanged:** pointer arithmetic inside `unsafe` (D44, unchecked by
+  design), atomics' read-modify-write (D144, wrapping like the hardware),
+  shifts (D21's amendment: a count past the width gives 0), floats.
+- **No switch.** There is no per-build or per-project opt-out — a switch
+  that changes what a program means is the shape Q11 rejected for bounds
+  checks (D114), and a library could not rely on it. Hot code that wants
+  no check says so per operation with `+%`, or lets the optimizer drop the
+  check where it proves the range.
+- **Cost, measured** before deciding (the 25-benchmark suite, release,
+  best of two, checks on vs. off): typically about +5% — `ast` 0, `lexer`
+  −5%, `parse` +9%, `json` +4%, `maps` +3%, `gzip` +7%, `gunzip` +13%,
+  `emptycoll` +13%, `httphello` +6% — and `adapters` +31%. Re-measured on the
+  built change (2026-10-25), `adapters` is 42–44 ms against 42.7–45 ms
+  wrapping: that +31% was one noisy run (the prelude adapters do no
+  arithmetic of their own; the benchmark's lambdas are what is checked), and
+  the suite as a whole moved within its run-to-run noise.
+
+D21's "_Resolves the D20 interaction:_ release builds have no overflow
+checks, so no landing pads on arithmetic" no longer holds; a release build
+already panics for bounds, division by zero and `pow`, so an overflow is
+one more such site.
+
+Rejected: keeping D21 (debug and release mean different things); checked
+everywhere with a project-level `overflow = "wrap"` opt-out (a global
+switch, as above).
 
 ### I1 — generators: investigated, not decided
 
