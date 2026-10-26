@@ -75,7 +75,7 @@ fun assignUnknown() {
   missing = 1 // error: unknown name 'missing'
 }
 fun assignGlobal() {
-  limit = 4 // error: cannot assign to 'limit': it is a module-level 'val'; state every task shares is a 'var' behind a lock (D66)
+  limit = 4 // error: cannot assign to 'limit': it is a module-level 'val'; state every task shares lives behind a lock ('val x = Mutex(value: ...)') or in an executor's state (D66/D150)
 }
 fun assignFunction() {
   unitBody = 1 // error: 'unitBody' is not assignable

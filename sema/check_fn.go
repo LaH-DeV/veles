@@ -483,13 +483,38 @@ func (c *Checker) checkGlobal(g *Global) {
 	if types.IsNever(declared) || types.IsUnit(declared) {
 		c.errorf(d.Name.Pos, "a global cannot have type '%s': its initializer gives no value to keep", declared)
 	}
-	if d.Kind == ast.BindVar && !isSynchronized(declared) && c.stateOwner[g] == nil {
-		// D66: every task sees the same globals, from whichever thread runs it
-		example := "val " + d.Name.Name + " = Mutex(value: ...)"
-		if _, ok := declared.(*types.Basic); ok {
-			example = "val " + d.Name.Name + " = Atomic(value: ...)"
+	if d.Kind == ast.BindVar && c.stateOwner[g] == nil {
+		// D66: every task sees the same globals, from whichever thread runs it.
+		// A synchronized value guards what it holds, not the global's slot:
+		// reassigning it races with every task using the old one (v0.114)
+		if isSynchronized(declared) {
+			var fix *source.Fix
+			if kw, ok := keywordBefore(d.Name.Pos, "var"); ok {
+				fix = &source.Fix{Title: "declare it 'val'", Edits: []source.TextEdit{{Span: kw, NewText: "val"}}}
+			}
+			c.errorFix(d.Name.Pos, fix, "module-level 'var %s' is shared by every task; the lock is inside the value, so declare it 'val' and change what it holds%s (D66)", d.Name.Name, syncWriteHint(declared, d.Name.Name))
+		} else {
+			example := "val " + d.Name.Name + " = Mutex(value: ...)"
+			if _, ok := declared.(*types.Basic); ok {
+				example = "val " + d.Name.Name + " = Atomic(value: ...)"
+			}
+			c.errorf(d.Name.Pos, "module-level 'var %s' is shared by every task, and tasks run on several threads at once (D66); keep the state behind a lock: '%s'", d.Name.Name, example)
 		}
-		c.errorf(d.Name.Pos, "module-level 'var %s' is shared by every task, and tasks run on several threads at once (D66); keep the state behind a lock: '%s'", d.Name.Name, example)
+	} else if d.Kind != ast.BindConst && c.stateOwner[g] == nil && !types.IsInvalid(declared) && !sendable(declared) {
+		// D66/D150: a global `val` is reached by every task too, and a
+		// MutableMap in it is changed through its methods, not by assignment
+		what, decl := fmt.Sprintf("module-level '%s %s'", d.Kind, g.Display), "val "+d.Name.Name
+		if c.staticOwner[g] != nil {
+			what, decl = fmt.Sprintf("'static %s %s'", d.Kind, g.Display), "static val "+d.Name.Name
+		}
+		fix := fmt.Sprintf("keep it behind a lock ('%s = Mutex(value: ...)') or in an executor's state (D150)", decl)
+		switch t := declared.(type) {
+		case *types.List, *types.Map, *types.Set:
+			fix = "make it immutable (a 'List', 'Map' or 'Set': '.toList()', '.toMap()', '.toSet()'), " + fix
+		case *types.Trait:
+			fix = fmt.Sprintf("require it of every implementor ('trait %s : Sendable'), or %s", t.Name, fix)
+		}
+		c.errorf(d.Name.Pos, "%s has type '%s', which is not Sendable: every task, on any thread, reaches it and could change what it holds (D66); %s", what, declared, fix)
 	}
 	g.Type = declared
 	g.Init = init
@@ -503,6 +528,57 @@ func isSynchronized(t types.Type) bool {
 	}
 	sync, _ := syncWrapper(st)
 	return sync
+}
+
+// syncWriteHint names the write a synchronized type offers in place of an
+// assignment (D66 v0.114): ": 'total.set(...)'", or why it has none.
+func syncWriteHint(t types.Type, name string) string {
+	st, _ := t.(*types.Struct)
+	if st == nil {
+		return ""
+	}
+	switch st.Name {
+	case "Mutex", "RwLock", "Watch":
+		return ": '" + name + ".set(...)'"
+	case "Atomic":
+		return ": '" + name + ".store(...)'"
+	case "Event":
+		return ": '" + name + ".set()' / '" + name + ".reset()'"
+	case "Lazy":
+		return " (a Lazy is built once and never replaced)"
+	}
+	return " (it cannot be replaced while tasks use it)"
+}
+
+// globalWriteHint ends an error about changing a global `val`: an
+// executor's state may be a `var` (D150); a module-level one never is
+// (D66 v0.114), so the hint names the type's own write or a lock.
+func (c *Checker) globalWriteHint(g *Global) string {
+	if g != nil && c.stateOwner[g] != nil {
+		return "; declare it 'var' (D150)"
+	}
+	if g != nil && isSynchronized(g.Type) {
+		return "; change what it holds" + syncWriteHint(g.Type, g.Display) + " (D66)"
+	}
+	return "; state every task shares lives behind a lock ('val x = Mutex(value: ...)') or in an executor's state (D66/D150)"
+}
+
+// keywordBefore finds the keyword written right before name (`var` in
+// `var total = …`), across spaces, for a fix that rewrites it.
+func keywordBefore(name source.Span, kw string) (source.Span, bool) {
+	if name.File == nil {
+		return source.Span{}, false
+	}
+	src := name.File.Content
+	end := name.Start
+	for end > 0 && (src[end-1] == ' ' || src[end-1] == '\t') {
+		end--
+	}
+	start := end - len(kw)
+	if start < 0 || src[start:end] != kw || end == name.Start {
+		return source.Span{}, false
+	}
+	return source.Span{File: name.File, Start: start, End: end}, true
 }
 
 // ---------------------------------------------------------------------------
@@ -1079,7 +1155,11 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			g := sym.Global
 			f.checkStateUse(g, e.Pos)
 			if mutate && !g.Mutable {
-				f.errorf(e.Pos, "cannot assign to '%s': it is a module-level 'val'; state every task shares is a 'var' behind a lock (D66)", e.Name)
+				where := "a module-level 'val'"
+				if f.c.stateOwner[g] != nil {
+					where = "a 'val' of its executor's state"
+				}
+				f.errorf(e.Pos, "cannot assign to '%s': it is %s%s", e.Name, where, f.c.globalWriteHint(g))
 			}
 			v := f.globalVar(g)
 			f.c.refGlobal(e.Pos, e.Name, g)
@@ -1130,7 +1210,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 			root = nil
 		} else if mutate && root != nil && root.IsGlobal && !root.Mutable {
 			// a global `val` is shared by every task (D35): nothing in it changes
-			f.errorf(e.Pos, "cannot assign to field '%s' of '%s': a global 'val' is a constant; declare it 'var' (D11/D35)", e.Name.Name, root.Name)
+			f.errorf(e.Pos, "cannot assign to field '%s' of '%s': a global 'val' is a constant%s", e.Name.Name, root.Name, f.c.globalWriteHint(root.Global))
 		} else if mutate && (temporary || root == nil && !isPlaceExpr(base)) {
 			f.copyMutationHint(e.X, e.Pos, "cannot assign to a field of a temporary value")
 			return nil, nil

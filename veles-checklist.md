@@ -1177,7 +1177,22 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
   effect shown by the editor like `suspends` (deliberate panics only), a
   written marker, a name convention (removed in D62).
 
+- Q59: mutable singleton state without a lock or a dedicated OS thread
+  (`veles-patterns.md` P2). Offered: a serial executor, `executor
+  metrics(serial: true) { var … }` (D150's rules on the shared pool, one
+  task at a time; recommended, with suspension refused inside its code), the
+  same but reentrant across suspension (Swift actors), or leaving `Mutex`
+  and thread executors. User, 2026-10-26: "not sure yet, not to be decided
+  today".
+
+- Q60: a spelling for replaceable globals (dependency injection, test
+  fakes; `veles-patterns.md` P4). Offered: `context val clock: Clock =
+  SystemClock()` with plain reads and `with clock = Fake()` rebinding, as
+  sugar over D72 (recommended), or documenting `TaskLocal(fallback:)` as
+  the pattern. User, 2026-10-26: "probably keyword but do not decide now".
+
 (2026-10-25: Q58, integer overflow in release, from the security review: D209.)
+(2026-10-26: the patterns menu, `veles-patterns.md`: P1 → D210, P3 → D211; P2 → Q59, P4 → Q60 open; P5 and R1–R8 not yet asked.)
 
 (2026-10-14: Q32–Q43, prepared in `veles-direction-2026-10-14.md`, were decided the same day:
 Q32 D157, Q33 D158, Q42 D159, Q39 D160, Q40 + Q41 D161, Q43 D162, Q34 D163, Q36 D164,
@@ -1412,8 +1427,45 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-24 | Trailing receiver blocks (user: "The syntax could be `apply { ... }` … it is important that the dev experience is good and performance is great") | **D207 amended: `{ … }` whose `this` is a value is a _receiver block_ (type: a _receiver function_); a same-line `{` after a call or method name is its last argument, filling a `fun on T()` or a plain `fun()`; a block has no parameters (`(a) => { … }` for `fun on T(A)`); `apply` and `edit` stay two names** (user, recommended of 4 on each). Rejected: only `x.apply({ … })`; trailing blocks for receiver functions only; `{ a -> … }`; `copy { … }` for `edit`. |
 | 2026-10-24 | Testing in the compiler (user: "we should be able to test `const fun`s etc no? maybe we should allow tests to run in the compiler?") | **Automatic: a test whose body the compiler can run runs there too, under `veles test`; test helpers likewise (so `@SkipIf(helper())` works); the report marks it and a one-sided failure names the side, D208** (user, over the recommended `const test` keyword). Rejected: `const test`; the compiler only; helpers only. |
 | 2026-10-25 | Q58: integer overflow in release builds (security review) | **Checked in every build** (user, recommended of 3; spec D209, amends D21): `+ - *`, unary `-`, `abs`, `MIN / -1` panic in release too; `+%` and the `wrapping…`/`checked…`/`saturating…` methods are the explicit choices; no opt-out switch. Measured first: typically +5% (an `adapters` +31% did not reproduce on the built change). Rejected: keep D21 (debug and release mean different things); checked plus a project-level `overflow = "wrap"` (a global switch that changes meaning, as Q11 refused for bounds). |
+| 2026-10-26 | Singletons (user: "how we'll support 'singleton' pattern … and different other common patterns"; menu `veles-patterns.md` P1) | **`lazy val` on module and static `val`s, spec D210** (user, recommended of 3): built on the first read, once, with `Lazy`'s rules; reads are plain names; eager stays the default; not on fields. Rejected: `Lazy` + `.get()` only; every global lazy (Swift). |
+| 2026-10-26 | A module `var` of a synchronized type was reassignable (found building B29 part 1: `var total = Mutex(value: 0)` reassigned while tasks locked it printed 200 002 of 200 000) | **No module-level `var`; every module global is a `val` of a `Sendable` type, D66 addendum v0.114** (user, recommended of 4): fix `var` → `val`, hints `set`/`store`/`reset`; executor state keeps `var`. Rejected: an atomic slot (the two-lock race remains); assignment only before the first task; documenting it. |
+| 2026-10-26 | A singleton with a lifecycle (menu P3) | **Made in `main` and handed down, spec D211** (user, recommended of 2): module initializers still cannot throw or suspend, and nothing is closed after `main`. Rejected: throwing/suspending initializers in the root package with globals closed after `main`; a `service` declaration. |
 
 ## 11. Known limitations to revisit
+
+- [x] **Fixed 2026-10-26 (plan B29 part 1):** `sema/check_fn.go`
+      `checkGlobal` refuses a module or `static val` whose type is not
+      `Sendable` (an executor's state is exempt), with a hint per kind:
+      immutable collection, `trait X : Sendable`, `Mutex`, executor. Pinned
+      by `TestConcurrencyRules` (six cases) and `TestConcurrencyAccepted`.
+      Nothing in std, examples, selfhost or docs hit it;
+      `TestPrivateMembers`'s fixture had a racy `static val` and now uses a
+      `static fun`. Docs: chapter 12, chapter 14 and the error reference.
+      **A module `val` of a mutable reference type races (found 2026-10-26,
+      veles-patterns.md F1).** `val cache = MutableMap<i64, i64>()` at module
+      level compiles, and four tasks calling `cache.set` hang or segfault under
+      `VELES_THREADS=8`. `sema/check_fn.go` refuses an unsynchronized module
+      `var` only. The global-`val` receiver check (`sema/receivers.go`, the
+      `RecvPlace` case) does not see handle receivers (`MutableMap`,
+      `MutableList`, `StringBuilder`). Fix per D66/D150: a module `val` and a
+      `static val` have to have a `Sendable` type, and the error suggests
+      `Mutex(value: …)`, an immutable collection or an executor. Migrate std
+      and examples if any of them hit it.
+- [x] **Decided and built 2026-10-26 (D66 addendum v0.114; user,
+      recommended of 4): no module-level `var` at all.** A `var` of a
+      synchronized type is an error with a fix that writes `val`, and the
+      message names the type's write (`set`/`store`/`reset`). Assigning a
+      global `val`, its field, or calling a mutating method on it no longer
+      says "declare it 'var'"; executor state still does (D150). Pinned by
+      `TestConcurrencyRules` (five cases) and `TestModuleVarOfLockFix`. The
+      tree had no such `var`. **A module `var` of a synchronized type can be
+      reassigned (found 2026-10-26, building the above).** `var hits = Atomic(value: 0)` is
+      accepted, as D66 says ("a module-level `var` whose type is not
+      synchronized" is the error). But `hits = Atomic(value: 5)` from a task
+      then writes the global's slot with no lock, while other tasks read it.
+      Refusing the assignment, or refusing `var` for these types ("use
+      `val`: the lock is inside"), changes D66's text, so it needs a decision
+      (veles-decide).
 
 - **B19 / D157 (implemented 2026-10-22; verified on Windows and Linux with
       the B22 runs, 2026-10-23; staticcheck reports nothing new).**

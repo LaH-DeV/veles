@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.112** — decisions D1–D209. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.114** — decisions D1–D211. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -1676,6 +1676,44 @@ channel has a lock of its own; a `race` claims its winner by
 compare-and-swap, so a value, a close, a timer and a finished task on
 different threads cannot complete it twice. The runtime lock is left for
 timers and socket waits.
+_Addendum (v0.114, 2026-10-26): no module-level `var`; every module global
+is a `val` of a `Sendable` type._
+
+```veles
+var total = Mutex(value: 0)     // error: module-level 'var total' … declare it 'val' and change what it holds: 'total.set(…)'
+val total = Mutex(value: 0)
+fun reset() { total.set(0) }    // the contents change under the lock; the global never does
+```
+
+The rule above allowed a `var` whose type is synchronized. The lock
+guards what the value holds, not the global's own slot: `total =
+Mutex(value: 0)` in one task raced with `total.withLock(…)` in the
+others. A `Mutex` global is two words, so a reader could see half of each
+and two tasks entered "the" critical section; a probe made 200 000
+increments and printed 200 002. (Found building plan B29 part 1, which made
+a module and `static val` require a `Sendable` type the same day.)
+
+- **A module-level `var` is an error** whatever its type, with a fix that
+  writes `val`. Mutable state outside a lock lives only in a one-thread
+  executor's state (D150, which keeps `var`). `static var` was already
+  refused, so module and static members follow one rule.
+- **Assigning such a global** is then the ordinary "cannot assign to a
+  `val`" error, with a hint naming the type's own write: `set(v)` for
+  `Mutex`, `RwLock` and `Watch`, `store(v)` for `Atomic`, `reset()` for
+  `Event`. `Lazy` has no reset (rebuilding on demand would be a decision of
+  its own). `TaskLocal` is rebound by `withValue`/`bind`, never assigned
+  (D72). An `Executor` cannot be swapped at run time: declare one (D150), or
+  hold it in a `Mutex` if a program needs to.
+- Low level: raw pointers in `unsafe` and atomics (D144) are unchanged.
+
+User, 2026-10-26, recommended of 4. Rejected: an atomic slot (the global
+behind a pointer published with release/acquire: the torn read goes, but a
+task holding the old lock and one taking the new one still both run, and
+every read pays an indirection); assignment allowed only before the first
+task starts (a cross-call flow analysis for a case `lazy val`, D210, and
+"made in `main`", D211, already cover); leaving it documented. Swift 6 is the
+precedent: a global `let` must be Sendable, and a global `var` must belong
+to an actor.
 
 ### D67 — FFI: `extern` blocks anywhere, native libraries in the manifest (v0.41)
 
@@ -8426,6 +8464,77 @@ one more such site.
 Rejected: keeping D21 (debug and release mean different things); checked
 everywhere with a project-level `overflow = "wrap"` opt-out (a global
 switch, as above).
+
+### D210 — `lazy val`: a global built on its first read (v0.113)
+
+```veles
+lazy val keywords = buildKeywordTable()          // built on the first read, once, by whichever task gets there first
+fun isKeyword(s: string): bool => keywords.contains(s)
+
+struct Tz {
+  static lazy val utc = Tz.load("UTC")
+}
+```
+
+From the patterns menu (`veles-patterns.md` P1). An expensive global, such as
+a table, a parsed embedded file or a compiled regex set, was either built
+before `main` whether or not the program needed it, or held in a `Lazy` with
+`.get()` on every read.
+
+- **`lazy`** is a modifier of a module-level `val` and of a `static val`, in
+  the same place as D90's `lazy` parameter. The initializer runs on the first
+  read, once. Concurrent first readers wait for the one running it (D146
+  `Lazy`'s rules). Reads are plain names.
+- The initializer cannot suspend or throw, and it runs as a `sendable`
+  function. A panic in it is raised again on every later read. The type has
+  to be `Sendable`. Module values are still ordered by dependency and a
+  cycle is still an error (D113), now counting lazy values too.
+- Not in a `const` or a `const fun` (the error says the value is built at run
+  time). Not on a `var`, a local or a field. A field would put a flag and a
+  branch in every value of its type; `Lazy<T>` stays the form for a field,
+  a local, or a value passed around (amends D187's "possible later sugar":
+  globals only).
+- Cost: a read is one acquire load and a predictable branch, and then the
+  value. The check is hoisted out of a loop, because the value never changes
+  once built. Eager stays the default for a plain `val`: the order of
+  initialization and its side effects remain where the source puts them.
+- Hover on the name says "lazy: built on first read". `veles fmt` keeps the
+  modifier order `public static lazy val`.
+
+User, 2026-10-26, recommended of 3. Rejected: keeping `Lazy` + `.get()` as
+the only form (the cheap choice stays the noisy one); every global with a
+non-constant initializer lazy (Swift's rule: initialization side effects
+happen at an unknown time or never, every read of a global pays a check, and
+startup is no longer deterministic).
+
+Both levels: `lazy val` is the high level; `Lazy<T>` and `isReady()` stay the
+low level. Self-hosting: the compiler's keyword, operator and builtin tables
+are built only by a run that needs them.
+
+### D211 — A resource is made in `main`, not by a global initializer (v0.113)
+
+```veles
+fun main() throws DbError {
+  with db = try Db.connect(os.env("DATABASE_URL") ?: "postgres://localhost")
+  try http.serve(listener, router(db))
+}
+```
+
+From the patterns menu (`veles-patterns.md` P3). A singleton with a lifecycle
+is a database pool, a client or a log sink: making it can fail or suspend,
+and it has to be closed. It stays a value made in `main` (or in a test) and
+handed down, as a parameter or as a task-local binding (D72). A module
+initializer still cannot throw or suspend (D150's rule for executor
+arguments holds for every global). No global is closed after `main`.
+
+User, 2026-10-26, recommended of 2. The reason that decides it: a global made
+by I/O cannot be replaced in a test, and every `veles test` run would open
+it; Go's experience with `init()` doing I/O is the evidence. Rejected:
+throwing and suspending initializers in the program's own package with
+`Closeable` globals closed after `main` in reverse order; a `service`
+declaration with start/stop (a container's policy in the language). Still
+to do: a docs chapter on application structure, showing `main` → handlers,
+and test fakes through task-locals.
 
 ### I1 — generators: investigated, not decided
 

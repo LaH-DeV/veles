@@ -862,6 +862,28 @@ of workers), or as `with t = async f()` when it runs in the background
 until the block ends, which cancels it then (D100) — a server in a test,
 a ticker.
 
+#### `module-level 'val cache' has type 'MutableMap<i64, i64>', which is not Sendable`
+
+Every task, on any thread, reaches a module-level `val` or a `static
+val`. A mutable collection, a `StringBuilder`, or a struct holding one
+would be changed through its methods by several threads at once (D66).
+Make the value immutable (`List`, `Map`, `Set`; `.toList()`), keep it
+behind a lock (`val cache = Mutex(value: MutableMap<i64, i64>())`), or
+keep it in an executor's state when one thread owns it (D150). For a
+trait object, declare the trait `Sendable` (`trait Clock : Sendable`) so
+every implementor is.
+
+#### `module-level 'var total' is shared by every task`
+
+No module global is a `var` (D66). For a plain value, keep the state
+behind a lock: `val hits = Atomic(value: 0)`. For a `Mutex`, an `Atomic`
+or another synchronized type, the lock is already inside the value: the
+global itself must not be replaced, because a task still holding the old
+lock would run beside a task taking the new one. Declare it `val` (the fix
+does this), and change what it holds: `total.set(0)`, `hits.store(0)`,
+`ready.reset()`. An executor's state is the one place a global `var` lives
+(D150).
+
 #### `'t' is not awaited on this path` / `'t' is not awaited on every path to the end of its block`
 
 A task bound with `val` runs alongside the rest of its block, and every

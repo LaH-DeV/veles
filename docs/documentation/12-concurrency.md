@@ -1427,15 +1427,29 @@ name, is a bare critical section.
 
 A module-level `var` is an error for the same reason a captured one is:
 every task sees the module's bindings, from whichever thread it runs on.
-Module state that changes is a `val` holding a lock:
+For the same reason a module-level `val`, and a `static val`, must have a
+`Sendable` type. A `MutableMap` in a `val` is never reassigned, but its
+methods change it. Module state that changes is a `val` holding a lock:
 
 ```veles
 // fragment
 var served = 0              // error: module-level 'var served' is shared by every task …
+var lock = Mutex(value: 0)  // error: … the lock is inside the value, so declare it 'val' and change what it holds: 'lock.set(...)'
+val seen = MutableMap<string, i64>()   // error: … 'MutableMap<string, i64>', which is not Sendable …
 val served = Atomic(value: 0)      // ok: served.add(1)
 val cache = Mutex(value: MutableMap<string, string>())
 val table = Lazy(init: () => buildTable())   // ok: built on first use
+val ports = ["http": 80, "https": 443]       // ok: an immutable Map is Sendable
 ```
+
+No module global is a `var`, not even one holding a lock: replacing the
+`Mutex` itself would let a task holding the old one run beside a task
+taking the new one. The value changes through its own methods
+(`served.store(0)`, `cache.set(…)`). A global of a trait type, `val clock:
+Clock = SystemClock()`, needs a
+trait that requires `Sendable` of every implementor (`trait Clock :
+Sendable`). State that only one thread uses can be kept in an executor
+without a lock (D150).
 
 ## More shared state: `RwLock`, `Event`, `Lazy`, `Broadcast`, `Watch`
 

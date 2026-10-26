@@ -183,7 +183,7 @@ func (c *Checker) applyReceiver(call *Call) {
 			root.AddrTaken = true
 		}
 		if fn.WritesSelf && root != nil && root.IsGlobal && !root.Mutable {
-			c.errorf(call.RecvSpan, "cannot call '%s' on '%s': the method changes its receiver and a global 'val' is a constant shared by every task; declare it 'var' (D11/D35)", fn.Display, root.Name)
+			c.errorf(call.RecvSpan, "cannot call '%s' on '%s': the method changes its receiver and a global 'val' is a constant shared by every task%s", fn.Display, root.Name, c.globalWriteHint(root.Global))
 		}
 	case RecvTemp, RecvHandle:
 		if fn.SelfEscapes {

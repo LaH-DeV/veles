@@ -365,8 +365,8 @@ Tests run at once, as tasks on the runtime's threads, so a suite takes
 about as long as its slowest tests rather than all of them added up. The
 report does not change with it: each test's lines — its verdict, what it
 recorded, what it printed — come together, in declaration order, whichever
-test finished first. Tests cannot race on memory (a module-level `var` is
-behind a lock, D66, and only Sendable values cross between tasks), but
+test finished first. Tests cannot race on memory (module-level state is
+Sendable or behind a lock, D66, and only Sendable values cross between tasks), but
 they can still step on each other's toes — two tests resetting one
 counter, binding one port; `--jobs 1` runs them one at a time (D80).
 

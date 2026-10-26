@@ -382,10 +382,67 @@ fun main() { hits += 1 }`, "'val hits = Atomic(value: ...)'"},
 struct P { var n: i32 }
 var p = P(n: 1)
 fun main() { }`, "'val p = Mutex(value: ...)'"},
+		// a module `val` is reached by every task as a `var` is: a mutable
+		// collection in it changes through its methods (found 2026-10-26)
+		{"D66 module-level val of a MutableMap", prelude + `
+val cache = MutableMap<i64, i64>()
+fun main() { cache.set(1, 1) }`, "module-level 'val cache' has type 'MutableMap<i64, i64>', which is not Sendable"},
+		{"D66 module-level val of a MutableList suggests an immutable list", prelude + `
+val seen = MutableList<string>.make(0, _ => "")
+fun main() { }`, "make it immutable"},
+		{"D66 module-level val of a StringBuilder", prelude + `
+val out = StringBuilder()
+fun main() { }`, "'val out = Mutex(value: ...)'"},
+		{"D66 module-level val of a non-Sendable trait object", prelude + `
+trait Clock { fun now(): i64 }
+struct Fixed { at: i64 }
+implement Clock for Fixed { fun now(): i64 => at }
+val clock: Clock = Fixed(at: 1)
+fun main() { }`, "'trait Clock : Sendable'"},
+		{"D66 static val of a struct holding a MutableList", prelude + `
+struct Registry {
+  names: MutableList<string>
+  static val shared = Registry(names: MutableList<string>.make(0, _ => ""))
+}
+fun main() { }`, "'static val Registry.shared' has type 'Registry'"},
+		// a lock guards what it holds, not the global's slot: reassigning a
+		// module `var total = Mutex(…)` raced with its users (D66 v0.114)
+		{"D66 module-level var of a Mutex", prelude + `
+var total = Mutex(value: 0)
+fun main() { }`, "module-level 'var total' is shared by every task; the lock is inside the value, so declare it 'val' and change what it holds: 'total.set(...)'"},
+		{"D66 module-level var of an Atomic", prelude + `
+var hits = Atomic(value: 0)
+fun main() { }`, "'hits.store(...)'"},
+		{"D66 assigning a module-level val of a Mutex", prelude + `
+val total = Mutex(value: 0)
+fun main() { total = Mutex(value: 1) }`, "cannot assign to 'total': it is a module-level 'val'; change what it holds: 'total.set(...)'"},
+		{"D66 a field of a module-level val", prelude + `
+struct P { var n: i64 }
+val p = P(n: 1)
+fun main() { p.n = 2 }`, "in an executor's state (D66/D150)"},
+		{"D150 assigning an executor's val", prelude + `
+executor gl {
+  val count = 0
+  fun bump() { count = 1 }
+}
+fun main() { }`, "it is a 'val' of its executor's state; declare it 'var' (D150)"},
+		{"D66 Lazy of a non-Sendable value", prelude + `
+val table = Lazy(init: () => MutableList<i64>.make(0, i => i))
+fun main() { }`, "'val table' has type 'Lazy<MutableList<i64>>', which is not Sendable"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) { expectError(t, c.src, c.want) })
 	}
+}
+
+// D66 v0.114: the fix for a module `var` of a synchronized type writes `val`
+func TestModuleVarOfLockFix(t *testing.T) {
+	src := prelude + "\npublic var  total = Mutex(value: 0)\nfun main() { io.println(\"${total.get()}\") }\n"
+	got := applyFixEdits(t, src, "module-level 'var total'")
+	if !strings.Contains(got, "public val  total = Mutex(value: 0)") {
+		t.Fatalf("fix did not write 'val':\n%s", got)
+	}
+	expectClean(t, got)
 }
 
 func TestConcurrencyAccepted(t *testing.T) {
@@ -412,6 +469,27 @@ fun main() {
   val _ = hits.update(n => n + 1)
   names.withLock(xs => xs.push("a"))
   io.println("${hits.load()} ${names.withLock(xs => xs.len())}")
+}`)
+	// module and static vals of Sendable types; an executor's state is its thread's
+	expectClean(t, prelude+`
+trait Clock : Sendable { fun now(): i64 }
+struct Fixed { at: i64 }
+implement Clock for Fixed { fun now(): i64 => at }
+struct Config {
+  port: i64
+  static val fallback = Config(port: 80)
+}
+val clock: Clock = Fixed(at: 1)
+val words = ["a", "b"]
+val ports = ["http": 80]
+val table = Lazy(init: () => [1, 2, 3])
+val inc = (x: i64) => x + 1
+executor gl {
+  var names: MutableList<string> = []
+  fun add(n: string) { names.push(n) }
+}
+fun main() {
+  io.println("${clock.now()} ${words.len()} ${ports.len()} ${table.get().len()} ${inc(Config.fallback.port)}")
 }`)
 }
 
@@ -2410,7 +2488,7 @@ struct Note { id: i64; text: string }
 struct Notes {
   private var next: i64 = 1
   private items:    MutableList<Note> = []
-  static val seeded = Notes(next: 100)
+  static fun seeded(): Notes => Notes(next: 100)   // a 'static val' would share its MutableList (D66)
   fun add(text: string): Note {
     val n = Note(id: this.next, text)
     this.items.push(n)
