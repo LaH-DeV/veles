@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.114** — decisions D1–D211. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.115** — decisions D1–D213. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -8535,6 +8535,129 @@ throwing and suspending initializers in the program's own package with
 declaration with start/stop (a container's policy in the language). Still
 to do: a docs chapter on application structure, showing `main` → handlers,
 and test fakes through task-locals.
+
+### D212 — `const struct`: a type immutable all the way down (v0.115)
+
+```veles
+const struct Config {
+  host: string
+  ports: List<i64>
+  tls: Tls?                                   // another const struct
+  fun url(): string => "https://$host:${ports.first() ?: 443}"
+}
+const struct Bad {
+  items: MutableList<i64>                     // error: 'items' is a 'MutableList<i64>'; a const struct holds only immutable data: use 'List<i64>'
+}
+const defaults = Config(host: "localhost", ports: [8080], tls: null)
+```
+
+From the user's open notes (`to_figure_out.md` 1: "a `data class` without
+methods and immutability enforced"). A struct already has immutable fields
+unless they are `var`, along with `==`, hashing, printing, `copy` and
+`const` values. That immutability is shallow, though:
+`struct Tags { names: MutableList<string> }` in a `val` still changes
+(`t.names.push(…)`), and nothing in a declaration promised otherwise. A
+later `var` or `MutableList` field silently changed whether the type could
+be shared between threads, be a map key, or be a module `val` (D66
+v0.114).
+
+- **`const struct Name { … }`**: `const` is a modifier of `struct`, in the
+  modifier order `public const struct`. It means "a type whose values can
+  be constants", the same idea as a `const fun` (D113). A struct declared
+  inside a sealed trait (D193) may be `const`. A sealed trait is not
+  declared `const`; it counts as immutable when all of its variants are.
+- **Checked at the declaration:** no `var` or `protected var` field; every
+  field's type is _deeply immutable_. That covers the numbers, `bool`,
+  `char`, enums, `string`, `Duration`/`Instant`-style value types that
+  qualify, immutable `List`/`Map`/`Set`/`Range` of deeply immutable
+  types, `Array<T, N>`, tuples, nullables, other `const struct`s, and
+  sealed types whose variants all qualify. Refused, each with an error
+  naming the field and the immutable alternative: `MutableList`/`Map`/`Set`,
+  `StringBuilder`, `Deque`/`PriorityQueue`, pointers (`*T`, raw included),
+  `Mutex`/`Atomic` and the other synchronized types (they are state, not
+  data), channels, task handles, trait objects and function types (either
+  can hold state). A plain struct field that qualifies is still an error
+  that asks for `const` on that struct, so the promise is written at every
+  level.
+- **Generics:** in `const struct Pair<A, B> { first: A; second: B }`, the
+  check runs per instance. `Pair<i64, MutableList<i64>>` is an error at the
+  type's use, naming the field and the type argument.
+- **What it gives:** a const struct is `Sendable` by construction (a module
+  or `static val`, a channel, a task boundary); it is safe as a map or set
+  key; it is buildable in a `const` when its arguments are constant; `copy`
+  (D164) works as for any struct. Its methods are allowed: none can change
+  `this`, because there is nothing assignable, and extension functions
+  (D173) could add methods anyway. `init` blocks keep D73's rules.
+- **Code generation may share instead of copy:** nothing can change a
+  value, so a large const struct (the ≥128-byte memory class) may be passed
+  by address with no defensive copy. This is behaviour-preserving, and
+  measured before it is done.
+- Hover and the docs list show `const struct`. Removing `const` from a
+  public type is an API break (`veles api-diff` reports it).
+
+User, 2026-10-26, recommended of 4. Rejected: an inferred `Immutable`
+marker trait verified by an empty `implement` (the property belongs on the
+declaration, where a reader looks); a `data struct` without methods
+(everything a Kotlin `data class` generates, a Veles struct already has,
+and banning methods adds no guarantee); leaving structs shallow.
+
+Both levels: `const struct` is the high level. A plain struct with
+pointers, locks and `var` fields stays the low level. Self-hosting: tokens,
+AST nodes and types as const structs can be shared by a parallel compiler's
+threads and used as interning keys.
+
+### D213 — Allocation hints in the editor (v0.115)
+
+```veles
+fun summary(items: List<Item>, limit: i64): string {
+  val names = items.map(i => i.name)          // heap
+  val shown = names.take(limit)
+  val pick = (i: Item) => i.price > limit      // heap
+  "${names.len()} items: ${shown.join(", ")}"  // heap
+}
+```
+
+From the user's open notes (`to_figure_out.md` 3: "inlay hints to show the
+type of memory allocations"). Veles allocates on the GC heap in a small set
+of places, and the checker already decides each of them:
+- mutable collections, on the first write (D187);
+- non-empty collection literals and the results of collection operations;
+- string building (interpolation, `+`, except where a side is shared);
+- a lambda that captures (its environment);
+- implicit boxing to a trait object (D9);
+- a local whose `&` escapes (heap-boxed);
+- `indirect` and tree variants (D198);
+- an `async` task's frame.
+
+Structs, tuples, arrays, enums and numbers stay on the stack or inline;
+constants are static data.
+
+- **Opt-in inlay hints** (an editor setting, off by default). A `heap`
+  label goes after each allocating expression. Nothing is shown for the
+  stack, the default, so code is not covered in labels. Hover on the label
+  says what is allocated, why, and how to avoid it when there is a way:
+  "a closure capturing `limit`; pass `limit` as a parameter, or use a named
+  function". A call to a function that allocates internally is not
+  labelled; the function's own sites are.
+- **`veles explain --alloc <file | fun>`** prints the same sites for the
+  terminal and CI.
+- **Truthfulness:** a hint is shown only where the generated code
+  allocates. The hints come from the same decisions the code generator
+  follows, and LLVM does not remove a GC allocation. A test compares the
+  hinted sites with the allocation calls in the IR for a corpus of
+  programs.
+
+User, 2026-10-26, recommended of 4. Rejected for now: a checked `@noAlloc`
+annotation with an inferred "allocates" effect (to be asked again once the
+hints show where the allocations are); a runtime allocation profile mapped
+back to source; no hints.
+
+_The same day (`to_figure_out.md` 2): `suspend loop`, sugar for ceding at
+the end of every iteration, is not added. D145's automatic yield at
+back-edges and an explicit `cede` (D197) stay. User: "we'd need check if the
+current approach is good. but ok, leave it" — so D145's yield policy (the
+~10 ms slice, a lone task, fixed-thread executors, the cost of `cede` per
+iteration) is to be measured; plan F21._
 
 ### I1 — generators: investigated, not decided
 
