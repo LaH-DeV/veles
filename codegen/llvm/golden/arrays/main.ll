@@ -121,12 +121,10 @@ entry:
   %a103 = alloca %S.main.Page
   %a104 = alloca %S.main.Page
   %a105 = alloca i64
-  %a116 = alloca %S.main.Page
-  %a120 = alloca [21 x i8]
-  %a124 = alloca %S.main.Page
-  %a128 = alloca [21 x i8]
-  %a132 = alloca %str
-  %a133 = alloca [3 x %str]
+  %a119 = alloca [21 x i8]
+  %a126 = alloca [21 x i8]
+  %a130 = alloca %str
+  %a131 = alloca [3 x %str]
   %t2 = getelementptr inbounds [4 x i64], ptr %a1, i64 0, i64 0
   store i64 1, ptr %t2
   %t3 = getelementptr inbounds [4 x i64], ptr %a1, i64 0, i64 1
@@ -327,36 +325,34 @@ idx.bad.28:
 idx.ok.27:
   %t115 = getelementptr inbounds [256 x i8], ptr %t111, i64 0, i64 %t110
   store i8 9, ptr %t115
-  call void @llvm.memmove.p0.p0.i64(ptr %a116, ptr %a103, i64 264, i1 false)
-  %t117 = extractvalue %str { ptr @.str.14, i64 20 }, 0
-  %t118 = extractvalue %str { ptr @.str.14, i64 20 }, 1
-  call void @veles_call_push(ptr %t117)
-  %t119 = call i64 @v_main.weight(ptr %a116)
+  %t116 = extractvalue %str { ptr @.str.14, i64 20 }, 0
+  %t117 = extractvalue %str { ptr @.str.14, i64 20 }, 1
+  call void @veles_call_push(ptr %t116)
+  %t118 = call i64 @v_main.weight(ptr %a103)
   call void @veles_call_pop()
-  %t121 = call i64 @veles_i64_format(ptr %a120, i64 %t119)
-  %t122 = insertvalue %str undef, ptr %a120, 0
-  %t123 = insertvalue %str %t122, i64 %t121, 1
-  call void @llvm.memmove.p0.p0.i64(ptr %a124, ptr %a104, i64 264, i1 false)
-  %t125 = extractvalue %str { ptr @.str.15, i64 20 }, 0
-  %t126 = extractvalue %str { ptr @.str.15, i64 20 }, 1
-  call void @veles_call_push(ptr %t125)
-  %t127 = call i64 @v_main.weight(ptr %a124)
+  %t120 = call i64 @veles_i64_format(ptr %a119, i64 %t118)
+  %t121 = insertvalue %str undef, ptr %a119, 0
+  %t122 = insertvalue %str %t121, i64 %t120, 1
+  %t123 = extractvalue %str { ptr @.str.15, i64 20 }, 0
+  %t124 = extractvalue %str { ptr @.str.15, i64 20 }, 1
+  call void @veles_call_push(ptr %t123)
+  %t125 = call i64 @v_main.weight(ptr %a104)
   call void @veles_call_pop()
-  %t129 = call i64 @veles_i64_format(ptr %a128, i64 %t127)
-  %t130 = insertvalue %str undef, ptr %a128, 0
-  %t131 = insertvalue %str %t130, i64 %t129, 1
-  %t134 = getelementptr [3 x %str], ptr %a133, i64 0, i64 0
-  store %str %t123, ptr %t134
-  %t135 = getelementptr [3 x %str], ptr %a133, i64 0, i64 1
-  store %str { ptr @.str.10, i64 1 }, ptr %t135
-  %t136 = getelementptr [3 x %str], ptr %a133, i64 0, i64 2
-  store %str %t131, ptr %t136
-  call void @veles_string_concat_n(ptr %a132, ptr %a133, i64 3)
-  %t137 = load %str, ptr %a132
-  %t138 = extractvalue %str { ptr @.str.16, i64 20 }, 0
-  %t139 = extractvalue %str { ptr @.str.16, i64 20 }, 1
-  call void @veles_call_push(ptr %t138)
-  call void @v_std.io.println(%str %t137)
+  %t127 = call i64 @veles_i64_format(ptr %a126, i64 %t125)
+  %t128 = insertvalue %str undef, ptr %a126, 0
+  %t129 = insertvalue %str %t128, i64 %t127, 1
+  %t132 = getelementptr [3 x %str], ptr %a131, i64 0, i64 0
+  store %str %t122, ptr %t132
+  %t133 = getelementptr [3 x %str], ptr %a131, i64 0, i64 1
+  store %str { ptr @.str.10, i64 1 }, ptr %t133
+  %t134 = getelementptr [3 x %str], ptr %a131, i64 0, i64 2
+  store %str %t129, ptr %t134
+  call void @veles_string_concat_n(ptr %a130, ptr %a131, i64 3)
+  %t135 = load %str, ptr %a130
+  %t136 = extractvalue %str { ptr @.str.16, i64 20 }, 0
+  %t137 = extractvalue %str { ptr @.str.16, i64 20 }, 1
+  call void @veles_call_push(ptr %t136)
+  call void @v_std.io.println(%str %t135)
   call void @veles_call_pop()
   ret void
 }

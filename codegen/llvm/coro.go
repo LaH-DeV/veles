@@ -673,8 +673,8 @@ func (g *gen) launch(e *sema.Launch) string {
 	ct := g.newTmp()
 	g.emit("%s = call ptr @veles_task_launch(ptr %s, i64 %d)", ct, scope, e.Index)
 	if e.Unwrap {
-		// D141: `await` gives the Ok payload, which follows the tag word
-		g.emit("call void @veles_task_set_unwrap(ptr %s, i64 8)", ct)
+		// D141: `await` gives the Ok payload, which follows the tag
+		g.emit("call void @veles_task_set_unwrap(ptr %s, i64 %d)", ct, types.PayloadOffset)
 	}
 	var argTypes []types.Type
 	var argVals []string

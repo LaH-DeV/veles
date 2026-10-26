@@ -22,9 +22,9 @@ func arrayLen(t types.Type) int64 {
 // bounds-checked inline: an index outside 0..<N (a negative one included,
 // compared unsigned) goes to the runtime's panic with the location `where`.
 // unchecked (D114) checks in a debug build only.
-func (g *gen) arrayElemPtr(arr sema.Expr, i string, unchecked bool, span source.Span) string {
+func (g *gen) arrayElemPtr(arr sema.Expr, i string, unchecked bool, span source.Span, mode placeMode) string {
 	n := arrayLen(arr.Type())
-	base := g.place(arr)
+	base := g.placeAs(arr, mode)
 	if unchecked {
 		g.uncheckedIndexCheck(i, fmt.Sprint(n), "array", span)
 	} else {
@@ -70,7 +70,7 @@ func (g *gen) arrayBuiltin(e *sema.Builtin) (string, bool) {
 	case "array.make":
 		return g.arrayMake(e.Type().(*types.Array), g.expr(e.Args[0])), true
 	case "array.rawData":
-		return g.place(e.Args[0]), true
+		return g.placeAs(e.Args[0], placeExpose), true // C may write through it
 	case "array.toList":
 		return g.arrayToList(e), true
 	case "list.toArray":
@@ -152,16 +152,16 @@ func (g *gen) listToArray(e *sema.Builtin) string {
 	llt := g.llType(at)
 	if g.isMem(nt) {
 		// built where it ends up: the flag, then the elements copied in
-		g.emit("store i1 true, ptr %s", g.fieldPtr(g.llType(nt), res, 0))
+		g.storeNullFlag(nt, "true", res)
 		if n > 0 {
 			size, _ := g.layout(at.Elem)
 			data := g.newTmp()
 			g.emit("%s = load ptr, ptr %s", data, list)
-			g.emit("call void @llvm.memcpy.p0.p0.i64(ptr %s, ptr %s, i64 %d, i1 false)", g.fieldPtr(g.llType(nt), res, 1), data, int64(size)*n)
+			g.emit("call void @llvm.memcpy.p0.p0.i64(ptr %s, ptr %s, i64 %d, i1 false)", g.nullPayloadPtr(nt, res), data, int64(size)*n)
 		}
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(badL)
-		g.emit("store i1 false, ptr %s", g.fieldPtr(g.llType(nt), res, 0))
+		g.storeNullFlag(nt, "false", res)
 		g.emitTerm("br label %%%s", doneL)
 		g.placeLabel(doneL)
 		return res

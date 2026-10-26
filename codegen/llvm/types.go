@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/LaH-DeV/veles/types"
@@ -15,7 +16,8 @@ import (
 //	f32, f64    float, double
 //	string      %str = { ptr, i64 }
 //	*T, *raw T  ptr
-//	T?          ptr when T is a pointer (niche), else { i1, T }
+//	T?          ptr when T is a pointer (niche), T when T holds a word that
+//	            is never zero (null: all zeros), else { i1, T }
 //	(A, B)      { A, B }
 //	Range<T>    { T, T, i1 }
 //	Array<T, N> [N x T]                                   (inline, D121)
@@ -56,6 +58,9 @@ func (g *gen) llType(t types.Type) string {
 	case *types.Nullable:
 		if isPtrLike(t.Elem) {
 			return "ptr"
+		}
+		if _, ok := g.niche(t); ok {
+			return g.llType(t.Elem) // null is all zeros (veles-layout-spec.md §5.2)
 		}
 		return "{ i1, " + g.llType(t.Elem) + " }"
 	case *types.Tuple:
@@ -116,7 +121,8 @@ func (g *gen) structType(s *types.Struct) string {
 // structBody writes a struct's LLVM type from its layout (D120). A packed
 // struct is LLVM's packed struct; a union an integer as aligned as the
 // union and the bytes after it, read and written through memory. Otherwise
-// the fields in order, with `[n x i8]` before a field wherever its offset
+// the fields in memory order (declaration order but for a `compact struct`,
+// D215), with `[n x i8]` before a field wherever its offset
 // needs more than LLVM's own placement would give (an `@align(n)` field, a
 // field of an over-aligned struct type) and after the last one when the
 // size needs more. Such a struct records where each field went (fidx), and
@@ -134,30 +140,18 @@ func (g *gen) structBody(s *types.Struct) string {
 		}
 		return body + " }"
 	}
-	var parts []string
+	slots := g.structSlots(s)
+	parts := make([]string, len(slots))
 	idx := make([]int, len(s.Fields))
 	remapped := false
-	at := 0
-	for i, f := range s.Fields {
-		natural := at
-		if !s.Packed {
-			natural = roundUpTo(at, g.llAlign(f.Type))
+	for j, sl := range slots {
+		if sl.field < 0 {
+			parts[j] = fmt.Sprintf("[%d x i8]", sl.pad)
+			continue
 		}
-		if p.Offsets[i] > natural {
-			parts = append(parts, fmt.Sprintf("[%d x i8]", p.Offsets[i]-at))
-			remapped = true
-		}
-		idx[i] = len(parts)
-		parts = append(parts, g.llType(f.Type))
-		fs, _ := g.layout(f.Type)
-		at = p.Offsets[i] + fs
-	}
-	llSize := at
-	if !s.Packed {
-		llSize = roundUpTo(at, p.LLAlign)
-	}
-	if llSize != p.Size {
-		parts = append(parts, fmt.Sprintf("[%d x i8]", p.Size-at))
+		idx[sl.field] = j
+		remapped = remapped || j != sl.field
+		parts[j] = g.llType(s.Fields[sl.field].Type)
 	}
 	if remapped {
 		g.fieldMap[mangleType(s)] = idx
@@ -170,6 +164,47 @@ func (g *gen) structBody(s *types.Struct) string {
 		body = "<" + body + ">"
 	}
 	return body
+}
+
+// structSlot is a member of a non-union struct's LLVM type: field `field`,
+// or (field -1) `pad` bytes of padding.
+type structSlot struct{ field, pad int }
+
+// structSlots places a struct's fields as structBody writes them: in order,
+// with padding before a field wherever its offset needs more than LLVM's
+// own placement would give and after the last when the size needs more.
+// Constants are built from the same list, so they match the type.
+func (g *gen) structSlots(s *types.Struct) []structSlot {
+	p := g.layouter().StructPlan(s)
+	order := make([]int, len(s.Fields))
+	for i := range order {
+		order[i] = i
+	}
+	// in memory order: a `compact struct` places fields out of declaration order (D215)
+	sort.SliceStable(order, func(a, b int) bool { return p.Offsets[order[a]] < p.Offsets[order[b]] })
+	var slots []structSlot
+	at := 0
+	for _, i := range order {
+		f := s.Fields[i]
+		natural := at
+		if !s.Packed {
+			natural = roundUpTo(at, g.llAlign(f.Type))
+		}
+		if p.Offsets[i] > natural {
+			slots = append(slots, structSlot{field: -1, pad: p.Offsets[i] - at})
+		}
+		slots = append(slots, structSlot{field: i})
+		fs, _ := g.layout(f.Type)
+		at = p.Offsets[i] + fs
+	}
+	llSize := at
+	if !s.Packed {
+		llSize = roundUpTo(at, p.LLAlign)
+	}
+	if llSize != p.Size {
+		slots = append(slots, structSlot{field: -1, pad: p.Size - at})
+	}
+	return slots
 }
 
 // fidx is the LLVM index of field i of a value of type t: i itself, unless

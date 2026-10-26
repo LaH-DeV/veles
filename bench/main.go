@@ -211,7 +211,38 @@ var goPause int64
 // keeps bench/gcpause's slices on the heap, as the Veles lists are
 var gcpauseSink []int64
 
+// bench/bigargs: Go passes the structs by value, as Veles' source does
+type bigWide struct{ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r int64 }
+
+type bigFramed struct {
+	head int64
+	body [16]int64
+	tail int64
+}
+
+//go:noinline
+func readWide(w bigWide, k int64) int64 { return w.a + w.r + k }
+
+//go:noinline
+func readFramed(f bigFramed, k int64) int64 { return f.head + f.tail + k }
+
 var references = map[string]func() string{
+	"bigargs": func() string {
+		const n = 20000000
+		wide := bigWide{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}
+		framed := bigFramed{head: 3, tail: 4}
+		for i := range framed.body {
+			framed.body[i] = 5
+		}
+		var check int64
+		for k := int64(0); k < n; k++ {
+			check += readWide(wide, k)
+		}
+		for k := int64(0); k < n; k++ {
+			check += readFramed(framed, k)
+		}
+		return strconv.FormatInt(check, 10)
+	},
 	"gzip": func() string {
 		begin := time.Now()
 		data := gzipText(2097152)

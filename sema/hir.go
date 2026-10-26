@@ -165,6 +165,9 @@ type Var struct {
 	Captured  bool // inside a closure: read through the environment
 	IsSelf    bool // a method's receiver (or its stand-in inside a lambda): a pointer read as the value
 	IsParam   bool // a function or lambda parameter
+	// ReadOnly: a parameter whose place the body never writes or lends (the
+	// receiver pass), so a large argument can be the caller's own value
+	ReadOnly bool
 
 	InitText string // a local binding's initializer as written, for the hover
 	ErrPoly  bool   // a parameter declared `fun(..) throws E` with E a type parameter of the enclosing function
@@ -178,6 +181,9 @@ type Var struct {
 	// checker reports when they are never read (see reportUnused).
 	used     bool
 	checkUse bool
+	// noInit: a local `var` declared without a value, unreadable until it
+	// is assigned on every path (D214)
+	noInit bool
 }
 
 type Global struct {

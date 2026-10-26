@@ -161,14 +161,27 @@ extend Parser {
       val variants: MutableList<ast.StructDecl> = []
       loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
         val memberAttrs = this.parseAttributes()
-        if ((this.atWord("indirect") || this.atWord("inline")) && this.peek(1).kind == Kind.KwStruct) {
-          // where the variant is stored (D198); its doc is on the word, taken first
+        val words = this.variantWords()
+        if (words > 0) {
+          // where the variant is stored (D198) and how its fields are placed
+          // (D215); its doc is on the first word, taken first
           val doc = this.takeDoc()
-          val word = this.next()
+          val first = this.cur()
+          var indirect = false
+          var isInline = false
+          var compact = false
+          loop (_ in 0..<words) {
+            when (this.next().text) {
+              "indirect" => indirect = true
+              "inline"   => isInline = true
+              else       => compact = true
+            }
+          }
           var variant = this.parseNestedVariant(d, memberAttrs, doc)
-          variant.indirect = word.text == "indirect"
-          variant.isInline = word.text == "inline"
-          variant.pos = word.span.to(variant.pos)
+          variant.indirect = indirect
+          variant.isInline = isInline
+          variant.compact = compact
+          variant.pos = first.span.to(variant.pos)
           variants.push(variant)
           this.parseMemberSeparator()
           continue
@@ -200,6 +213,18 @@ extend Parser {
     }
     d.pos = this.spanFrom(head.start)
     d
+  }
+
+  // how many words before a `struct` in a sealed trait's body say how the
+  // variant is stored or laid out: `indirect` or `inline`, then `compact`;
+  // 0 when the cursor is not at such words
+  fun variantWords(): i64 {
+    var n = 0
+    if (this.atWord("indirect") || this.atWord("inline")) n += 1
+    val t = this.peek(n)
+    if (t.kind == Kind.Ident && t.text == "compact") n += 1
+    if (n == 0 || this.peek(n).kind != Kind.KwStruct) return 0
+    n
   }
 
   /// A `struct` in the body of a sealed trait (D193): an ordinary struct that

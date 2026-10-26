@@ -847,6 +847,8 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 		if s.Value != nil {
 			v.InitText = srcText(s.Value) // for the hover
 			f.c.refVar(b.Name.Pos, v)     // re-record the declaration with it
+		} else if mutable {
+			v.noInit = true
 		}
 		// an alias of a `with` resource may not leave its block either (D100);
 		// looked up before the name is declared, which may shadow it
@@ -1000,6 +1002,11 @@ func (f *fnCtx) checkAssignInner(s *ast.AssignStmt) []Stmt {
 		value = f.coerce(raw, target.Type(), s.Value.Span())
 	} else {
 		op := BinOpFromToken(s.Op)
+		if n, isName := s.Target.(*ast.NameExpr); isName && root != nil {
+			if sym := f.scope.Lookup(n.Name); sym != nil && sym.Kind == SymLocal {
+				f.requireAssigned(sym.Var, root, n.Pos) // `x += 1` reads x
+			}
+		}
 		var pre []Stmt
 		target, pre = f.hoistPlace(target)
 		if rawPointer(target.Type()) != nil {
@@ -1115,7 +1122,56 @@ func (f *fnCtx) assignPlace(targetAst ast.Expr, target Expr, root *Var, value Ex
 			}
 		}
 	}
+	if _, whole := target.(*VarRef); whole && root != nil && declaredWithoutValue(root) {
+		f.narrow[assignedFact(root)] = types.TUnit // D214
+	}
 	return &Assign{Target: target, Value: value}
+}
+
+// declaredWithoutValue: v, or the variable a lambda's capture v stands for,
+// is a local `var` declared without a value (D214).
+func declaredWithoutValue(v *Var) bool {
+	for ; v != nil; v = v.Outer {
+		if v.noInit {
+			return true
+		}
+	}
+	return false
+}
+
+// assignedFact is the flow fact "v has been assigned on every path to
+// here", which a local `var` declared without a value needs before any use
+// (D214). Assignments to v do not drop it (invalidatePlace).
+func assignedFact(v *Var) place { return place{v: v, path: pathAssigned} }
+
+const pathAssigned = "$assigned"
+
+// requireAssigned refuses a use of decl, as cur in this function (its
+// capture inside a lambda), before it is assigned on every path to here.
+// An assignment in an enclosing function before the lambda counts; one in
+// the lambda counts only inside it.
+func (f *fnCtx) requireAssigned(decl, cur *Var, pos source.Span) {
+	if !decl.noInit {
+		return
+	}
+	for ctx := f; ctx != nil; ctx = ctx.parent {
+		v := decl
+		if !ctx.owns(decl) {
+			inner, ok := ctx.captures[decl]
+			if !ok {
+				continue
+			}
+			v = inner
+		}
+		if _, ok := ctx.narrow[assignedFact(v)]; ok {
+			return
+		}
+		if ctx.owns(decl) {
+			break
+		}
+	}
+	f.errorf(pos, "'%s' is used before it is assigned on every path to here; it was declared without a value, so it holds nothing yet: give it one ('var %s: %s = ...') or assign it on each branch above (D214)", decl.Name, decl.Name, decl.Type)
+	f.narrow[assignedFact(cur)] = types.TUnit // one error per path
 }
 
 // checkLValue checks an assignable expression. It returns the lvalue and,
@@ -1148,6 +1204,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 				// a field write or address-of reads the binding; a plain
 				// assignment to the name itself does not
 				markUsed(v)
+				f.requireAssigned(sym.Var, v, e.Pos)
 			}
 			f.c.refVar(e.Pos, v) // the name at an assignment hovers like a read
 			return &VarRef{exprBase{v.Type}, v}, v

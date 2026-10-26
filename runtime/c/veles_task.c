@@ -1718,16 +1718,23 @@ void *veles_task_result(veles_task *t) {
     return t->result;
 }
 
+/* where a Result's payload starts: the compiler's types.PayloadOffset */
+#define TAGGED_PAYLOAD_OFFSET 8
+
 /* what `await` gives: the result, or for a fail-fast child (D141) the Ok
  * payload inside it */
 void *veles_task_value(veles_task *t) {
-    return (char *)t->result + (task_bit(t, TB_UNWRAP) ? 8 : 0);
+    return (char *)t->result + (task_bit(t, TB_UNWRAP) ? TAGGED_PAYLOAD_OFFSET : 0);
 }
 
 /* a launch in a fail-fast block of a function that throws (D141): the
- * payload of its Result sits at off, which is after the tag word (8) */
+ * payload of its Result sits at off; the task has no room to keep it, so
+ * a compiler that disagrees stops here rather than reading the wrong bytes */
 void veles_task_set_unwrap(veles_task *t, int64_t off) {
-    (void)off;
+    if (off != TAGGED_PAYLOAD_OFFSET) {
+        static const char msg[] = "internal error: the compiler and the runtime disagree on where a Result's payload starts";
+        veles_panic(msg, (int64_t)sizeof msg - 1);
+    }
     task_set(t, TB_UNWRAP);
 }
 

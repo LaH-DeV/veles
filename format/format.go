@@ -1038,6 +1038,9 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	} else if d.Inline {
 		p.w("inline ")
 	}
+	if d.Compact {
+		p.w("compact ") // D215
+	}
 	switch {
 	case d.Error:
 		p.w("error ")

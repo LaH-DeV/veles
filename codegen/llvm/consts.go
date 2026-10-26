@@ -230,15 +230,34 @@ func (g *gen) constInit(v sema.ConstVal, at string) string {
 		if isPtrLike(v.T.Elem) {
 			return g.constInit(v.V, at)
 		}
+		if _, ok := g.niche(v.T); ok {
+			return g.constInit(v.V, at) // a nullable laid out as its value
+		}
 		return fmt.Sprintf("{ i1 true, %s %s }", g.llType(v.T.Elem), g.constInit(v.V, at))
 	case *sema.CTuple:
 		return g.constFields(v.T.Elems, v.Elems, at)
 	case *sema.CStruct:
-		ts := make([]types.Type, len(v.T.Fields))
-		for i, f := range v.T.Fields {
-			ts[i] = f.Type
+		if len(v.Fields) == 0 || v.T.Union {
+			ts := make([]types.Type, len(v.T.Fields))
+			for i, f := range v.T.Fields {
+				ts[i] = f.Type
+			}
+			return g.constFields(ts, v.Fields, at)
 		}
-		return g.constFields(ts, v.Fields, at)
+		g.structType(v.T)
+		var parts []string
+		for _, sl := range g.structSlots(v.T) {
+			if sl.field < 0 {
+				parts = append(parts, fmt.Sprintf("[%d x i8] zeroinitializer", sl.pad))
+				continue
+			}
+			parts = append(parts, g.llType(v.T.Fields[sl.field].Type)+" "+g.constInit(v.Fields[sl.field], at+"."+strconv.Itoa(sl.field)))
+		}
+		body := "{ " + strings.Join(parts, ", ") + " }"
+		if v.T.Packed {
+			body = "<" + body + ">"
+		}
+		return body
 	case *sema.CArray:
 		// inline in what holds it: `[N x T] [...]` (D121)
 		parts := make([]string, len(v.Elems))

@@ -74,6 +74,7 @@ type gen struct {
 	label            int
 	term             bool
 	storage          map[*sema.Var]string
+	borrowed         map[*sema.Var]bool // parameters read in the caller's storage (mem.go exprArg)
 	loops            map[*sema.Loop]loopLabels
 	fnResult         types.Type  // Result<T, E> sealed when the function throws
 	cleanups         []sema.Expr // active `with` close calls, innermost last
@@ -616,6 +617,7 @@ func (g *gen) resetFn(fn *sema.Func) {
 	g.label = 0
 	g.term = false
 	g.storage = map[*sema.Var]string{}
+	g.borrowed = map[*sema.Var]bool{}
 	g.loops = map[*sema.Loop]loopLabels{}
 	g.fnResult = nil
 	g.cleanups = nil
@@ -760,9 +762,9 @@ func (g *gen) function(fn *sema.Func) {
 		llt := g.vt(v.Type)
 		params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
 		if g.isMem(v.Type) {
-			// a memory-class argument is the address of a copy made for this call:
-			// the variable's own storage, unless it is a heap cell or the function
-			// is a coroutine, whose frame keeps its own
+			// a memory-class argument is an address the caller may have lent
+			// from its own storage (exprArg): read in place by a body that
+			// never writes or lends it, copied by any other
 			size := g.memSize(v.Type)
 			move := func(dst string) {
 				prologue = append(prologue, fmt.Sprintf("  call void @llvm.memmove.p0.p0.i64(ptr %s, ptr %%p%d, i64 %d, i1 false)", dst, i, size))
@@ -775,8 +777,11 @@ func (g *gen) function(fn *sema.Func) {
 				move(fmt.Sprintf("%%cell%d", i))
 			case fn.Suspends:
 				move(g.varStorage(v, true))
-			default:
+			case v.ReadOnly:
 				g.storage[v] = fmt.Sprintf("%%p%d", i)
+				g.borrowed[v] = true
+			default:
+				move(g.varStorage(v, true))
 			}
 			return
 		}

@@ -99,6 +99,10 @@ var contextualDocs = map[string][]contextualDoc{
 		{keywordDoc{"`indirect struct`: a variant stored behind a pointer, so a large one does not make every value of the family as big (D198).", "sealed trait Event {\n  indirect struct Upload { name: string; bytes: List<u8> }\n}", "09-sealed-types.md"},
 			func(toks []lexer.Token, i int) bool { return nextIs(toks, i, lexer.KwStruct) }},
 	},
+	"compact": {
+		{keywordDoc{"`compact struct`: the compiler places the fields for the smallest size, by alignment, largest first. Only memory changes: construction, printing, `==`, `Codable` and `T.fields` keep the declared order. Without it, fields lie in the order written (D215).", "compact struct Sample {\n  flag: u8\n  at:   i64\n  kind: u8\n}   // 16 bytes, not 24", "13-memory-and-ffi.md#field-order-and-compact-structs"},
+			func(toks []lexer.Token, i int) bool { return nextIs(toks, i, lexer.KwStruct) }},
+	},
 	"annotation": {
 		{keywordDoc{"Declares an annotation: typed data written `@Name(…)` on a declaration, read while compiling by the trait named after `for` (D174). `on` lists where it may stand; `= wrapper` makes one that wraps functions (D176).", "annotation Min(value: i64) on field for Validate\n\n@Min(18)\nage: i64", "14-attributes-and-testing.md#annotations-of-your-own"},
 			func(toks []lexer.Token, i int) bool { return nextIs(toks, i, lexer.Ident) }},

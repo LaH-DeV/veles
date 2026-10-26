@@ -336,6 +336,13 @@ struct Parser {
       }
       Kind.KwStruct => return this.parseStruct(head, false)
       Kind.Ident => {
+        if (this.atWord("compact") && (this.peek(1).kind == Kind.KwStruct || this.peek(1).kind == Kind.KwExtern && this.peek(2).kind == Kind.KwStruct)) {
+          this.next()  // the compiler places the fields (D215); refused on an extern struct by the checker
+          val isExtern = this.accept(Kind.KwExtern)
+          var d = this.parseStruct(head, isExtern)
+          d.compact = true
+          return d
+        }
         if (this.atWord("indirect") && this.peek(1).kind == Kind.KwSealed) {
           this.next()  // every variant behind a pointer (D198)
           val d = this.parseTrait(head)

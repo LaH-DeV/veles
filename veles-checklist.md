@@ -1179,7 +1179,7 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 - Q59: mutable singleton state without a lock or a dedicated OS thread
   (`veles-patterns.md` P2). Offered: a serial executor, `executor
-  metrics(serial: true) { var … }` (D150's rules on the shared pool, one
+metrics(serial: true) { var … }` (D150's rules on the shared pool, one
   task at a time; recommended, with suspension refused inside its code), the
   same but reentrant across suspension (Swift actors), or leaving `Mutex`
   and thread executors. User, 2026-10-26: "not sure yet, not to be decided
@@ -1187,11 +1187,12 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 - Q60: a spelling for replaceable globals (dependency injection, test
   fakes; `veles-patterns.md` P4). Offered: `context val clock: Clock =
-  SystemClock()` with plain reads and `with clock = Fake()` rebinding, as
+SystemClock()` with plain reads and `with clock = Fake()` rebinding, as
   sugar over D72 (recommended), or documenting `TaskLocal(fallback:)` as
   the pattern. User, 2026-10-26: "probably keyword but do not decide now".
 
 (2026-10-25: Q58, integer overflow in release, from the security review: D209.)
+(2026-10-26: Q61 and Q62, value layout, prepared in `veles-layout-spec.md`: D214, D215.)
 (2026-10-26: the patterns menu, `veles-patterns.md`: P1 → D210, P3 → D211; P2 → Q59, P4 → Q60 open; P5 and R1–R8 not yet asked.)
 
 (2026-10-14: Q32–Q43, prepared in `veles-direction-2026-10-14.md`, were decided the same day:
@@ -1411,9 +1412,9 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-20 | Q56: `freeze()` and a pointer taken before it (the user: "tempting to get them to stay local but the real production grade code probably needs passing pointers… how can we improve it ?"; also asked for no `unsafe {}` everywhere)                                                                     | **An "exposed" flag on the collection: `freeze()` always freezes the old names (later writes panic), shares the storage when no pointer was ever handed out, and copies it once when one was** (user, recommended of 3; spec D188). Rejected: pointers that stay local (breaks accessors that return `ref`), `unsafe fun freeze`, a compile-time refusal alone, a panic on an exposed collection. Built next.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 2026-10-20 | Syntax review (the user: "let's think about more places that syntax could be better … a lot of them … think them through and explain and ask"; prepared in `veles-syntax-ideas.md` and `veles-syntax-decisions.md`)                                                                                      | **Counter loops: two lints, no syntax (recommended). `x in c` / `x !in c`: the contains operator, with both a byte and a substring in a string ("like in js, no?" — Python's model; D189). `loop (val x = e)`: recommended (D190). Compound assignments: bit and wrapping (D191). `string.slice` (D192) and a look at views. Variants nested in a sealed trait (D193). Extension functions on enums (D194).** (user, recommended of 2–4 each, except `in`, where the user added the substring form, and `slice`, where the user added the view question). Generators (I1): "investigate problem further, give a lot of different examples" — `veles-research-generators.md`, open. Rejected: a step clause or C-style loop, `&&=`/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |     | =`, `u8 in string`as a method, the data-only variant short form,`implement Trait for Enum`. Lints built the same day (`redundant_discard`, `loop_is_range`, `continue_skips_step`, `else_if_ladder`). Not built: D189–D194. |
 | 2026-10-21 | Explicit scheduler yielding (D197)                                                                                                                                                                                                                                                                       | **Reserved statement `cede`; remove the executable prelude `yieldNow()` in the implementing migration** (user, recommended statement-only of 3, reserved of 2, scheduling opportunity of 2). No next-task/global-order guarantee; preserve inferred effects, cancellation, cleanup and executor affinity. Rejected: status quo helper, Unit-valued expression, contextual keyword, global round-robin promise. Specified in `veles-cede-spec.md`; **not implemented**, plan F20. Generator design I1 remains open and returns to planning next.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 2026-10-23 | `copy` (D164) on a type whose `init` takes parameters, and on an `extern union` (gaps found while building B21) | **Refused, both** (user, recommended of 4 and of 2; D164 addendum v0.105). Rejected: copying without running `init` (derived fields go stale); running `init` with the parameters' defaults (wrong input, silently); `init`'s parameters as required arguments of `copy` (a construction under another name; can be added later); for the union, writing the named field over the receiver's bytes. |
-| 2026-10-23 | Large sealed values (plan S7: `selfhost`'s `ast.Expr` was 180 bytes under D12's inline layout; Go's 16) | **Recursive sealed types box their variants automatically; `indirect struct` boxes one anywhere, `inline struct` keeps one in the value; a lint suggests `indirect` for a lopsided non-tree type** (user: "B + C with lint from A", target "more like golang, not 1.3x worse"; then the recommended of 3 for which types box, and of 2 for the opt-out; D198). Rejected: boxing by size in every sealed type (`Result<Big, E>` would allocate per call); D12 with only the lint (hand-written `data: *IfData` fields). |
-| 2026-10-23 | Source files that are not valid UTF-8 (plan S6: Go's front end accepted such a byte in a comment, the self-hosted one could not read the file) | **As Go: every undecodable sequence is an error, comments included; the file does not compile** (user: "make it work like Go", over the recommended "reject up front" with one error; D199). Rejected: a byte-level self-hosted lexer keeping the lenient rule; leaving the front ends to disagree. |
+| 2026-10-23 | `copy` (D164) on a type whose `init` takes parameters, and on an `extern union` (gaps found while building B21)                                                                                                                                                                                          | **Refused, both** (user, recommended of 4 and of 2; D164 addendum v0.105). Rejected: copying without running `init` (derived fields go stale); running `init` with the parameters' defaults (wrong input, silently); `init`'s parameters as required arguments of `copy` (a construction under another name; can be added later); for the union, writing the named field over the receiver's bytes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 2026-10-23 | Large sealed values (plan S7: `selfhost`'s `ast.Expr` was 180 bytes under D12's inline layout; Go's 16)                                                                                                                                                                                                  | **Recursive sealed types box their variants automatically; `indirect struct` boxes one anywhere, `inline struct` keeps one in the value; a lint suggests `indirect` for a lopsided non-tree type** (user: "B + C with lint from A", target "more like golang, not 1.3x worse"; then the recommended of 3 for which types box, and of 2 for the opt-out; D198). Rejected: boxing by size in every sealed type (`Result<Big, E>` would allocate per call); D12 with only the lint (hand-written `data: *IfData` fields).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2026-10-23 | Source files that are not valid UTF-8 (plan S6: Go's front end accepted such a byte in a comment, the self-hosted one could not read the file)                                                                                                                                                           | **As Go: every undecodable sequence is an error, comments included; the file does not compile** (user: "make it work like Go", over the recommended "reject up front" with one error; D199). Rejected: a byte-level self-hosted lexer keeping the lenient rule; leaving the front ends to disagree.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 | 2026-10-24 | How large the heap grows before the first collection (bench/parse: 32 MiB made the Windows parse ~5% faster; plan S16 leftovers) | **Defaults stay (8 MiB, goal 100); a `[runtime] gc.minHeap` / `gc.goal` setting and `VELES_GC_MIN_HEAP` / `VELES_GC_GOAL` overrides, D200** (user, recommended of 3). Rejected: a 32 MiB default (memory in every churning program for one benchmark); the environment variable alone. |
 | 2026-10-24 | D188's move for a field of a local whose methods were called (`Scan(tokens: lexer.tokens.toList(), …)` copied every token) | **The proof widens: methods whose summary says `this` is not kept, and no later use of the field, D201** (user, recommended of 3). Rejected: `freeze()` in the compiler's source; keeping the copy. |
@@ -1433,9 +1434,39 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-26 | `suspend loop`, a cede at every iteration (`to_figure_out.md` 2) | **Not added; D145's automatic yield and `cede` (D197) stay** (user, recommended of 3: "we'd need check if the current approach is good. but ok, leave it"; spec note after D213). The check is plan F21. Rejected: `suspend loop`; a per-executor time slice (not offered as a decision yet; F21 may raise it). |
 | 2026-10-26 | Allocation inlay hints (`to_figure_out.md` 3) | **Opt-in `heap` hints at allocating sites, with hover; `veles explain --alloc`, spec D213** (user, recommended of 4). Rejected for now: `@noAlloc` with an inferred effect (to ask again after the hints); a runtime allocation profile. |
 | 2026-10-26 | A singleton with a lifecycle (menu P3) | **Made in `main` and handed down, spec D211** (user, recommended of 2): module initializers still cannot throw or suspend, and nothing is closed after `main`. Rejected: throwing/suspending initializers in the root package with globals closed after `main`; a `service` declaration. |
+| 2026-10-26 | Q61: a local `var x: T` with no value (`veles-layout-spec.md`; it was zero-filled, so `*T` and handles could be null) | **Definite assignment before any read, `&`, capture or method call, spec D214** (user, recommended of 3), with the validity invariant `unsafe` must keep. Rejected: Go-style zero values for the types whose zero is valid; leaving it. |
+| 2026-10-26 | Q62: what a plain struct's layout promises | **Declaration order with C's alignment rule is guaranteed; `compact struct` (a contextual word, like `inline`/`indirect`) lets the compiler place fields for minimal size; encodings of `T?`, sealed, error unions, closures and trait objects are unspecified, spec D215** (user: "declaration order guaranteed" plus "a modifier … I prefer a keyword"; then `compact`, recommended of 3). Rejected: automatic reordering of every struct (0.4 % measured); `@compact`; no opt-in. |
 
 ## 11. Known limitations to revisit
 
+- [x] **Layout bugs found 2026-10-26 (veles-layout-spec.md §4).** All four
+      fixed the same day. (1) `var x: T` with no value in a function was
+      zero-filled with no definite-assignment check: `var p: *Named` passed
+      as `(*Named)?` read as `null`, and `var xs: List<i64>; xs.len()`
+      exited 255 with no message — now refused (D214, plan B32 step 2,
+      `sema/testdata/conform/D214-definite-assignment.vs`). (2) a constant
+      table of an `@align` or packed struct failed in clang — constants are
+      built from the struct's slots (`structSlots`), pinned by
+      `TestConstantTablesOfPaddedStructs`; (3) the memory class starts at
+      128 bytes as D121 says; (4) `types.PayloadOffset` is the one payload
+      offset (GC descriptors, the fail-fast launch), and the runtime stops
+      with an internal error if the compiler passes another.
+- [x] **Fixed 2026-10-26: run-time crashes on macOS arm64.** `veles test
+  std/compress` exited 255, and `TestHashFlooding`,
+      `TestReactorPollFallback` (segfaults), `TestStdRegexUnitTests` ("list
+      was frozen by freeze()"), `TestTLSServer`,
+      `TestReactorManyConnections` and `TestStdHttpUnitTests` failed. Cause:
+      a dead large object's span is given back with `os_decommit`, and a
+      later span carved from that place is taken to read as zeros
+      (`new_span`, the `virgin` slots); Darwin's `MADV_DONTNEED` keeps the
+      bytes, so new objects started with stale words — a list header with
+      its frozen bit set, stale pointers. On macOS `os_decommit` now maps
+      fresh pages over the range (`mmap` `MAP_FIXED`). Pinned by
+      `TestReleasedMemoryReadsAsZeros` (fails without the fix); `go test
+    ./...` green on this Mac (the Unicode tables regenerated the same day,
+      with Go pinned to 1.27.1).
+      Linux (`MADV_DONTNEED` zero-fills private anonymous pages) and Windows
+      (`MEM_DECOMMIT`) were not affected.
 - [x] **Fixed 2026-10-26 (plan B29 part 1):** `sema/check_fn.go`
       `checkGlobal` refuses a module or `static val` whose type is not
       `Sendable` (an executor's state is exempt), with a hint per kind:
@@ -1471,13 +1502,13 @@ Every new public std API (http cookies/forms/client, `std/log`,
       (veles-decide).
 
 - **B19 / D157 (implemented 2026-10-22; verified on Windows and Linux with
-      the B22 runs, 2026-10-23; staticcheck reports nothing new).**
-      Result and task interpolation is rejected in strings, format specs and
-      template values; explicit `Result.toString()` remains available. Checker,
-      CLI repair/debug/release, LSP and migrated examples/docs are covered.
-      The specified generic limit remains: a parameter declared `T` can be
-      interpolated when instantiated as a Result; direct parameter coverage
-      pins this exception, not a generic-effect or wrapper analysis.
+  the B22 runs, 2026-10-23; staticcheck reports nothing new).**
+  Result and task interpolation is rejected in strings, format specs and
+  template values; explicit `Result.toString()` remains available. Checker,
+  CLI repair/debug/release, LSP and migrated examples/docs are covered.
+  The specified generic limit remains: a parameter declared `T` can be
+  interpolated when instantiated as a Result; direct parameter coverage
+  pins this exception, not a generic-effect or wrapper analysis.
 - [ ] **Runtime timing-test investigation (2026-10-22).** The initial B19
       full run failed `TestLoopsAreCancellationPoints` at release/8 workers
       (the shielded lock region finished before its timeout). The unchanged
@@ -1668,120 +1699,120 @@ Every new public std API (http cookies/forms/client, `std/log`,
 bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribute and
   function names confirmed when built).
 - [ ] **S8 debug info (built 2026-10-23), what is left.** (1) A local of a
-  suspending function that lives across a suspension prints nothing once
-  LLVM's coroutine split moves it into the frame (its `dbg.declare` is not
-  carried over; `driver/debuginfo_test.go` keeps such locals in a plain
-  function for that reason). (2) Lists, maps, sets, nullables, sealed
-  values and closures are named and sized only; a gdb pretty-printer or
-  DWARF members would show their contents. (3) std's files are embedded,
-  so a debugger cannot show their text (writing them to a cache directory
-  would). (4) lldb on macOS was not run. (5) `--release` builds carry no
-  line information (`-g` without `!dbg`). (6) Function types in the
-  subprograms are empty (`!DISubroutineType(types: !{})`).
+      suspending function that lives across a suspension prints nothing once
+      LLVM's coroutine split moves it into the frame (its `dbg.declare` is not
+      carried over; `driver/debuginfo_test.go` keeps such locals in a plain
+      function for that reason). (2) Lists, maps, sets, nullables, sealed
+      values and closures are named and sized only; a gdb pretty-printer or
+      DWARF members would show their contents. (3) std's files are embedded,
+      so a debugger cannot show their text (writing them to a cache directory
+      would). (4) lldb on macOS was not run. (5) `--release` builds carry no
+      line information (`-g` without `!dbg`). (6) Function types in the
+      subprograms are empty (`!DISubroutineType(types: !{})`).
 - [ ] **D198 (built 2026-10-23, plan S16), what is left.** (1) A method
-  called on a narrowed boxed variant gets a fresh box as `this`; if the
-  method keeps that pointer (stores it somewhere), a later copy of the
-  sealed value shares the box and a write through the kept pointer is seen
-  by the copy. Every write through the value itself, `&value` included
-  (it points at the tag and pointer, not the box), copies first; the D188
-  escape summary would tell when a kept `this` needs a copy at assignment. (2) A box is copied on every write
-  through a narrowed variable, not once per value (no uniqueness is
-  tracked). (3) `bench/parse` was 1.1× Go on Windows (1.0–1.1× on Linux)
-  before the instruction-count pass of 2026-10-23 (progress log), which
-  found Veles executing ~40% fewer instructions than Go for the same work.
-  The three choices that were left were decided 2026-10-24 as D200 (a
-  `[runtime] gc` setting), D201 (a field moves out of a local whose methods
-  were called) and D202 (`startsWith(prefix, startIndex)`); plan S18–S20.
-  (4) macOS was not run.
+      called on a narrowed boxed variant gets a fresh box as `this`; if the
+      method keeps that pointer (stores it somewhere), a later copy of the
+      sealed value shares the box and a write through the kept pointer is seen
+      by the copy. Every write through the value itself, `&value` included
+      (it points at the tag and pointer, not the box), copies first; the D188
+      escape summary would tell when a kept `this` needs a copy at assignment. (2) A box is copied on every write
+      through a narrowed variable, not once per value (no uniqueness is
+      tracked). (3) `bench/parse` was 1.1× Go on Windows (1.0–1.1× on Linux)
+      before the instruction-count pass of 2026-10-23 (progress log), which
+      found Veles executing ~40% fewer instructions than Go for the same work.
+      The three choices that were left were decided 2026-10-24 as D200 (a
+      `[runtime] gc` setting), D201 (a field moves out of a local whose methods
+      were called) and D202 (`startsWith(prefix, startIndex)`); plan S18–S20.
+      (4) macOS was not run.
 - [ ] **D200–D202 (built 2026-10-24, plan S18–S20), what is left.** (1)
-  D201's method summary is pessimistic where it cannot see: a method
-  reached through a trait (a default body), a decorated or extern one, and
-  a field mention it cannot classify (an index expression, a pointer taken
-  with `&`) keep everything; an element written through `ref` in a method
-  counts as handing out the storage. (2) `endsWith` has no index argument
-  (D202 left it out until something needs it). (3) The Go front end's own
-  lexer was not changed (its operator scan is `strings.HasPrefix` already).
-  (4) macOS was not run.
+      D201's method summary is pessimistic where it cannot see: a method
+      reached through a trait (a default body), a decorated or extern one, and
+      a field mention it cannot classify (an index expression, a pointer taken
+      with `&`) keep everything; an element written through `ref` in a method
+      counts as handing out the storage. (2) `endsWith` has no index argument
+      (D202 left it out until something needs it). (3) The Go front end's own
+      lexer was not changed (its operator scan is `strings.HasPrefix` already).
+      (4) macOS was not run.
 - [ ] **C9 — `std/cli`, `std/build`, D203 (built 2026-10-24), what is
-  left.** (1) **`examples/todo` keeps its own parser**: no command means
-  `ls`, `list`/`do`/`del` are aliases, and `ls -passport` excludes a word —
-  a default subcommand, variant aliases and pass-through arguments are
-  `std/cli` API to decide first. (2) **`T.doc`** (a type's doc comment, a
-  constant) was added for the help's first paragraph; the name is the
-  agent's, not yet confirmed by the user. ~~(3) enum choices in the help~~,
-  ~~(4) `has`/`attr` on `MemberInfo`~~, ~~(5) `internal` trait methods~~,
-  ~~(6) inference through `try`~~, ~~(7) the `'enter'` message~~ — fixed
-  2026-10-24 (D205's `Enumerated` lists the choices). (8) A reserved flag
-  name (`--help`, `--version`, `-h`) or a long short flag is a compile-time
-  `static assert` now, naming the field, but reported at the line in
-  `std/cli` rather than at the user's field (a "required by" note at the
-  use site would be a general improvement). (9) D160's per-OS files
-  (`_windows.vs`, …) are plan P1, not built. (10) macOS was not run.
+      left.** (1) **`examples/todo` keeps its own parser**: no command means
+      `ls`, `list`/`do`/`del` are aliases, and `ls -passport` excludes a word —
+      a default subcommand, variant aliases and pass-through arguments are
+      `std/cli` API to decide first. (2) **`T.doc`** (a type's doc comment, a
+      constant) was added for the help's first paragraph; the name is the
+      agent's, not yet confirmed by the user. ~~(3) enum choices in the help~~,
+      ~~(4) `has`/`attr` on `MemberInfo`~~, ~~(5) `internal` trait methods~~,
+      ~~(6) inference through `try`~~, ~~(7) the `'enter'` message~~ — fixed
+      2026-10-24 (D205's `Enumerated` lists the choices). (8) A reserved flag
+      name (`--help`, `--version`, `-h`) or a long short flag is a compile-time
+      `static assert` now, naming the field, but reported at the line in
+      `std/cli` rather than at the user's field (a "required by" note at the
+      use site would be a general improvement). (9) D160's per-OS files
+      (`_windows.vs`, …) are plan P1, not built. (10) macOS was not run.
 - [ ] **D207 (built 2026-10-24, plan C11), what is left.** (1) A block
-  passed to a function of one's own (`buildString { … }`) is a closure, not
-  inlined: there is no `inline fun`, so captures cost an allocation there.
-  (2) `return` in a block given to `apply`/`edit` is refused; Kotlin returns
-  from the enclosing function — a decision if wanted. (3) A receiver
-  function value is called `body(x)`; `x.body()` is not offered (a
-  spelling decision). (4) Inside `edit` on a string the receiver is a
-  `StringBuilder`: it has the in-place edits and `len`/`isEmpty`, not yet
-  the read-only string methods (`contains`, `startsWith`, …). (5) In a
-  generic function, a block's bare names are resolved against the receiver
-  type of the first instance checked. (6) `edit` on a struct copies it
-  shallowly, as `copy()` does: a mutable collection in a field is shared
-  with the original. (7) Inside an argument list that already failed, a
-  block is not checked (its errors appear once the call is fixed). (8) A
-  method calling `this.apply { … }` makes its callers' receivers escape
-  (heap) whatever the block does — the receiver pass sees a pointer into
-  `this` handed out. (9) Not measured on Linux.
+      passed to a function of one's own (`buildString { … }`) is a closure, not
+      inlined: there is no `inline fun`, so captures cost an allocation there.
+      (2) `return` in a block given to `apply`/`edit` is refused; Kotlin returns
+      from the enclosing function — a decision if wanted. (3) A receiver
+      function value is called `body(x)`; `x.body()` is not offered (a
+      spelling decision). (4) Inside `edit` on a string the receiver is a
+      `StringBuilder`: it has the in-place edits and `len`/`isEmpty`, not yet
+      the read-only string methods (`contains`, `startsWith`, …). (5) In a
+      generic function, a block's bare names are resolved against the receiver
+      type of the first instance checked. (6) `edit` on a struct copies it
+      shallowly, as `copy()` does: a mutable collection in a field is shared
+      with the original. (7) Inside an argument list that already failed, a
+      block is not checked (its errors appear once the call is fixed). (8) A
+      method calling `this.apply { … }` makes its callers' receivers escape
+      (heap) whatever the block does — the receiver pass sees a pointer into
+      `this` handed out. (9) Not measured on Linux.
 - [ ] **Intermittent on Linux (found 2026-10-24): `driver TestExecutors`
-  panics "deadlock: every task is blocked"** in case 12 (a task waiting for
-  a `Thread`) or 13 (`runBlocking`), about 1 run in 10 under `-count`;
-  reproduced at the committed HEAD with none of the day's changes, so it
-  predates D207/D208. Not diagnosed.
+      panics "deadlock: every task is blocked"** in case 12 (a task waiting for
+      a `Thread`) or 13 (`runBlocking`), about 1 run in 10 under `-count`;
+      reproduced at the committed HEAD with none of the day's changes, so it
+      predates D207/D208. Not diagnosed.
 - [ ] **D208 (built 2026-10-24, plan C12), what is left.** (1) The report
-  for "the program failed, the compiler passed" is built but not pinned by a
-  test (there is no hook to make the runtime wrong). (2) A test that uses
-  `try` does not run in the compiler (a `const fun` cannot throw yet, D113),
-  nor does a test under a suite's `skip`/`skipIf` gate. (3) Each test has
-  the whole constant step budget; a suite of slow tests the compiler can
-  run makes `veles test` slower by that much — not measured. (4) Helper
-  call sites inside a failing compile-time run are not listed under the
-  failure as the runtime lists them.
+      for "the program failed, the compiler passed" is built but not pinned by a
+      test (there is no hook to make the runtime wrong). (2) A test that uses
+      `try` does not run in the compiler (a `const fun` cannot throw yet, D113),
+      nor does a test under a suite's `skip`/`skipIf` gate. (3) Each test has
+      the whole constant step budget; a suite of slow tests the compiler can
+      run makes `veles test` slower by that much — not measured. (4) Helper
+      call sites inside a failing compile-time run are not listed under the
+      failure as the runtime lists them.
 - [ ] **D199 (built 2026-10-24, plan S17), what is left.** (1) The gate
-  modes that print a file's text (`--lines`, `--render`, `--quote`) skip a
-  file that is not UTF-8: a Veles string cannot hold its bytes. (2) The
-  language server analyses the disk's bytes only while the editor's buffer
-  is that file with U+FFFD for each undecodable byte; an editor that
-  replaces a run of bad bytes with one U+FFFD (a truncated sequence) can
-  put a later column on that line off by one. (3) `benchParse` still reads
-  with `fs.readFile` (std is UTF-8). (4) macOS was not run.
+      modes that print a file's text (`--lines`, `--render`, `--quote`) skip a
+      file that is not UTF-8: a Veles string cannot hold its bytes. (2) The
+      language server analyses the disk's bytes only while the editor's buffer
+      is that file with U+FFFD for each undecodable byte; an editor that
+      replaces a run of bad bytes with one U+FFFD (a truncated sequence) can
+      put a later column on that line off by one. (3) `benchParse` still reads
+      with `fs.readFile` (std is UTF-8). (4) macOS was not run.
 - [ ] **B22 left open (D166 built 2026-10-23).** (1) **Labels in a generic
-  type's arguments are refused, not kept** (`Box<(lo: i64, hi: i64)>` is an
-  error naming `Box<(i64, i64)>`): one struct or sealed instance serves every
-  labelling and holds none, because codegen, derived operations and several
-  checker tables key instances by identity. Keeping them needs instances per
-  labelling that are `Identical` to each other and emitted once by `Key`.
-  Built-in collections (`List`, `Map`, …), function results and a throwing
-  call's success type keep labels; a `Result` value that is not a direct call
-  (a `Result<(a: …), E>` local, `when (r) { is Ok => … }`) shows its payload
-  unlabelled. The spec says labels do not change the generic instance; it
-  does not say whether a written label may be refused — the user's to
-  confirm or lift. (2) A `loop (e in m)` over a map, and `loop ((k, v) in m)`'s
-  element, stay `(K, V)`: D166 labels `entries()` only. (3) `[(1, 2): x => x]`
-  — a tuple key whose value is a one-parameter lambda without parentheses —
-  still reads as a lambda `(1, 2): x => …` (the return-type scan sees `x =>`);
-  write `(x) => x`. (4) Not done: rename/references of a label (the label is
-  not a declaration the index knows), hover on the label in `t.key` (not
-  built or checked), and moving the selfhost's const tables (`range.1 < r`) to labels.
-  Windows and Linux (WSL) green.
+      type's arguments are refused, not kept** (`Box<(lo: i64, hi: i64)>` is an
+      error naming `Box<(i64, i64)>`): one struct or sealed instance serves every
+      labelling and holds none, because codegen, derived operations and several
+      checker tables key instances by identity. Keeping them needs instances per
+      labelling that are `Identical` to each other and emitted once by `Key`.
+      Built-in collections (`List`, `Map`, …), function results and a throwing
+      call's success type keep labels; a `Result` value that is not a direct call
+      (a `Result<(a: …), E>` local, `when (r) { is Ok => … }`) shows its payload
+      unlabelled. The spec says labels do not change the generic instance; it
+      does not say whether a written label may be refused — the user's to
+      confirm or lift. (2) A `loop (e in m)` over a map, and `loop ((k, v) in m)`'s
+      element, stay `(K, V)`: D166 labels `entries()` only. (3) `[(1, 2): x => x]`
+      — a tuple key whose value is a one-parameter lambda without parentheses —
+      still reads as a lambda `(1, 2): x => …` (the return-type scan sees `x =>`);
+      write `(x) => x`. (4) Not done: rename/references of a label (the label is
+      not a declaration the index knows), hover on the label in `t.key` (not
+      built or checked), and moving the selfhost's const tables (`range.1 < r`) to labels.
+      Windows and Linux (WSL) green.
 - [ ] **B21 left open (D163–D165 built 2026-10-23).** One choice that is the
-  user's: D163's migration of the tree's `throw X(message: …)` sites "by
-  `--fix`, as the user chooses when built" — it needs a lint that offers the
-  positional form on a one-parameter construction (a style rule: which
-  spelling to prefer, on by default or not); nothing was migrated. (`copy`
-  on a type whose `init` takes parameters and on an `extern union`: decided
-  2026-10-23, refused — D164 addendum v0.105.)
+      user's: D163's migration of the tree's `throw X(message: …)` sites "by
+      `--fix`, as the user chooses when built" — it needs a lint that offers the
+      positional form on a one-parameter construction (a style rule: which
+      spelling to prefer, on by default or not); nothing was migrated. (`copy`
+      on a type whose `init` takes parameters and on an `extern union`: decided
+      2026-10-23, refused — D164 addendum v0.105.)
 - **Found by the direction review (2026-10-14, `veles-direction-2026-10-14.md`), open:**
   ~~`implement Codable` on a struct with a tuple field fails with "no method 'encode'"~~
   (fixed with B22, 2026-10-23: the derive names the field); ~~no debug info~~ (S8 built 2026-10-23: gdb steps Veles source; what is left above); no per-target

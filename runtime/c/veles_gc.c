@@ -281,10 +281,17 @@ static int os_commit(char *p, size_t n) {
 #endif
 }
 
-/* gives the memory of [p, p + n) back; the range stays reserved */
+/* gives the memory of [p, p + n) back; the range stays reserved and reads
+ * as zeros when it is used again (new_span relies on it) */
 static void os_decommit(char *p, size_t n) {
 #if defined(_WIN32)
     VirtualFree(p, n, MEM_DECOMMIT);
+#elif defined(__APPLE__)
+    /* Darwin's MADV_DONTNEED keeps the bytes until the kernel wants the
+     * pages: a fresh mapping over the range is what reads as zeros */
+    if (mmap(p, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_NORESERVE, -1, 0) == MAP_FAILED) {
+        memset(p, 0, n);
+    }
 #else
     madvise(p, n, MADV_DONTNEED);
 #endif

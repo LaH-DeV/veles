@@ -140,6 +140,7 @@ public sealed trait Decl {
     // `inline struct`: kept in the value even in a tree (D198)
     public var indirect: bool = false
     public var isInline: bool = false
+    public var compact:  bool = false  // `compact struct`: the compiler places the fields (D215)
     public var pos:      Span = Span.none()
   }
   /// `trait Name { type Item; fun m() }`, or `sealed trait Name`.

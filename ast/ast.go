@@ -324,7 +324,10 @@ type StructDecl struct {
 	// in a recursive sealed type (D198)
 	Indirect bool
 	Inline   bool
-	Pos      source.Span
+	// Compact: `compact struct` — the compiler places the fields for the
+	// smallest size (D215)
+	Compact bool
+	Pos     source.Span
 }
 
 type AssocTypeDecl struct {

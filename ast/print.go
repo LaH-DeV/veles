@@ -234,6 +234,9 @@ func (p *printer) decl(d Decl) {
 		if d.Inline {
 			p.w("inline ")
 		}
+		if d.Compact {
+			p.w("compact ")
+		}
 		p.w(d.Name.Name)
 		p.typeParams(d.TypeParams)
 		if d.Variant != nil {

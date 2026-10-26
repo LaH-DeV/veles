@@ -10,7 +10,8 @@
 # tree's HEAD, copies over every changed or untracked file with CRLF
 # stripped, and runs the command there (default: build, vet and every test).
 # Go is looked for in ~/.local/go (a user-space install needs no sudo:
-# `curl -sSL https://go.dev/dl/go1.23.2.linux-amd64.tar.gz | tar -xz -C ~/.local`);
+# `curl -sSL https://go.dev/dl/go1.27.1.linux-amd64.tar.gz | tar -xz -C ~/.local`);
+# an older Go fetches the pinned 1.27.1 itself (GOTOOLCHAIN below, go.mod).
 # clang comes from `sudo apt install clang`.
 #
 # Stress, as in the veles-test skill:
@@ -21,6 +22,7 @@
 set -u
 here=$(cd "$(dirname "$0")/.." && pwd)
 export PATH=$HOME/.local/go/bin:$HOME/go/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.27.1}
 command -v go >/dev/null || { echo "wsl-test: no Go in WSL (see the header of this script)"; exit 2; }
 command -v clang >/dev/null || { echo "wsl-test: no clang in WSL: sudo apt install clang"; exit 2; }
 clone=$HOME/veles

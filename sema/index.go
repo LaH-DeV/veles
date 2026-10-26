@@ -914,6 +914,45 @@ func structHead(st *types.Struct) string {
 	return head
 }
 
+// layoutLine is a struct's size, alignment and padding for its hover, and
+// what `compact` would make it (D215); "" for a generic one or a union.
+func layoutLine(st *types.Struct) string {
+	if st.Union || len(st.TypeParams) > 0 && len(st.TypeArgs) == 0 {
+		return ""
+	}
+	lay := &types.Layout{}
+	lay.Sealed = func(s *types.Sealed) int { return 8 + 8*lay.SealedPayloadWords(s) }
+	lay.ErrorUnion = func(u *types.ErrorUnion) int {
+		words := 0
+		for _, m := range types.UnionMembers(u) {
+			size, _ := lay.Of(m)
+			words = max(words, (size+7)/8)
+		}
+		return 8 + 8*words
+	}
+	p := lay.StructPlan(st)
+	used := 0
+	for _, f := range st.Fields {
+		size, _ := lay.Of(f.Type)
+		used += size
+	}
+	line := fmt.Sprintf("%d bytes, aligned %d", p.Size, p.Align)
+	if pad := p.Size - used; pad > 0 {
+		line += fmt.Sprintf(", %d of padding", pad)
+	}
+	if st.Compact {
+		return line + "; fields placed by the compiler (compact)"
+	}
+	if !st.Extern && !st.Packed && !st.Transparent && len(st.Fields) > 1 {
+		c := *st
+		c.Compact = true
+		if cp := lay.StructPlan(&c); cp.Size < p.Size {
+			line += fmt.Sprintf("; 'compact' would make it %d", cp.Size)
+		}
+	}
+	return line
+}
+
 // methodDecl renders an inherent method for a struct's shape: visibility,
 // `static`, then the signature without the owner prefix.
 func methodDecl(tmpl *types.Struct, t *FuncTemplate) string {
@@ -1261,6 +1300,9 @@ func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 		if !d.Extern {
 			// what a caller must (and may) give to build one, from here
 			sb.WriteString("  // " + constructorLine(tt, v) + "\n")
+		}
+		if line := layoutLine(tt); line != "" && !d.Error {
+			sb.WriteString("  // " + line + "\n")
 		}
 		for _, fld := range tt.Fields {
 			if !v.sees(tt, fld.Pub, fld.Internal, fld.Private) {

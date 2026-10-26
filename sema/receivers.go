@@ -49,6 +49,15 @@ func (c *Checker) receiverPass(prog *Program) {
 		}
 	}
 	c.settleOnCalls()
+	for _, fn := range prog.Funcs {
+		if fn.Body == nil {
+			continue
+		}
+		for _, p := range fn.Params {
+			esc, wr := selfUse(fn.Body, p)
+			p.ReadOnly = !esc && !wr && !p.AddrTaken
+		}
+	}
 	c.fieldUsePass(prog)
 	c.lintParamCopies(prog)
 	c.lintNeverClosed(prog)
@@ -99,6 +108,10 @@ func selfUse(body *Block, self *Var) (escapes, writes bool) {
 		case *Assign:
 			if rootVar(n.Target) == self {
 				writes = true
+			}
+		case *Builtin:
+			if n.Op == "array.rawData" && rootVar(n.Args[0]) == self {
+				writes = true // the storage is lent to C, which may write it (withRaw)
 			}
 		case *Deref:
 			if a, ok := n.X.(*AddrOf); ok {
@@ -161,10 +174,39 @@ func rootVar(e Expr) *Var {
 			e = x.X
 		case *VariantCast:
 			e = x.X
+		case *Builtin:
+			// an element of an Array lies inside the value holding it (D121)
+			if x.Op == "list.ref" || x.Op == "list.refUnchecked" {
+				if _, isArray := x.Args[0].Type().(*types.Array); isArray {
+					e = x.Args[0]
+					continue
+				}
+			}
+			return nil
 		default:
 			return nil
 		}
 	}
+}
+
+// RootVar is rootVar for the code generator: the variable whose own
+// storage a place expression lies in, or nil.
+func RootVar(e Expr) *Var { return rootVar(e) }
+
+// MayWrite reports whether evaluating e may change v's own storage: an
+// assignment into it, or a pointer into it handed out (a method's
+// receiver included). A capture makes v a heap cell, which is not asked.
+func MayWrite(e Expr, v *Var) bool {
+	found := false
+	walkExpr(e, func(n any) {
+		switch n := n.(type) {
+		case *Assign:
+			found = found || rootVar(n.Target) == v
+		case *AddrOf:
+			found = found || rootVar(n.X) == v
+		}
+	})
+	return found
 }
 
 // applyReceiver settles one method call once the callee's facts are known:

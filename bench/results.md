@@ -617,3 +617,42 @@ pause 1.32–1.45 ms over four runs, as at 4 MiB in the same session.
 | benchmark | ops | Veles | Go | Veles / Go |
 |---|---:|---:|---:|---:|
 | parse | 155 | 52.01ms | 62.46ms | 0.8× |
+
+## 2026-10-26 20:30 — go1.27.1, darwin/arm64 (HEAD d7eecc7, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| adapters | 24000000 | 53.94ms | 25.5ms | 2.1× |
+| ast | 861841 | 52.08ms | 24.62ms | 2.1× |
+| awaitall | 50000 | 94.23ms | 27.91ms | 3.4× |
+| awaitscope | 50000 | 93.13ms | 26.59ms | 3.5× |
+| bigargs | 40000000 | 46.55ms | 96.96ms | 0.5× |
+| channels | 200000 | 13.93ms | 7.77ms | 1.8× |
+| emit | 1000000 | 63.84ms | 37.01ms | 1.7× |
+| emptycoll | 2000000 | 22.23ms | 19.32ms | 1.2× |
+| gcpause | 20000000 | 364.24ms | 129.24ms | 2.8× |
+| gunzip | 16777232 | 44.41ms | 51.13ms | 0.9× |
+| gzip | 2097154 | 113.52ms | 15.98ms | 7.1× |
+| httphello | 16000 | 389.44ms | 362.57ms | 1.1× |
+| idle | 100000 | 97.15ms | 113.11ms | 0.9× |
+| intern | 1000000 | 30.46ms | 14.99ms | 2.0× |
+| json | 40000 | 52.46ms | 25.99ms | 2.0× |
+| lexer | 2100000 | 37.44ms | 74.14ms | 0.5× |
+| maps | 2000000 | 53.96ms | 51.18ms | 1.1× |
+| parallel | 64 | 6.67ms | 32.21ms | 0.2× |
+| parse | 163 | 37.44ms | 62.92ms | 0.6× |
+| pipes | 1600000 | 51.37ms | 65.56ms | 0.8× |
+| sha256 | 16 | 60.82ms | 6.27ms | 9.7× |
+| sort | 900000 | 47.01ms | 49.82ms | 0.9× |
+| spawn | 100000 | 64.49ms | 20.04ms | 3.2× |
+| strings | 1000000 | 59.71ms | 47.69ms | 1.3× |
+| suscall | 10000000 | 136.41ms | 4.71ms | 29.0× |
+| trees | 14592688 | 151.61ms | 150.5ms | 1.0× |
+
+| benchmark | Veles bytes/op | Go bytes/op | Veles / Go |
+|---|---:|---:|---:|
+| idle | 248 | 2673 | 0.09× |
+
+| benchmark | Veles longest pause | Go longest pause |
+|---|---:|---:|
+| gcpause | 14.79ms | 1.42ms |

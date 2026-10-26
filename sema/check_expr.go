@@ -636,6 +636,7 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	if sym.Kind == SymLocal {
 		f.awaitedUse(sym.Var, e)
 		v := f.localVar(sym.Var)
+		f.requireAssigned(sym.Var, v, e.Pos)
 		markUsed(v)
 		x := f.narrowedRef(v)
 		f.c.refVarAs(e.Pos, v, x.Type())
@@ -881,6 +882,7 @@ func (f *fnCtx) symbolValue(sym *Symbol, span source.Span, want types.Type) Expr
 	switch sym.Kind {
 	case SymLocal:
 		v := f.localVar(sym.Var)
+		f.requireAssigned(sym.Var, v, span)
 		markUsed(v)
 		return f.narrowedRef(v)
 	case SymGlobal:
@@ -2148,7 +2150,7 @@ func (f *fnCtx) invalidatePlace(p place) {
 			delete(f.narrow, k) // an index fact about the list p names (D62)
 			continue
 		}
-		if k.v != p.v {
+		if k.v != p.v || k.path == pathAssigned {
 			continue
 		}
 		if p.path == "" || k.path == p.path || strings.HasPrefix(k.path, p.path+".") {
@@ -2166,7 +2168,7 @@ func (f *fnCtx) invalidatePaths(v *Var) {
 			delete(f.narrow, k)
 			continue
 		}
-		if k.v == v && k.path != "" {
+		if k.v == v && k.path != "" && k.path != pathAssigned {
 			delete(f.narrow, k)
 		}
 	}

@@ -320,6 +320,7 @@ struct Printer {
     if (d.isExtern) this.write("extern ")
     if (d.indirect) this.write("indirect ")
     if (d.isInline) this.write("inline ")
+    if (d.compact) this.write("compact ")
     this.write(d.name.name)
     this.typeParams(d.typeParams)
     if (val variant = d.variant) {

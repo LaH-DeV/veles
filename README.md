@@ -28,7 +28,14 @@ tutorial chapters for three levels of reader plus a cheat sheet, a
 standard-library reference and a guide to error messages. Every program in
 them is compiled and run by `go test ./docs/`.
 
-Requirements: Go 1.23 and `clang` (LLVM 17+) on `PATH`, or `VELES_CLANG`.
+Requirements: Go 1.27.1 and `clang` (LLVM 17+) on `PATH`, or `VELES_CLANG`.
+The Go version is pinned for every machine: `go.mod` asks for 1.27.1, so an
+older Go (1.21 or newer) downloads and uses it, and the test scripts set
+`GOTOOLCHAIN=go1.27.1`. The generated Unicode tables (`selfhost/lexer`,
+`std/regex`) come from that Go's Unicode data (17.0.0), and their freshness
+tests fail under a Go with other data; move the pin and regenerate them
+together (`go test ./selfhost -run UnicodeTables -update`,
+`go test ./std -run RegexUnicodeTables -update-unicode`).
 `--release` disables overflow checks (D21) and optimises; the default is a
 checked debug build. `run` and `test` build into a temporary directory; only
 `build` leaves an executable behind. The C runtime is compiled once per
@@ -41,20 +48,20 @@ program (docs chapter 13).
 
 ### macOS
 
-Apple Silicon is supported and tested with Go 1.23.2 and Apple clang 21.
+Apple Silicon is supported and tested with Go 1.27.1 and Apple clang 21.
 Install Xcode Command Line Tools (`xcode-select --install`) and Go. TLS
 uses Homebrew OpenSSL 3 (`brew install openssl@3`); the runtime loads it
 from `/opt/homebrew/lib` or `/usr/local/lib`, without extra linker flags.
 
 ```bash
-GOTOOLCHAIN=go1.23.2 go build -o veles .
+GOTOOLCHAIN=go1.27.1 go build -o veles .
 ./veles run examples/hello
 bash internal/macos-test.sh
 ```
 
-The script runs build, vet and every test with Go 1.23.2 by default, or a
+The script runs build, vet and every test with Go 1.27.1 by default, or a
 supplied command, such as `bash internal/macos-test.sh go test ./examples -sanitize`.
-`GOTOOLCHAIN` may override that version, but newer Go releases with different
+`GOTOOLCHAIN` may override that version, but Go releases with different
 Unicode data fail the generated-table freshness checks until the tables are
 updated together. The runtime cache is under `~/Library/Caches/veles/rt`.
 Sockets use kqueue; Intel Macs are not yet validated. Thread names work;

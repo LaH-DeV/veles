@@ -75,20 +75,16 @@ func (g *gen) place(e sema.Expr) string {
 func (g *gen) placeAs(e sema.Expr, mode placeMode) string {
 	switch e := e.(type) {
 	case *sema.VarRef:
+		if mode == placeWrite && g.borrowed[e.Var] {
+			panic(fmt.Sprintf("parameter '%s' is read in its caller's storage but written here (sema.Var.ReadOnly is wrong)", e.Var.Name))
+		}
 		return g.varPtr(e.Var)
 	case *sema.Deref:
 		return g.expr(e.X)
 	case *sema.Unwrap:
-		// the payload of a nullable place (after a null test): a pointer-like
-		// nullable is the payload itself; otherwise field 1 of {i1, T}
-		base := g.placeAs(e.X, mode)
+		// the payload of a nullable place (after a null test)
 		nt := e.X.Type().(*types.Nullable)
-		if isPtrLike(nt.Elem) {
-			return base
-		}
-		p := g.newTmp()
-		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", p, g.llType(nt), base)
-		return p
+		return g.nullPayloadPtr(nt, g.placeAs(e.X, mode))
 	case *sema.ConstTable:
 		if _, isArray := e.Value.(*sema.CArray); isArray {
 			return g.constTable(e.Value, e.Name) // the array's read-only storage
@@ -124,7 +120,7 @@ func (g *gen) placeAs(e sema.Expr, mode placeMode) string {
 		return p
 	case *sema.Builtin:
 		if _, ok := e.Args[0].Type().(*types.Array); ok && (e.Op == "list.ref" || e.Op == "list.refUnchecked") {
-			return g.arrayElemPtr(e.Args[0], g.expr(e.Args[1]), e.Op == "list.refUnchecked", e.Span)
+			return g.arrayElemPtr(e.Args[0], g.expr(e.Args[1]), e.Op == "list.refUnchecked", e.Span, mode)
 		}
 		if e.Op == "list.ref" {
 			list := g.expr(e.Args[0])
@@ -377,15 +373,7 @@ func (g *gen) expr(e sema.Expr) string {
 		if isPtrLike(nt.Elem) {
 			return x
 		}
-		if g.isMem(nt) {
-			return g.makeNullableT(nt, "true", x)
-		}
-		llt := g.llType(nt)
-		a := g.newTmp()
-		g.emit("%s = insertvalue %s undef, i1 true, 0", a, llt)
-		b := g.newTmp()
-		g.emit("%s = insertvalue %s %s, %s %s, 1", b, llt, a, g.llType(nt.Elem), x)
-		return b
+		return g.makeNullableT(nt, "true", x)
 	case *sema.IsNull:
 		x := g.expr(e.X)
 		nt := e.X.Type().(*types.Nullable)
@@ -700,7 +688,7 @@ func (g *gen) call(e *sema.Call) string {
 	for i, a := range e.Args {
 		var v string
 		if g.isMem(a.Type()) && !fn.Extern {
-			v = g.exprOwned(a) // a copy of its own, made now: a later argument may change the original
+			v = g.exprArg(a, e.Args)
 		} else {
 			v = g.expr(a)
 		}
@@ -1514,12 +1502,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = extractvalue { %s, i1 } %s, 1", of, ty, pair)
 		ok := g.newTmp()
 		g.emit("%s = xor i1 %s, true", ok, of)
-		nt := g.llType(e.Type())
-		a := g.newTmp()
-		g.emit("%s = insertvalue %s undef, i1 %s, 0", a, nt, ok)
-		v := g.newTmp()
-		g.emit("%s = insertvalue %s %s, %s %s, 1", v, nt, a, ty, val)
-		return v
+		return g.makeNullableT(e.Type().(*types.Nullable), ok, val)
 	case "num.toChecked":
 		// D86: `x.toU8()` on a value that may not fit: { fits, converted }
 		x := g.expr(e.Args[0])
@@ -1818,7 +1801,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		return g.makeNullableT(e.Type().(*types.Nullable), ok, val)
 	case "list.get":
 		if _, ok := e.Args[0].Type().(*types.Array); ok {
-			p := g.arrayElemPtr(e.Args[0], g.expr(e.Args[1]), false, e.Span)
+			p := g.arrayElemPtr(e.Args[0], g.expr(e.Args[1]), false, e.Span, placeRead)
 			return g.loadVal(e.Type(), p)
 		}
 		l := g.expr(e.Args[0])
@@ -2266,9 +2249,18 @@ func (g *gen) makeNullableT(nt *types.Nullable, present, val string) string {
 	if isPtrLike(nt.Elem) || !g.isMem(nt) {
 		return g.makeNullable(nt, present, val)
 	}
+	if _, ok := g.niche(nt); ok {
+		// the value itself, or all zeros
+		src := val
+		if present != "true" {
+			src = g.newTmp()
+			g.emit("%s = select i1 %s, ptr %s, ptr %s", src, present, val, g.zeroMem(nt.Elem))
+		}
+		return g.ownCopy(nt.Elem, src)
+	}
 	tmp := g.newMem(nt)
-	g.emit("store i1 %s, ptr %s", present, g.fieldPtr(g.llType(nt), tmp, 0))
-	g.storeVal(nt.Elem, val, g.fieldPtr(g.llType(nt), tmp, 1))
+	g.storeNullFlag(nt, present, tmp)
+	g.storeVal(nt.Elem, val, g.nullPayloadPtr(nt, tmp))
 	return tmp
 }
 
@@ -2280,6 +2272,14 @@ func (g *gen) makeNullable(nt *types.Nullable, present, val string) string {
 		return v
 	}
 	llt := g.llType(nt)
+	if _, ok := g.niche(nt); ok {
+		if present == "true" {
+			return val
+		}
+		v := g.newTmp()
+		g.emit("%s = select i1 %s, %s %s, %s zeroinitializer", v, present, llt, val, llt)
+		return v
+	}
 	a := g.newTmp()
 	g.emit("%s = insertvalue %s undef, i1 %s, 0", a, llt, present)
 	b := g.newTmp()
@@ -2343,7 +2343,7 @@ func (g *gen) callIndirect(e *sema.CallIndirect) string {
 	args := []string{"ptr " + env}
 	vals := make([]string, len(e.Args)) // each argument is evaluated once
 	for i, a := range e.Args {
-		vals[i] = g.exprOwned(a)
+		vals[i] = g.exprArg(a, e.Args)
 		args = append(args, g.vt(a.Type())+" "+vals[i])
 	}
 	if sema.IndirectSuspendsIn(e, g.view()) { // by its type, unless the instance knows it is plain (D116)
@@ -2510,7 +2510,7 @@ func (g *gen) callVirtual(e *sema.CallVirtual) string {
 	args := []string{"ptr " + data}
 	vals := make([]string, len(e.Args))
 	for i, a := range e.Args {
-		vals[i] = g.exprOwned(a)
+		vals[i] = g.exprArg(a, e.Args)
 		args = append(args, g.vt(a.Type())+" "+vals[i])
 	}
 	if e.Sig.Effects.Suspends {

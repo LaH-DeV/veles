@@ -2560,7 +2560,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 	for i, tp := range tmpl.TypeParams {
 		m[tp] = args[i]
 	}
-	inst := &types.Struct{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Internal: tmpl.Internal, Extern: tmpl.Extern, Packed: tmpl.Packed, Align: tmpl.Align, Union: tmpl.Union, Transparent: tmpl.Transparent, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl, Tag: tmpl.Tag}
+	inst := &types.Struct{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Internal: tmpl.Internal, Extern: tmpl.Extern, Packed: tmpl.Packed, Align: tmpl.Align, Union: tmpl.Union, Transparent: tmpl.Transparent, Compact: tmpl.Compact, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl, Tag: tmpl.Tag}
 	tmpl.Instances[key] = inst
 	for _, f := range tmpl.Fields {
 		nf := *f

@@ -33,6 +33,17 @@ func (c *Checker) layoutAttrs(s *types.Struct, d *ast.StructDecl, attrs map[stri
 			s.Transparent = true
 		}
 	}
+	if d.Compact {
+		_, transparent := attrs["transparent"]
+		switch {
+		case d.Extern:
+			c.errorf(d.Pos, "an extern struct is laid out as C lays it out, in declaration order; 'compact' would move its fields: drop 'compact' (D215)")
+		case transparent:
+			c.errorf(d.Pos, "a @transparent struct is its one field, which 'compact' cannot move: drop 'compact' (D215)")
+		default:
+			s.Compact = true
+		}
+	}
 }
 
 // checkLayouts checks what needs every struct's fields: run once they are
@@ -49,6 +60,9 @@ func (c *Checker) checkLayouts() {
 		}
 		if s.Transparent && len(s.Fields) != 1 {
 			c.errorf(d.Name.Pos, "a @transparent struct has exactly one field, which C sees in its place; '%s' has %d (D120)", s.Name, len(s.Fields))
+		}
+		if s.Compact && len(s.Fields) < 2 {
+			c.warnf(d.Name.Pos, "'compact' changes nothing for '%s': with fewer than two fields there is nothing to place; drop it (D215)", s.Name)
 		}
 		if s.Union {
 			if len(s.Fields) == 0 {

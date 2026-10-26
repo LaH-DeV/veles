@@ -10,14 +10,15 @@ entry:
   %a11 = alloca %S.main.Data
   %a23 = alloca %S.main.Data
   %a28 = alloca %S.main.Spaced, align 16
-  %a32 = alloca %S.main.Holder, align 64
-  %a49 = alloca [21 x i8]
-  %a56 = alloca %S.main.Data
-  %a58 = alloca [21 x i8]
-  %a65 = alloca [21 x i8]
-  %a72 = alloca [21 x i8]
-  %a76 = alloca %str
-  %a77 = alloca [7 x %str]
+  %a29 = alloca %S.main.Holder, align 64
+  %a33 = alloca %S.main.Holder, align 64
+  %a50 = alloca [21 x i8]
+  %a57 = alloca %S.main.Data
+  %a59 = alloca [21 x i8]
+  %a66 = alloca [21 x i8]
+  %a73 = alloca [21 x i8]
+  %a77 = alloca %str
+  %a78 = alloca [7 x %str]
   store %S.main.Data zeroinitializer, ptr %a2
   store i32 7, ptr %a2
   %t1 = load %S.main.Data, ptr %a2
@@ -54,74 +55,76 @@ arith.ok.2:
   %t26 = insertvalue %S.main.Spaced undef, i8 1, 0
   %t27 = insertvalue %S.main.Spaced %t26, i32 2, 2
   store %S.main.Spaced %t27, ptr %a28
-  %t29 = insertvalue %S.main.Counter undef, i64 4, 0
-  %t30 = insertvalue %S.main.Holder undef, i8 3, 0
-  %t31 = insertvalue %S.main.Holder %t30, %S.main.Counter %t29, 2
-  store %S.main.Holder %t31, ptr %a32
-  %t33 = getelementptr inbounds %S.main.Holder, ptr %a32, i32 0, i32 2
-  %t34 = getelementptr inbounds %S.main.Counter, ptr %t33, i32 0, i32 0
-  %t35 = load i64, ptr %t34
-  %t37 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t35, i64 1)
-  %t38 = extractvalue { i64, i1 } %t37, 0
-  %t39 = extractvalue { i64, i1 } %t37, 1
-  br i1 %t39, label %overflow.3, label %arith.ok.4
+  %t30 = getelementptr inbounds %S.main.Holder, ptr %a29, i32 0, i32 0
+  store i8 3, ptr %t30
+  %t31 = insertvalue %S.main.Counter undef, i64 4, 0
+  %t32 = getelementptr inbounds %S.main.Holder, ptr %a29, i32 0, i32 2
+  store %S.main.Counter %t31, ptr %t32
+  call void @llvm.memmove.p0.p0.i64(ptr %a33, ptr %a29, i64 128, i1 false)
+  %t34 = getelementptr inbounds %S.main.Holder, ptr %a33, i32 0, i32 2
+  %t35 = getelementptr inbounds %S.main.Counter, ptr %t34, i32 0, i32 0
+  %t36 = load i64, ptr %t35
+  %t38 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t36, i64 1)
+  %t39 = extractvalue { i64, i1 } %t38, 0
+  %t40 = extractvalue { i64, i1 } %t38, 1
+  br i1 %t40, label %overflow.3, label %arith.ok.4
 overflow.3:
-  %t40 = extractvalue %str { ptr @.str.1, i64 16 }, 0
-  %t41 = extractvalue %str { ptr @.str.1, i64 16 }, 1
-  %t42 = extractvalue %str { ptr @.str.3, i64 13 }, 0
-  %t43 = extractvalue %str { ptr @.str.3, i64 13 }, 1
-  call void @veles_panic_at(ptr %t40, i64 %t41, ptr %t42, i64 %t43)
+  %t41 = extractvalue %str { ptr @.str.1, i64 16 }, 0
+  %t42 = extractvalue %str { ptr @.str.1, i64 16 }, 1
+  %t43 = extractvalue %str { ptr @.str.3, i64 13 }, 0
+  %t44 = extractvalue %str { ptr @.str.3, i64 13 }, 1
+  call void @veles_panic_at(ptr %t41, i64 %t42, ptr %t43, i64 %t44)
   unreachable
 arith.ok.4:
-  %t44 = getelementptr inbounds %S.main.Holder, ptr %a32, i32 0, i32 2
-  %t45 = getelementptr inbounds %S.main.Counter, ptr %t44, i32 0, i32 0
-  store i64 %t38, ptr %t45
-  %t46 = load %S.main.Event, ptr %a5
-  %t47 = extractvalue %S.main.Event %t46, 0
-  %t48 = zext i32 %t47 to i64
-  %t50 = call i64 @veles_u64_format(ptr %a49, i64 %t48)
-  %t51 = insertvalue %str undef, ptr %a49, 0
-  %t52 = insertvalue %str %t51, i64 %t50, 1
-  %t53 = load %S.main.Event, ptr %a5
-  %t54 = extractvalue %S.main.Event %t53, 1
-  store %S.main.Data %t54, ptr %a56
-  %t55 = load i32, ptr %a56
-  %t57 = sext i32 %t55 to i64
-  %t59 = call i64 @veles_i64_format(ptr %a58, i64 %t57)
-  %t60 = insertvalue %str undef, ptr %a58, 0
-  %t61 = insertvalue %str %t60, i64 %t59, 1
-  %t62 = getelementptr inbounds %S.main.Spaced, ptr %a28, i32 0, i32 2
-  %t63 = load i32, ptr %t62
-  %t64 = sext i32 %t63 to i64
-  %t66 = call i64 @veles_i64_format(ptr %a65, i64 %t64)
-  %t67 = insertvalue %str undef, ptr %a65, 0
-  %t68 = insertvalue %str %t67, i64 %t66, 1
-  %t69 = getelementptr inbounds %S.main.Holder, ptr %a32, i32 0, i32 2
-  %t70 = getelementptr inbounds %S.main.Counter, ptr %t69, i32 0, i32 0
-  %t71 = load i64, ptr %t70
-  %t73 = call i64 @veles_i64_format(ptr %a72, i64 %t71)
-  %t74 = insertvalue %str undef, ptr %a72, 0
-  %t75 = insertvalue %str %t74, i64 %t73, 1
-  %t78 = getelementptr [7 x %str], ptr %a77, i64 0, i64 0
-  store %str %t52, ptr %t78
-  %t79 = getelementptr [7 x %str], ptr %a77, i64 0, i64 1
-  store %str { ptr @.str.4, i64 1 }, ptr %t79
-  %t80 = getelementptr [7 x %str], ptr %a77, i64 0, i64 2
-  store %str %t61, ptr %t80
-  %t81 = getelementptr [7 x %str], ptr %a77, i64 0, i64 3
-  store %str { ptr @.str.4, i64 1 }, ptr %t81
-  %t82 = getelementptr [7 x %str], ptr %a77, i64 0, i64 4
-  store %str %t68, ptr %t82
-  %t83 = getelementptr [7 x %str], ptr %a77, i64 0, i64 5
-  store %str { ptr @.str.4, i64 1 }, ptr %t83
-  %t84 = getelementptr [7 x %str], ptr %a77, i64 0, i64 6
-  store %str %t75, ptr %t84
-  call void @veles_string_concat_n(ptr %a76, ptr %a77, i64 7)
-  %t85 = load %str, ptr %a76
-  %t86 = extractvalue %str { ptr @.str.5, i64 20 }, 0
-  %t87 = extractvalue %str { ptr @.str.5, i64 20 }, 1
-  call void @veles_call_push(ptr %t86)
-  call void @v_std.io.println(%str %t85)
+  %t45 = getelementptr inbounds %S.main.Holder, ptr %a33, i32 0, i32 2
+  %t46 = getelementptr inbounds %S.main.Counter, ptr %t45, i32 0, i32 0
+  store i64 %t39, ptr %t46
+  %t47 = load %S.main.Event, ptr %a5
+  %t48 = extractvalue %S.main.Event %t47, 0
+  %t49 = zext i32 %t48 to i64
+  %t51 = call i64 @veles_u64_format(ptr %a50, i64 %t49)
+  %t52 = insertvalue %str undef, ptr %a50, 0
+  %t53 = insertvalue %str %t52, i64 %t51, 1
+  %t54 = load %S.main.Event, ptr %a5
+  %t55 = extractvalue %S.main.Event %t54, 1
+  store %S.main.Data %t55, ptr %a57
+  %t56 = load i32, ptr %a57
+  %t58 = sext i32 %t56 to i64
+  %t60 = call i64 @veles_i64_format(ptr %a59, i64 %t58)
+  %t61 = insertvalue %str undef, ptr %a59, 0
+  %t62 = insertvalue %str %t61, i64 %t60, 1
+  %t63 = getelementptr inbounds %S.main.Spaced, ptr %a28, i32 0, i32 2
+  %t64 = load i32, ptr %t63
+  %t65 = sext i32 %t64 to i64
+  %t67 = call i64 @veles_i64_format(ptr %a66, i64 %t65)
+  %t68 = insertvalue %str undef, ptr %a66, 0
+  %t69 = insertvalue %str %t68, i64 %t67, 1
+  %t70 = getelementptr inbounds %S.main.Holder, ptr %a33, i32 0, i32 2
+  %t71 = getelementptr inbounds %S.main.Counter, ptr %t70, i32 0, i32 0
+  %t72 = load i64, ptr %t71
+  %t74 = call i64 @veles_i64_format(ptr %a73, i64 %t72)
+  %t75 = insertvalue %str undef, ptr %a73, 0
+  %t76 = insertvalue %str %t75, i64 %t74, 1
+  %t79 = getelementptr [7 x %str], ptr %a78, i64 0, i64 0
+  store %str %t53, ptr %t79
+  %t80 = getelementptr [7 x %str], ptr %a78, i64 0, i64 1
+  store %str { ptr @.str.4, i64 1 }, ptr %t80
+  %t81 = getelementptr [7 x %str], ptr %a78, i64 0, i64 2
+  store %str %t62, ptr %t81
+  %t82 = getelementptr [7 x %str], ptr %a78, i64 0, i64 3
+  store %str { ptr @.str.4, i64 1 }, ptr %t82
+  %t83 = getelementptr [7 x %str], ptr %a78, i64 0, i64 4
+  store %str %t69, ptr %t83
+  %t84 = getelementptr [7 x %str], ptr %a78, i64 0, i64 5
+  store %str { ptr @.str.4, i64 1 }, ptr %t84
+  %t85 = getelementptr [7 x %str], ptr %a78, i64 0, i64 6
+  store %str %t76, ptr %t85
+  call void @veles_string_concat_n(ptr %a77, ptr %a78, i64 7)
+  %t86 = load %str, ptr %a77
+  %t87 = extractvalue %str { ptr @.str.5, i64 20 }, 0
+  %t88 = extractvalue %str { ptr @.str.5, i64 20 }, 1
+  call void @veles_call_push(ptr %t87)
+  call void @v_std.io.println(%str %t86)
   call void @veles_call_pop()
   ret void
 }

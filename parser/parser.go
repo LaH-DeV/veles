@@ -493,6 +493,15 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 	case lexer.KwStruct:
 		return p.parseStruct(attrs, pub, false, start)
 	case lexer.Ident:
+		if p.cur().Text == "compact" && (p.peek(1).Kind == lexer.KwStruct || p.peek(1).Kind == lexer.KwExtern && p.peek(2).Kind == lexer.KwStruct) {
+			p.next() // the compiler places the fields (D215); refused on an extern struct by the checker
+			extern := p.accept(lexer.KwExtern)
+			d := p.parseStruct(attrs, pub, extern, start)
+			if sd, ok := d.(*ast.StructDecl); ok {
+				sd.Compact = true
+			}
+			return d
+		}
 		if p.cur().Text == "indirect" && p.peek(1).Kind == lexer.KwSealed {
 			p.next() // every variant behind a pointer (D198)
 			d := p.parseTrait(attrs, pub, start)
@@ -1253,15 +1262,28 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 		p.skipSemis()
 		for !p.at(lexer.RBrace, lexer.EOF) {
 			mattrs := p.parseAttributes()
-			if p.at(lexer.Ident) && (p.cur().Text == "indirect" || p.cur().Text == "inline") && p.peek(1).Kind == lexer.KwStruct {
-				// `indirect struct` / `inline struct`: where the variant is stored (D198)
+			if n := p.variantWords(); n > 0 {
+				// `indirect struct` / `inline struct`: where the variant is stored
+				// (D198); `compact struct`: how its fields are placed (D215)
 				doc := p.takeDoc() // on the word, before it is taken
-				word := p.next()
+				first := p.cur()
+				var indirect, inline, compact bool
+				for i := 0; i < n; i++ {
+					switch p.next().Text {
+					case "indirect":
+						indirect = true
+					case "inline":
+						inline = true
+					case "compact":
+						compact = true
+					}
+				}
 				p.parseNestedVariant(d, mattrs, doc)
 				if n := len(d.Variants); n > 0 {
-					d.Variants[n-1].Indirect = word.Text == "indirect"
-					d.Variants[n-1].Inline = word.Text == "inline"
-					d.Variants[n-1].Pos = word.Span.To(d.Variants[n-1].Pos)
+					d.Variants[n-1].Indirect = indirect
+					d.Variants[n-1].Inline = inline
+					d.Variants[n-1].Compact = compact
+					d.Variants[n-1].Pos = first.Span.To(d.Variants[n-1].Pos)
 				}
 				p.parseMemberSeparator()
 				continue
@@ -1981,6 +2003,23 @@ func (p *Parser) peekIdentAfterTypeParams() string {
 		}
 	}
 	return "name"
+}
+
+// variantWords is how many words before a `struct` in a sealed trait's body
+// say how the variant is stored or laid out — `indirect` or `inline`, then
+// `compact` — or 0 when the cursor is not at such words.
+func (p *Parser) variantWords() int {
+	n := 0
+	if p.at(lexer.Ident) && (p.cur().Text == "indirect" || p.cur().Text == "inline") {
+		n++
+	}
+	if t := p.peek(n); t.Kind == lexer.Ident && t.Text == "compact" {
+		n++
+	}
+	if n == 0 || p.peek(n).Kind != lexer.KwStruct {
+		return 0
+	}
+	return n
 }
 
 // parseNestedVariant parses a `struct` in the body of a sealed trait (D193):

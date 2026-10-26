@@ -119,7 +119,7 @@ var families = []family{
 		`only allowed at module level`, `needs an initializer`, `needs a (type|body)`, `^local functions`,
 		`^'static'`, `static (member|value)`, `static val`, `visibility`, `^'public'`, `^'private'`,
 		`^'protected'`, `^'private protected'`, `^a field is`, `extend`, `extension`, `impl`, `^'main' must`, `infinite size`, `type alias`,
-		`^'const'`, `^a global cannot`, `^'%s' binding needs`, `^'suspends' must`),
+		`^'const'`, `^a global cannot`, `^'%s' binding needs`, `^'suspends' must`, `before it is assigned on every path`, `\(D215\)`),
 	fam("unused", `never used`, `must be used`),
 	fam("syntax", `escape`, `a binding in a condition`, `^expected`, `^unexpected`, `^unterminated`, `^empty type`, `^a tuple labels every element`, `is used twice in one tuple`, `not valid UTF-8`),
 }

@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.115** — decisions D1–D213. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.116** — decisions D1–D215. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -103,6 +103,8 @@ Rationale: Kotlin's collapsing `T?` makes generic lookups ambiguous — `map[key
 - `String??` arises only from generic instantiation, essentially never from hand-written source
 
 **Representation is dual:** nullable pointer → niche-optimized, zero cost. Nullable value struct → tagged union with a discriminant. Nesting costs a discriminant only at the nested level. Does not disturb D8: nullable and non-nullable pointers are the same GC shape.
+
+_2026-10-26 (plan B32 step 4, `veles-layout-spec.md` §5.2; behaviour unchanged, the encoding is unspecified per D215): a `T?` is as big as `T` when `T` holds a value that is never zero (D214) at a fixed place — a pointer, a collection, channel or task handle, a closure, a trait object, through struct fields, tuple elements and an array's first element — and null is all zeros; otherwise it carries a discriminant. Strings, numbers, sealed values, C's types and raw pointers keep it. Nesting adds a discriminant at each further level._
 
 **Precedence with pointers:** `?` binds tighter than `*`, so `*User?` is a pointer to a nullable `User`. A nullable pointer is written `(*User)?`.
 
@@ -4082,7 +4084,8 @@ D51 intends attributes to be.
 - **`@packed`** on an `extern struct` or `extern union`: no padding, alignment
   1. A field read copies with an unaligned load; `&s.field` on a packed field
      is an error (the pointer would be misaligned — Rust's rule). Refused on a
-     plain struct (its layout is the compiler's).
+     plain struct (its layout is the compiler's; _D215: declaration order,
+     or the compiler's placement under `compact struct`_).
 - **`@align(n)`** on any struct, or on a field of an `extern struct`: `n` a
   power of two not below the natural alignment (else an error naming it);
   the size rounds up to it. On a plain struct it is the low-level tool for
@@ -4198,6 +4201,14 @@ _Built 2026-10-03 (B16)._ Settled while building:
   closure taking one, a task argument, a channel element, a map value and a
   trait object's method all work; an extern struct of that size crosses to C
   by value as C passes it.
+  _2026-10-26 (plan B32 step 3, `veles-layout-spec.md` §5.3; behaviour
+  unchanged): any aggregate over 64 bytes is in the memory class too, array
+  or not. An argument is the address of the caller's own variable (or a
+  field of it) when nothing can change it during the call — a local nothing
+  points into or captures, which no other argument of the call writes —
+  and of a copy otherwise; a callee that writes its parameter or lends a
+  pointer into it copies it on entry. Measured on `bench/bigargs`: 88 ms →
+  46 ms (Go 90 ms)._
 - **Reads.** `a.at(i)` is `T?`, and `T` where the index is a constant in
   range (an out-of-range constant is an error), where a bounds fact proves it
   (`loop (i in a.indices())`, `loop (i in 0..<K.len())`, `loop (i < 4)`), and
@@ -6859,7 +6870,7 @@ fun main() {
 ```
 
 - **Entry points.** `cli.parse<T: Args>(args: List<string>): T throws
-  cli.Error` throws, as `config.load` and `json.decode` do — for tests and
+cli.Error` throws, as `config.load` and `json.decode` do — for tests and
   programs that decide themselves; `cli.args<T: Args>(): T` reads
   `os.args()`, and on a `cli.Error` prints its text (to stdout for help and
   version, to stderr for a usage error) and exits 0 or 2. D167's
@@ -7965,7 +7976,7 @@ sealed trait Message {                  // not recursive: inline, as D12
 }
 ```
 
-- **Automatic, for trees.** A sealed type is *recursive* when one of its
+- **Automatic, for trees.** A sealed type is _recursive_ when one of its
   variants holds the type itself — directly, behind a pointer, in a
   collection or a nullable, or through another type's field (`*Expr`,
   `List<Stmt>` in `Block` in a `Stmt`). In a recursive sealed type every
@@ -7973,7 +7984,7 @@ sealed trait Message {                  // not recursive: inline, as D12
   value is its tag and one word. Non-recursive sealed types — `Result`,
   `Message` above — stay inline exactly as D12 says.
 - **`indirect struct V`** in a sealed trait's body (or `indirect sealed trait
-  T` for all its variants) boxes that variant in any sealed type.
+T` for all its variants) boxes that variant in any sealed type.
 - **`inline struct V`** keeps a variant in the value in a type that would
   box it (low-level control: a hot, small node); the value is then sized for
   the largest inline variant.
@@ -8008,7 +8019,7 @@ the self-hosted front end could not read such a file at all. The user:
 - Every byte sequence that is not UTF-8 is an error at its position — in
   code, a string, a character literal or a comment alike — and the file does
   not compile: `main.vs:3:7: the text is not valid UTF-8 here (byte 0xE9):
-  save the file as UTF-8` (Go: `illegal UTF-8 encoding`). Each bad sequence
+save the file as UTF-8` (Go: `illegal UTF-8 encoding`). Each bad sequence
   is reported, as Go does; a byte-order mark at the start stays allowed.
 - Both front ends report it the same way: the self-hosted one reads the
   file as bytes, reports these errors and lexes nothing more (gate G3 covers
@@ -8237,8 +8248,8 @@ Os.MacOS.toString(case: Case.Kebab)        // "mac-os"
   whose fix writes `Case`.
 - **`Enumerated`** (prelude) is the trait every enum implements without
   writing anything: `static fun values(): List<This>`, `static fun
-  parse(text: string, case: Case = Case.AsWritten): This?`, `fun
-  toString(case: Case): string`; it requires `Display`, `Parsable` and
+parse(text: string, case: Case = Case.AsWritten): This?`, `fun
+toString(case: Case): string`; it requires `Display`, `Parsable` and
   `Comparable`. Generic code asks `V implements Enumerated` (`std/cli`
   lists an enum flag's choices with it).
 - **Overriding.** An enum may write `implement Enumerated for Os { … }` and
@@ -8370,7 +8381,7 @@ the function it is written in — no closure — so `server.apply { port = 8080
 }` costs what the assignment does (measured: 0.33 ns per call, as the
 assignment; ~25 ns as a closure). It follows that a `try` in it reaches
 that function, while `return`, and a `break`/`continue` that would leave the
-block, are refused (the block runs to its end); a receiver function *value*
+block, are refused (the block runs to its end); a receiver function _value_
 given to `apply`/`edit` may not throw. In a block, a bare name is the
 innermost receiver's member that has it, then an enclosing receiver's (a
 method's), as for locals. The variable the block works on stays on the
@@ -8620,6 +8631,7 @@ fun summary(items: List<Item>, limit: i64): string {
 From the user's open notes (`to_figure_out.md` 3: "inlay hints to show the
 type of memory allocations"). Veles allocates on the GC heap in a small set
 of places, and the checker already decides each of them:
+
 - mutable collections, on the first write (D187);
 - non-empty collection literals and the results of collection operations;
 - string building (interpolation, `+`, except where a side is shared);
@@ -8658,6 +8670,119 @@ back-edges and an explicit `cede` (D197) stay. User: "we'd need check if the
 current approach is good. but ok, leave it" — so D145's yield policy (the
 ~10 ms slice, a lone task, fixed-thread executors, the cost of `cede` per
 iteration) is to be measured; plan F21._
+
+### D214 — A local `var` is assigned before it is read (v0.116)
+
+```veles
+fun label(on: bool): string {
+  var name: string
+  if (on) name = "on" else name = "off"
+  name                                  // fine: assigned on every path
+}
+fun count(): i64 {
+  var xs: List<i64>
+  xs.len()                              // error: 'xs' is read before it is assigned
+}
+```
+
+Found 2026-10-26 (`veles-layout-spec.md` §4). A `var x: T` with no value
+was zero-filled. That gave values no program could otherwise make: a
+non-nullable `*T` that is null (so `(*T)?` read it as `null`, breaking D5's
+pointer niche), a `List` that exits the program with status 255 and no
+message on `len()`, closures and trait objects with no code.
+
+- **Definite assignment.** A local `var` declared without a value may not
+  be read, have `&` taken, be captured by a lambda, or have a method called
+  on it until it is assigned on every path to that point. The facts are the
+  `init` block's (D73): they join at `if`/`when`, an assignment inside a
+  loop body does not count after the loop, and a path that leaves
+  (`return`, `throw`, `break`, `continue`, a `Never` call) does not need
+  one. The error names the variable and says what to do: "'xs' is read
+  before it is assigned on every path; give it a value
+  (`var xs: List<i64> = []`) or assign it on each branch above".
+- `val` still needs a value where it is declared (unchanged).
+- **The validity invariant this makes true.** Every value a program can
+  observe is valid for its type: a non-nullable pointer, collection or task
+  handle, closure and trait object is never null; a sealed value's tag names
+  one of its variants; a string's length is not negative and its pointer is
+  not null when the length is not 0. Code in `unsafe` that makes an invalid
+  value has undefined behaviour. A value typed by C (`*raw T`, extern
+  fields, `CLayout`) has C's validity only: raw pointers may be null.
+
+User, 2026-10-26, recommended of 3. Rejected: zero values for the types
+whose zero is valid (numbers, `bool`, `string`, `T?`, structs of those) and
+an error for the rest (Go's model: two rules where one does); leaving it.
+No code in std, `selfhost`, the examples, the benchmarks or the docs used
+the form.
+
+Both levels: nothing changes for code that gives its variables values. The
+invariant is what lets the compiler store `T?` without a flag word where
+`T` has a value that is never zero (`veles-layout-spec.md` §5.2), with no
+change to the source.
+
+### D215 — Struct layout: declaration order, and `compact struct` (v0.116)
+
+```veles
+struct Header {            // fields where they are written: 32 bytes
+  flag: u8                 // offset 0
+  at:   i64                // offset 8
+  kind: u8                 // offset 16
+  n:    i32                // offset 20
+  ok:   bool               // offset 24
+}
+compact struct Sample {    // the compiler places the fields: 16 bytes
+  flag: u8
+  at:   i64
+  kind: u8
+  n:    i32
+  ok:   bool
+}
+```
+
+D120 said a plain struct's layout is "the compiler's" and nothing more.
+
+- **Guaranteed:** a struct's fields, and a tuple's elements, lie in
+  declaration order, each at the next offset its alignment allows (raised by
+  `@align(n)`, D120), and the size is a multiple of the alignment. This is
+  C's rule, and what the debugger shows.
+- **`compact struct`** lets the compiler place the fields for the smallest
+  size: by alignment, largest first, and in declaration order among equals.
+  That always gives the least padding Veles types allow. Only the placement
+  changes. Construction, `Codable`, `Comparable`, `T.fields`, printing,
+  `==`, hashing, positional patterns and the C-facing rules all keep
+  declaration order. A generic `compact struct` is placed per instance.
+- **Spelling.** `compact` is a contextual word before `struct`, like
+  `inline`/`indirect` (D198), and reserves nothing. The modifier order is
+  `public const compact struct`. In a sealed trait's body it goes after
+  `inline`/`indirect`: `indirect compact struct V`.
+- **Refused:** `compact extern struct` (C fixes the order) and `compact`
+  with `@packed` or `@transparent`, each with an error that says why.
+  _(As built, 2026-10-26: `@packed` applies only to extern structs, so it
+  is refused through the first error.)_
+  `compact` on a struct with fewer than two fields gets a warning that it
+  changes nothing.
+- **Hover** on a struct shows its size, alignment and padding. When
+  `compact` would make it smaller it says so ("32 bytes, 15 of padding;
+  `compact` would make it 16"). There is no lint: in `selfhost` only 9 of
+  437 structs would gain, 8 bytes each.
+- **Unspecified** (may change between compiler versions): how `T?`, sealed
+  values, error unions, closures and trait objects are encoded. Programs
+  depend only on the layouts of `extern`/`CLayout` types (D69, D120) and on
+  the struct rule above.
+
+User, 2026-10-26: "declaration order guaranteed. MAYBE WE COULD ADD A
+MODIFIER FOR THE STRUCT THAT WOULD DO IT (if not, the attribute would be ok,
+but I prefer a keyword if is good and not problematic)"; then `compact
+struct`, recommended of 3. Rejected: every struct's layout unspecified, with
+fields reordered automatically (Rust's default; measured gain 0.4 %, and
+the layout stops being predictable); `@compact` (an attribute, as `@packed`
+and `@align` are; those are C layout, and `compact` is Veles's own, like
+`inline`/`indirect`); no opt-in.
+
+Both levels: by default the layout is what is written, for those who
+manage memory by hand. `compact` asks the compiler to do it. Self-hosting:
+the self-hosted lexer, parser and formatter learn the word with the Go
+front end (gate G1–G5).
 
 ### I1 — generators: investigated, not decided
 

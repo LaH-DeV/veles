@@ -752,6 +752,25 @@ extending a `Result` or an `Option`. See
 `protected var count: i64`. A bare field is never assigned by anyone, and
 so has nothing to protect (D22).
 
+#### `'xs' is used before it is assigned on every path to here`
+
+A local `var` may be declared without a value (`var name: string`) when the
+branches below give it one, but nothing may read it, take `&` of it,
+capture it in a lambda, call a method on it or write one of its fields until
+every path to that point has assigned it (D214). An assignment inside a
+loop body does not count after the loop, since the body may run no times;
+one inside a lambda counts only inside it. Give the variable a value where
+it is declared, or assign it on each branch above the use.
+
+#### `an extern struct is laid out as C lays it out … drop 'compact'`
+
+`compact struct` lets the compiler place a struct's fields for the smallest
+size (D215). It is refused where the layout is not the compiler's to choose:
+an `extern struct` (C's order; `@packed` applies only there) and a
+`@transparent` one (it is its one field). On a struct with fewer than two
+fields it is a warning: there is nothing to place. See
+[chapter 13](../13-memory-and-ffi.md#field-order-and-compact-structs).
+
 ### traits
 
 **What a type must provide to be used as a trait.** `'Point' does not

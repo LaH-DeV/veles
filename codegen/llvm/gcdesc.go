@@ -49,6 +49,9 @@ func (g *gen) pointerOffsets(t types.Type) []int {
 		if isPtrLike(tt.Elem) {
 			return []int{0}
 		}
+		if _, ok := g.niche(tt); ok {
+			return g.pointerOffsets(tt.Elem)
+		}
 		ea := g.llAlign(tt.Elem)
 		base := (1 + ea - 1) / ea * ea
 		return shift(g.pointerOffsets(tt.Elem), base)
@@ -81,7 +84,7 @@ func (g *gen) pointerOffsets(t types.Type) []int {
 		words := g.payloadWords(t)
 		var offs []int
 		for i := 0; i < words; i++ {
-			offs = append(offs, 8+8*i)
+			offs = append(offs, types.PayloadOffset+8*i)
 		}
 		return offs
 	}
