@@ -1,6 +1,6 @@
 // Tests of std/lint's helpers: the fixes a rule builds and what reporting
 // records. The compiler's side (running a rule on a file) is tested in the
-// compiler, with examples/lintrules.
+// compiler, with examples/features/lintrules.
 
 test fun context(text: string): Context => Context(file: File.of("a.vs", text), reports: [])
 

@@ -260,7 +260,7 @@ reports `tooDeepMessage(limit)`; that is what `std/json` does, with
 `Options.maxDepth` (64) as its own policy. A walk whose depth is only its
 call frames — a recursive descent parser — counts them with `Depth(limit: n)`,
 where `enter` and `leave` pair like a push and a pop on every path out of
-the body except a throw, which abandons the walk anyway. `examples/recursion`
+the body except a throw, which abandons the walk anyway. `examples/features/recursion`
 is that parser, in forty lines.
 
 ### Errors (D4)
@@ -1277,7 +1277,7 @@ Strings are indexed in bytes (D18) and are valid UTF-8 by construction, so
 character. Bytes carry no such promise, and `decodeBytes` is strict about
 them in the sense Table 3-7 of the Unicode standard means: shortest form
 only, no surrogates, nothing above U+10FFFF. Encoding a value that is not a
-code point writes U+FFFD rather than failing. See `examples/utf8`. Every
+code point writes U+FFFD rather than failing. See `examples/features/utf8`. Every
 function here is a `const fun` (D113).
 
 ## Module `jwt`

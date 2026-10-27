@@ -13,14 +13,14 @@ what follows is track S of `veles-plan.md`.
 
 ```bash
 go build -o veles.exe .
-./veles.exe run examples/hello              # compile and run a module directory
-./veles.exe build examples/tasks -o tasks   # produce an executable
-./veles.exe test examples/testing           # run the tests (D78; --filter text, --timeout 30s)
-./veles.exe check examples/errors           # type-check only (--fix applies lint corrections)
-./veles.exe parse examples/syntax_tour.vs   # dump the syntax tree
-./veles.exe build examples/hello --emit-llvm   # write the LLVM IR instead of linking
-./veles.exe fmt examples std                 # format sources in place (--check lists, --stdout prints)
-./veles.exe lsp                              # language server over stdio (see editors/vscode)
+./veles.exe run examples/hello                      # compile and run a module directory
+./veles.exe build examples/calc -o calc              # produce an executable
+./veles.exe test examples/features/testing           # run the tests (D78; --filter text, --timeout 30s)
+./veles.exe check examples/features/errors           # type-check only (--fix applies lint corrections)
+./veles.exe parse examples/features/syntax_tour.vs   # dump the syntax tree
+./veles.exe build examples/hello --emit-llvm         # write the LLVM IR instead of linking
+./veles.exe fmt examples std                         # format sources in place (--check lists, --stdout prints)
+./veles.exe lsp                                      # language server over stdio (see editors/vscode)
 ```
 
 New to the language? Start with [docs/documentation/index.md](docs/documentation/index.md): twenty-five
@@ -86,7 +86,7 @@ non-default priorities and CPU affinity are refused rather than ignored.
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `docs/`           | tutorials and reference; `go test ./docs/` runs every code block                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `selfhost/`       | the front end rewritten in Veles (veles-selfhost-frontend-plan.md), phase by phase; `go test ./selfhost` builds it and checks its output against the Go front end's, byte for byte, on every Veles file in the repository                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `examples/`       | 64 programs with expected output; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`; a `name.vss` script is a test when `name.expected.txt` exists, fed `name.stdin.txt` when present)                                                                                                                                                                                                                                                                                                                                                                 |
+| `examples/`       | programs with expected output, real tools at the top and one short program per language feature in `features/`; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`; a `name.vss` script is a test when `name.expected.txt` exists, fed `name.stdin.txt` when present)                                                                                                                                                                                                                                                                                                                                                                 |
 
 `go test ./...` is the regression suite. The parser, formatter and checker also
 have native fuzz targets — `go test -fuzz=FuzzParse ./parser`, `-fuzz=FuzzFormat

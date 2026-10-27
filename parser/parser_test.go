@@ -17,7 +17,7 @@ func parse(t *testing.T, src string) (*ast.File, *source.Diagnostics) {
 }
 
 func TestSyntaxTourParsesCleanly(t *testing.T) {
-	data, err := os.ReadFile("../examples/syntax_tour.vs")
+	data, err := os.ReadFile("../examples/features/syntax_tour.vs")
 	if err != nil {
 		t.Skip("syntax tour missing")
 	}

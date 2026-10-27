@@ -956,7 +956,7 @@ may not suspend. A panic inside it ends the process with its location:
 it cannot unwind through C's frames. `p.cast<*raw T>()` reinterprets a raw
 pointer (C's `void *`), and `(&x).cast<*raw u8>()` gives C the address of a
 Veles value for the length of a call; both need `unsafe`, as does calling
-through an `extern fun` value. `examples/ffi` puts all of it together.
+through an `extern fun` value. `examples/features/ffi` puts all of it together.
 
 ### Variadic C functions
 

@@ -33,7 +33,8 @@ git checkout -q -- . && git clean -qfd && git fetch -q "$here" HEAD && git check
 # WSL's git has no core.autocrlf, so it also lists files that differ only in
 # CRLF; copying those is harmless. Files marked -text are copied as bytes.
 (cd "$here" && git -c core.quotepath=off status --porcelain --untracked-files=all | cut -c4-) | while read -r f; do
-	case "$f" in *" -> "*) f=${f#* -> } ;; esac
+	# a rename leaves its old path behind in the clone unless removed here
+	case "$f" in *" -> "*) rm -f "${f%% -> *}"; f=${f#* -> } ;; esac
 	if [ -f "$here/$f" ]; then
 		mkdir -p "$(dirname "$f")"
 		if [ "$(cd "$here" && git check-attr text -- "$f" | sed 's/.*: //')" = unset ]; then

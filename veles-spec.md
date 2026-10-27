@@ -3225,7 +3225,7 @@ statement-position sites (38 in std and examples, 14 in docs samples, 4 in
 std doc comments), and the `scope { … t.cancel() }` shapes
 in `std/http` (tests, the acceptor of `acceptAndServe`), `examples/httpd`,
 `session`, `fuzz` and docs chapters 12 and 17; the cancels in
-`examples/cancel` and in `serve`'s grace race are what those programs are
+`examples/features/cancel` and in `serve`'s grace race are what those programs are
 about, and stay.
 
 ### D101 — Which heads write `val` (v0.60)
@@ -4013,7 +4013,7 @@ leaves does not make the code after it unreachable for other instances.
 `static assert` and `const` contexts come with B14. `implements` is a word
 only after a name in an expression; the built-in types print, compare and hash
 without the traits, so `i64 implements Display` is false. Conformance
-`D117-implements`, `D135-is-on-trait-objects`; `examples/generics`,
+`D117-implements`, `D135-is-on-trait-objects`; `examples/features/generics`,
 `traitobjects`; chapter 8.
 
 ### D118 — User-defined derivation: later, through compile-time reflection (v0.63)
@@ -4059,7 +4059,7 @@ enum cannot implement any trait (D57), so it cannot write `default()` by hand
 either — the D57 error stands. A struct whose `init` takes a parameter with no
 default is not derived. The example above said `make(n, …)`, which takes a
 function of the index; `repeat(value, n)` is the value form. Conformance
-`D119-default`, `examples/generics`, chapter 8, the stdlib reference.
+`D119-default`, `examples/features/generics`, chapter 8, the stdlib reference.
 
 ### D120 — C layout: `@packed`, `@align(n)`, `extern union`, `@transparent` (v0.64)
 
@@ -4625,7 +4625,7 @@ Decodable>(sql): List<T>`, `queryOne<T>(sql): T?`, `exec(sql): i64` (rows
 
 _Part 2 built 2026-10-05 (E2)._ `std/db` is the wire protocol written in Veles (version 3, the extended query protocol with every value a separate bind field; SCRAM-SHA-256 on `std/crypto`; TLS through `std/tls`) — **not libpq**, so no native library is needed on any platform and waiting is a task suspension. `Sql` is `(parts, args)`: splicing is concatenating parts, so no scan of the text renumbers anything. `db.Param` is `fun toArg(): db.Arg` (type OID, text or bytes, secret flag); a `string` is sent with no type so the server reads it as the column's type. Errors are one `DbError` with a `kind` and the SQLSTATE `code`. `db.open` takes `Secret<string>`: `postgres://user:password@host:port/database?sslmode=…&sslrootcert=…&application_name=…`; TLS is **on and verified by default for any host but loopback**, `sslmode=disable` and `sslmode=insecure` (TLS without the check) are the only others, there is no `prefer`, and an unknown query parameter is an error. Rows decode through a `codec.Decoder` of format `"db"` (snake_case, `@key(db:)`). A statement past its time or a cancelled task drops its connection. **Deviation, forced by the language:** `with tx = pool.begin()` cannot send `ROLLBACK` at its close (`Closeable.close()` cannot suspend), so a transaction left without `commit()` drops its connection and the server rolls back (`tx.rollback()` returns the connection to the pool) — the same question as `otel.start`'s flush. Password hashing (D130): `crypto.hashPassword`/`verifyPassword` are Argon2id **in Veles** (RFC 9106; ~60 ms for 19 MiB/2 passes at -O2) instead of the libargon2 binding, with `Uuid` made `Codable` on the way; recorded here for the user.
 
-_Part 1 built 2026-10-04._ `ast.TemplateExpr{Tag, Lit}`; the parser makes one when a string token starts exactly where a name (or `module.name`, not `?.`, no type arguments) ends — with a space it is an error that says to write `sql"…"`. The checker lowers `tag"a ${x} b ${y}"` to the call `tag(["a ", " b ", ""], [x, y])` (pieces always one more than values, escapes processed), so values convert to the element type as list elements do (a trait object boxes each) and every call diagnostic applies; a tag that is not a function, or a function not marked `@template`, is an error at the tag, and `@template` itself is checked at the declaration (a module-level function of `(parts: List<string>, values: List<V>)`; `V` may be generic). The formatter prints the literal as written; `ast.Dump` prints `(template tag (str …))`; the VS Code grammar colours the tag. Hover and go-to-definition work through the call. Example `examples/templates` (`html` that escapes, `sql` that keeps values apart); docs chapter 2 and the attributes table. `std/db` (E2) and the std tags (`html`, `regex`) are not built.
+_Part 1 built 2026-10-04._ `ast.TemplateExpr{Tag, Lit}`; the parser makes one when a string token starts exactly where a name (or `module.name`, not `?.`, no type arguments) ends — with a space it is an error that says to write `sql"…"`. The checker lowers `tag"a ${x} b ${y}"` to the call `tag(["a ", " b ", ""], [x, y])` (pieces always one more than values, escapes processed), so values convert to the element type as list elements do (a trait object boxes each) and every call diagnostic applies; a tag that is not a function, or a function not marked `@template`, is an error at the tag, and `@template` itself is checked at the declaration (a module-level function of `(parts: List<string>, values: List<V>)`; `V` may be generic). The formatter prints the literal as written; `ast.Dump` prints `(template tag (str …))`; the VS Code grammar colours the tag. Hover and go-to-definition work through the call. Example `examples/features/templates` (`html` that escapes, `sql` that keeps values apart); docs chapter 2 and the attributes table. `std/db` (E2) and the std tags (`html`, `regex`) are not built.
 
 Self-hosting: neutral (the compiler emits IR through `StringBuilder`).
 
@@ -5305,7 +5305,7 @@ with audio = try Thread.start(name: "audio", priority: Priority.High, cpus: [3],
 _(The example as amended 2026-10-10, below; it was `Executor(threads: 4, name: "cpu")`
 and `Thread.start(…) { audioLoop() }`.)_
 
-The concurrency review (2026-10-09, `veles-concurrency-review.md`) found
+The concurrency review (2026-10-09, `archive/veles-concurrency-review.md`) found
 that the only control over threads was `VELES_THREADS`: a task resumes on
 any worker after any wait, so a library that must be called from one thread
 (a GL context, COM, a GUI's main thread), work that must not take the cores
@@ -6359,7 +6359,7 @@ staying legal.
 
 ### D157 — A `Result` or a task handle cannot be interpolated (v0.82)
 
-Q32, found by the 2026-10-14 review (`veles-direction-2026-10-14.md` §4): a
+Q32, found by the 2026-10-14 review (`archive/veles-direction-2026-10-14.md` §4): a
 failing call inside `"${…}"` compiled, and its error became text.
 
 ```veles
@@ -6743,7 +6743,7 @@ convention, but a `-1` used as an index is a bug no checker sees).
 ### D166 — Labelled tuples (v0.82)
 
 Q35 (user, recommended of 3, after asking to see "all of the use cases and
-pros and cons" — `veles-direction-2026-10-14.md` §4 Q35). Amends D37.
+pros and cons" — `archive/veles-direction-2026-10-14.md` §4 Q35). Amends D37.
 _(Built 2026-10-23, plan B22. An implementation limit, open to the user:
 labels written in a generic struct's or sealed type's type arguments are
 refused rather than kept — checklist §11 "B22 left open".)_
@@ -7656,7 +7656,7 @@ The clause is last on the spec, after the braced names, on the same line (a new 
 
 Rejected: `extensions: false` (all or nothing, and an opt-out where the default is to include); a per-name list inside the braces (`use regex { Regex, find }`: a name and a method share one list, and `find` could mean either); keeping the old default (a use brings all extensions) with the new clause only restricting it — a braced list would not be exact, and a reader could not tell from the `use` line what methods a file has.
 
-Migration: the examples (`examples/extensions`, `examples/regex`), the docs and the tests that used a module's extensions now say `extend`; the compiler's message names the exact clause. Not built: the editor's auto-import of an extension name, `veles check --fix` writing the clause, and a warning for an `extend { f }` name the file never calls (checklist §11).
+Migration: the examples (`examples/features/extensions`, `examples/regex`), the docs and the tests that used a module's extensions now say `extend`; the compiler's message names the exact clause. Not built: the editor's auto-import of an extension name, `veles check --fix` writing the clause, and a warning for an `extend { f }` name the file never calls (checklist §11).
 
 ### D186 — `std/version`: `Version` and `Constraint` (v0.100)
 
@@ -7764,7 +7764,7 @@ Rejected: an explicit compile-time `.move()` alone (the proof is the limit, not 
 
 ### D189 — `x in c` and `x !in c` (v0.103)
 
-2026-10-20, from the style review (`veles-syntax-ideas.md` S4, prepared in `veles-syntax-decisions.md` §1). The user: "contains operator but in string I would like both byte in string and substring in string (would be like in js, no?)" — the model is Python's (`"b" in "abc"`); JavaScript's `in` tests object keys and its substring test is `includes`.
+2026-10-20, from the style review (`veles-syntax-ideas.md` S4, prepared in `archive/veles-syntax-decisions.md` §1). The user: "contains operator but in string I would like both byte in string and substring in string (would be like in js, no?)" — the model is Python's (`"b" in "abc"`); JavaScript's `in` tests object keys and its substring test is `includes`.
 
 ```veles
 if (b in [' ', '\t', '\r', '\n']) …       // a byte among bytes

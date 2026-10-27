@@ -178,8 +178,10 @@ func (p *printer) nl() {
 }
 
 // raw copies a span of the source verbatim (literals).
+// raw writes source text as it is, but for line ends: a literal over
+// several lines of a CRLF file comes out with LF, as the rest of the output
 func (p *printer) raw(sp source.Span) {
-	p.w(p.src[sp.Start:sp.End])
+	p.w(strings.ReplaceAll(p.src[sp.Start:sp.End], "\r\n", "\n"))
 }
 
 func (p *printer) hasNewline(from, to int) bool {
@@ -2655,13 +2657,15 @@ func trailingBlock(e *ast.CallExpr) *ast.LambdaExpr {
 
 // receiverBlock prints a trailing receiver block: on one line when the
 // author wrote it on one line with no comment — `s.apply { port = 5 }`,
-// `name.edit { trim(); toLower() }` — else as any block.
+// `name.edit { trim(); toLower() }` — and its statements print on one line
+// (a `when` or a nested block does not); else as any block.
 func (p *printer) receiverBlock(b *ast.Block) {
 	text := p.src[b.Pos.Start:b.Pos.End]
 	if len(b.Stmts) == 0 || strings.ContainsAny(text, "\r\n") || strings.Contains(text, "//") || strings.Contains(text, "/*") {
 		p.block(b)
 		return
 	}
+	saved, state, marks := p.out.String(), *p, len(p.marks)
 	p.w("{ ")
 	for i, s := range b.Stmts {
 		if i > 0 {
@@ -2670,4 +2674,13 @@ func (p *printer) receiverBlock(b *ast.Block) {
 		p.nested(func() { p.stmt(s) })
 	}
 	p.w(" }")
+	if !strings.Contains(p.out.String()[len(saved):], "\n") {
+		return
+	}
+	// a statement broke over lines: what the second run would make of it
+	p.ci, p.marks, p.indent, p.pendingNL, p.lineEmpty = state.ci, p.marks[:marks], state.indent, state.pendingNL, state.lineEmpty
+	p.lastEnd, p.lastComment, p.cont, p.oneTuple = state.lastEnd, state.lastComment, state.cont, state.oneTuple
+	p.out.Reset()
+	p.out.WriteString(saved)
+	p.block(b)
 }

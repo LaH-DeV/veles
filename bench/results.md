@@ -160,7 +160,7 @@ accumulated directly, a string without escapes copied once
 (`listDecodeUtf8Range`), `writeQuoted` copying an escape-free string
 whole, UTF-8 validation eight ASCII bytes at a time, and `split` as one
 runtime pass (`veles_string_split`, parts sharing the text's bytes).
-`examples/text` pins split and float edge cases.
+`examples/features/text` pins split and float edge cases.
 
 ## 2026-09-28 11:48 — go1.23.2, linux/amd64 (HEAD 76b8eb1, plus the working tree)
 
@@ -656,3 +656,42 @@ pause 1.32–1.45 ms over four runs, as at 4 MiB in the same session.
 | benchmark | Veles longest pause | Go longest pause |
 |---|---:|---:|
 | gcpause | 14.79ms | 1.42ms |
+
+## 2026-10-27 01:22 — go1.27.1, windows/amd64 (HEAD d06a846, plus the working tree)
+
+| benchmark | ops | Veles | Go | Veles / Go |
+|---|---:|---:|---:|---:|
+| adapters | 24000000 | 48.63ms | 30.85ms | 1.6× |
+| ast | 861841 | 40.11ms | 32.69ms | 1.2× |
+| awaitall | 50000 | 40.37ms | 64.34ms | 0.6× |
+| awaitscope | 50000 | 41.34ms | 64.52ms | 0.6× |
+| bigargs | 40000000 | 35.69ms | 104.07ms | 0.3× |
+| channels | 200000 | 10.11ms | 17.07ms | 0.6× |
+| emit | 1000000 | 74.08ms | 69.24ms | 1.1× |
+| emptycoll | 2000000 | 22.32ms | 19.49ms | 1.1× |
+| gcpause | 20000000 | 505.88ms | 226.01ms | 2.2× |
+| gunzip | 16777232 | 84.97ms | 62.57ms | 1.4× |
+| gzip | 2097154 | 138.92ms | 20.17ms | 6.9× |
+| httphello | 16000 | 227.72ms | 441.99ms | 0.5× |
+| idle | 100000 | 106.95ms | 413.36ms | 0.3× |
+| intern | 1000000 | 32.05ms | 16.83ms | 1.9× |
+| json | 40000 | 58.22ms | 42.78ms | 1.4× |
+| lexer | 2100000 | 55.69ms | 69.89ms | 0.8× |
+| maps | 2000000 | 72.33ms | 58.24ms | 1.2× |
+| parallel | 64 | 7.25ms | 26.17ms | 0.3× |
+| parse | 163 | 58.34ms | 66.07ms | 0.9× |
+| pipes | 1600000 | 24.43ms | 84.77ms | 0.3× |
+| sha256 | 16 | 70.34ms | 8.18ms | 8.6× |
+| sort | 900000 | 35.34ms | 53.31ms | 0.7× |
+| spawn | 100000 | 38.36ms | 25.11ms | 1.5× |
+| strings | 1000000 | 60.6ms | 48.19ms | 1.3× |
+| suscall | 10000000 | 129.52ms | 6.92ms | 18.7× |
+| trees | 14592688 | 165.9ms | 211.64ms | 0.8× |
+
+| benchmark | Veles bytes/op | Go bytes/op | Veles / Go |
+|---|---:|---:|---:|
+| idle | 249 | 8783 | 0.03× |
+
+| benchmark | Veles longest pause | Go longest pause |
+|---|---:|---:|
+| gcpause | 1.81ms | 1.7ms |

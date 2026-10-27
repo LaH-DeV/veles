@@ -5,7 +5,7 @@
 (like Bluetooth) could be added, for different purposes — a menu to choose
 from.
 
-This builds on `veles-direction-2026-10-14.md` (same day), whose questions
+This builds on `archive/veles-direction-2026-10-14.md` (same day), whose questions
 became **D157–D167** and are decided but not built yet. Nothing here
 re-asks them; where code below uses them it says so.
 
@@ -290,7 +290,7 @@ suite "money" {
 ```
 
 The low-level gallery (extern, `@packed`, `Array<u8, N>`, atomics, a named
-thread pool) is in `veles-direction-2026-10-14.md` §3 and still current.
+thread pool) is in `archive/veles-direction-2026-10-14.md` §3 and still current.
 
 ### 1.3 The same code once D158 and D163–D167 are built (decided)
 

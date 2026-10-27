@@ -407,7 +407,7 @@ says, never input, and there is always one more than the values; `tag"…"` is
 the call `tag(pieces, values)` and has the function's result type, which is
 not a `string`. A name that is not `@template` cannot tag a literal, and a
 space (`html "…"`) is an error that says so. A module's function is tagged
-`db.sql"…"`. `examples/templates` writes an `html` and an `sql` tag; a
+`db.sql"…"`. `examples/features/templates` writes an `html` and an `sql` tag; a
 database module (`std/db`) uses the same to make injection impossible.
 
 ### Regular expressions

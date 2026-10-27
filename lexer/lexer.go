@@ -732,6 +732,11 @@ func (lx *Lexer) stringLit() {
 			buf.WriteString(lx.escape())
 			continue
 		}
+		if c == '\r' && lx.peekByte(1) == '\n' {
+			// a line break is "\n" whatever the file's line ends, as in a text block
+			lx.pos++
+			continue
+		}
 		if c == '$' {
 			// `$ident` or `${expr}`
 			if lx.peekByte(1) == '{' {

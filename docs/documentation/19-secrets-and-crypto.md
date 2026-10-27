@@ -378,7 +378,7 @@ own tokens, which is the common case.
 
 ## A worked example
 
-`examples/crypto` runs every vector in this chapter — FIPS 180-4 for the
+`examples/features/crypto` runs every vector in this chapter — FIPS 180-4 for the
 hashes, RFC 4231 and RFC 2202 for the MACs, RFC 4648 for base64, and the
 token from RFC 7515 Appendix A.1, which is how you know the JWT code
 agrees with something other than itself.

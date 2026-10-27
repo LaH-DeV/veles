@@ -167,10 +167,12 @@ test "a connection is reused when its body was read" {
 }
 
 test "a connection the server closed while idle is replaced for a repeatable request" {
-  with srv = try testServer(handler(req => Response.text(req.peer)), limits: Limits(idleTimeout: Duration.millis(100)))
+  // the idle wait also bounds a new connection's first request
+  // (`requestLine`), so it is wide enough for a loaded test machine
+  with srv = try testServer(handler(req => Response.text(req.peer)), limits: Limits(idleTimeout: Duration.millis(400)))
   with client = Client()
   val first = try client.get(srv.url).text()
-  await sleep(Duration.millis(500))
+  await sleep(Duration.millis(1200))
   val second = try client.get(srv.url).text()
   expect(first != second)
 }

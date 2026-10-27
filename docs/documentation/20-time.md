@@ -376,7 +376,7 @@ rather than `20`.
 
 ## A worked example
 
-`examples/time` runs the vectors: the RFC 3339 grammar and its leniencies,
+`examples/features/time` runs the vectors: the RFC 3339 grammar and its leniencies,
 the leap second, the calendar across 1970 and across the year 2000, the
 three HTTP-date forms, the refusals, and the round trips for both
 `Duration` and `Timestamp`. Nothing in it reads the host clock except the

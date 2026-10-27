@@ -1,7 +1,7 @@
 // Tests (D78): `test "sentence" { }` next to the code, the test-only
 // vocabulary (expect, require, expectThrows, expectPanics, fail), a
 // `test fun` helper, a suite, and `assert` for an invariant in ordinary code.
-// `veles test examples/testing` runs them; `veles run` leaves them out.
+// `veles test examples/features/testing` runs them; `veles run` leaves them out.
 use io { println }
 
 error RangeError {

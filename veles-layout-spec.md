@@ -266,8 +266,12 @@ Per item, before the change lands:
 | 2. Definite assignment for locals (§5.1)             | Q61    | `sema` flow facts, error + fix, docs ch. 2, error reference                    | low; 0 uses in the tree                 |
 | 3. Borrowed big arguments (§5.3)                     | —      | `expr.go` `call`, `gen.go` param binding, thunks, `mem.go`, D121 text          | medium; aliasing rule must be exact     |
 | 4. Nullable niche (§5.2)                             | step 2 | `types/layout.go` `Niche`, nullable helpers, `gcdesc.go`, `consts.go`, D5 text | medium; contained once step 1 is done   |
-| 5. Exact sealed pointer maps, over-aligned placement | —      | `gcdesc.go`, `types.go`                                                        | low                                     |
-| 6. `compact struct` (D215)                           | —      | parser (Go and `selfhost/`), formatter, sema, `StructPlan`, hover              | low; placement only, one function       |
+| 5. `compact struct` (D215)                           | —      | parser (Go and `selfhost/`), formatter, sema, `StructPlan`, hover              | low; placement only, one function       |
+| 6. Exact sealed pointer maps, over-aligned placement | —      | `gcdesc.go`, `types.go`                                                        | low                                     |
+
+Steps 1–5 built 2026-10-26 (plan B32, numbered as there); verified on
+Windows and Linux 2026-10-27. Step 6 and `noalias` (§5.3) are open
+(checklist §11).
 
 Self-hosting: the rules are a recursive walk over the type (`Niche`) and a
 per-call check of the argument expression (temporary or clean local) — both

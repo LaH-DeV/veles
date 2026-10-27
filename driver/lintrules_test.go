@@ -29,12 +29,12 @@ func copyDir(t *testing.T, from, to string) {
 	}
 }
 
-// A lint rule written in Veles (D177, examples/lintrules): `veles check` runs
+// A lint rule written in Veles (D177, examples/features/lintrules): `veles check` runs
 // the rules the manifest names, and `--fix` applies the fix a rule reports.
 func TestLibraryLintFix(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	copyDir(t, "../examples/lintrules", root)
+	copyDir(t, "../examples/features/lintrules", root)
 	app := filepath.Join(root, "app")
 	if code := Run(Options{Path: app, Mode: "check"}); code == 0 {
 		t.Fatal("check passed although lower_case_functions is \"deny\"")

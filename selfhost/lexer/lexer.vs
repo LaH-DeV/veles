@@ -750,6 +750,11 @@ struct Lexer {
         text.append(this.escape())
         continue
       }
+      if (b == '\r' && this.peekByte(1) == '\n') {
+        // a line break is "\n" whatever the file's line ends, as in a text block
+        this.pos += 1
+        continue
+      }
       if (b == '$' && this.peekByte(1) == '{') {
         if (!text.isEmpty()) {
           parts.push(StringPart(text: text.toString()))
