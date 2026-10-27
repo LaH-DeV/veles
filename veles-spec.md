@@ -8566,9 +8566,12 @@ by I/O cannot be replaced in a test, and every `veles test` run would open
 it; Go's experience with `init()` doing I/O is the evidence. Rejected:
 throwing and suspending initializers in the program's own package with
 `Closeable` globals closed after `main` in reverse order; a `service`
-declaration with start/stop (a container's policy in the language). Still
-to do: a docs chapter on application structure, showing `main` → handlers,
-and test fakes through task-locals.
+declaration with start/stop (a container's policy in the language). _Docs
+written 2026-10-27 (B29 part 3): chapter 26, "Application structure" —
+where each kind of shared value lives, resources made in `main` with
+`with`, handed down as a parameter (often one struct of what the handlers
+need) or a task-local (what code only consults on the way), and fakes in
+tests through both._
 
 ### D212 — `const struct`: a type immutable all the way down (v0.115)
 

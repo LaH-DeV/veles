@@ -46,6 +46,7 @@ For readers who want to know what the compiler actually does.
 23. [Observability](23-observability.md) — `otel`: traces, metrics and logs in OpenTelemetry's format; spans that follow tasks and cross services by `traceparent`; OTLP export.
 24. [Databases](24-databases.md) — `db`: PostgreSQL with `sql"…"` templates whose values never touch the text, rows read into structs, a connection pool, transactions, verified TLS.
 25. [How packages and the registry work](25-packages-and-the-registry.md) — where a dependency comes from, what a build checks, `veles.sum`, the module cache and `vendor/`, the registry (tiers, signed metadata, yanks, reviews), the trust model and what is not protected, publishing, and what each refusal means.
+26. [Application structure](26-application-structure.md) — where a program's shared values live: constants and `lazy val`s, synchronized state, and resources made in `main` and handed down as parameters or task-locals, with fakes in tests.
 
 ## Reference
 

@@ -1465,8 +1465,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
       the slow path would be, at the price of a fence on ARM. Measured
       today: a read is ~10% over a plain module `val` when the read is the
       whole of a non-inlined function (`bench/lazyval`), less inside a
-      loop body that does work. (b) D211's docs chapter on application
-      structure (B29 part 3) is not written.
+      loop body that does work.
 - [ ] **Allocation hints left over (D213, plan B31 built 2026-10-27).**
       (a) Sites are checked against the generated code by statement line,
       the line table's granularity: two sites on one line are not told

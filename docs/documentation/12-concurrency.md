@@ -1449,7 +1449,9 @@ taking the new one. The value changes through its own methods
 Clock = SystemClock()`, needs a
 trait that requires `Sendable` of every implementor (`trait Clock :
 Sendable`). State that only one thread uses can be kept in an executor
-without a lock (D150).
+without a lock (D150). A resource — a database pool, a client, a file —
+is not a module value at all: it is made in `main` and handed down
+(chapter 26).
 
 ### Built on first read: `lazy val`
 
