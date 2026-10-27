@@ -186,6 +186,7 @@ public sealed trait Decl {
     public var pub:        bool = false
     public var isInternal: bool = false
     public var kind:       BindKind = BindKind.Val
+    public var isLazy:     bool = false  // `lazy val`: built on its first read, once (D210)
     public var name:       Ident = Ident()
     public var typ:        (*Type)? = null
     public var value:      (*Expr)? = null

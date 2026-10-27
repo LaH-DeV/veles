@@ -413,10 +413,12 @@ type ValDecl struct {
 	Pub      bool
 	Internal bool // `internal`: the module level written out (M5); the default
 	Kind     BindKind
-	Name     Ident
-	Type     Type
-	Value    Expr
-	Pos      source.Span
+	// Lazy: `lazy val` — built on its first read, once (D210)
+	Lazy  bool
+	Name  Ident
+	Type  Type
+	Value Expr
+	Pos   source.Span
 }
 
 // ExecutorDecl is `executor name(args) { state and functions }` (D150): a

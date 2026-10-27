@@ -411,6 +411,9 @@ func (c *Checker) refGlobal(span source.Span, name string, g *Global) {
 	if c.index == nil || g == nil || !span.IsValid() {
 		return
 	}
+	if g.Guard != nil && g.Type == nil {
+		c.checkGlobal(g.Guard) // gives the lazy value its type (D210)
+	}
 	ref := Ref{Span: span, Def: g.Span, Kind: "val", Name: name, Type: g.Type, Doc: c.globalDoc(g), Shape: c.shapeFrom(g.Type, c.viewFrom(span))}
 	if g.Mutable {
 		ref.Kind = "var"
@@ -426,6 +429,9 @@ func (c *Checker) refGlobal(span source.Span, name string, g *Global) {
 func (c *Checker) globalDecl(name string, g *Global) string {
 	d := c.globals[g]
 	if d == nil {
+		d = c.lazyDecl[g]
+	}
+	if d == nil {
 		kind := "val"
 		if g.Mutable {
 			kind = "var"
@@ -437,6 +443,9 @@ func (c *Checker) globalDecl(name string, g *Global) string {
 	if c.staticOwner[g] != nil {
 		sb.WriteString("static ")
 	}
+	if d.Lazy {
+		sb.WriteString("lazy ")
+	}
 	sb.WriteString(d.Kind.String() + " " + name + typeSuffix(g.Type))
 	if d.Value != nil {
 		if t := srcText(d.Value); t != "" && len(t) <= 60 && !strings.Contains(t, "\n") {
@@ -444,6 +453,9 @@ func (c *Checker) globalDecl(name string, g *Global) string {
 		} else {
 			sb.WriteString(" = ...")
 		}
+	}
+	if d.Lazy {
+		sb.WriteString("  // lazy: built on first read (D210)")
 	}
 	if g.Const != nil && d.Value != nil {
 		// what the compiler computed (D113), when it is not what is written

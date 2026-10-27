@@ -8530,6 +8530,21 @@ Both levels: `lazy val` is the high level; `Lazy<T>` and `isReady()` stay the
 low level. Self-hosting: the compiler's keyword, operator and builtin tables
 are built only by a run that needs them.
 
+_Built 2026-10-27 (B29 part 2)._ Settled while building: a `lazy val` is
+`Lazy` underneath — a hidden module value `Lazy(init: () => value)`, made
+with the others, builds it — and the name has storage of its own and a
+ready flag, so once built a read is an acquire load of the flag, a branch
+and the value (the first reads call the hidden `get()` out of line, store
+the value and set the flag; two first readers store the same value).
+Ordering follows the initializer as for any module value, so a cycle
+through a lazy value is the usual error. A `lazy` local or field is a
+parse error that names `Lazy<T>`; `lazy var` and `lazy const` are refused
+by the checker. Measured on `bench/lazyval` (a table read 50 million times
+through a function that is not inlined): 0.4× Go's `sync.OnceValue`, and
+about 10% over the same read of a plain module `val` — the flag's load and
+branch. Not built: hoisting the check out of a loop (an acquire load is
+not hoisted, and a cheaper form needs a fence on ARM; checklist §11).
+
 ### D211 — A resource is made in `main`, not by a global initializer (v0.113)
 
 ```veles

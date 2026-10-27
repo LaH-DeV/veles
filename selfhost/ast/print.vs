@@ -265,6 +265,7 @@ struct Printer {
         this.attrs(d.attrs)
         this.write("(")
         if (d.pub) this.write("public ")
+        if (d.isLazy) this.write("lazy ")
         this.write("${bindWord(d.kind)} ${d.name.name}")
         if (val typ = d.typ) {
           this.write(": ")
@@ -372,7 +373,7 @@ struct Printer {
     }
     loop (s in d.statics) {
       this.nl()
-      this.write("(static ${s.name.name} ")
+      this.write(if (s.isLazy) "(static lazy ${s.name.name} " else "(static ${s.name.name} ")
       this.optExpr(s.value)
       this.write(")")
     }

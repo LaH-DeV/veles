@@ -293,6 +293,8 @@ func (c *Checker) checkDeclaredSuspension(prog *Program) {
 		if fn.IsClosure {
 			if fn.Sig.Effects.Suspends {
 				fn.Suspends = true
+			} else if lazy := c.lazyInit[fn.Span]; fn.Suspends && lazy != nil {
+				c.errorf(fn.Span, "the initializer of 'lazy val %s' cannot throw or suspend: it runs inside whichever read comes first, which neither handles an error nor waits; build the value in 'main' and pass it down (D210)", lazy.Display)
 			} else if fn.Suspends {
 				c.errorf(fn.Span, "this lambda suspends, so its type must be a suspending function type: 'fun(...): T suspends' (D40)")
 			}

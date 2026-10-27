@@ -226,7 +226,27 @@ func readWide(w bigWide, k int64) int64 { return w.a + w.r + k }
 //go:noinline
 func readFramed(f bigFramed, k int64) int64 { return f.head + f.tail + k }
 
+// lazyTable is bench/lazyval's table, built on its first use.
+var lazyTable = sync.OnceValue(func() []int64 {
+	out := make([]int64, 256)
+	for i := range out {
+		out[i] = int64(i) * 7 % 13
+	}
+	return out
+})
+
+//go:noinline
+func lazyLookup(i int64) int64 { return lazyTable()[i%256] }
+
 var references = map[string]func() string{
+	"lazyval": func() string {
+		const n = 50000000
+		var check int64
+		for i := int64(0); i < n; i++ {
+			check += lazyLookup(i)
+		}
+		return strconv.FormatInt(check, 10)
+	},
 	"bigargs": func() string {
 		const n = 20000000
 		wide := bigWide{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}

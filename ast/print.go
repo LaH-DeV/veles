@@ -299,7 +299,11 @@ func (p *printer) decl(d Decl) {
 		}
 		for _, s := range d.Statics {
 			p.child(func() {
-				p.w("(static " + s.Name.Name + " ")
+				p.w("(static ")
+				if s.Lazy {
+					p.w("lazy ")
+				}
+				p.w(s.Name.Name + " ")
 				p.expr(s.Value)
 				p.w(")")
 			})
@@ -395,6 +399,9 @@ func (p *printer) decl(d Decl) {
 		p.w("(")
 		if d.Pub {
 			p.w("public ")
+		}
+		if d.Lazy {
+			p.w("lazy ")
 		}
 		p.w(d.Kind.String() + " " + d.Name.Name)
 		if d.Type != nil {

@@ -89,6 +89,10 @@ func inAnnotationDecl(toks []lexer.Token, i int) bool {
 }
 
 var contextualDocs = map[string][]contextualDoc{
+	"lazy": {
+		{keywordDoc{"`lazy val`: a module value, or a type's `static lazy val`, built on its first read, once, by whichever task gets there first; the others wait. A panic in the initializer is raised again by every later read (D210).", "lazy val keywords = buildKeywords()\nstruct Zone { static lazy val utc = Zone.load(\"UTC\") }", "12-concurrency.md#built-on-first-read-lazy-val"},
+			func(toks []lexer.Token, i int) bool { return nextIs(toks, i, lexer.KwVal) }},
+	},
 	"inline": {
 		{keywordDoc{"`inline loop (f in T.fields) { … }` is unrolled while compiling: the body is checked and compiled once per field (or member), each copy with that field's own type in `f.Type`. There is no `break` or `continue`: there are copies, not rounds (D174).", "inline loop (f in This.fields) {\n  if (val min = f.attr<Min>()) {\n    if (f.get(this) < min.value) out.push(f.name)\n  }\n}", "14-attributes-and-testing.md#reading-them"},
 			func(toks []lexer.Token, i int) bool { return nextIs(toks, i, lexer.KwLoop) }},

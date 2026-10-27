@@ -294,8 +294,8 @@ fun spansOfValDecl(node: ValDecl, out: MutableList<string>) {
     spansOfAttribute(x1, out)
   }
   spansOfIdent(node.name, out)
-  if (val x8 = node.typ) spansOfType(*x8, out)
-  if (val x9 = node.value) spansOfExpr(*x9, out)
+  if (val x9 = node.typ) spansOfType(*x9, out)
+  if (val x10 = node.value) spansOfExpr(*x10, out)
   out.push("ValDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 

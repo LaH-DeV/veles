@@ -67,8 +67,13 @@ extend Parser {
   }
 
   fun parseStmt(): ast.Stmt {
-    val start = this.span()
+    var start = this.span()
     if (this.atStaticAssert()) return ast.StaticAssertStmt(assert: this.parseStaticAssert())
+    if (this.lazyAt(0)) {
+      this.errorAt(this.span(), "'lazy' is for a module-level 'val' or a 'static val' (D210); a local built on first use is 'val x = Lazy(() => …)', read with 'x.get()'")
+      this.next()
+      start = this.span()
+    }
     when (this.cur().kind) {
       Kind.KwVal, Kind.KwVar, Kind.KwConst => return this.parseValStmt(start)
       Kind.KwReturn => {

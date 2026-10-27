@@ -194,6 +194,10 @@ type Global struct {
 	Name    string // mangled
 	Display string
 	Type    types.Type
+	// Guard: a `lazy val` (D210) has no storage of its own; it is built by
+	// this hidden global, `Lazy(init: () => value)`, whose get() every read
+	// calls. nil for any other global.
+	Guard *Global
 	Mutable bool
 	Init    Expr
 	Span    source.Span
@@ -800,6 +804,16 @@ type With struct {
 }
 
 func (*With) hirStmt() {}
+
+// LazyRead is a read of a `lazy val` (D210): the value's own global once
+// its ready flag is set, one acquire load and a branch; before that, Build —
+// the hidden Lazy's get(), which builds it once and raises a panic in its
+// initializer again — gives it, and it is stored and the flag set.
+type LazyRead struct {
+	exprBase
+	Value *Var // the lazy value's global
+	Build Expr
+}
 
 // Box coerces a value to a trait object (D9): the value is copied to the
 // heap and paired with the vtable of its impl. Methods lists the concrete

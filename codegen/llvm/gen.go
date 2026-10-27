@@ -183,6 +183,9 @@ func Generate(prog *sema.Program) string {
 	sb.WriteString("\n")
 	for _, gl := range prog.Globals {
 		llt := g.llType(gl.Type)
+		if gl.Guard != nil {
+			fmt.Fprintf(&sb, "@%s.ready = internal global i8 0\n", mangleGlobal(gl)) // a lazy value is built (D210)
+		}
 		if a := g.overAlign[llt]; a > 0 {
 			fmt.Fprintf(&sb, "@%s = global %s zeroinitializer, align %d\n", mangleGlobal(gl), llt, a) // @align(n) (D120)
 			continue

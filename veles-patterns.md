@@ -1,6 +1,6 @@
 # Patterns in Veles: singletons and the rest (menu, 2026-10-26)
 
-**Status 2026-10-26:** P1 → **D210** (`lazy val`), P3 → **D211** (resources
+**Status 2026-10-26:** P1 → **D210** (`lazy val`, built 2026-10-27), P3 → **D211** (resources
 made in `main`), both decided by the user as recommended. P2 → Q59 and P4 →
 Q60 are open (the user: "not to be decided today", "probably keyword but do
 not decide now"). P5 and R1–R8 have not been asked yet. F1 is in checklist

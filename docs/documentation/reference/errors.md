@@ -516,6 +516,15 @@ need each other — through the functions their initializers call as well. A
 value that needs itself, directly or round a cycle, has no first value:
 compute it in a function, or pass it as a parameter.
 
+A `lazy val` (D210) is built on its first read instead, so its errors are
+about that read: `the initializer of 'lazy val thrown' cannot throw or
+suspend` (the read that builds it neither handles an error nor waits —
+handle the error inside, or build the value in `main`), `'fine' is a lazy
+value, built at run time on its first read; a constant cannot read it`,
+and `lazy` on a `var` or a `const`, which is a contradiction: a lazy value
+is built once and never changes, and a `const` is computed while
+compiling.
+
 ### operators
 
 **An operator the type does not have.** `operator '-' is not defined for

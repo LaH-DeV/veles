@@ -277,7 +277,8 @@
         },
         {
           "name": "storage.modifier.veles",
-          "match": "\\b(lazy)\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*\\s*:)"
+          "comment": "a lazy parameter (D90), or a lazy val built on its first read (D210)",
+          "match": "\\b(lazy)\\b(?=\\s+([A-Za-z_][A-Za-z0-9_]*\\s*:|(val|var|const)\\b))"
         },
         {
           "name": "storage.type.veles",

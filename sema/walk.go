@@ -178,6 +178,8 @@ func walkExpr(e Expr, visit func(node any)) {
 		walkExpr(e.Value, visit)
 	case *Box:
 		walkExpr(e.X, visit)
+	case *LazyRead:
+		walkExpr(e.Build, visit)
 	case *Launch:
 		walkExpr(e.Call, visit)
 	case *AwaitTask:

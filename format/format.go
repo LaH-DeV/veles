@@ -486,6 +486,9 @@ func (p *printer) decl(d ast.Decl) {
 		} else if d.Internal {
 			p.w("internal ")
 		}
+		if d.Lazy {
+			p.w("lazy ") // D210
+		}
 		p.w(d.Kind.String() + " " + d.Name.Name)
 		if d.Type != nil {
 			p.w(": ")
@@ -1212,7 +1215,11 @@ func (p *printer) staticVal(d *ast.ValDecl) {
 	} else if d.Internal {
 		p.w("internal ")
 	}
-	p.w("static val " + d.Name.Name)
+	p.w("static ")
+	if d.Lazy {
+		p.w("lazy ") // D210
+	}
+	p.w("val " + d.Name.Name)
 	if d.Type != nil {
 		p.w(": ")
 		p.typ(d.Type)

@@ -186,6 +186,7 @@ sealed trait Decl {
     var pub:        bool = false
     var isInternal: bool = false
     var kind:       BindKind = BindKind.Val
+    var isLazy:     bool = false  // `lazy val`: built on its first read, once (D210)
     var name:       Ident = Ident()
     var typ:        (*Type)? = null
     var value:      (*Expr)? = null
@@ -657,8 +658,8 @@ sealed trait Expr {
     var ret:    (*Type)? = null
     var body:   *Expr  // a BlockExpr for `{ … }`
     // written `{ … }` alone: a receiver block, or a plain `fun()` (D207)
-    var bare:   bool = false
-    var pos:    Span = Span.none()
+    var bare: bool = false
+    var pos:  Span = Span.none()
   }
   /// `(a, b)`; `(key: k, value: v)` labels every element (D166), `labels`
   /// empty when none is labelled.

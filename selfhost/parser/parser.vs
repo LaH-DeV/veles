@@ -343,6 +343,12 @@ struct Parser {
           d.compact = true
           return d
         }
+        if (this.lazyAt(0)) {
+          this.next()  // `lazy val`: built on its first read (D210); the checker refuses `var` and `const`
+          var d = this.parseValDecl(head)
+          d.isLazy = true
+          return d
+        }
         if (this.atWord("indirect") && this.peek(1).kind == Kind.KwSealed) {
           this.next()  // every variant behind a pointer (D198)
           val d = this.parseTrait(head)

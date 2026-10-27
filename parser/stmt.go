@@ -98,6 +98,11 @@ func (p *Parser) parseStmt() ast.Stmt {
 	if p.atStaticAssert() {
 		return p.parseStaticAssert()
 	}
+	if p.lazyAt(0) {
+		p.errorf(p.span(), "'lazy' is for a module-level 'val' or a 'static val' (D210); a local built on first use is 'val x = Lazy(() => …)', read with 'x.get()'")
+		p.next()
+		start = p.span()
+	}
 	switch p.cur().Kind {
 	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
 		s := &ast.ValStmt{}

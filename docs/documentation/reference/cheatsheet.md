@@ -16,6 +16,7 @@ const PAGE = limit * 4096       // constants, operators, "${...}", len(), if/whe
 const NAMES: List<string> = ["a", "b"]  // List/Map/Set tables: read-only in the binary; NAMES.at(0) is a string
 const fun table(): List<u32> { ... }    // the compiler may run it (D113); an ordinary function at run time too
 const TABLE: List<u32> = table()        // computed while compiling, read-only in the binary
+lazy val words = loadWords()            // built on its first read, once (D210); also `static lazy val` in a type
 static assert(PAGE > 0, "why")  // checked at compile time; module level or in a body
 val banner = "hi"               // module-level value
 val counter = Atomic(value: 0)  // module-level state is behind Atomic/Mutex: a module-level `var` is an error (D66)

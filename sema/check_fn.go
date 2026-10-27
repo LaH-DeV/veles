@@ -81,6 +81,7 @@ type fnCtx struct {
 	initOwned   map[string]int // checking an `init { }` block: the fields it must assign, by index (D28)
 	selfAsRecv  bool           // the next `this` is a method receiver, not a value (init blocks)
 	isGlobal    bool           // checking a global initializer
+	constInit   bool           // checking a `const` initializer (D113)
 	staticOwner *types.Struct  // the struct whose `static val` this global initializer is, if any
 	looseArgs   int            // inside checkArgsLoosely: the call already failed, its lambdas have no expected type
 	inlineBase  []int          // len(loops) at the start of each inline loop body being checked: a jump to a loop at or below it would leave the unrolled body (D174)
@@ -456,6 +457,7 @@ func (c *Checker) checkGlobal(g *Global) {
 	env := &typeEnv{module: m, file: file, tps: map[string]*types.TypeParam{}}
 	f := c.newFnCtx(nil, m, file, env, nil)
 	f.isGlobal = true
+	f.constInit = d.Kind == ast.BindConst
 	f.staticOwner = c.staticOwner[g] // a `static val` initializer is inside its type
 	if info := c.stateOwner[g]; info != nil {
 		f.exec = info // its executor's state: initialised on its thread (D150)
@@ -507,6 +509,16 @@ func (c *Checker) checkGlobal(g *Global) {
 		if c.staticOwner[g] != nil {
 			what, decl = fmt.Sprintf("'static %s %s'", d.Kind, g.Display), "static val "+d.Name.Name
 		}
+		if lazy := c.lazyOf[g]; lazy != nil {
+			// the value a `lazy val` builds, not the hidden handle (D210)
+			what, decl = fmt.Sprintf("'lazy val %s'", lazy.Display), "lazy val "+lazy.Display
+			if c.staticOwner[g] != nil {
+				what, decl = fmt.Sprintf("'static lazy val %s'", lazy.Display), "static lazy val "+lazy.Display
+			}
+			if st, ok := declared.(*types.Struct); ok && len(st.TypeArgs) == 1 {
+				declared = st.TypeArgs[0]
+			}
+		}
 		fix := fmt.Sprintf("keep it behind a lock ('%s = Mutex(value: ...)') or in an executor's state (D150)", decl)
 		switch t := declared.(type) {
 		case *types.List, *types.Map, *types.Set:
@@ -518,6 +530,11 @@ func (c *Checker) checkGlobal(g *Global) {
 	}
 	g.Type = declared
 	g.Init = init
+	if lazy := c.lazyOf[g]; lazy != nil {
+		if st, ok := declared.(*types.Struct); ok && len(st.TypeArgs) == 1 {
+			lazy.Type = st.TypeArgs[0] // what a read of the lazy value gives (D210)
+		}
+	}
 }
 
 // isSynchronized: a Mutex, an Atomic or a D146 type, whose operations take their lock
@@ -1218,6 +1235,11 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 				}
 				f.errorf(e.Pos, "cannot assign to '%s': it is %s%s", e.Name, where, f.c.globalWriteHint(g))
 			}
+			if g.Guard != nil {
+				// a lazy value has no storage to point at: its value, as a temporary
+				f.c.refGlobal(e.Pos, e.Name, g)
+				return f.lazyRead(g, e.Pos), nil
+			}
 			v := f.globalVar(g)
 			f.c.refGlobal(e.Pos, e.Name, g)
 			return &VarRef{exprBase{v.Type}, v}, v
@@ -1409,7 +1431,10 @@ func (f *fnCtx) lookupField(st *types.Struct, name string, span source.Span) *ty
 
 // globalValue is a module-level binding read as a value: a constant is its
 // value written in (D113), anything else a read of the global.
-func (f *fnCtx) globalValue(g *Global) Expr {
+func (f *fnCtx) globalValue(g *Global, span source.Span) Expr {
+	if g.Guard != nil {
+		return f.lazyRead(g, span)
+	}
 	v := f.globalVar(g)
 	if g.Const != nil {
 		x := constExpr(g.Const)

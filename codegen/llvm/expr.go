@@ -29,6 +29,37 @@ func targetTriple() string {
 	}
 }
 
+// lazyRead reads a `lazy val` (D210): once built, its ready flag is set and
+// the read is an acquire load, a branch and the value's own global. The first
+// reads run Build (the hidden Lazy's get(), which builds it once), store what
+// it gives and set the flag; two first readers store the same value.
+func (g *gen) lazyRead(e *sema.LazyRead) string {
+	at := "@" + mangleGlobal(e.Value.Global)
+	ready, built, done := g.newLabel("lazy.ready"), g.newLabel("lazy.build"), g.newLabel("lazy.done")
+	flag := g.newTmp()
+	g.emit("%s = load atomic i8, ptr %s.ready acquire, align 1", flag, at)
+	set := g.newTmp()
+	g.emit("%s = icmp ne i8 %s, 0", set, flag)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", set, ready, built)
+	g.placeLabel(built)
+	// the first reads go out of line, so the reader keeps the registers of
+	// a plain global read
+	g.thunkSeq++
+	slow := fmt.Sprintf("lazy.build.%d", g.thunkSeq)
+	g.defineHelperEx(slow, "void", nil, "noinline cold", func() {
+		v := g.expr(e.Build)
+		g.storeVal(e.Type(), v, at)
+		g.emit("store atomic i8 1, ptr %s.ready release, align 1", at)
+		g.emitTerm("ret void")
+	})
+	g.emit("call void @%s()", slow)
+	g.emitTerm("br label %%%s", done)
+	g.placeLabel(ready)
+	g.emitTerm("br label %%%s", done)
+	g.placeLabel(done)
+	return g.loadVal(e.Type(), at)
+}
+
 // isPlace reports whether an expression denotes memory we can point at.
 func isPlace(e sema.Expr) bool {
 	switch e := e.(type) {
@@ -181,6 +212,8 @@ func (g *gen) stringPart(part sema.Expr) string {
 
 func (g *gen) expr(e sema.Expr) string {
 	switch e := e.(type) {
+	case *sema.LazyRead:
+		return g.lazyRead(e)
 	case *sema.IntConst:
 		if types.IsFloat(e.Type()) {
 			return floatConst(float64(e.Value))

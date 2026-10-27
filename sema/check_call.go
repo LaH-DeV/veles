@@ -237,7 +237,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			return f.panicCall(e)
 		}
 		sym := f.c.preludeSym(callee.Name)
-		if sym == nil || sym.Kind != SymFunc {
+		if sym == nil || sym.Kind != SymFunc && sym.Kind != SymType {
 			panic("synthesized call to a missing prelude function " + callee.Name)
 		}
 		return f.callSymbol(sym, callee.Name, typeArgs, e, want)

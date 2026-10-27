@@ -1438,7 +1438,7 @@ var lock = Mutex(value: 0)  // error: … the lock is inside the value, so decla
 val seen = MutableMap<string, i64>()   // error: … 'MutableMap<string, i64>', which is not Sendable …
 val served = Atomic(value: 0)      // ok: served.add(1)
 val cache = Mutex(value: MutableMap<string, string>())
-val table = Lazy(init: () => buildTable())   // ok: built on first use
+lazy val table = buildTable()                // ok: built on its first read (below)
 val ports = ["http": 80, "https": 443]       // ok: an immutable Map is Sendable
 ```
 
@@ -1450,6 +1450,56 @@ Clock = SystemClock()`, needs a
 trait that requires `Sendable` of every implementor (`trait Clock :
 Sendable`). State that only one thread uses can be kept in an executor
 without a lock (D150).
+
+### Built on first read: `lazy val`
+
+A module `val` is built before `main`, in the order the source gives,
+whether or not the program needs it. One that is expensive — a table, a
+parsed embedded file, a compiled set of patterns — can be `lazy` instead:
+built on its first read, once, by whichever task gets there first, while
+the others wait for it (D210). A read is a plain name.
+
+```veles
+use io
+
+lazy val keywords = buildKeywords()
+
+fun buildKeywords(): Set<string> {
+  io.println("building")
+  ["fun", "val", "var", "loop"].toSet()
+}
+
+fun isKeyword(word: string): bool => keywords.contains(word)
+
+struct Zone {
+  name: string
+
+  static lazy val utc = Zone(name: "UTC")
+}
+
+fun main() {
+  io.println("start")
+  io.println("${isKeyword("val")} ${isKeyword("x")} ${Zone.utc.name}")
+}
+```
+
+Output:
+```text
+start
+building
+true false UTC
+```
+
+The rules are `Lazy`'s, below: a panic in the initializer is raised again
+by every later read, and the initializer may not suspend or throw — it
+runs inside whichever read comes first, which neither waits nor handles
+an error — so a value that needs either is built in `main` and passed
+down. Its type must be `Sendable`, like any module value's, and it takes
+part in the order of the module's values (a cycle is still an error). A
+`const` cannot read one. Once built, a read is one load of a flag, a
+branch and the value. `lazy` goes only on a module `val` or a `static
+val`: on a field it would put a flag in every value, so a field, a local or
+a value passed around holds a `Lazy<T>` and calls `get()`.
 
 ## More shared state: `RwLock`, `Event`, `Lazy`, `Broadcast`, `Watch`
 

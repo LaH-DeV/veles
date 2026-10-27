@@ -118,6 +118,10 @@ func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 		if wf, ok := want.(*types.Func); ok && len(hf.Params) == len(wf.Params) && (hf.Effects != wf.Effects) {
 			// same shape, different effects: a function value keeps its own
 			// calling convention, a lambda written in place adapts (D40)
+			if lazy := f.c.lazyInit[span]; lazy != nil {
+				f.errorf(span, "the initializer of 'lazy val %s' cannot throw or suspend: it runs inside whichever read comes first, which neither handles an error nor waits; handle the error in it ('?? fallback', 'catch'), or build the value in 'main' and pass it down (D210)", lazy.Display)
+				return x
+			}
 			f.errorf(span, "type mismatch: expected '%s', found '%s'; a function value does not take on 'suspends' or 'throws' — pass a lambda that calls it, '(x) => f(x)'", want, have)
 			return x
 		}
@@ -650,7 +654,7 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	switch sym.Kind {
 	case SymGlobal:
 		f.checkStateUse(sym.Global, e.Pos)
-		return f.globalValue(sym.Global)
+		return f.globalValue(sym.Global, e.Pos)
 	case SymFunc:
 		f.checkExecFunc(sym.Func, e.Pos)
 		return f.funcValue(sym.Func, e.Pos)
@@ -886,7 +890,7 @@ func (f *fnCtx) symbolValue(sym *Symbol, span source.Span, want types.Type) Expr
 		markUsed(v)
 		return f.narrowedRef(v)
 	case SymGlobal:
-		return f.globalValue(sym.Global)
+		return f.globalValue(sym.Global, span)
 	case SymFunc:
 		return f.funcValue(sym.Func, span)
 	case SymType:

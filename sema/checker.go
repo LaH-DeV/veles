@@ -31,6 +31,11 @@ type Checker struct {
 	// the final round's are kept (D45 fixpoint).
 	roundDiags *source.Diagnostics
 	seen       map[string]bool
+	// lazyOf maps the hidden global of a `lazy val` to the value it builds
+	// (D210), for messages; lazyInit the span of each one's initializer
+	lazyOf   map[*Global]*Global
+	lazyInit map[source.Span]*Global
+	lazyDecl map[*Global]*ast.ValDecl // the declaration as written, for hover
 	// typeSite: the generic call being checked, where a type its inference
 	// instantiates is reported (checkConstArgs)
 	typeSite source.Span
@@ -656,10 +661,12 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			}
 			c.attrsOf(sv.Attrs, "value")
 			g := &Global{Name: m.prefix() + "." + d.Name.Name + "." + sv.Name.Name, Display: d.Name.Name + "." + sv.Name.Name, Span: sv.Name.Pos}
-			c.globals[g] = sv
 			c.globalMod[g] = m
 			c.globalFile[g] = f
 			c.staticOwner[g] = s
+			if !c.lazyGuard(g, sv, s) {
+				c.globals[g] = sv
+			}
 			c.staticVals[s][sv.Name.Name] = &Symbol{Name: sv.Name.Name, Kind: SymGlobal, Pub: sv.Pub, Internal: sv.Internal, Module: m, Span: sv.Name.Pos, Global: g}
 		}
 	case *ast.ErrorAliasDecl:
@@ -731,9 +738,11 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 	case *ast.ValDecl:
 		c.attrsOf(d.Attrs, "value")
 		g := &Global{Name: m.prefix() + "." + d.Name.Name, Display: d.Name.Name, Mutable: d.Kind == ast.BindVar, Span: d.Name.Pos}
-		c.globals[g] = d
 		c.globalMod[g] = m
 		c.globalFile[g] = f
+		if !c.lazyGuard(g, d, nil) {
+			c.globals[g] = d
+		}
 		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymGlobal, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos, Global: g})
 	case *ast.ExecutorDecl:
 		c.declareExecutor(m, f, d)
@@ -2838,6 +2847,12 @@ func (c *Checker) runRound() *Program {
 		c.checkGlobal(g)
 		if c.globals[g].Kind != ast.BindConst { // a constant is written in where it is used (D113)
 			c.prog.Globals = append(c.prog.Globals, g)
+		}
+		// a lazy value's own storage, filled by its first read (D210): it
+		// has no initializer to run with the others
+		if lazy := c.lazyOf[g]; lazy != nil && lazy.Type != nil && !types.IsInvalid(lazy.Type) {
+			lazy.Init = nil
+			c.prog.Globals = append(c.prog.Globals, lazy)
 		}
 	}
 	c.executorsHIR()

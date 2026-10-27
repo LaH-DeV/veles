@@ -40,7 +40,7 @@ extend Parser {
           }
         }
         Kind.KwStatic => {
-          if (afterMember in [Kind.KwVal, Kind.KwVar]) {
+          if (afterMember in [Kind.KwVal, Kind.KwVar] || this.lazyAt(at + 1)) {
             if (hasVis) this.next()
             if (vis == Kind.KwPrivate) this.errorAt(this.prevSpan(), "a static value cannot be 'private'; it is the module's unless 'public' (D23)")
             statics.push(this.parseStaticVal(memberAttrs, vis == Kind.KwPublic, vis == Kind.KwInternal))
@@ -104,9 +104,11 @@ extend Parser {
     val start = this.span()
     val doc = this.takeDoc()
     this.next()  // static
+    val isLazy = this.lazyAt(0)
+    if (isLazy) this.next()  // built on its first read (D210)
     if (this.at(Kind.KwVar)) this.errorAt(this.span(), "a static member is a 'val': a type's constants do not change (a mutable global belongs at module level)")
     this.next()  // val / var
-    var d: ast.ValDecl = ast.ValDecl(attrs, doc, pub, isInternal, kind: ast.BindKind.Val)
+    var d: ast.ValDecl = ast.ValDecl(attrs, doc, pub, isInternal, kind: ast.BindKind.Val, isLazy)
     d.name = this.ident()
     if (this.accept(Kind.Colon)) d.typ = &this.parseType()
     if (this.expect(Kind.Assign)) d.value = &this.parseExpr()
@@ -124,6 +126,10 @@ extend Parser {
     val isInternal = vis == Kind.KwInternal
     if (pub || isPrivate || isInternal) this.next()
     var f = ast.Field(attrs, pub, isInternal, isPrivate, doc)
+    if (this.lazyAt(0)) {
+      this.errorAt(this.span(), "'lazy' is for a module-level 'val' or a 'static val' (D210): on a field it would put a flag and a branch in every value; hold a 'Lazy<T>' field and read it with '.get()'")
+      this.next()
+    }
     // mutability (D22)
     if (this.at(Kind.KwProtected)) {
       val protectedAt = this.next().span
@@ -216,6 +222,14 @@ extend Parser {
     }
     d.pos = this.spanFrom(head.start)
     d
+  }
+
+  // whether peek(n) is the word `lazy` before a binding: `val`, `var` or
+  // `const` (D210; a parameter's `lazy` is D90's, read elsewhere)
+  fun lazyAt(n: i64): bool {
+    val t = this.peek(n)
+    if (t.kind != Kind.Ident || t.text != "lazy") return false
+    this.peek(n + 1).kind in [Kind.KwVal, Kind.KwVar, Kind.KwConst]
   }
 
   // how many tokens from peek(n) on lead to a `struct` after `const`:

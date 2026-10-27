@@ -502,6 +502,14 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 			}
 			return d
 		}
+		if p.lazyAt(0) {
+			p.next() // `lazy val`: built on its first read (D210); the checker refuses `var` and `const`
+			d := p.parseValDecl(attrs, pub, start)
+			if vd, ok := d.(*ast.ValDecl); ok {
+				vd.Lazy = true
+			}
+			return d
+		}
 		if p.cur().Text == "indirect" && p.peek(1).Kind == lexer.KwSealed {
 			p.next() // every variant behind a pointer (D198)
 			d := p.parseTrait(attrs, pub, start)
@@ -1144,7 +1152,7 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 				}
 				d.Fields = append(d.Fields, p.parseField(mattrs, vis == lexer.KwPub, vis == lexer.KwPrivate, vis == lexer.KwInternal, hasVis))
 			case lexer.KwStatic:
-				if p.peek(at+1).Kind == lexer.KwVal || p.peek(at+1).Kind == lexer.KwVar {
+				if p.peek(at+1).Kind == lexer.KwVal || p.peek(at+1).Kind == lexer.KwVar || p.lazyAt(at+1) {
 					if hasVis {
 						p.next()
 					}
@@ -1184,11 +1192,15 @@ func (p *Parser) parseStaticVal(attrs []*ast.Attribute, pub, internal bool) *ast
 	start := p.span()
 	doc := p.takeDoc()
 	p.next() // static
+	lazy := p.lazyAt(0)
+	if lazy {
+		p.next() // built on its first read (D210)
+	}
 	if p.at(lexer.KwVar) {
 		p.errorf(p.span(), "a static member is a 'val': a type's constants do not change (a mutable global belongs at module level)")
 	}
 	p.next() // val / var
-	d := &ast.ValDecl{Attrs: attrs, Doc: doc, Pub: pub, Internal: internal, Kind: ast.BindVal}
+	d := &ast.ValDecl{Attrs: attrs, Doc: doc, Pub: pub, Internal: internal, Kind: ast.BindVal, Lazy: lazy}
 	d.Name, _ = p.expectIdent()
 	if p.accept(lexer.Colon) {
 		d.Type = p.parseType()
@@ -1215,6 +1227,10 @@ func (p *Parser) parseField(attrs []*ast.Attribute, pub, private, internal, hasV
 		p.next()
 	}
 	f := &ast.Field{Attrs: attrs, Pub: pub, Private: private, Internal: internal, Doc: doc}
+	if p.lazyAt(0) {
+		p.errorf(p.span(), "'lazy' is for a module-level 'val' or a 'static val' (D210): on a field it would put a flag and a branch in every value; hold a 'Lazy<T>' field and read it with '.get()'")
+		p.next()
+	}
 	// mutability (D22): bare or `val` = set once by the constructor; `var`
 	// = assignable by anyone who sees the field; `protected var` =
 	// assignable only by the type's own declarations
@@ -2022,6 +2038,20 @@ func (p *Parser) peekIdentAfterTypeParams() string {
 		}
 	}
 	return "name"
+}
+
+// lazyAt reports whether peek(n) is the word `lazy` before a binding — `val`,
+// `var` or `const` (D210; a parameter's `lazy` is D90's, read elsewhere).
+func (p *Parser) lazyAt(n int) bool {
+	t := p.peek(n)
+	if t.Kind != lexer.Ident || t.Text != "lazy" {
+		return false
+	}
+	switch p.peek(n + 1).Kind {
+	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
+		return true
+	}
+	return false
 }
 
 // structWordsAt is how many tokens from peek(n) on lead to a `struct` after
