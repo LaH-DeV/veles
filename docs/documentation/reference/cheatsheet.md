@@ -137,6 +137,7 @@ struct Shared<T> {
   private cell: *T
   init(value: T) { this.cell = &value }     // init parameters join the constructor (D73): Shared(value: 1)
 }
+const struct Tls { cert: string; ports: List<i64> }  // immutable all the way down (D212): no var, no Mutable*/pointer/fun/trait-object fields, nested structs const too; Sendable, a map key
 val p = Point(x: 1)             // named construction (Point(x, y) puns variables named like fields); p == q, "$p" work
 val s = Shared(1)               // one constructor parameter: positional too (D163); throw UsageError("bad flag")
 val q = p.copy(x: 5)            // generated copy: named fields change, the rest kept, init runs again (D164)

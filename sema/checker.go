@@ -31,6 +31,9 @@ type Checker struct {
 	// the final round's are kept (D45 fixpoint).
 	roundDiags *source.Diagnostics
 	seen       map[string]bool
+	// typeSite: the generic call being checked, where a type its inference
+	// instantiates is reported (checkConstArgs)
+	typeSite source.Span
 	// exportedC: the `extern "C" fun`s by C symbol (D69), by declaration so
 	// a later inference round sees the same one again
 	exportedC map[string]*ast.FunDecl
@@ -602,7 +605,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		} else {
 			attrs = c.attrsOf(d.Attrs, "struct")
 		}
-		s := &types.Struct{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Internal: d.Internal, Extern: d.Extern, Union: d.Union, Decl: d, Instances: map[string]*types.Struct{}}
+		s := &types.Struct{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Internal: d.Internal, Extern: d.Extern, Union: d.Union, Const: d.Const, Decl: d, Instances: map[string]*types.Struct{}}
 		c.layoutAttrs(s, d, attrs)
 		ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 		for i, tp := range d.TypeParams {
@@ -2551,6 +2554,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 	c.resolveStruct(tmpl)
 	c.checkTypeArgBounds(tmpl.Name, tmpl.TypeParams, args, span)
 	c.checkSecretArg(tmpl, args, span)
+	c.checkConstArgs(tmpl, args, span)
 	args = stripLabels(args) // shared by every labelling (D166), as instances of functions are
 	key := argsKey(args)
 	if inst, ok := tmpl.Instances[key]; ok {
@@ -2560,7 +2564,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 	for i, tp := range tmpl.TypeParams {
 		m[tp] = args[i]
 	}
-	inst := &types.Struct{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Internal: tmpl.Internal, Extern: tmpl.Extern, Packed: tmpl.Packed, Align: tmpl.Align, Union: tmpl.Union, Transparent: tmpl.Transparent, Compact: tmpl.Compact, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl, Tag: tmpl.Tag}
+	inst := &types.Struct{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Internal: tmpl.Internal, Extern: tmpl.Extern, Packed: tmpl.Packed, Align: tmpl.Align, Union: tmpl.Union, Transparent: tmpl.Transparent, Compact: tmpl.Compact, Const: tmpl.Const, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl, Tag: tmpl.Tag}
 	tmpl.Instances[key] = inst
 	for _, f := range tmpl.Fields {
 		nf := *f
@@ -2780,6 +2784,7 @@ func unify(pattern, concrete types.Type, m map[*types.TypeParam]types.Type) bool
 
 func (c *Checker) runRound() *Program {
 	c.changed = false
+	c.checkConstStructs() // D212: reported with the bodies, not stopping them
 	if c.index != nil {
 		c.index.Refs = c.index.Refs[:c.collectRefs] // keep signature refs recorded during collection
 	}

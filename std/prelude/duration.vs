@@ -35,7 +35,7 @@ const nanosMax: i64 = 9223372036854775807
 /// `-d`, and `+=`/`-=`; `a.over(b)` is how many times `b` fits in `a`. The
 /// two sums that get written most, "now plus a timeout" and "how much is
 /// left", are not written here at all: they are `time.Deadline`.
-public struct Duration {
+public const struct Duration {
   private ns: i64
 
   /// No time at all. `Duration.zero` is the identity of `plus` and the value

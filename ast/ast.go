@@ -327,7 +327,9 @@ type StructDecl struct {
 	// Compact: `compact struct` — the compiler places the fields for the
 	// smallest size (D215)
 	Compact bool
-	Pos     source.Span
+	// Const: `const struct` — immutable all the way down (D212)
+	Const bool
+	Pos   source.Span
 }
 
 type AssocTypeDecl struct {

@@ -895,6 +895,9 @@ func structHead(st *types.Struct) string {
 	case tmpl.Inline:
 		head = "inline " + head
 	}
+	if tmpl.Const {
+		head = "const " + head // D212
+	}
 	head = visPrefix(pub, internal, false) + head
 	if len(st.TypeParams) > 0 && len(st.TypeArgs) == 0 {
 		head += st.Name + typeParamList(st.TypeParams)
@@ -1752,6 +1755,9 @@ func (c *Checker) compactStructShape(st *types.Struct) string {
 	kw := "struct "
 	if d, ok := tmpl.Decl.(*ast.StructDecl); ok && d.Error {
 		kw = "error "
+	}
+	if tmpl.Const {
+		kw = "const " + kw // D212
 	}
 	if len(st.Fields) == 0 {
 		return kw + st.String()

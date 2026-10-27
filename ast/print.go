@@ -225,6 +225,9 @@ func (p *printer) decl(d Decl) {
 		if d.Pub {
 			p.w("public ")
 		}
+		if d.Const {
+			p.w("const ")
+		}
 		if d.Extern {
 			p.w("extern ")
 		}

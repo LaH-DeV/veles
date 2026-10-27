@@ -682,7 +682,10 @@ type Struct struct {
 	Transparent bool
 	// Compact: `compact struct` — fields placed by alignment, largest first,
 	// for the smallest size; declaration order everywhere else (D215)
-	Compact     bool
+	Compact bool
+	// Const: `const struct` — no `var` field, every field deeply immutable
+	// (D212)
+	Const       bool
 	TypeParams  []*TypeParam
 	TypeArgs    []Type
 	Template    *Struct

@@ -628,6 +628,19 @@ made where the compiler cannot see it (a function handed the same list)
 panics instead, when the loop next steps: `'xs' changed while a loop
 walked it`.
 
+#### `'items' is a 'MutableList<i64>'; a const struct holds only immutable data: use 'List<i64>'`
+
+A `const struct` promises that nothing reached through its values
+changes (D212), so each field must be deeply immutable. The message names
+the field and what to use: the immutable collection, `string` for a
+`StringBuilder`, `const struct` on a plain struct you declared (the
+promise is written at every level), a `const` variant for a sealed type.
+A `var` field is refused the same way; build a changed value with
+`copy`. Pointers, functions, trait objects, channels, task handles and
+`Mutex`/`Atomic` are state, not data: keep them beside the value. For a
+generic one the error is where the type arguments are written:
+`'Pair' is a const struct, so its field 'second' is a 'MutableList<i64>'`.
+
 ### references
 
 **Changing a copy when the original was meant.** `'p' is a copy of the

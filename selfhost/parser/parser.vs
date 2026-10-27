@@ -389,6 +389,18 @@ struct Parser {
         return this.parseImpl(head.attrs, false)
       }
       Kind.KwConst => {
+        if (this.structWordsAt(1) > 0) {
+          // `const struct`: immutable all the way down (D212), checked by the
+          // checker; then `compact` (D215) and `extern` as without it
+          this.next()
+          val compact = this.atWord("compact")
+          if (compact) this.next()
+          val isExtern = this.accept(Kind.KwExtern)
+          var d = this.parseStruct(head, isExtern)
+          d.isConst = true
+          d.compact = compact
+          return d
+        }
         // `const fun` (D113), or a constant
         if (this.peek(1).kind == Kind.KwFun) return this.topLevelFun(head, this.parseFun(head.attrs, FunContext.Free))
         return this.parseValDecl(head)

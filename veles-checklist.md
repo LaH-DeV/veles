@@ -1459,6 +1459,16 @@ Every new public std API (http cookies/forms/client, `std/log`,
 
 ## 11. Known limitations to revisit
 
+- [ ] **`const struct` left over (D212, plan B30 built 2026-10-27).**
+      (a) Removing `const` from a public type is an API break that
+      `veles apidiff` should report; the tool does not exist yet (plan G1,
+      on S12's interface files). (b) Sharing a large const struct by
+      address with no defensive copy: immutability of the value is not
+      enough, since a `var` holding it can be reassigned during the call;
+      D121's caller rule already lends what is safe. Measure before
+      anything more. (c) `selfhost/` could declare its tokens, spans and
+      AST nodes `const struct` (D212's self-hosting note) once the AST
+      settles (S13).
 - [ ] **A nullable niche in `string` and in sealed values** (parked with
       numbers, `veles-layout-spec.md` §5.5): a `string?` or sealed `T?`
       still carries a flag word. A string niche needs every empty string to

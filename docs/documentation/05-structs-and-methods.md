@@ -444,6 +444,79 @@ parameter, because the caller will never see the change. It stays quiet
 when the change is the point: the function returns the changed copy, or
 uses it whole (stores it, passes it on).
 
+### Immutable all the way down: `const struct`
+
+A struct with no `var` fields still holds whatever its fields hold: a
+`MutableList` inside it changes, whoever holds the struct. `const struct`
+promises more and the compiler checks it: no `var` field, and every field
+deeply immutable — numbers, `bool`, strings, enums, immutable `List`,
+`Map` and `Set` of such, tuples, nullables, arrays, other `const struct`s,
+and sealed types whose variants are all `const` (D212).
+
+```veles
+use io
+
+const struct Endpoint {
+  host:  string
+  ports: List<i64>
+  fun url(): string => "https://$host:${ports.first() ?: 443}"
+}
+
+sealed trait Rule {
+  const struct Allow {
+    prefix: string
+  }
+  const struct Deny {
+    prefix: string
+    status: i64
+  }
+}
+
+const struct Policy {
+  endpoint: Endpoint
+  rules:    List<Rule>
+}
+
+const local = Endpoint(host: "localhost", ports: [8080])
+val policy = Policy(endpoint: local, rules: [Allow(prefix: "/static"), Deny(prefix: "/admin", status: 403)])
+
+fun main() {
+  val hits: Map<Endpoint, i64> = [local: 3]
+  io.println("${policy.endpoint.url()} ${policy.rules.len()} ${hits.get(local)}")
+}
+```
+
+Output:
+```text
+https://localhost:8080 2 3
+```
+
+What can change is refused at the field, with the immutable form to use:
+
+```veles
+// fragment
+const struct Tags {
+  names: MutableList<string> // error: 'names' is a 'MutableList<string>'; a const struct holds only immutable data: use 'List<string>'
+}
+```
+
+A plain struct in a field is refused too, even one that happens to hold
+only numbers, with a request to declare it `const`: the promise is
+written at every level, so a later `var` there cannot break it unseen.
+Pointers, functions, trait objects, channels, task handles and the
+synchronized types (`Mutex`, `Atomic`, …) are state rather than data and
+are refused. A generic `const struct Pair<A, B>` is checked again for
+each use: `Pair<i64, MutableList<i64>>` is an error where it is written.
+
+What it gives: a `const struct` is `Sendable` (it crosses to other tasks
+and channels, and can be a module `val`, as `policy` is above), it is a
+safe map or set key, and it can be a `const` when its arguments are
+constant, as `local` is (one that holds a sealed value cannot be a
+`const` yet). Methods are allowed, and `copy` gives a changed value. The
+standard library's value types are `const struct`s — `Duration`,
+`Timestamp`, `Offset`, `DateTime`, `Digest`, `Uuid` — so they can be
+fields of yours.
+
 ## Static functions
 
 A `static fun` has no `this`: it belongs to the type and is called on the

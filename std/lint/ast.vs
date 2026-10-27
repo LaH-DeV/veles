@@ -141,6 +141,7 @@ public sealed trait Decl {
     public var indirect: bool = false
     public var isInline: bool = false
     public var compact:  bool = false  // `compact struct`: the compiler places the fields (D215)
+    public var isConst:  bool = false  // `const struct`: immutable all the way down (D212)
     public var pos:      Span = Span.none()
   }
   /// `trait Name { type Item; fun m() }`, or `sealed trait Name`.

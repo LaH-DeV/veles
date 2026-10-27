@@ -1,5 +1,5 @@
 1. What about `const struct` -> that could be a `data class` without methods and immutability enforced. It would be a nice way to define a struct that is meant to be immutable and only hold data.
-   → Decided 2026-10-26 as D212 (methods allowed, deeply immutable); not built yet, plan B30.
+   → Decided 2026-10-26 as D212 (methods allowed, deeply immutable); built 2026-10-27 (plan B30).
 2. maybe we could have a `suspend loop` that would be just sugar for a loop with cede inside at the end?
 ```veles
 loop {

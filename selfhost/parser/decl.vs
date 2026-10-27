@@ -163,21 +163,24 @@ extend Parser {
         val memberAttrs = this.parseAttributes()
         val words = this.variantWords()
         if (words > 0) {
-          // where the variant is stored (D198) and how its fields are placed
-          // (D215); its doc is on the first word, taken first
+          // what the variant is (D212), where it is stored (D198) and how its
+          // fields are placed (D215); its doc is on the first word, taken first
           val doc = this.takeDoc()
           val first = this.cur()
+          var isConst = false
           var indirect = false
           var isInline = false
           var compact = false
           loop (_ in 0..<words) {
             when (this.next().text) {
+              "const"    => isConst = true
               "indirect" => indirect = true
               "inline"   => isInline = true
               else       => compact = true
             }
           }
           var variant = this.parseNestedVariant(d, memberAttrs, doc)
+          variant.isConst = isConst
           variant.indirect = indirect
           variant.isInline = isInline
           variant.compact = compact
@@ -215,12 +218,27 @@ extend Parser {
     d
   }
 
-  // how many words before a `struct` in a sealed trait's body say how the
-  // variant is stored or laid out: `indirect` or `inline`, then `compact`;
-  // 0 when the cursor is not at such words
+  // how many tokens from peek(n) on lead to a `struct` after `const`:
+  // `struct` itself, or `compact` and/or `extern` before it; 0 when they do
+  // not
+  fun structWordsAt(n: i64): i64 {
+    var i = n
+    val t = this.peek(i)
+    if (t.kind == Kind.Ident && t.text == "compact") i += 1
+    if (this.peek(i).kind == Kind.KwExtern) i += 1
+    if (this.peek(i).kind != Kind.KwStruct) return 0
+    i - n + 1
+  }
+
+  // how many words before a `struct` in a sealed trait's body say what the
+  // variant is (`const`, D212), how it is stored (`indirect` or `inline`,
+  // D198) and laid out (`compact`, D215), in that order; 0 when the cursor
+  // is not at such words
   fun variantWords(): i64 {
     var n = 0
-    if (this.atWord("indirect") || this.atWord("inline")) n += 1
+    if (this.at(Kind.KwConst)) n += 1
+    val storage = this.peek(n)
+    if (storage.kind == Kind.Ident && (storage.text == "indirect" || storage.text == "inline")) n += 1
     val t = this.peek(n)
     if (t.kind == Kind.Ident && t.text == "compact") n += 1
     if (n == 0 || this.peek(n).kind != Kind.KwStruct) return 0

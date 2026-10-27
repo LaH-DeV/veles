@@ -8625,6 +8625,21 @@ pointers, locks and `var` fields stays the low level. Self-hosting: tokens,
 AST nodes and types as const structs can be shared by a parallel compiler's
 threads and used as interning keys.
 
+_Built 2026-10-27 (B30)._ Settled while building: `const` is the first
+modifier after visibility, so `public const compact extern struct`, and in
+a sealed trait's body `const indirect compact struct`. The check runs with
+the function bodies, so its errors come together with theirs. An instance
+made by a generic call's inference (`pairUp(MutableSet<i64>())` returning
+`Pair<i64, T>`) is reported at that call. An error type cannot be declared
+`const`; it counts as immutable when its fields are. The standard
+library's value types became `const struct`: `Duration`, `Timestamp`,
+`Offset`, `DateTime`, `Digest`, `Uuid`. Not built: `veles apidiff`
+reporting a removed `const` (the tool does not exist yet, plan G1), and
+the pass-by-address optimisation, which needs more than immutability: a
+`var` holding the value can still be reassigned during a call, so the
+caller rule of D121 applies unchanged. A `const` of a const struct that
+holds a sealed value is refused, as any sealed constant is (D113).
+
 ### D213 — Allocation hints in the editor (v0.115)
 
 ```veles

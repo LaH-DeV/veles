@@ -317,6 +317,7 @@ struct Printer {
       else                 => "struct "
     })
     if (d.pub) this.write("public ")
+    if (d.isConst) this.write("const ")
     if (d.isExtern) this.write("extern ")
     if (d.indirect) this.write("indirect ")
     if (d.isInline) this.write("inline ")

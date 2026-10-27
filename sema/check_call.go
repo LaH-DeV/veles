@@ -578,6 +578,11 @@ func (f *fnCtx) callTemplate(t *FuncTemplate, ownerSubst map[*types.TypeParam]ty
 func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypeParam]types.Type, typeArgs []types.Type, recv Expr, args []ast.Arg, span source.Span, want types.Type) Expr {
 	f.c.resolveSignature(t)
 	f.noteUse(t, span)
+	// a type the call's inference instantiates has no span of its own: an
+	// error about it (checkConstArgs) is the call's
+	outer := f.c.typeSite
+	f.c.typeSite = span
+	defer func() { f.c.typeSite = outer }()
 	if t.Extern && f.unsafe == 0 {
 		f.errorf(span, "calling extern \"C\" function '%s' requires an 'unsafe' block (D44)", t.Name)
 	}

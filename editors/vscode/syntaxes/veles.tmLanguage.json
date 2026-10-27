@@ -199,7 +199,7 @@
         },
         {
           "comment": "val / var / const binding",
-          "match": "\\b(public\\s+)?(val|var|const)\\s+(?!fun\\b)([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(public\\s+)?(val|var|const)\\s+(?!(?:fun|struct|compact|extern)\\b)([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.modifier.veles" },
             "2": { "name": "storage.type.veles" },

@@ -558,6 +558,21 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 		}
 		return p.parseImpl(attrs, false)
 	case lexer.KwConst:
+		if n := p.structWordsAt(1); n > 0 {
+			// `const struct`: immutable all the way down (D212), checked by
+			// the checker; then `compact` (D215) and `extern` as without it
+			p.next()
+			compact := p.cur().Text == "compact"
+			if compact {
+				p.next()
+			}
+			extern := p.accept(lexer.KwExtern)
+			d := p.parseStruct(attrs, pub, extern, start)
+			if sd, ok := d.(*ast.StructDecl); ok {
+				sd.Const, sd.Compact = true, compact
+			}
+			return d
+		}
 		if p.peek(1).Kind == lexer.KwFun {
 			fn := p.parseFun(attrs, funContextFree) // `const fun` (D113)
 			fn.Pub = pub
@@ -1264,12 +1279,15 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 			mattrs := p.parseAttributes()
 			if n := p.variantWords(); n > 0 {
 				// `indirect struct` / `inline struct`: where the variant is stored
-				// (D198); `compact struct`: how its fields are placed (D215)
+				// (D198); `compact struct`: how its fields are placed (D215); `const
+				// struct`: immutable all the way down (D212)
 				doc := p.takeDoc() // on the word, before it is taken
 				first := p.cur()
-				var indirect, inline, compact bool
+				var isConst, indirect, inline, compact bool
 				for i := 0; i < n; i++ {
 					switch p.next().Text {
+					case "const":
+						isConst = true
 					case "indirect":
 						indirect = true
 					case "inline":
@@ -1283,6 +1301,7 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 					d.Variants[n-1].Indirect = indirect
 					d.Variants[n-1].Inline = inline
 					d.Variants[n-1].Compact = compact
+					d.Variants[n-1].Const = isConst
 					d.Variants[n-1].Pos = first.Span.To(d.Variants[n-1].Pos)
 				}
 				p.parseMemberSeparator()
@@ -2005,12 +2024,33 @@ func (p *Parser) peekIdentAfterTypeParams() string {
 	return "name"
 }
 
+// structWordsAt is how many tokens from peek(n) on lead to a `struct` after
+// `const`: `struct` itself, or `compact` and/or `extern` before it — 0 when
+// they do not.
+func (p *Parser) structWordsAt(n int) int {
+	i := n
+	if t := p.peek(i); t.Kind == lexer.Ident && t.Text == "compact" {
+		i++
+	}
+	if p.peek(i).Kind == lexer.KwExtern {
+		i++
+	}
+	if p.peek(i).Kind != lexer.KwStruct {
+		return 0
+	}
+	return i - n + 1
+}
+
 // variantWords is how many words before a `struct` in a sealed trait's body
-// say how the variant is stored or laid out — `indirect` or `inline`, then
-// `compact` — or 0 when the cursor is not at such words.
+// say what the variant is (`const`, D212), how it is stored (`indirect` or
+// `inline`, D198) and laid out (`compact`, D215), in that order — or 0 when
+// the cursor is not at such words.
 func (p *Parser) variantWords() int {
 	n := 0
-	if p.at(lexer.Ident) && (p.cur().Text == "indirect" || p.cur().Text == "inline") {
+	if p.at(lexer.KwConst) {
+		n++
+	}
+	if t := p.peek(n); t.Kind == lexer.Ident && (t.Text == "indirect" || t.Text == "inline") {
 		n++
 	}
 	if t := p.peek(n); t.Kind == lexer.Ident && t.Text == "compact" {

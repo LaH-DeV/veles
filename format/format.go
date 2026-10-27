@@ -1035,6 +1035,9 @@ func (p *printer) structDecl(d *ast.StructDecl) {
 	} else if d.Internal {
 		p.w("internal ")
 	}
+	if d.Const {
+		p.w("const ") // D212
+	}
 	if d.Indirect {
 		p.w("indirect ") // D198
 	} else if d.Inline {
