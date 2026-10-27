@@ -34,6 +34,7 @@
 typedef struct veles_desc veles_desc;
 void *veles_alloc(int64_t size);
 void *veles_alloc_words(int64_t size);
+void *veles_alloc_words_aligned(int64_t size, int64_t align);
 void *veles_gc_alloc(veles_desc *desc, int64_t size);
 void veles_gc_root(void *addr, veles_desc *desc);
 void veles_panic(const char *msg, int64_t len);
@@ -144,6 +145,7 @@ typedef struct task_rare {
     struct veles_deadline *deadline; /* the innermost withTimeout it is inside (D151) */
     struct veles_cleanup *inherited; /* a closer not started yet: the cleanups it takes on (D147) */
     int32_t cut;            /* a withTimeout's deadline fired: frames at this depth and deeper unwind (its frame's depth + 1; 0 none, D151) */
+    int32_t unwrap_at;      /* TB_UNWRAP: where the Ok payload starts when it is not 8 (an over-aligned payload); 0 = 8 */
     uint8_t test_task;      /* a test the runner queued (D80): its end starts the next */
 } task_rare;
 
@@ -1718,23 +1720,24 @@ void *veles_task_result(veles_task *t) {
     return t->result;
 }
 
-/* where a Result's payload starts: the compiler's types.PayloadOffset */
+/* where a Result's payload starts unless it is over-aligned: the
+ * compiler's types.Layout.PayloadOffset */
 #define TAGGED_PAYLOAD_OFFSET 8
 
 /* what `await` gives: the result, or for a fail-fast child (D141) the Ok
  * payload inside it */
 void *veles_task_value(veles_task *t) {
-    return (char *)t->result + (task_bit(t, TB_UNWRAP) ? TAGGED_PAYLOAD_OFFSET : 0);
+    if (!task_bit(t, TB_UNWRAP)) return t->result;
+    task_rare *r = __atomic_load_n(&t->rare, __ATOMIC_ACQUIRE);
+    int64_t off = r && r->unwrap_at ? r->unwrap_at : TAGGED_PAYLOAD_OFFSET;
+    return (char *)t->result + off;
 }
 
 /* a launch in a fail-fast block of a function that throws (D141): the
- * payload of its Result sits at off; the task has no room to keep it, so
- * a compiler that disagrees stops here rather than reading the wrong bytes */
+ * payload of its Result sits at off — 8, or kept in the rare block for an
+ * over-aligned payload, so the common task stays as small as it is */
 void veles_task_set_unwrap(veles_task *t, int64_t off) {
-    if (off != TAGGED_PAYLOAD_OFFSET) {
-        static const char msg[] = "internal error: the compiler and the runtime disagree on where a Result's payload starts";
-        veles_panic(msg, (int64_t)sizeof msg - 1);
-    }
+    if (off != TAGGED_PAYLOAD_OFFSET) rare_of(t)->unwrap_at = (int32_t)off;
     task_set(t, TB_UNWRAP);
 }
 
@@ -5209,21 +5212,32 @@ _Static_assert(sizeof(veles_task) == 152, "review B4: a parked task stays small 
 _Static_assert(sizeof(veles_waiter) == 40, "the wait union");
 _Static_assert(offsetof(frame_arena, top) == 8 && offsetof(frame_arena, cap) == 16 && offsetof(frame_arena, data) == 24, "codegen/llvm/coro.go frameHelpers");
 
-/* storage for the frame of a call (link has a parent) or of a task (none) */
-void *veles_frame_alloc(veles_task *t, frame_link *l, int64_t size) {
-    if (!l->parent) return veles_alloc_words(size);
+/* how far past top the frame of alignment align starts in a */
+static int64_t arena_pad(frame_arena *a, int64_t align) {
+    uintptr_t at = (uintptr_t)(a->data + a->top);
+    return (int64_t)((0 - at) & (uintptr_t)(align - 1));
+}
+
+/* storage for the frame of a call (link has a parent) or of a task (none),
+ * as aligned as LLVM laid the frame out (llvm.coro.align): more than a
+ * word only when it holds an over-aligned value (D120) */
+void *veles_frame_alloc(veles_task *t, frame_link *l, int64_t size, int64_t align) {
+    if (align < 8) align = 8;
+    if (!l->parent) return align > 8 ? veles_alloc_words_aligned(size, align) : veles_alloc_words(size);
     size = (size + 15) & ~(int64_t)15;
     frame_arena *a = t->arena;
-    if (!a || a->top + size > a->cap) {
-        frame_arena *n = size <= ARENA_CHUNK ? arena_take() : NULL;
+    if (!a || a->top + arena_pad(a, align) + size > a->cap) {
+        int64_t need = size + align; /* room to align in a fresh chunk */
+        frame_arena *n = need <= ARENA_CHUNK ? arena_take() : NULL;
         if (!n) {
-            int64_t cap = size > ARENA_CHUNK / 2 ? size * 2 : ARENA_CHUNK;
+            int64_t cap = need > ARENA_CHUNK / 2 ? need * 2 : ARENA_CHUNK;
             n = veles_alloc_words((int64_t)sizeof *n + cap);
             n->cap = cap;
         }
         n->prev = a;
         t->arena = a = n;
     }
+    a->top += arena_pad(a, align);
     void *p = a->data + a->top;
     a->top += size;
     return p;

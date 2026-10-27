@@ -188,7 +188,7 @@ func (g *gen) showBody(t types.Type, v string) string {
 			if sep != "" {
 				acc = g.concat(acc, g.stringConst(sep))
 			}
-			el := g.part(tt, v, i, e)
+			el := g.part(tt, v, g.fidx(tt, i), e)
 			acc = g.concat(acc, g.show(e, el))
 		}
 		return g.concat(acc, g.stringConst(")"))

@@ -116,7 +116,7 @@ func (g *gen) placeAs(e sema.Expr, mode placeMode) string {
 	case *sema.TupleGet:
 		base := g.placeAs(e.X, mode)
 		p := g.newTmp()
-		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, g.llType(e.X.Type()), base, e.Index)
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", p, g.llType(e.X.Type()), base, g.fidx(e.X.Type(), e.Index))
 		return p
 	case *sema.Builtin:
 		if _, ok := e.Args[0].Type().(*types.Array); ok && (e.Op == "list.ref" || e.Op == "list.refUnchecked") {
@@ -318,7 +318,7 @@ func (g *gen) expr(e sema.Expr) string {
 		return g.fieldOf(e.X.Type(), x, e.Index)
 	case *sema.TupleGet:
 		x := g.expr(e.X)
-		return g.part(e.X.Type(), x, e.Index, e.Type())
+		return g.part(e.X.Type(), x, g.fidx(e.X.Type(), e.Index), e.Type())
 	case *sema.StructLit:
 		if g.isMem(e.Type()) {
 			// each field is stored as it is evaluated: a later one may change
@@ -342,7 +342,7 @@ func (g *gen) expr(e sema.Expr) string {
 		if g.isMem(e.Type()) {
 			tmp := g.newMem(e.Type())
 			for i, el := range e.Elems {
-				g.storeVal(el.Type(), g.expr(el), g.fieldPtr(g.llType(e.Type()), tmp, i))
+				g.storeVal(el.Type(), g.expr(el), g.fieldPtr(g.llType(e.Type()), tmp, g.fidx(e.Type(), i)))
 			}
 			return tmp
 		}
@@ -351,7 +351,7 @@ func (g *gen) expr(e sema.Expr) string {
 		for i, el := range e.Elems {
 			v := g.expr(el)
 			n := g.newTmp()
-			g.emit("%s = insertvalue %s %s, %s %s, %d", n, llt, acc, g.llType(el.Type()), v, i)
+			g.emit("%s = insertvalue %s %s, %s %s, %d", n, llt, acc, g.llType(el.Type()), v, g.fidx(e.Type(), i))
 			acc = n
 		}
 		return acc
@@ -2283,7 +2283,7 @@ func (g *gen) makeNullable(nt *types.Nullable, present, val string) string {
 	a := g.newTmp()
 	g.emit("%s = insertvalue %s undef, i1 %s, 0", a, llt, present)
 	b := g.newTmp()
-	g.emit("%s = insertvalue %s %s, %s %s, 1", b, llt, a, g.llType(nt.Elem), val)
+	g.emit("%s = insertvalue %s %s, %s %s, %d", b, llt, a, g.llType(nt.Elem), val, g.fidx(nt, 1))
 	return b
 }
 

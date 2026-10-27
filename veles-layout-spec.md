@@ -270,8 +270,8 @@ Per item, before the change lands:
 | 6. Exact sealed pointer maps, over-aligned placement | —      | `gcdesc.go`, `types.go`                                                        | low                                     |
 
 Steps 1–5 built 2026-10-26 (plan B32, numbered as there); verified on
-Windows and Linux 2026-10-27. Step 6 and `noalias` (§5.3) are open
-(checklist §11).
+Windows and Linux 2026-10-27. Step 6 and `noalias` (§5.3) built 2026-10-27;
+the string and sealed niches (§5.5) stay parked (checklist §11).
 
 Self-hosting: the rules are a recursive walk over the type (`Niche`) and a
 per-call check of the argument expression (temporary or clean local) — both

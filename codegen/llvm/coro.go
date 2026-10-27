@@ -16,6 +16,7 @@ import (
 
 const coroDecls = `declare token @llvm.coro.id(i32, ptr, ptr, ptr)
 declare i64 @llvm.coro.size.i64()
+declare i64 @llvm.coro.align.i64()
 declare ptr @llvm.coro.begin(token, ptr)
 declare i8 @llvm.coro.suspend(token, i1)
 declare ptr @llvm.coro.free(token, ptr)
@@ -29,7 +30,7 @@ declare void @veles_frame_park_held(ptr, ptr, i64)
 declare void @veles_frame_return(ptr, ptr, ptr, i64, i64, ptr)
 declare void @veles_frame_unwound(ptr, ptr)
 declare void @veles_frame_back(ptr, ptr)
-declare ptr @veles_frame_alloc(ptr, ptr, i64)
+declare ptr @veles_frame_alloc(ptr, ptr, i64, i64)
 declare void @veles_frame_free(ptr, ptr)
 ; the link of a task's own frame: no caller (review F3)
 @veles.root.link = internal constant { ptr, i64, i64 } zeroinitializer
@@ -129,7 +130,7 @@ declare ptr @veles_deadline_cleanup_move(ptr)
 ; veles_frame_back, taken inline (review F3). The offsets are the
 ; runtime's (veles_task: hdl 0, arena 24, depth 136, popped 150;
 ; frame_arena: top 8, cap 16, data 24), which veles_task.c asserts.
-define internal ptr @veles.frame.alloc(ptr %t, ptr %l, i64 %size) alwaysinline {
+define internal ptr @veles.frame.alloc(ptr %t, ptr %l, i64 %size, i64 %align) alwaysinline {
 entry:
   %par = load ptr, ptr %l
   %isroot = icmp eq ptr %par, null
@@ -146,16 +147,27 @@ have:
   %top = load i64, ptr %topp
   %capp = getelementptr inbounds i8, ptr %a, i64 16
   %cap = load i64, ptr %capp
-  %end = add i64 %top, %sz
+  %data0 = getelementptr inbounds i8, ptr %a, i64 24
+  %at = ptrtoint ptr %data0 to i64
+  %at1 = add i64 %at, %top
+  %neg = sub i64 0, %at1
+  %am1 = sub i64 %align, 1
+  %pad1 = and i64 %neg, %am1
+  ; a frame of word alignment, nearly all, takes no padding: align is a
+  ; constant once LLVM has laid the frame out, so this folds away
+  %over = icmp ugt i64 %align, 8
+  %pad = select i1 %over, i64 %pad1, i64 0
+  %top2 = add i64 %top, %pad
+  %end = add i64 %top2, %sz
   %fits = icmp ule i64 %end, %cap
   br i1 %fits, label %fast, label %slow
 fast:
   store i64 %end, ptr %topp
   %data = getelementptr inbounds i8, ptr %a, i64 24
-  %p = getelementptr inbounds i8, ptr %data, i64 %top
+  %p = getelementptr inbounds i8, ptr %data, i64 %top2
   ret ptr %p
 slow:
-  %r = call ptr @veles_frame_alloc(ptr %t, ptr %l, i64 %size)
+  %r = call ptr @veles_frame_alloc(ptr %t, ptr %l, i64 %size, i64 %align)
   ret ptr %r
 }
 
@@ -217,14 +229,14 @@ type coroState struct {
 func (g *gen) coroPrologue() {
 	c := &coroState{task: "%task", link: "%link", depth: "%coro.depth", finalL: "coro.final", cleanupL: "coro.cleanup", suspendL: "coro.suspend"}
 	g.coro = c
-	// the frame is a collector object, whose body is 8-aligned: said so,
-	// LLVM realigns a field that needs more (an @align(n) local, D120)
-	// rather than assume the 16 it takes by default
 	g.emit("%%coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)")
 	g.emit("%%coro.size = call i64 @llvm.coro.size.i64()")
-	// a call's frame comes from the task's arena, a task's own from the
-	// collector (veles_frame_alloc)
-	g.emit("%%coro.mem = call ptr @veles.frame.alloc(ptr %%task, ptr %%link, i64 %%coro.size)")
+	// LLVM lays the frame out for its most aligned field and assumes that
+	// alignment of the storage (an over-aligned value, D120, needs more
+	// than a word), so the frame is allocated at it: from the task's arena
+	// for a call, from the collector for a task's own (veles_frame_alloc)
+	g.emit("%%coro.align = call i64 @llvm.coro.align.i64()")
+	g.emit("%%coro.mem = call ptr @veles.frame.alloc(ptr %%task, ptr %%link, i64 %%coro.size, i64 %%coro.align)")
 	g.emit("%%coro.hdl = call ptr @llvm.coro.begin(token %%coro.id, ptr %%coro.mem)")
 	g.emit("%%coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %%link, i32 0, i32 1")
 	g.emit("%%coro.depth = load i64, ptr %%coro.depthp")
@@ -674,7 +686,8 @@ func (g *gen) launch(e *sema.Launch) string {
 	g.emit("%s = call ptr @veles_task_launch(ptr %s, i64 %d)", ct, scope, e.Index)
 	if e.Unwrap {
 		// D141: `await` gives the Ok payload, which follows the tag
-		g.emit("call void @veles_task_set_unwrap(ptr %s, i64 %d)", ct, types.PayloadOffset)
+		off := g.layouter().PayloadOffset(g.resultTypeOf(e.Call.Fn.Sig))
+		g.emit("call void @veles_task_set_unwrap(ptr %s, i64 %d)", ct, off)
 	}
 	var argTypes []types.Type
 	var argVals []string
@@ -936,11 +949,11 @@ func (g *gen) gatherResults(e *sema.ScopeBlock) string {
 		g.placeLabel(joinL)
 		v = g.loadVal(want, res)
 		if tupleMem != "" {
-			g.storeVal(want, v, g.fieldPtr(llt, tupleMem, i))
+			g.storeVal(want, v, g.fieldPtr(llt, tupleMem, g.fidx(tt, i)))
 			continue
 		}
 		n := g.newTmp()
-		g.emit("%s = insertvalue %s %s, %s %s, %d", n, llt, acc, wantLL, v, i)
+		g.emit("%s = insertvalue %s %s, %s %s, %d", n, llt, acc, wantLL, v, g.fidx(tt, i))
 		acc = n
 	}
 	if tupleMem != "" {

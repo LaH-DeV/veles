@@ -793,8 +793,9 @@ Output:
 - **`@align(n)`** raises an alignment: on a field of an extern struct
   (C's `_Alignas`), or on any struct. `n` is a power of two from 1 to 4096,
   never below the natural alignment. An over-aligned struct is aligned
-  wherever it lives — locals, globals, list storage, the heap — which is
-  what keeps two hot counters on different cache lines.
+  wherever it lives — locals, globals, list storage, the heap, inside a
+  tuple, a `T?` or a sealed value — which is what keeps two hot counters
+  on different cache lines.
 - **`@transparent`** on a struct with one field gives a binding its own
   handle types at no cost: C sees the field, in registers and all.
 

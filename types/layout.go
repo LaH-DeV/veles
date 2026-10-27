@@ -15,8 +15,8 @@ import "sort"
 // without explicit padding, while a struct's LLVM type carries padding
 // wherever its fields' offsets need more than LLVM would do (StructPlan).
 type Layout struct {
-	// Sealed and ErrorUnion size the tagged types, which the code
-	// generator lays out in words; nil means 8 bytes of tag and nothing else.
+	// Sealed and ErrorUnion give the payload words of the tagged types,
+	// which the code generator lays out; nil means a tag and nothing else.
 	Sealed     func(*Sealed) int
 	ErrorUnion func(*ErrorUnion) int
 
@@ -56,9 +56,11 @@ func (l *Layout) Of(t Type) (size, align int) {
 		if _, ok := l.Niche(t.Elem); ok {
 			return l.Of(t.Elem)
 		}
-		return l.natural([]Type{TBool, t.Elem})
+		_, size, align := l.Placed([]Type{TBool, t.Elem})
+		return size, align
 	case *Tuple:
-		return l.natural(t.Elems)
+		_, size, align := l.Placed(t.Elems)
+		return size, align
 	case *Array:
 		size, align := l.Of(t.Elem)
 		n, _ := t.N()
@@ -69,15 +71,19 @@ func (l *Layout) Of(t Type) (size, align int) {
 		p := l.StructPlan(t)
 		return p.Size, p.Align
 	case *Sealed:
+		words := 0
 		if l.Sealed != nil {
-			return l.Sealed(t), 8
+			words = l.Sealed(t)
 		}
-		return 8, 8
+		off := l.PayloadOffset(t)
+		return roundUp(off+8*words, off), off
 	case *ErrorUnion:
+		words := 0
 		if l.ErrorUnion != nil {
-			return l.ErrorUnion(t), 8
+			words = l.ErrorUnion(t)
 		}
-		return 8, 8
+		off := l.PayloadOffset(t)
+		return roundUp(off+8*words, off), off
 	case *Enum:
 		return l.Of(t.Base)
 	}
@@ -85,9 +91,33 @@ func (l *Layout) Of(t Type) (size, align int) {
 }
 
 // PayloadOffset is where a sealed value's or an error union's payload
-// starts: after the tag, at its words' alignment. The runtime's fail-fast
-// `await` checks it (veles_task_set_unwrap).
-const PayloadOffset = 8
+// starts: after the tag, at 8, or at the alignment of an over-aligned
+// variant or member, so its `@align(n)` holds there too. The value is as
+// aligned as its payload. The runtime's fail-fast `await` is told it
+// (veles_task_set_unwrap).
+func (l *Layout) PayloadOffset(t Type) int {
+	off := 8
+	switch t := t.(type) {
+	case *Sealed:
+		for _, v := range t.Variants {
+			if t.IsRecursive() && !variantInline(v) {
+				// boxed, or a word at most: sizing it would come back here
+				// through the variant that holds the type itself
+				continue
+			}
+			if !l.VariantBoxed(v) {
+				_, a := l.Of(v)
+				off = max(off, a)
+			}
+		}
+	case *ErrorUnion:
+		for _, m := range t.Members {
+			_, a := l.Of(m)
+			off = max(off, a)
+		}
+	}
+	return off
+}
 
 // NichePath leads to a word that is never zero in a valid value (D214):
 // Path indexes struct fields, tuple elements, element 0 of an array and
@@ -126,7 +156,7 @@ func (l *Layout) Niche(t Type) (NichePath, bool) {
 			}
 		}
 	case *Tuple:
-		offs := l.Offsets(t.Elems)
+		offs, _, _ := l.Placed(t.Elems)
 		for i, e := range t.Elems {
 			if n, ok := l.Niche(e); ok {
 				return NichePath{Offset: offs[i] + n.Offset, Path: append([]int{i}, n.Path...)}, true
@@ -140,6 +170,14 @@ func (l *Layout) Niche(t Type) (NichePath, bool) {
 		}
 	}
 	return NichePath{}, false
+}
+
+// variantInline: the variant is declared `inline` (D198).
+func variantInline(v *Struct) bool {
+	if v.Template != nil {
+		return v.Template.Inline
+	}
+	return v.Inline
 }
 
 // VariantBoxed reports whether a variant is stored behind a pointer in its
@@ -219,7 +257,25 @@ func (l *Layout) Offsets(elems []Type) []int {
 	return offs
 }
 
-// natural lays elems out as LLVM would (a tuple, a nullable, a range).
+// Placed lays out the members of a tuple, or a nullable's flag and value:
+// each at the next multiple of its guaranteed alignment, so an
+// over-aligned struct keeps its `@align(n)` inside them too. Where no
+// member is over-aligned this is LLVM's own placement; otherwise the code
+// generator pads the LLVM type to match, as it does for structs.
+func (l *Layout) Placed(elems []Type) (offs []int, size, align int) {
+	offs = make([]int, len(elems))
+	align = 1
+	end := 0
+	for i, e := range elems {
+		s, a := l.Of(e)
+		align = max(align, a)
+		offs[i] = roundUp(end, a)
+		end = offs[i] + s
+	}
+	return offs, roundUp(end, align), align
+}
+
+// natural lays elems out as LLVM would (a range).
 func (l *Layout) natural(elems []Type) (size, align int) {
 	align = 1
 	end := 0

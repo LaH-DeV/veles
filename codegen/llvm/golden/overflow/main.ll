@@ -546,7 +546,8 @@ entry:
   store { ptr, ptr } %p2, ptr %a2
   %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
-  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size)
+  %coro.align = call i64 @llvm.coro.align.i64()
+  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size, i64 %coro.align)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
   %coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %link, i32 0, i32 1
   %coro.depth = load i64, ptr %coro.depthp
@@ -745,7 +746,8 @@ entry:
   %a175 = alloca %str
   %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
-  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size)
+  %coro.align = call i64 @llvm.coro.align.i64()
+  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size, i64 %coro.align)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
   %coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %link, i32 0, i32 1
   %coro.depth = load i64, ptr %coro.depthp
@@ -1286,7 +1288,8 @@ entry:
   %a2 = alloca i64
   %coro.id = call token @llvm.coro.id(i32 8, ptr null, ptr null, ptr null)
   %coro.size = call i64 @llvm.coro.size.i64()
-  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size)
+  %coro.align = call i64 @llvm.coro.align.i64()
+  %coro.mem = call ptr @veles.frame.alloc(ptr %task, ptr %link, i64 %coro.size, i64 %coro.align)
   %coro.hdl = call ptr @llvm.coro.begin(token %coro.id, ptr %coro.mem)
   %coro.depthp = getelementptr inbounds { ptr, i64, i64 }, ptr %link, i32 0, i32 1
   %coro.depth = load i64, ptr %coro.depthp

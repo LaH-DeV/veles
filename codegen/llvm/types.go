@@ -62,13 +62,9 @@ func (g *gen) llType(t types.Type) string {
 		if _, ok := g.niche(t); ok {
 			return g.llType(t.Elem) // null is all zeros (veles-layout-spec.md §5.2)
 		}
-		return "{ i1, " + g.llType(t.Elem) + " }"
+		return g.placedType(t, []types.Type{types.TBool, t.Elem})
 	case *types.Tuple:
-		parts := make([]string, len(t.Elems))
-		for i, e := range t.Elems {
-			parts[i] = g.llType(e)
-		}
-		return "{ " + strings.Join(parts, ", ") + " }"
+		return g.placedType(t, t.Elems)
 	case *types.Array:
 		return fmt.Sprintf("[%d x %s]", arrayLen(t), g.llType(t.Elem))
 	case *types.Range:
@@ -210,13 +206,66 @@ func (g *gen) structSlots(s *types.Struct) []structSlot {
 // fidx is the LLVM index of field i of a value of type t: i itself, unless
 // the struct's type carries padding before it (structBody).
 func (g *gen) fidx(t types.Type, i int) int {
-	if st, ok := t.(*types.Struct); ok {
-		g.structType(st)
-		if m := g.fieldMap[mangleType(st)]; m != nil {
+	switch t.(type) {
+	case *types.Struct, *types.Tuple, *types.Nullable:
+		g.llType(t)
+		if m := g.fieldMap[mangleType(t)]; m != nil {
 			return m[i]
 		}
 	}
 	return i
+}
+
+// placedType is the LLVM type of a tuple, or of a nullable with a flag
+// (members: the flag, then the value): the members where Layout.Placed
+// puts them, with `[n x i8]` wherever that is past LLVM's own placement —
+// only around an over-aligned member — recorded for fidx and overAlign as
+// structBody does.
+func (g *gen) placedType(t types.Type, elems []types.Type) string {
+	slots := g.placedSlots(elems)
+	parts := make([]string, len(slots))
+	idx := make([]int, len(elems))
+	remapped := false
+	for j, sl := range slots {
+		if sl.field < 0 {
+			parts[j] = fmt.Sprintf("[%d x i8]", sl.pad)
+			continue
+		}
+		idx[sl.field] = j
+		remapped = remapped || j != sl.field
+		parts[j] = g.llType(elems[sl.field])
+	}
+	body := "{ " + strings.Join(parts, ", ") + " }"
+	if remapped {
+		g.layouter() // makes fieldMap
+		g.fieldMap[mangleType(t)] = idx
+	}
+	if _, _, align := g.layouter().Placed(elems); align > g.llAlign(t) {
+		g.overAlign[body] = align
+	}
+	return body
+}
+
+// placedSlots is structSlots for the members of a tuple or flagged
+// nullable, placed by Layout.Placed.
+func (g *gen) placedSlots(elems []types.Type) []structSlot {
+	offs, size, _ := g.layouter().Placed(elems)
+	var slots []structSlot
+	at, llAlign := 0, 1
+	for i, e := range elems {
+		a := g.llAlign(e)
+		llAlign = max(llAlign, a)
+		if offs[i] > roundUpTo(at, a) {
+			slots = append(slots, structSlot{field: -1, pad: offs[i] - at})
+		}
+		slots = append(slots, structSlot{field: i})
+		es, _ := g.layout(e)
+		at = offs[i] + es
+	}
+	if roundUpTo(at, llAlign) != size {
+		slots = append(slots, structSlot{field: -1, pad: size - at})
+	}
+	return slots
 }
 
 func roundUpTo(n, a int) int {
@@ -232,9 +281,28 @@ func (g *gen) sealedType(s *types.Sealed) string {
 		return name
 	}
 	g.typeDecls[name] = ""
-	g.typeDecls[name] = fmt.Sprintf("{ i32, [%d x i64] }", g.payloadWords(s))
+	g.typeDecls[name] = g.taggedBody(name, s, g.payloadWords(s))
 	g.typeOrder = append(g.typeOrder, name)
 	return name
+}
+
+// taggedBody is the LLVM type of a sealed value or an error union: the tag,
+// then the payload words at index 1. A payload aligned past 8 bytes (an
+// over-aligned variant or member) starts at its alignment: the tag then
+// lies in the first bytes of an `[n x i8]`, read and written through
+// memory (isMem), so the payload's index stays 1.
+func (g *gen) taggedBody(name string, t types.Type, words int) string {
+	off := g.layouter().PayloadOffset(t)
+	if off == 8 {
+		return fmt.Sprintf("{ i32, [%d x i64] }", words)
+	}
+	g.overAlign[name] = off
+	size, _ := g.layout(t)
+	body := fmt.Sprintf("{ [%d x i8], [%d x i64]", off, words)
+	if tail := size - off - 8*words; tail > 0 {
+		body += fmt.Sprintf(", [%d x i8]", tail)
+	}
+	return body + " }"
 }
 
 func (g *gen) unionType(u *types.ErrorUnion) string {
@@ -243,7 +311,7 @@ func (g *gen) unionType(u *types.ErrorUnion) string {
 		return name
 	}
 	g.typeDecls[name] = ""
-	g.typeDecls[name] = fmt.Sprintf("{ i32, [%d x i64] }", g.unionWords(u))
+	g.typeDecls[name] = g.taggedBody(name, u, g.unionWords(u))
 	g.typeOrder = append(g.typeOrder, name)
 	return name
 }
@@ -274,8 +342,8 @@ func (g *gen) payloadWords(t types.Type) int {
 func (g *gen) layouter() *types.Layout {
 	if g.lay == nil {
 		g.lay = &types.Layout{
-			Sealed:     func(s *types.Sealed) int { return 8 + 8*g.payloadWords(s) },
-			ErrorUnion: func(u *types.ErrorUnion) int { return 8 + 8*g.unionWords(u) },
+			Sealed:     func(s *types.Sealed) int { return g.payloadWords(s) },
+			ErrorUnion: func(u *types.ErrorUnion) int { return g.unionWords(u) },
 		}
 		g.fieldMap = map[string][]int{}
 		g.overAlign = map[string]int{}

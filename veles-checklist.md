@@ -1201,6 +1201,16 @@ SystemClock()` with plain reads and `with clock = Fake()` rebinding, as
   unconditional `loop` (and of a labelled one it targets); leave it (the
   workaround is a value: `var found = -1`, or `val found = xs.indexOf(3)`).
 
+- Q64: a named function passed where a suspending or throwing function is
+  expected (D40, D116; found 2026-10-27). `[1, 2].map(double)` with
+  `fun double(n: i64): i64` is refused — "a function value does not take on
+  'suspends' or 'throws' — pass a lambda that calls it" — because `map`'s
+  parameter is conditionally `suspends throws E` and a function value keeps
+  its own calling convention. Options: the compiler wraps a *named*
+  function (not a variable holding one) in the lambda itself, so
+  `xs.map(double)` works as Kotlin's `xs.map(::double)` does; or leave it
+  (the error names the fix, `xs.map(n => double(n))`).
+
 (2026-10-25: Q58, integer overflow in release, from the security review: D209.)
 (2026-10-26: Q61 and Q62, value layout, prepared in `veles-layout-spec.md`: D214, D215.)
 (2026-10-26: the patterns menu, `veles-patterns.md`: P1 → D210, P3 → D211; P2 → Q59, P4 → Q60 open; P5 and R1–R8 not yet asked.)
@@ -1449,15 +1459,20 @@ Every new public std API (http cookies/forms/client, `std/log`,
 
 ## 11. Known limitations to revisit
 
-- [ ] **Value layout left over (plan B32 step 6, `veles-layout-spec.md`
-      §5.3–5.4).** (a) A sealed payload's GC descriptor lists every payload
-      word, not the union of the variants' pointer offsets: more scanning,
-      and an `i64` that looks like a heap address keeps garbage alive.
-      (b) `@align(n)` values inside tuples, nullables and sealed payloads
-      are not over-aligned there (D120 accepts it). (c) Borrowed big
-      parameters are `ptr` without `noalias`: add it once the GC/thread
-      stress passes with it. (d) Parked with numbers: a niche in `string`
-      and in sealed values (1-based tags).
+- [ ] **A nullable niche in `string` and in sealed values** (parked with
+      numbers, `veles-layout-spec.md` §5.5): a `string?` or sealed `T?`
+      still carries a flag word. A string niche needs every empty string to
+      have a non-null pointer (C-produced ones included); a sealed one needs
+      1-based tags at every tag site, for 2 uses in `selfhost`.
+- [x] **Value layout left over (plan B32 step 6), done 2026-10-27:** exact
+      GC maps for sealed and error payloads (the union of the variants'
+      pointer words); `@align(n)` kept inside tuples, nullables and sealed
+      or error payloads (D120 note); `noalias nocapture readonly` on
+      borrowed big parameters (D121 note). Found on the way and fixed: a
+      suspending function's frame was allocated 8-aligned while LLVM laid
+      it out for an over-aligned local, so a release build crashed on a
+      large `@align(64)` local kept across a suspension (frames now come
+      at `llvm.coro.align`; golden `overalign` runs it in release).
 - [ ] **`http.serve`: `idleTimeout` also bounds a new connection's first
       request** (`std/http/http.vs` `requestLine`; found 2026-10-27 when
       `std/http`'s "closed while idle is replaced" test failed once in the

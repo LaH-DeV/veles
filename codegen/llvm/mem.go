@@ -54,7 +54,8 @@ func (g *gen) isMem(t types.Type) bool {
 	}
 	g.memo[key] = false // a type that contains itself by value was refused earlier
 	size, _ := g.layout(t)
-	v := size > wideThreshold || size >= memThreshold && g.holdsArray(t, map[string]bool{})
+	v := size > wideThreshold || size >= memThreshold && g.holdsArray(t, map[string]bool{}) ||
+		g.layouter().PayloadOffset(t) > 8 // its tag is not an LLVM field (taggedBody)
 	g.memo[key] = v
 	return v
 }
@@ -377,7 +378,7 @@ func (g *gen) nullVal(nt *types.Nullable, v string) string {
 		return g.loadVal(nt.Elem, g.nullPayloadPtr(nt, v))
 	}
 	r := g.newTmp()
-	g.emit("%s = extractvalue %s %s, 1", r, g.llType(nt), v)
+	g.emit("%s = extractvalue %s %s, %d", r, g.llType(nt), v, g.fidx(nt, 1))
 	return r
 }
 
@@ -392,7 +393,7 @@ func (g *gen) nullPayloadPtr(nt *types.Nullable, base string) string {
 	if _, ok := g.niche(nt); ok {
 		return base
 	}
-	return g.fieldPtr(g.llType(nt), base, 1)
+	return g.fieldPtr(g.llType(nt), base, g.fidx(nt, 1))
 }
 
 // storeNullFlag sets whether the nullable stored at base (not pointer-like)
@@ -455,7 +456,7 @@ func (g *gen) nicheStep(t types.Type, i int) (int, types.Type) {
 	case *types.Struct:
 		return g.fidx(t, i), t.Fields[i].Type
 	case *types.Tuple:
-		return i, t.Elems[i]
+		return g.fidx(t, i), t.Elems[i]
 	case *types.Array:
 		return 0, t.Elem
 	}

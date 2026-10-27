@@ -227,9 +227,8 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 	case "map.entries":
 		kt, vt := keyValTypes(e.Args[0].Type())
 		tt := &types.Tuple{Elems: []types.Type{kt, vt}}
-		va := g.llAlign(vt)
-		ks := g.sizeOf(kt)
-		valOffset := (ks + va - 1) / va * va
+		offs, _, _ := g.layouter().Placed(tt.Elems)
+		valOffset := offs[1]
 		m := g.expr(e.Args[0])
 		v := g.newTmp()
 		g.emit("%s = call ptr @veles_map_entries(ptr %s, ptr %s, i64 %d, i64 %d)", v, m, g.arrayDescOf(tt), valOffset, g.sizeOf(tt))

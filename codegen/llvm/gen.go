@@ -760,7 +760,14 @@ func (g *gen) function(fn *sema.Func) {
 	}
 	bind := func(v *sema.Var, i int) {
 		llt := g.vt(v.Type)
-		params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
+		if g.isMem(v.Type) {
+			// the callee only reads the argument, in place or by copying it
+			// below, and keeps no pointer to it; nothing else writes it
+			// during the call, which exprArg's lending rule ensures
+			params = append(params, fmt.Sprintf("ptr noalias nocapture readonly %%p%d", i))
+		} else {
+			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
+		}
 		if g.isMem(v.Type) {
 			// a memory-class argument is an address the caller may have lent
 			// from its own storage (exprArg): read in place by a body that

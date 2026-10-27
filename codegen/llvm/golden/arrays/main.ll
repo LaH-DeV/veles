@@ -24,7 +24,7 @@ fill.done.3:
   ret void
 }
 
-define i64 @v_main.weight(ptr %p1) {
+define i64 @v_main.weight(ptr noalias nocapture readonly %p1) {
 entry:
   %a1 = alloca i64
   %a3 = alloca [256 x i8]

@@ -4110,9 +4110,9 @@ literal power of two from 1 to 4096 (a page; the collector's spans are
 aligned to more). An over-aligned struct is aligned where it is stored —
 locals, globals, fields, list storage, boxed and captured values (the
 collector hands out a body that aligned, from a size class the alignment
-divides) — but not when it sits inside a tuple, a nullable or a sealed
-payload, which LLVM lays out by its own rules (a copy there is still
-correct, only not over-aligned). A field of a `@packed` struct is read and
+divides), and since 2026-10-27 (plan B32) inside a tuple, a nullable and a
+sealed or error payload too, which then start at the value's alignment
+with padding before them. A field of a `@packed` struct is read and
 written through the whole struct, so the compiler never forms a pointer of
 the field's type: `&p.field` is refused, and a method called on such a
 field gets a copy. A `@packed` struct does not cross into C by value yet
@@ -4123,7 +4123,11 @@ blocks; its fields are C types. `@transparent` applies to plain structs
 `raw`, which is a keyword; it is `handle` in the docs. Found with it: a
 coroutine frame told LLVM it was 16-byte aligned (`llvm.coro.id(i32 0)`)
 while the collector gives 8 — harmless while nothing needed more than 8;
-it now says 8, so LLVM realigns any stricter field itself.
+it now says 8. That did not make LLVM realign a stricter field: it lays
+the frame out for its most aligned field and assumes the storage is that
+aligned, so a release build crashed on a large `@align(64)` local kept
+across a suspension; since 2026-10-27 the frame is allocated at
+`llvm.coro.align`.
 
 ### D121 — `Array<T, N>`: fixed-size inline arrays, and const generic parameters (v0.64)
 
@@ -4208,7 +4212,11 @@ _Built 2026-10-03 (B16)._ Settled while building:
   points into or captures, which no other argument of the call writes —
   and of a copy otherwise; a callee that writes its parameter or lends a
   pointer into it copies it on entry. Measured on `bench/bigargs`: 88 ms →
-  46 ms (Go 90 ms)._
+  46 ms (Go 90 ms). 2026-10-27: the parameter is `noalias nocapture
+  readonly` — the callee only reads it, and the rule above is what makes
+  `noalias` true; the GC and thread stress runs pass with it. A sealed,
+  `Result` or error union value with an over-aligned payload is in the
+  memory class whatever its size (its tag is not an LLVM field)._
 - **Reads.** `a.at(i)` is `T?`, and `T` where the index is a constant in
   range (an out-of-range constant is an error), where a bounds fact proves it
   (`loop (i in a.indices())`, `loop (i in 0..<K.len())`, `loop (i < 4)`), and
