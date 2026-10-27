@@ -1191,26 +1191,7 @@ SystemClock()` with plain reads and `with clock = Fake()` rebinding, as
   sugar over D72 (recommended), or documenting `TaskLocal(fallback:)` as
   the pattern. User, 2026-10-26: "probably keyword but do not decide now".
 
-- Q63: definite assignment through `break` (D214, raised by the
-  2026-10-27 review). D214 says an assignment inside a loop body does not
-  count after the loop, so the usual search loop is refused:
-  `var found: i64` then `loop { if (xs.at(i) == 3) { found = i; break } … }`
-  then `found` — "used before it is assigned". Rust, Swift and Kotlin accept
-  it for a loop with no condition: the only way out is a `break`, and every
-  `break` has assigned. Options: join the facts of every `break` of an
-  unconditional `loop` (and of a labelled one it targets); leave it (the
-  workaround is a value: `var found = -1`, or `val found = xs.indexOf(3)`).
-
-- Q64: a named function passed where a suspending or throwing function is
-  expected (D40, D116; found 2026-10-27). `[1, 2].map(double)` with
-  `fun double(n: i64): i64` is refused — "a function value does not take on
-  'suspends' or 'throws' — pass a lambda that calls it" — because `map`'s
-  parameter is conditionally `suspends throws E` and a function value keeps
-  its own calling convention. Options: the compiler wraps a *named*
-  function (not a variable holding one) in the lambda itself, so
-  `xs.map(double)` works as Kotlin's `xs.map(::double)` does; or leave it
-  (the error names the fix, `xs.map(n => double(n))`).
-
+(2026-10-27: Q63 → D216, Q64 → D217.)
 (2026-10-25: Q58, integer overflow in release, from the security review: D209.)
 (2026-10-26: Q61 and Q62, value layout, prepared in `veles-layout-spec.md`: D214, D215.)
 (2026-10-26: the patterns menu, `veles-patterns.md`: P1 → D210, P3 → D211; P2 → Q59, P4 → Q60 open; P5 and R1–R8 not yet asked.)
@@ -1456,6 +1437,8 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-26 | A singleton with a lifecycle (menu P3) | **Made in `main` and handed down, spec D211** (user, recommended of 2): module initializers still cannot throw or suspend, and nothing is closed after `main`. Rejected: throwing/suspending initializers in the root package with globals closed after `main`; a `service` declaration. |
 | 2026-10-26 | Q61: a local `var x: T` with no value (`veles-layout-spec.md`; it was zero-filled, so `*T` and handles could be null) | **Definite assignment before any read, `&`, capture or method call, spec D214** (user, recommended of 3), with the validity invariant `unsafe` must keep. Rejected: Go-style zero values for the types whose zero is valid; leaving it. |
 | 2026-10-26 | Q62: what a plain struct's layout promises | **Declaration order with C's alignment rule is guaranteed; `compact struct` (a contextual word, like `inline`/`indirect`) lets the compiler place fields for minimal size; encodings of `T?`, sealed, error unions, closures and trait objects are unspecified, spec D215** (user: "declaration order guaranteed" plus "a modifier … I prefer a keyword"; then `compact`, recommended of 3). Rejected: automatic reordering of every struct (0.4 % measured); `@compact`; no opt-in. |
+| 2026-10-27 | Q63: definite assignment through `break` (D214) | **A variable assigned on every way out of a loop — each `break` leaving it, and the normal end of a loop with a condition — is assigned after it, spec D216** (user, recommended of 3). Rejected for now: `break value` loops (could come later on top); leaving the search loop refused. |
+| 2026-10-27 | Q64: a plain function where a parameter may suspend (D40, D116) | **A function value without `suspends` (named or a variable) is accepted for a `suspends` parameter of a conditionally suspending function; the call is plain; a parameter the callee keeps still refuses, spec D217** (user, recommended of 3). Rejected: adapters everywhere (a hidden closure for a variable); leaving `xs.map(double)` refused. |
 
 ## 11. Known limitations to revisit
 

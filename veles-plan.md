@@ -110,7 +110,8 @@ decision-free unless it names a Q.
    Unicode tables, `fmt.quote`, the lint AST, splitting `std/http`).
 6. [ ] **Track P** from P2 (P1's `build.target` landed with C9; per-target
    files and the LSP per OS are what is left of P1).
-7. Decisions waiting for the user (checklist §9): Q45, Q57, Q59, Q60, Q63, Q64.
+7. Decisions waiting for the user (checklist §9): Q45, Q57, Q59, Q60.
+   (Q63 → D216 and Q64 → D217, decided and built 2026-10-27.)
 
 **Where to continue (2026-10-14 audit, history):** every step above is done, and so are tracks C
 and F. B17 (D142 visibility) and B20 (D158 bare members) were built 2026-10-17. Next, in
@@ -536,6 +537,29 @@ on Linux).
 ## Progress log
 
 Older entries: `archive/progress-log-2026-09.md`.
+
+### 2026-10-27 — Q63 → D216, Q64 → D217, decided and built
+
+- **D216** (definite assignment through `break`, amends D214): each `Loop`
+  keeps the assigned-facts true at every `break` that leaves it (labelled
+  ones from inner loops included); a loop with no condition and no
+  iterable takes them as its facts after the loop. Loops with a condition
+  or an iterable are unchanged (their normal end keeps the entry facts).
+  `sema/testdata/conform/D216-assigned-through-break.vs` (the search loop,
+  a break that skips the assignment, a labelled break, a loop over a
+  list, a `return` path); chapter 2 shows the search loop running.
+- **D217** (a plain function where a parameter may suspend, amends D116
+  and D40): the checker accepts a function value without `suspends` for a
+  `suspends` parameter as a `Cast` and records where; suspension
+  inference judges it by the value itself (a named function by whether it
+  suspends, a variable by its own type); after inference
+  `sema/plainfunc.go` keeps only direct arguments of a conditionally
+  suspending function whose call no other argument makes suspend, and
+  refuses the rest with a message per case (kept, another argument
+  suspends, a suspending function whose value type says otherwise, not an
+  argument). `xs.map(double)`, `xs.map(f)`, `filter(isOdd)`, `fold(0, add)`
+  run in debug and release. `sema/testdata/conform/D217-plain-function-values.vs`;
+  chapter 10 and the error reference updated.
 
 ### 2026-10-27 — B29 part 3: D211's docs chapter; B29 complete
 

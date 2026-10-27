@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.116** — decisions D1–D215. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.117** — decisions D1–D217. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -8842,6 +8842,80 @@ Both levels: by default the layout is what is written, for those who
 manage memory by hand. `compact` asks the compiler to do it. Self-hosting:
 the self-hosted lexer, parser and formatter learn the word with the Go
 front end (gate G1–G5).
+
+### D216 — A variable assigned before every `break` is assigned after the loop (v0.117)
+
+```veles
+fun firstNegative(xs: List<i64>): i64 {
+  var found: i64
+  var i = 0
+  loop {
+    if (i == xs.len()) {
+      found = -1
+      break
+    }
+    if ((xs.at(i) ?: 0) < 0) {
+      found = i
+      break
+    }
+    i += 1
+  }
+  found              // assigned: every way out of the loop assigned it
+}
+```
+
+Amends D214 (checklist Q63, raised by the 2026-10-27 review). D214 counted
+nothing assigned inside a loop body after the loop, which refused the usual
+search loop; Rust (`loop`), Swift and Kotlin (`while (true)`) and
+TypeScript accept it.
+
+- **Rule.** What is assigned after a loop is what is assigned on _every way
+  out_ of it: each `break` that leaves it — a labelled `break outer` from a
+  loop inside included — and, for a loop with a condition or over a
+  collection (`loop (cond)`, `loop (x in xs)`), its normal end, where what
+  held before the loop holds (the body may not run). A `loop { }` with no
+  condition ends only by `break`, so the `break`s alone decide. `return`,
+  `throw`, `continue` and a call that never returns are not ways out of the
+  loop.
+- Unchanged: an assignment the body makes on only some paths still does not
+  count; everything else in D214 stands.
+
+User, 2026-10-27, recommended of 3. Rejected for now: a loop that gives a
+value, `val found = loop { … break i }` (Rust) — new syntax; it could be
+added on top of this later. Rejected: leaving it (a placeholder value is
+what D214 exists to discourage).
+
+### D217 — A plain function where a parameter may suspend (v0.117)
+
+```veles
+fun double(n: i64): i64 => n * 2
+
+val total = [1, 2].map(double).sum()        // accepted: map's parameter only may suspend
+```
+
+Amends D116 and D40 (checklist Q64, found 2026-10-27). D116 makes a
+`suspends` parameter mean _may suspend_, and a call of a conditionally
+suspending function plain when nothing passed to such a parameter
+suspends; a lambda written in place adapts. A function value did not: its
+type says no `suspends`, so `xs.map(double)` was refused, although D116
+already compiles the plain copy of `map` that such a call needs. (`throws`
+was not the problem: `E` of a `throws E` parameter already follows the
+argument.)
+
+- **Rule.** A function value whose type does not say `suspends` — a named
+  function or a variable — is accepted for a `suspends` parameter of a
+  conditionally suspending function (`map`, `filter`, `forEach`, `fold`,
+  `withLock`, `TaskLocal.withValue`, …). The call is plain, exactly as with
+  a plain lambda; nothing is wrapped and nothing costs more.
+- A parameter the function _keeps_ — stores, returns, or hands to a function
+  that is not conditional (D116's "not conditional") — is truly
+  suspending: a plain function value there stays an error, with the message
+  saying the function keeps it and the fix `(x) => f(x)`.
+
+User, 2026-10-27, recommended of 3. Rejected: adapting a plain function
+value everywhere (a hidden closure for a variable, where the parameter is
+kept); leaving it (point-free code never worked with the collection
+operations).
 
 ### I1 — generators: investigated, not decided
 

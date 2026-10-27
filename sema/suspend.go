@@ -76,8 +76,12 @@ func (w susp) argSuspends(a Expr) bool {
 		if w.plainVar(v.Var) {
 			return false
 		}
+	case *FuncRef:
+		return v.Fn.Suspends || v.Fn.suspends // a named function suspends as it does (D217)
 	}
-	return funcTypeSuspends(a.Type())
+	// the value's own type: a plain one passed where the parameter may
+	// suspend is under a Cast that says it does (D217)
+	return funcTypeSuspends(FuncValueOf(a).Type())
 }
 
 // FuncValueOf is the function value an expression passes on unchanged:
@@ -262,6 +266,7 @@ func (c *Checker) inferSuspension(prog *Program) {
 		}
 	}
 	c.checkDeclaredSuspension(prog)
+	c.checkPlainFuncArgs(prog)
 }
 
 // suspensionFixpoint computes Suspends and Conditional for every function.

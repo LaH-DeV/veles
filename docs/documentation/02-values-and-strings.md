@@ -62,7 +62,41 @@ afternoon
 
 An `if` used as a value usually reads better (`val part = if (hour < 12)
 "morning" else "afternoon"`); the form above is for values built across
-several statements.
+several statements. A loop counts too: after a `loop { }` with no
+condition, which ends only by `break`, a variable assigned before every
+`break` is assigned (D216). A loop with a condition, or over a list, may
+end without running its body, so what it assigns does not count there.
+
+```veles
+use io
+
+fun firstNegative(xs: List<i64>): i64 {
+  var found: i64
+  var i = 0
+  loop {
+    if (i == xs.len()) {
+      found = -1
+      break
+    }
+    if ((xs.at(i) ?: 0) < 0) {
+      found = i
+      break
+    }
+    i += 1
+  }
+  found
+}
+
+fun main() {
+  io.println("${firstNegative([4, 2, -7, 1])} ${firstNegative([1])}")
+}
+```
+
+Output:
+
+```text
+2 -1
+```
 
 ## Numbers
 

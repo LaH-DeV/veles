@@ -267,6 +267,9 @@ type Loop struct {
 
 	hasBreak    bool
 	hasContinue bool
+	// breakAssigned: the variables assigned on the way to every `break`
+	// that leaves this loop so far (D216)
+	breakAssigned facts
 }
 
 type Break struct {

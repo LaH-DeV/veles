@@ -33,6 +33,9 @@ type Checker struct {
 	seen       map[string]bool
 	// lazyOf maps the hidden global of a `lazy val` to the value it builds
 	// (D210), for messages; lazyInit the span of each one's initializer
+	// plainFuncAt: each plain function value accepted where a parameter may
+	// suspend, and where it was written (D217)
+	plainFuncAt map[*Cast]source.Span
 	lazyOf   map[*Global]*Global
 	lazyInit map[source.Span]*Global
 	lazyDecl map[*Global]*ast.ValDecl // the declaration as written, for hover

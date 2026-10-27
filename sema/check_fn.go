@@ -758,6 +758,7 @@ func (f *fnCtx) checkStmtAt(s ast.Stmt) (stmts []Stmt, term bool) {
 		if lp == nil {
 			return nil, true
 		}
+		f.noteBreakAssigned(lp, !lp.hasBreak)
 		lp.hasBreak = true
 		f.leaveAwaited(s.Pos, f.loopIndex(lp))
 		return []Stmt{&Break{Loop: lp}}, true
@@ -1145,6 +1146,22 @@ func (f *fnCtx) assignPlace(targetAst ast.Expr, target Expr, root *Var, value Ex
 	return &Assign{Target: target, Value: value}
 }
 
+// noteBreakAssigned keeps, for the loop a `break` leaves, the variables
+// assigned on the way to it and to every earlier break of it (D216).
+func (f *fnCtx) noteBreakAssigned(lp *Loop, first bool) {
+	now := facts{}
+	for k, v := range f.narrow {
+		if k.path == pathAssigned {
+			now[k] = v
+		}
+	}
+	if first {
+		lp.breakAssigned = now
+		return
+	}
+	lp.breakAssigned = mergeFacts(lp.breakAssigned, now)
+}
+
 // declaredWithoutValue: v, or the variable a lambda's capture v stands for,
 // is a local `var` declared without a value (D214).
 func declaredWithoutValue(v *Var) bool {
@@ -1493,7 +1510,17 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 	// `break` may leave before it; what held on entry still does (the
 	// variables the body assigns were dropped above).
 	entry := f.saveNarrow()
-	defer func() { f.restoreNarrow(mergeFacts(entry, f.saveNarrow())) }()
+	defer func() {
+		after := mergeFacts(entry, f.saveNarrow())
+		if s.Cond == nil && s.Iter == nil && lp.hasBreak {
+			// a loop with no condition ends only by `break`: what every break
+			// had assigned is assigned after it (D216)
+			for k, v := range lp.breakAssigned {
+				after[k] = v
+			}
+		}
+		f.restoreNarrow(after)
+	}()
 	if s.Cond != nil {
 		f.lintLoopTrue(s)
 	}

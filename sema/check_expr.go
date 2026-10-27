@@ -118,6 +118,17 @@ func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 		if wf, ok := want.(*types.Func); ok && len(hf.Params) == len(wf.Params) && (hf.Effects != wf.Effects) {
 			// same shape, different effects: a function value keeps its own
 			// calling convention, a lambda written in place adapts (D40)
+			if wf.Effects.Suspends && !hf.Effects.Suspends && hf.Effects.Throws == wf.Effects.Throws && (!hf.Effects.Throws || types.Identical(hf.Effects.Error, wf.Effects.Error)) && f.c.lazyInit[span] == nil {
+				// D217: a plain function where a parameter may suspend; whether
+				// that parameter only may (the call is then plain) is known after
+				// suspension inference (checkPlainFuncArgs)
+				c := &Cast{exprBase{want}, x}
+				if f.c.plainFuncAt == nil {
+					f.c.plainFuncAt = map[*Cast]source.Span{}
+				}
+				f.c.plainFuncAt[c] = span
+				return c
+			}
 			if lazy := f.c.lazyInit[span]; lazy != nil {
 				f.errorf(span, "the initializer of 'lazy val %s' cannot throw or suspend: it runs inside whichever read comes first, which neither handles an error nor waits; handle the error in it ('?? fallback', 'catch'), or build the value in 'main' and pass it down (D210)", lazy.Display)
 				return x

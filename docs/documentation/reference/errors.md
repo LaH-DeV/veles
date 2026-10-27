@@ -217,8 +217,21 @@ for no particular reason — use `i64` unless the width matters.
 
 #### `a function value does not take on 'suspends' or 'throws'`
 
-A named function passed where a `suspends` or `throws` function type is
-wanted: pass a lambda that calls it, `(x) => f(x)` (D40).
+A named function or a function variable passed where its effects do not
+fit: one that throws where the parameter does not, for instance. Pass a
+lambda that calls it, `(x) => f(x)`; a lambda written in place takes the
+effects the parameter asks for (D40). A plain function where the
+parameter only _may_ suspend is no error (`xs.map(double)`, D217).
+
+#### `a function that does not suspend cannot stand here`
+
+A plain function value accepted where a parameter may suspend (D217) is
+refused when the call would run it as a suspending function after all:
+the function it is passed to keeps it (stores or returns it), another
+argument makes the call suspend, it is passed through a function value or
+a trait object, or it is not an argument at all
+(`val g: fun(i64): i64 suspends = double`). The fix is the lambda that
+calls it, `(x) => f(x)`, which is compiled as a suspending function.
 
 #### `type mismatch: expected '(y: i64, x: i64)', found '(x: i64, y: i64)'; the labels differ`
 
