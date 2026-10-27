@@ -34,6 +34,9 @@ type Checker struct {
 	// typeSite: the generic call being checked, where a type its inference
 	// instantiates is reported (checkConstArgs)
 	typeSite source.Span
+	// allocAt: where each allocating node was written, kept across rounds
+	// (Program.allocAt)
+	allocAt map[Expr]source.Span
 	// exportedC: the `extern "C" fun`s by C symbol (D69), by declaration so
 	// a later inference round sees the same one again
 	exportedC map[string]*ast.FunDecl
@@ -2798,6 +2801,11 @@ func (c *Checker) runRound() *Program {
 		}
 	}
 	c.prog.ResultType = func(ok, err types.Type) types.Type { return c.ResultType(ok, err) }
+	// one table for every round: a node made once (a field default) is reused
+	if c.allocAt == nil {
+		c.allocAt = map[Expr]source.Span{}
+	}
+	c.prog.allocAt = c.allocAt
 	c.queue = nil
 	c.instances = map[string]*Func{}
 	c.funcs = nil

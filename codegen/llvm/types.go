@@ -341,10 +341,7 @@ func (g *gen) payloadWords(t types.Type) int {
 // layouter is the layout state, made on first use.
 func (g *gen) layouter() *types.Layout {
 	if g.lay == nil {
-		g.lay = &types.Layout{
-			Sealed:     func(s *types.Sealed) int { return g.payloadWords(s) },
-			ErrorUnion: func(u *types.ErrorUnion) int { return g.unionWords(u) },
-		}
+		g.lay = &types.Layout{}
 		g.fieldMap = map[string][]int{}
 		g.overAlign = map[string]int{}
 	}

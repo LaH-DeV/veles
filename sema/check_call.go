@@ -1029,7 +1029,7 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 		result = f.runInit(st, initFn, lit, args, span)
 	}
 	if st.Sealed != nil && !variantWanted(want, st) {
-		result = &MakeVariant{exprBase{st.Sealed}, st.Sealed, st, result}
+		result = f.c.noteAlloc(&MakeVariant{exprBase{st.Sealed}, st.Sealed, st, result}, span)
 	}
 	return result
 }
@@ -2362,7 +2362,7 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 		return bad()
 	}
 	f.c.noteBoxed(t)
-	return &Box{exprBase{trait}, x, trait, methods}
+	return f.c.noteAlloc(&Box{exprBase{trait}, x, trait, methods}, span)
 }
 
 // objectMethods instantiates the methods of t's table as a trait's object,

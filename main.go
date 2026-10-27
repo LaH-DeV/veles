@@ -10,6 +10,7 @@
 //	veles lint  --list            the lints a package may set in [lint]
 //	veles explain <family>         what an error means and how to fix it (the "see:" line)
 //	veles explain <file.vs | dir> --derive [Type]  print the implements the compiler wrote
+//	veles explain --alloc <file.vs | dir> [fun]     where the program allocates on the heap (D213)
 //	veles new   <dir>             create a package that runs and tests (--template server: an HTTP service)
 //	veles doc   [dir] [-o out]    the package's public API as Markdown
 //	veles fetch [dir]             download the registry and git dependencies and record them in veles.sum
@@ -34,7 +35,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--sanitize] [--timings] [--const-steps n] [--fix] [--dump names|types|hir] [--dump-std] [--filter text] [--timeout 10m] [--jobs n] [--fail-on-skip] [-- args...] | veles explain <family> | veles explain <path> --derive [Type] | veles fmt <paths...> [--check] [--stdout] | veles new <dir> [--template app|server] | veles doc [dir] [-o out] | veles fetch [dir] | veles add <spec>[@version] [--as name] [--dev] | veles update <name>... [--all] | veles remove <name>... | veles deps [dir] [--why name] | veles vendor [dir] | veles audit [dir] [--detail] | veles publish [dir] | veles yank <owner/name>@<version> [--reason text] [--undo] | veles attest keygen|sign|verify|import | veles lsp")
+	fmt.Fprintln(os.Stderr, "usage: veles <build|run|test|check|parse|tokens> <path> [-o output] [--emit-llvm] [--keep] [--release] [--sanitize] [--timings] [--const-steps n] [--fix] [--dump names|types|hir] [--dump-std] [--filter text] [--timeout 10m] [--jobs n] [--fail-on-skip] [-- args...] | veles explain <family> | veles explain <path> --derive [Type] | veles explain --alloc <path> [fun] | veles fmt <paths...> [--check] [--stdout] | veles new <dir> [--template app|server] | veles doc [dir] [-o out] | veles fetch [dir] | veles add <spec>[@version] [--as name] [--dev] | veles update <name>... [--all] | veles remove <name>... | veles deps [dir] [--why name] | veles vendor [dir] | veles audit [dir] [--detail] | veles publish [dir] | veles yank <owner/name>@<version> [--reason text] [--undo] | veles attest keygen|sign|verify|import | veles lsp")
 	os.Exit(2)
 }
 
@@ -112,17 +113,32 @@ func command() int {
 		}
 		return 0
 	case "explain":
-		opts := driver.ExplainOptions{Path: path}
-		for _, a := range os.Args[3:] {
+		opts := driver.ExplainOptions{}
+		var names []string
+		for _, a := range os.Args[2:] {
 			switch {
 			case a == "--derive":
 				opts.Derive = true
+			case a == "--alloc":
+				opts.Alloc = true
 			case strings.HasPrefix(a, "-"):
 				fmt.Fprintf(os.Stderr, "unknown flag %q\n", a)
 				usage()
 			default:
-				opts.TypeName = a
+				names = append(names, a)
 			}
+		}
+		if len(names) == 0 || len(names) > 2 {
+			usage()
+		}
+		opts.Path = names[0]
+		path = names[0]
+		if len(names) == 2 {
+			opts.TypeName = names[1]
+		}
+		if opts.Alloc {
+			// `veles explain --alloc <path> [fun]`: the heap allocation sites (D213)
+			return driver.ExplainAlloc(opts)
 		}
 		if !opts.Derive {
 			// `veles explain private-to-module`: the name a "see:" line gives

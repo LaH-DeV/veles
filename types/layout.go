@@ -15,11 +15,6 @@ import "sort"
 // without explicit padding, while a struct's LLVM type carries padding
 // wherever its fields' offsets need more than LLVM would do (StructPlan).
 type Layout struct {
-	// Sealed and ErrorUnion give the payload words of the tagged types,
-	// which the code generator lays out; nil means a tag and nothing else.
-	Sealed     func(*Sealed) int
-	ErrorUnion func(*ErrorUnion) int
-
 	plans map[*Struct]StructPlan
 }
 
@@ -71,16 +66,14 @@ func (l *Layout) Of(t Type) (size, align int) {
 		p := l.StructPlan(t)
 		return p.Size, p.Align
 	case *Sealed:
-		words := 0
-		if l.Sealed != nil {
-			words = l.Sealed(t)
-		}
+		words := l.SealedPayloadWords(t)
 		off := l.PayloadOffset(t)
 		return roundUp(off+8*words, off), off
 	case *ErrorUnion:
 		words := 0
-		if l.ErrorUnion != nil {
-			words = l.ErrorUnion(t)
+		for _, m := range t.Members {
+			s, _ := l.Of(m)
+			words = max(words, (s+7)/8)
 		}
 		off := l.PayloadOffset(t)
 		return roundUp(off+8*words, off), off

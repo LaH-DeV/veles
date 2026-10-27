@@ -36,6 +36,11 @@
           "default": "veles",
           "description": "Path to the `veles` compiler binary; the language server is `veles lsp`."
         },
+        "veles.inlayHints.allocations": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show a `heap` hint after each expression that allocates on the heap, with what it allocates and how to avoid it in its tooltip (D213)."
+        },
         "veles.trace.server": {
           "type": "string",
           "enum": ["off", "messages", "verbose"],

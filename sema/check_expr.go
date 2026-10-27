@@ -164,7 +164,7 @@ func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 		}
 	case *types.Sealed:
 		if st, ok := have.(*types.Struct); ok && st.Sealed == w {
-			return &MakeVariant{exprBase{want}, w, st, x}
+			return f.c.noteAlloc(&MakeVariant{exprBase{want}, w, st, x}, span)
 		}
 	case *types.List, *types.Map, *types.Set:
 		// D63: a mutable collection becomes its immutable form by a move
@@ -552,7 +552,7 @@ func (f *fnCtx) stringLit(e *ast.StringLit) Expr {
 		}
 		cat.Parts = append(cat.Parts, f.toString(x, p.Expr.Span()))
 	}
-	return cat
+	return f.c.noteAlloc(cat, e.Pos)
 }
 
 func (f *fnCtx) checkInterpolation(e ast.Expr, x Expr) bool {
@@ -1255,7 +1255,7 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 			if types.IsInvalid(x.Type()) {
 				return bad()
 			}
-			return &AddrOf{exprBase{&types.Pointer{Elem: x.Type()}}, x}
+			return f.c.noteAlloc(&AddrOf{exprBase{&types.Pointer{Elem: x.Type()}}, x}, e.Pos)
 		}
 		lv, root := f.checkLValue(e.X, false)
 		if lv == nil {
@@ -1445,7 +1445,7 @@ func (f *fnCtx) makeBinary(op BinOp, l, r Expr, span source.Span) Expr {
 	switch op {
 	case OpAdd:
 		if types.IsString(t) {
-			return &StringConcat{exprBase{types.TString}, []Expr{l, r}}
+			return f.c.noteAlloc(&StringConcat{exprBase{types.TString}, []Expr{l, r}}, span)
 		}
 		fallthrough
 	case OpSub, OpMul, OpDiv, OpRem:
@@ -1829,7 +1829,7 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 		return bad()
 	}
 	lit.T = &types.List{Elem: elem, Mutable: mutable}
-	return lit
+	return f.c.noteAlloc(lit, e.Pos)
 }
 
 // setLit builds a set from a list literal where a Set is expected:

@@ -144,6 +144,8 @@ func stmtPos(s sema.Stmt) source.Span {
 		return s.Pos
 	case *sema.Continue:
 		return s.Pos
+	case *sema.With:
+		return s.Pos
 	}
 	return source.Span{}
 }

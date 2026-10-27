@@ -1881,6 +1881,11 @@ func (f *fnCtx) iteratorLoop(s *ast.LoopStmt, iter Expr, lp *Loop, label string)
 	default:
 		return nil, false
 	}
+	for _, d := range pre {
+		// evaluated where the iterable is written: the line table, and the
+		// allocation sites, place them there (D213)
+		d.(*VarDecl).Pos = s.Iter.Span()
+	}
 	next := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(itVar, s.Iter.Span()), Name: ast.Ident{Name: "next", Pos: s.Iter.Span()}, Pos: s.Iter.Span()}, Pos: s.Iter.Span()}
 	nx := f.checkExpr(next, nil)
 	nt, ok := nx.Type().(*types.Nullable)
@@ -1964,6 +1969,15 @@ func (f *fnCtx) withExpr(e *ast.WithExpr, want types.Type) Expr {
 	return &BlockExpr{exprBase{out.Type}, out}
 }
 
+// withPos is where binding i of a `with` is written: its name and value.
+func withPos(s *ast.WithExpr, i int) source.Span {
+	b := s.Bindings[i]
+	if b.Name.Name == "" {
+		return b.Value.Span()
+	}
+	return b.Name.Pos.To(b.Value.Span())
+}
+
 func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, want types.Type, asValue bool, result **Var) ([]Stmt, types.Type) {
 	if i == len(s.Bindings) {
 		if !asValue {
@@ -2037,7 +2051,7 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 	if types.IsNever(bodyT) {
 		body.Type = types.TNever
 	}
-	return []Stmt{&With{Var: v, Init: init, Close: closeCall, Body: body}}, bodyT
+	return []Stmt{&With{Var: v, Init: init, Close: closeCall, Body: body, Pos: withPos(s, i)}}, bodyT
 }
 
 // withTask is `with t = async f(...)` (D100 part 2): f runs as a background

@@ -51,7 +51,7 @@ func (f *fnCtx) mapLit(e *ast.MapLit, want types.Type) Expr {
 		return bad()
 	}
 	lit.T = &types.Map{Key: kt, Value: vt, Mutable: mutable}
-	return lit
+	return f.c.noteAlloc(lit, e.Pos)
 }
 
 // collectionCtor handles `MutableMap<K, V>()`, `Set<T>()`, `MutableList<T>()`.
@@ -90,12 +90,12 @@ func (f *fnCtx) collectionCtor(name string, typeArgs []types.Type, e *ast.CallEx
 	switch tt := t.(type) {
 	case *types.Map:
 		f.c.checkHashable(tt.Key, e.Pos)
-		return &MapLit{exprBase{tt}, nil}
+		return f.c.noteAlloc(&MapLit{exprBase{tt}, nil}, e.Pos)
 	case *types.Set:
 		f.c.checkHashable(tt.Elem, e.Pos)
 		return &Builtin{exprBase{tt}, "set.new", nil, e.Pos}
 	}
-	return &ListLit{exprBase{t}, nil}
+	return f.c.noteAlloc(&ListLit{exprBase{t}, nil}, e.Pos)
 }
 
 func isCollectionCtor(name string) bool {

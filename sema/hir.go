@@ -26,6 +26,10 @@ type Program struct {
 	// (D4); nil when main does not throw.
 	MainReport *Func
 	Release    bool
+	// allocAt is where an allocating node without a span of its own was
+	// written (a literal, a closure, a box, a launch, a variant): what
+	// AllocSites reports (D213)
+	allocAt map[Expr]source.Span
 	// DebugInfo asks codegen for line tables and local variables (plan S8):
 	// the driver sets it for a debug build.
 	DebugInfo bool
@@ -789,6 +793,8 @@ type With struct {
 	Init  Expr
 	Close Expr // the close() call on Var
 	Body  *Block
+	// Pos is the binding as written: where the line table puts it
+	Pos source.Span
 	// Lock: a `with … = m.lock()` (D107), whose body may not suspend
 	Lock *HeldLock
 }

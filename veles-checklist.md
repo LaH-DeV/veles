@@ -1459,6 +1459,14 @@ Every new public std API (http cookies/forms/client, `std/log`,
 
 ## 11. Known limitations to revisit
 
+- [ ] **Allocation hints left over (D213, plan B31 built 2026-10-27).**
+      (a) Sites are checked against the generated code by statement line,
+      the line table's granularity: two sites on one line are not told
+      apart. Expression-level line entries in codegen would make the check
+      exact (and help a debugger). (b) Other editors than VS Code need the
+      `allocationHints` initialization option documented in their setup.
+      (c) `@noAlloc` with an inferred effect is to be asked again (D213's
+      rejected-for-now) now that the hints exist.
 - [ ] **`const struct` left over (D212, plan B30 built 2026-10-27).**
       (a) Removing `const` from a public type is an API break that
       `veles apidiff` should report; the tool does not exist yet (plan G1,

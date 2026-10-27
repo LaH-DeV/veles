@@ -8687,6 +8687,24 @@ annotation with an inferred "allocates" effect (to be asked again once the
 hints show where the allocations are); a runtime allocation profile mapped
 back to source; no hints.
 
+_Built 2026-10-27 (B31)._ Settled while building: the sites are
+`sema.AllocSites`, read by the language server (setting
+`veles.inlayHints.allocations`, sent as `initializationOptions` and
+`workspace/didChangeConfiguration`) and by `veles explain --alloc <dir>
+[fun]`. Beyond the eight kinds above, three more allocate and are sites: a
+channel, an `&` of a temporary (D10), and a temporary whose method keeps a
+pointer to it (a heap copy the compiler makes). An allocation written
+elsewhere but made in a statement — a field default, the standard
+library's code inlined there — is shown on that statement. Not shown:
+tests (their sites are mostly failure messages), code the compiler writes
+(derived methods), and messages built on the way to a panic.
+`codegen/llvm/allocsite_test.go` checks every example and benchmark both
+ways against the allocation calls of the generated code, line by line.
+Found on the way: the checker's walker skipped the value a task-holding
+`with` receives (D111), so analyses built on it never saw that
+expression; a `with` and a loop's iterable had no line of their own in the
+line table.
+
 _The same day (`to_figure_out.md` 2): `suspend loop`, sugar for ceding at
 the end of every iteration, is not added. D145's automatic yield at
 back-edges and an explicit `cede` (D197) stay. User: "we'd need check if the

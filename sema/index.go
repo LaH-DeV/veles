@@ -34,6 +34,9 @@ type Index struct {
 	// Moved marks each mutable collection that D63 hands over as its immutable
 	// form without a copy (D188): the editor says so after it.
 	Moved map[source.Span]bool
+	// Allocs are the heap allocation sites of the package's own code (D213),
+	// for the editor's opt-in `heap` hints
+	Allocs []AllocSite
 }
 
 // TypeDecl is where the type of a value is declared, for
@@ -176,6 +179,7 @@ func (c *Checker) indexInferred(prog *Program) {
 		return
 	}
 	c.index.Inferred = map[source.Span]Inferred{}
+	c.index.Allocs = AllocSites(prog)
 	for _, fn := range prog.Funcs {
 		t := fn.tmpl
 		if fn.IsClosure || t == nil || t.Decl == nil || t.Sig == nil || !t.Decl.Name.Pos.IsValid() {
@@ -908,7 +912,6 @@ func structHead(st *types.Struct) string {
 		head += " : " + st.Sealed.Name
 		if !tmpl.Indirect && !tmpl.Inline && st.Sealed.IsRecursive() && len(st.TypeArgs) == len(st.TypeParams) {
 			lay := &types.Layout{}
-			lay.Sealed = func(s *types.Sealed) int { return 8 + 8*lay.SealedPayloadWords(s) }
 			if lay.VariantBoxed(st) {
 				head += " — boxed: '" + st.Sealed.Name + "' is a tree"
 			}
@@ -924,15 +927,6 @@ func layoutLine(st *types.Struct) string {
 		return ""
 	}
 	lay := &types.Layout{}
-	lay.Sealed = func(s *types.Sealed) int { return 8 + 8*lay.SealedPayloadWords(s) }
-	lay.ErrorUnion = func(u *types.ErrorUnion) int {
-		words := 0
-		for _, m := range types.UnionMembers(u) {
-			size, _ := lay.Of(m)
-			words = max(words, (size+7)/8)
-		}
-		return 8 + 8*words
-	}
 	p := lay.StructPlan(st)
 	used := 0
 	for _, f := range st.Fields {

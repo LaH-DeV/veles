@@ -358,7 +358,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	}
 	fn.checked = true
 	f.c.funcs = append(f.c.funcs, fn)
-	return &Closure{exprBase{fn.Sig}, fn, l.captureList}
+	return f.c.noteAlloc(&Closure{exprBase{fn.Sig}, fn, l.captureList}, e.Pos)
 }
 
 // wantOn shows a receiver function type with its receiver put back.

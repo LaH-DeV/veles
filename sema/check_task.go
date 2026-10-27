@@ -512,7 +512,7 @@ func (f *fnCtx) launchCall(e *ast.CallExpr, want types.Type) Expr {
 			}
 		}
 		// a field's declared type carries the error to the receiving block (D111)
-		return &Launch{exprBase: exprBase{&types.Task{Result: call.Type()}}, Call: call, Index: -1, Fails: fails}
+		return f.c.noteAlloc(&Launch{exprBase: exprBase{&types.Task{Result: call.Type()}}, Call: call, Index: -1, Fails: fails}, e.Pos)
 	}
 	sc := f.scopes[len(f.scopes)-1]
 	handle := call.Type()
@@ -528,6 +528,7 @@ func (f *fnCtx) launchCall(e *ast.CallExpr, want types.Type) Expr {
 	}
 	l := &Launch{exprBase: exprBase{&types.Task{Result: handle}}, Call: call, Scope: sc, Index: len(sc.Launches), Fails: fails, Unwrap: unwrap}
 	sc.Launches = append(sc.Launches, l)
+	f.c.noteAlloc(l, e.Pos)
 	if sc.Gather {
 		// D52: a panic surfaces as a Result error at the gather boundary
 		// a Result the child returns without `throws` is its value (D155)

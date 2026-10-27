@@ -89,6 +89,40 @@ marks while the program runs however small the heap (on Linux it asks for
 the kernel's soft-dirty bits, when they work); `=all` takes every page as
 written, which is slow and only for testing the collector.
 
+### Where a program allocates
+
+Most values never reach the heap: numbers, structs, tuples, arrays, enums
+and nullables of them live in a variable, a field or an argument, and
+constants are static data. The heap is used at a few places the compiler
+decides, and it can show you each of them (D213):
+
+- a collection literal or the result of a collection operation (`map`,
+  `filter`, `keys`, `split`, …), and a mutable collection's storage, which
+  comes with its first write (`reserve(n)` sizes it once);
+- string building — interpolation and `+` — except where one piece is the
+  whole result;
+- a lambda that captures, for its environment, and a local a lambda
+  captures or `&` points at, which lives in a heap cell;
+- a value turned into a trait object, an `&` of a temporary, and an
+  `indirect` or tree variant (D198);
+- a task started with `async`, and a channel.
+
+`veles explain --alloc <dir> [function]` lists them, one a line, with what
+is allocated and, where there is one, how to avoid it:
+
+```text
+main.vs:4:14: summary: a closure capturing 'limit' — pass 'limit' as a parameter, or use a named function
+main.vs:5:14: summary: a new 'List<string>' from 'filter'
+main.vs:6:3: summary: a new string: the pieces are copied into one — in a loop, collect the pieces in a StringBuilder
+```
+
+The editor shows the same as a `heap` hint after each such expression,
+when the `veles.inlayHints.allocations` setting is on (it is off by
+default, so code is not covered in labels). A call of a function that
+allocates inside is not marked; that function's own lines are. The sites
+come from the decisions the code generator follows, and a test holds them
+to the allocation calls in the generated code of every example.
+
 ## Values versus pointers
 
 A struct is a value: assigning copies it, passing it copies it (D7).
