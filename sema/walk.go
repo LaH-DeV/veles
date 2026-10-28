@@ -4,6 +4,8 @@ package sema
 // order, calling visit on each (statements as `any`, expressions as Expr)
 // before descending. Lambdas are separate functions (their bodies are not
 // entered here: the Closure node is visited, its Fn is in Program.Funcs).
+// A block's trailing value is announced by a blockValue first, for a
+// visitor that follows where code is written (AllocSites).
 func walkBlock(b *Block, visit func(node any)) {
 	if b == nil {
 		return
@@ -12,9 +14,14 @@ func walkBlock(b *Block, visit func(node any)) {
 		walkStmt(s, visit)
 	}
 	if b.Value != nil {
+		visit(blockValue{b})
 		walkExpr(b.Value, visit)
 	}
 }
+
+// blockValue: what follows is the value of this block, written at its
+// ValuePos.
+type blockValue struct{ block *Block }
 
 func walkStmt(s Stmt, visit func(node any)) {
 	if s == nil {
@@ -46,7 +53,13 @@ func walkStmt(s Stmt, visit func(node any)) {
 	case *ScopeBlock:
 		walkExpr(s.On, visit)
 		walkExpr(s.Workers, visit)
+		if s.Held != nil {
+			walkExpr(s.Held.Init, visit) // the value a `with` receives (D111)
+		}
 		walkBlock(s.Body, visit)
+		if s.Held != nil {
+			walkExpr(s.Held.Close, visit)
+		}
 	}
 }
 
@@ -165,6 +178,8 @@ func walkExpr(e Expr, visit func(node any)) {
 		walkExpr(e.Value, visit)
 	case *Box:
 		walkExpr(e.X, visit)
+	case *LazyRead:
+		walkExpr(e.Build, visit)
 	case *Launch:
 		walkExpr(e.Call, visit)
 	case *AwaitTask:
@@ -172,7 +187,13 @@ func walkExpr(e Expr, visit func(node any)) {
 	case *ScopeBlock:
 		walkExpr(e.On, visit)
 		walkExpr(e.Workers, visit)
+		if e.Held != nil {
+			walkExpr(e.Held.Init, visit) // the value a `with` receives (D111)
+		}
 		walkBlock(e.Body, visit)
+		if e.Held != nil {
+			walkExpr(e.Held.Close, visit)
+		}
 	case *RaceFirst:
 		walkExpr(e.Tasks, visit)
 	case *Race:

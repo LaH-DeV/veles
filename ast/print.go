@@ -225,6 +225,9 @@ func (p *printer) decl(d Decl) {
 		if d.Pub {
 			p.w("public ")
 		}
+		if d.Const {
+			p.w("const ")
+		}
 		if d.Extern {
 			p.w("extern ")
 		}
@@ -233,6 +236,9 @@ func (p *printer) decl(d Decl) {
 		}
 		if d.Inline {
 			p.w("inline ")
+		}
+		if d.Compact {
+			p.w("compact ")
 		}
 		p.w(d.Name.Name)
 		p.typeParams(d.TypeParams)
@@ -293,7 +299,11 @@ func (p *printer) decl(d Decl) {
 		}
 		for _, s := range d.Statics {
 			p.child(func() {
-				p.w("(static " + s.Name.Name + " ")
+				p.w("(static ")
+				if s.Lazy {
+					p.w("lazy ")
+				}
+				p.w(s.Name.Name + " ")
 				p.expr(s.Value)
 				p.w(")")
 			})
@@ -389,6 +399,9 @@ func (p *printer) decl(d Decl) {
 		p.w("(")
 		if d.Pub {
 			p.w("public ")
+		}
+		if d.Lazy {
+			p.w("lazy ")
 		}
 		p.w(d.Kind.String() + " " + d.Name.Name)
 		if d.Type != nil {
@@ -672,6 +685,8 @@ func (p *printer) stmt(s Stmt) {
 			p.w(" " + s.Label.Name)
 		}
 		p.w(")")
+	case *CedeStmt:
+		p.w("(cede)")
 	case *LoopStmt:
 		if s.Inline {
 			p.open("inline-loop")

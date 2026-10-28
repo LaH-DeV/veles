@@ -157,7 +157,7 @@ Output:
 When one field needs several questions, walk all the fields and ask each one
 (`inline loop (f in This.fields)`): `f.has<A>()` and `f.attr<A>()` are
 constants there, `if (f.has<A>())` keeps only the branch that applies, and
-`if (val a = f.attr<A>())` binds the annotation. `examples/annotations` does
+`if (val a = f.attr<A>())` binds the annotation. `examples/features/annotations` does
 this for a `Skip` annotation.
 
 The rules the compiler holds you to:
@@ -178,7 +178,7 @@ The rules the compiler holds you to:
 - Annotations on enum members, variants and functions can be declared and used
   but not yet read ([checklist §11](../../veles-checklist.md)).
 
-`examples/annotations` is a small validation library used from a program.
+`examples/features/annotations` is a small validation library used from a program.
 
 ### Decorators
 
@@ -244,7 +244,7 @@ succeeded on attempt 3
   is declared `on fun` and nothing else; its arguments are built on each call, so
   they need not be constants. State, such as a cache, lives in a module-level
   `Mutex`, `Atomic` or `Lazy`.
-- `examples/decorators` has a retry, a logger and a decorator pair.
+- `examples/features/decorators` has a retry, a logger and a decorator pair.
 
 ## Writing tests
 

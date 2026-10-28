@@ -56,6 +56,8 @@ type Server struct {
 	stdDir   string            // materialised standard library, for go-to-definition into std
 	stdOnce  sync.Once         // stdNames is read from the embedded sources once (auto-import)
 	stdNames []importCandidate // the standard modules' public names
+	// allocHints: the client asked for `heap` hints (D213), off by default
+	allocHints bool
 }
 
 type document struct {
@@ -204,6 +206,13 @@ func (s *Server) handle(req *request) {
 	switch req.Method {
 	case "initialize":
 		s.materializeStd()
+		var p struct {
+			Options struct {
+				AllocationHints bool `json:"allocationHints"`
+			} `json:"initializationOptions"`
+		}
+		json.Unmarshal(req.Params, &p)
+		s.allocHints = p.Options.AllocationHints
 		s.reply(req.ID, map[string]any{
 			"capabilities": map[string]any{
 				"textDocumentSync": map[string]any{
@@ -230,6 +239,21 @@ func (s *Server) handle(req *request) {
 			"serverInfo": map[string]any{"name": "veles-lsp", "version": "0.1"},
 		})
 	case "initialized":
+	case "workspace/didChangeConfiguration":
+		// the client's `veles` settings: whether to show `heap` hints (D213)
+		var p struct {
+			Settings struct {
+				Veles struct {
+					InlayHints struct {
+						Allocations *bool `json:"allocations"`
+					} `json:"inlayHints"`
+				} `json:"veles"`
+			} `json:"settings"`
+		}
+		json.Unmarshal(req.Params, &p)
+		if on := p.Settings.Veles.InlayHints.Allocations; on != nil {
+			s.allocHints = *on
+		}
 	case "shutdown":
 		s.shutdown = true
 		s.reply(req.ID, nil)

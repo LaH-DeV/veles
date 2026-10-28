@@ -118,6 +118,21 @@ func (f *fnCtx) coerce(x Expr, want types.Type, span source.Span) Expr {
 		if wf, ok := want.(*types.Func); ok && len(hf.Params) == len(wf.Params) && (hf.Effects != wf.Effects) {
 			// same shape, different effects: a function value keeps its own
 			// calling convention, a lambda written in place adapts (D40)
+			if wf.Effects.Suspends && !hf.Effects.Suspends && hf.Effects.Throws == wf.Effects.Throws && (!hf.Effects.Throws || types.Identical(hf.Effects.Error, wf.Effects.Error)) && f.c.lazyInit[span] == nil {
+				// D217: a plain function where a parameter may suspend; whether
+				// that parameter only may (the call is then plain) is known after
+				// suspension inference (checkPlainFuncArgs)
+				c := &Cast{exprBase{want}, x}
+				if f.c.plainFuncAt == nil {
+					f.c.plainFuncAt = map[*Cast]source.Span{}
+				}
+				f.c.plainFuncAt[c] = span
+				return c
+			}
+			if lazy := f.c.lazyInit[span]; lazy != nil {
+				f.errorf(span, "the initializer of 'lazy val %s' cannot throw or suspend: it runs inside whichever read comes first, which neither handles an error nor waits; handle the error in it ('?? fallback', 'catch'), or build the value in 'main' and pass it down (D210)", lazy.Display)
+				return x
+			}
 			f.errorf(span, "type mismatch: expected '%s', found '%s'; a function value does not take on 'suspends' or 'throws' — pass a lambda that calls it, '(x) => f(x)'", want, have)
 			return x
 		}
@@ -164,7 +179,7 @@ func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 		}
 	case *types.Sealed:
 		if st, ok := have.(*types.Struct); ok && st.Sealed == w {
-			return &MakeVariant{exprBase{want}, w, st, x}
+			return f.c.noteAlloc(&MakeVariant{exprBase{want}, w, st, x}, span)
 		}
 	case *types.List, *types.Map, *types.Set:
 		// D63: a mutable collection becomes its immutable form by a move
@@ -552,7 +567,7 @@ func (f *fnCtx) stringLit(e *ast.StringLit) Expr {
 		}
 		cat.Parts = append(cat.Parts, f.toString(x, p.Expr.Span()))
 	}
-	return cat
+	return f.c.noteAlloc(cat, e.Pos)
 }
 
 func (f *fnCtx) checkInterpolation(e ast.Expr, x Expr) bool {
@@ -629,6 +644,9 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 		return x
 	}
 	if sym == nil {
+		if e.Name == "yieldNow" {
+			return f.removedYieldNowRef(e, want)
+		}
 		hint, fix := f.unknownNameHint(e.Pos, e.Name, true)
 		f.c.errorFix(e.Pos, fix, "unknown name '%s'%s", e.Name, hint)
 		return bad()
@@ -636,6 +654,7 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	if sym.Kind == SymLocal {
 		f.awaitedUse(sym.Var, e)
 		v := f.localVar(sym.Var)
+		f.requireAssigned(sym.Var, v, e.Pos)
 		markUsed(v)
 		x := f.narrowedRef(v)
 		f.c.refVarAs(e.Pos, v, x.Type())
@@ -649,7 +668,7 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 	switch sym.Kind {
 	case SymGlobal:
 		f.checkStateUse(sym.Global, e.Pos)
-		return f.globalValue(sym.Global)
+		return f.globalValue(sym.Global, e.Pos)
 	case SymFunc:
 		f.checkExecFunc(sym.Func, e.Pos)
 		return f.funcValue(sym.Func, e.Pos)
@@ -881,10 +900,11 @@ func (f *fnCtx) symbolValue(sym *Symbol, span source.Span, want types.Type) Expr
 	switch sym.Kind {
 	case SymLocal:
 		v := f.localVar(sym.Var)
+		f.requireAssigned(sym.Var, v, span)
 		markUsed(v)
 		return f.narrowedRef(v)
 	case SymGlobal:
-		return f.globalValue(sym.Global)
+		return f.globalValue(sym.Global, span)
 	case SymFunc:
 		return f.funcValue(sym.Func, span)
 	case SymType:
@@ -1253,7 +1273,7 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 			if types.IsInvalid(x.Type()) {
 				return bad()
 			}
-			return &AddrOf{exprBase{&types.Pointer{Elem: x.Type()}}, x}
+			return f.c.noteAlloc(&AddrOf{exprBase{&types.Pointer{Elem: x.Type()}}, x}, e.Pos)
 		}
 		lv, root := f.checkLValue(e.X, false)
 		if lv == nil {
@@ -1443,7 +1463,7 @@ func (f *fnCtx) makeBinary(op BinOp, l, r Expr, span source.Span) Expr {
 	switch op {
 	case OpAdd:
 		if types.IsString(t) {
-			return &StringConcat{exprBase{types.TString}, []Expr{l, r}}
+			return f.c.noteAlloc(&StringConcat{exprBase{types.TString}, []Expr{l, r}}, span)
 		}
 		fallthrough
 	case OpSub, OpMul, OpDiv, OpRem:
@@ -1827,7 +1847,7 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 		return bad()
 	}
 	lit.T = &types.List{Elem: elem, Mutable: mutable}
-	return lit
+	return f.c.noteAlloc(lit, e.Pos)
 }
 
 // setLit builds a set from a list literal where a Set is expected:
@@ -2148,7 +2168,7 @@ func (f *fnCtx) invalidatePlace(p place) {
 			delete(f.narrow, k) // an index fact about the list p names (D62)
 			continue
 		}
-		if k.v != p.v {
+		if k.v != p.v || k.path == pathAssigned {
 			continue
 		}
 		if p.path == "" || k.path == p.path || strings.HasPrefix(k.path, p.path+".") {
@@ -2166,7 +2186,7 @@ func (f *fnCtx) invalidatePaths(v *Var) {
 			delete(f.narrow, k)
 			continue
 		}
-		if k.v == v && k.path != "" {
+		if k.v == v && k.path != "" && k.path != pathAssigned {
 			delete(f.narrow, k)
 		}
 	}

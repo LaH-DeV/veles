@@ -265,6 +265,7 @@ struct Printer {
         this.attrs(d.attrs)
         this.write("(")
         if (d.pub) this.write("public ")
+        if (d.isLazy) this.write("lazy ")
         this.write("${bindWord(d.kind)} ${d.name.name}")
         if (val typ = d.typ) {
           this.write(": ")
@@ -317,9 +318,11 @@ struct Printer {
       else                 => "struct "
     })
     if (d.pub) this.write("public ")
+    if (d.isConst) this.write("const ")
     if (d.isExtern) this.write("extern ")
     if (d.indirect) this.write("indirect ")
     if (d.isInline) this.write("inline ")
+    if (d.compact) this.write("compact ")
     this.write(d.name.name)
     this.typeParams(d.typeParams)
     if (val variant = d.variant) {
@@ -370,7 +373,7 @@ struct Printer {
     }
     loop (s in d.statics) {
       this.nl()
-      this.write("(static ${s.name.name} ")
+      this.write(if (s.isLazy) "(static lazy ${s.name.name} " else "(static ${s.name.name} ")
       this.optExpr(s.value)
       this.write(")")
     }
@@ -620,6 +623,7 @@ struct Printer {
         if (val label = s.label) this.write(" ${label.name}")
         this.write(")")
       }
+      is CedeStmt         => this.write("(cede)")
       is LoopStmt         => {
         this.open(if (s.isInline) "inline-loop" else "loop")
         if (val label = s.label) this.write(" @${label.name}")

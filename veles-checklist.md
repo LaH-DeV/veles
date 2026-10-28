@@ -98,7 +98,7 @@ answered from the shape, tuples get `Comparable`, enums get
       element-scaled, `p - q` an element count, `<` `<=` `>` `>=` on
       addresses, all inside `unsafe`; `*raw ()` refuses to step (cast to
       `*raw u8`), `n + p` says to write the pointer first. A plain GEP, not
-      `inbounds` (sema/rawptr.go, golden `rawptr`, docs 13, examples/ffi
+      `inbounds` (sema/rawptr.go, golden `rawptr`, docs 13, examples/features/ffi
       turns bsearch's result into an index)
 - [x] `--sanitize` for C code the program links (see §2)
 
@@ -191,10 +191,35 @@ answered from the shape, tuples get `Comparable`, enums get
       polls one cache-line-aligned word; a cancellation unwinds there (a plain function from where it
       is, the task then waiting as T_ENDING for the children of the scopes it left — a panic too
       now); a scope body notices a failed child; a suspending loop that ran ~10 ms while work waits
-      yields; lock regions and `with` closes are shielded; `yieldNow()`, `checkCancelled()`; the
-      monitor moves a long-running task's runnext to the shared queue. TestLoopsAreCancellationPoints
-      (debug/release, 1/2/4/8 threads, GC pressure); docs reference/concurrency, chapters 12, 14, 16,
-      concurrency-explained, stdlib
+      yields; lock regions and `with` closes are shielded; `yieldNow()` (now `cede`, D197),
+      `checkCancelled()`; the monitor moves a long-running task's runnext to the shared queue.
+      TestLoopsAreCancellationPoints (debug/release, 1/2/4/8 threads, GC pressure); docs
+      reference/concurrency, chapters 12, 14, 16, concurrency-explained, stdlib
+- [x] A tight counted loop looks for attention once per chunk (D218, plan F22, 2026-10-28): a
+      range or list loop over an i64 index whose condition, body and step call nothing, suspend
+      nowhere and hold no loop (`sema/chunk.go`) runs as chunks of 16–1024 rounds by body size,
+      the back-edge poll once per chunk (`codegen/llvm/gen.go` `chunkedLoop`; the inner loop's one
+      exit is `cond & idx < limit`, which LLVM counts). `bench/backedge`: a multiply-add chain
+      865 → 107 ps a round (C 100), a sum of squares 358 → 4 (C folds it), the suspending twins
+      1723 → 114 and 698 → 5. TestChunkedLoops (sizes around a chunk's edge, empty, negative,
+      inclusive to i64's top, both list kinds, break/continue/return/labels, a deadline and a
+      collection inside a chunked loop; debug/release, 1/2/4/8 threads, GC stress), golden
+      `chunks`; docs chapter 12, reference/concurrency
+- [x] `cede` (D197, plan F20, 2026-10-27): a reserved statement in both front ends (`ast.CedeStmt`,
+      `parser/cede.go`, `selfhost/parser/cede.vs`; a newline after it always ends the statement),
+      its own operation `task.cede` lowered to the runtime's zero sleep, a direct suspension seed
+      refused where suspension is (lock regions, global initializers, `const fun`, plain callbacks).
+      Every wrong form is an error that names the fix (`cede()`, `await cede`/`try cede`/`async
+      cede`, `val x = cede`, `=> cede` bodies, a name `cede`); the prelude `yieldNow` is gone, its
+      uses errors with fixes where sound (statement, body, `async`, a value where a suspending
+      `fun()` is wanted) and a program's own `yieldNow` untouched. Found on the way: a yield
+      abandoned by a cancellation left `TB_YIELDED` set, so the next `cede`/`sleep(0)` returned at
+      once — no turn, no cancellation seen (TestCede case 4 fails without the fix); a bad
+      expression that took its tokens made the parser skip the next statement too. Tests:
+      `parser/cede_test.go`, `sema/cede_test.go`, conform D197-*, `driver/cede_test.go`
+      (debug/release, 1/2/4/8 threads, GC stress and poisoning), golden `codegen/llvm/golden/cede`,
+      self-host edge `p-cede`, LSP hover; docs chapter 12, reference/concurrency, errors, stdlib,
+      cheatsheet, networking, concurrency-explained
 - [x] Atomics (D144, plan F5, 2026-10-09): `compareAndSet`, `compareExchange`, integer `add`/`sub`/
       `fetchAnd`/`fetchOr`/`fetchXor`, `order: MemoryOrder` on every operation (an invalid order
       written as a case is a compile error), lock-free `Atomic` of a pointer, nullable pointer or
@@ -280,7 +305,7 @@ Panic>`; a non-throwing function with a failing child (a `scope`, a D111 field) 
       `AsyncIterator` — D42's trait, built with it) and loops owning a task-holding iterable;
       `scope` as a value; a placed scope that starts nothing is an error. Conformance
       D156-awaited-handles/await-all/workers/scope-value/lazy-map, driver TestLessCeremony
-      (debug/release, 1–8 threads), examples/verify, examples/tasks; docs chapter 12,
+      (debug/release, 1–8 threads), examples/verify, examples/features/tasks; docs chapter 12,
       reference/concurrency, errors, stdlib, cheatsheet. Left in §11
 - [x] Deadlock detection: "deadlock: every task is blocked" when no task
       can run and no timer, socket or blocking call can wake one
@@ -318,13 +343,13 @@ Panic>`; a non-throwing function with a failing child (a `scope`, a D111 field) 
 - [x] `Default` (D119) — built 2026-10-02 (plan B15): prelude trait with
       the listed implements (tuples to eight), derived by an empty
       `implement Default`, `T.default()`; conformance `D119-default`,
-      `examples/generics`, chapter 8, stdlib reference
+      `examples/features/generics`, chapter 8, stdlib reference
 - [x] Suspension follows the argument (D116) and `is Trait` at run time and
       `T implements X` at compile time (D117) — built 2026-10-02 (plan B15):
       plain and coroutine instances per call (`TestConditionalSuspension`,
       `D116-conditional-suspension`, hover "suspends if `f` does"); a type id
       in every method table, per-trait tables, narrowing (`D135-is-on-trait-
-objects`, `examples/traitobjects`); `T implements X` decided per
+objects`, `examples/features/traitobjects`); `T implements X` decided per
       instance, only the taken branch checked (`D117-implements`). B8 moved
       the eager adapters into the prelude with it
 - [x] `x is Display` on a non-trait-object said "'i64' can never be
@@ -370,7 +395,7 @@ f()).g()` warns that the inner `try` is redundant, with a fix; the `(try f()).g(
       Parts 1–3 built 2026-10-03 (`sema/consteval.go`, `codegen/llvm/consts.go`,
       `static assert`); part 4, `const fun`, built 2026-10-05 (`sema/constfun.go`,
       `constnum.go`; the differential test `driver/constfun_test.go`; chapter 2,
-      `examples/constfun`) — what is left is under §11 "Deferred from `const fun`"
+      `examples/features/constfun`) — what is left is under §11 "Deferred from `const fun`"
 - [x] Module-level values are initialized in dependency order (through the
       functions their initializers call); a cycle is an error — built
       2026-10-03. Before, `val a = f()` with `f` reading a later `val` saw
@@ -388,7 +413,7 @@ f()).g()` warns that the inner `try` is redundant, with a fix; the `(try f()).g(
       the tree migrated. Tests: conformance `D100-with-statement`,
       `D100-with-syntax`, driver `TestWithStatementExits` (every exit path,
       both profiles), lsp `TestWithInTheEditor`, parser
-      `TestWithStatement`, format "with statement", `examples/with`
+      `TestWithStatement`, format "with statement", `examples/features/with`
 - [x] D101–D106 — built 2026-10-01 (plan B11): `if (m = …)` one error with
       the `val` fix (D101, conformance `D101-heads`); loop mutation refused at
       compile time and caught at run time by a modification count on lists
@@ -396,8 +421,8 @@ f()).g()` warns that the inner `try` is redundant, with a fix; the `(try f()).g(
       `TestLoopOverChangedCollection`); a one-task `gather` is its Result and
       `async` runs `sendable fun` values (D103, `D103-gather-and-values`);
       rotate/swap/reverse/copySign/isSignNegative/nextUp/nextDown (D104,
-      `examples/bits`, golden `bits`); `reserve` on StringBuilder, maps, sets,
-      deques (D105, `examples/reserve`); empty-literal message and fix,
+      `examples/features/bits`, golden `bits`); `reserve` on StringBuilder, maps, sets,
+      deques (D105, `examples/features/reserve`); empty-literal message and fix,
       `Range.isEmpty`, lambda arms parenthesized (D106, `D106-empty-literals`,
       format "lambda arm")
 - [x] A generic call's type argument inferred from the expected type
@@ -458,7 +483,7 @@ f()).g()` warns that the inner `try` is redundant, with a fix; the `(try f()).g(
       `TestUncheckedAccess`, conform `D114-unchecked-access`)
 - [x] Integer conversions between widths: `toT()` is checked (`T?`), `wrapT()` is the explicit
       truncation, a literal that cannot fit is a compile error (D86, 2026-09-29;
-      `examples/conversions`, conform `D86-conversions`, golden `arith`)
+      `examples/features/conversions`, conform `D86-conversions`, golden `arith`)
 - [x] Hash flooding (HashDoS, 2026-10-25): maps hashed strings with unkeyed
       FNV-1a and started probing at `hash & mask`, where an integer's hash
       is the integer — 200 000 keys `i * 2^20` all started at slot 0 and took
@@ -577,7 +602,7 @@ f()).g()` warns that the inner `try` is redundant, with a fix; the `(try f()).g(
       JSON's own policy against that default. The router does not recurse (it
       matches segments in a loop) and so has nothing to bound; the front-end
       rewrite takes `Depth` as it stands (`veles-selfhost-frontend-plan.md` §4.3),
-      and `examples/recursion` is that parser in miniature — a recursive descent
+      and `examples/features/recursion` is that parser in miniature — a recursive descent
       that answers a diagnostic rather than a segmentation fault
 - [x] Stack exhaustion is a panic and the stack is big (D92, found by plan
       S3, 2026-09-29; built 2026-09-29). Before: a recursion that is not a
@@ -682,8 +707,13 @@ f()).g()` warns that the inner `try` is redundant, with a fix; the `(try f()).g(
       goroutine) and the time to park and wake them
 - [x] The allocator was quadratic between collections (every slot of every
       full span scanned per allocation): `json` took 376 s, now 0.31 s. Fixed in
-      `veles_gc.c` (O(1) full-span skip, a per-class cursor); `examples/gc`
+      `veles_gc.c` (O(1) full-span skip, a per-class cursor); `examples/features/gc`
       guards it (2026-09-25)
+- [x] Latency (2026-10-27, plan F21): a benchmark may print `LATENCY <name> <ns>`
+      and its Go reference set `goLatency`. `bench/preempt` (a ticker's worst
+      lateness beside one busy loop per worker; `-- all` for the F21 cases) and
+      `bench/backedge` (the back-edge poll in tight loops) keep D145's slice and
+      the poll's price from drifting unseen
 
 ---
 
@@ -819,7 +849,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
       `-lbcrypt`); panics rather than throws, and `std/random`'s doc now
       points here
 - [x] UUID v4 and v7; v7 carries a counter in `rand_a`, so successive ids are
-      **strictly increasing** (5000 checked in `examples/crypto`)
+      **strictly increasing** (5000 checked in `examples/features/crypto`)
 - [x] JWT sign/verify (HS256/HS384/HS512) with the algorithm taken from the
       caller, `exp` required by default, `crit` rejected, a key shorter than
       the digest refused, and `Reason` so `Expired` can be told from the rest;
@@ -869,7 +899,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
 - [x] `Duration` is `Codable`: `"90.5s"` by default, and `DurationStyle` (`Seconds`,
       `Iso8601`, `Text`, `Nanos`, `Millis`) as a format option —
       `json.Options(durations:)` — the `EnumStyle` precedent (D60 addendum,
-      docs 18 "Durations", `examples/codable`) (2026-09-25)
+      docs 18 "Durations", `examples/features/codable`) (2026-09-25)
 
 ### 5.7 `std/log`
 
@@ -911,7 +941,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
       `u64`/`u32`, `f64.fromBits(bits)` / `f32.fromBits(bits)` invert it;
       nothing is rounded, a NaN keeps its payload, `-0.0` differs from `0.0`.
       In `std/prelude/number.vs` over the same `unsafe` cast (LLVM folds it to
-      a `bitcast` at -O2). `examples/floatbits` (LLVM-style hex constants,
+      a `bitcast` at -O2). `examples/features/floatbits` (LLVM-style hex constants,
       round trips, NaN payload, `-0.0`, sign/exponent/fraction), docs chapter 2
       and the stdlib reference. A compiler builtin can replace it later
 - [x] `std/config` (D125, 2026-10-04): `config.load<T>(files:, prefix:)` reads a derived struct from
@@ -946,7 +976,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
       (`sema/template.go`), `@template` validated at the declaration, formatter, `Dump`, VS Code grammar. Tests:
       parser expression cases + `TestTemplateLiteralNeedsNoSpace`, `TestTemplateLiteralRoundTrips`,
       conformance D129-template-signature / D129-template-use, `TestTemplateTagQualifiedByModule`; example
-      `examples/templates`; docs chapter 2 and 14, cheat sheet. `std/db` (E2) is the first user
+      `examples/features/templates`; docs chapter 2 and 14, cheat sheet. `std/db` (E2) is the first user
 - [~] `std/os`: `hostname`, `pid`, `tempDir` done (2026-09-25); `shutdownSignal`/`raiseSignal` done (D68); `run` without a shell (2026-09-27, §2); `run(..., input:, stderr: os.Stderr)` with `Output.stderr` (D82, 2026-09-28)
 - [x] `std/fs`: `walk` done (2026-09-25: depth-first, name order, links to
       directories not followed, its own stack); streaming through `fs.File`/`io.Stream`
@@ -960,7 +990,7 @@ behind a name that says "crypto" (§10, 2026-09-23).
       Strict in (shortest form only, no surrogates, nothing above U+10FFFF —
       Table 3-7) and lossy out (U+FFFD for a value that is not a code point,
       as Go and Rust do). `std/json` now decodes its `\u` escapes through it
-      instead of a private copy; `examples/utf8` is the Table 3-7 and Kuhn
+      instead of a private copy; `examples/features/utf8` is the Table 3-7 and Kuhn
       stress vectors
 - [x] Collections: `Deque<T>` (ring buffer) and `PriorityQueue<T>` (binary
       heap) in the prelude; `Set` has `union`/`intersect`/`difference`/`isSubsetOf`
@@ -1107,11 +1137,11 @@ arguments`) or it is a compiler-internal check
 
 - [~] `examples/httpd` upgraded: `std/json` (done: derived `Note`, a `PUT` with a 400 that lists the problems); middleware, graceful shutdown,
   limits — the reference server
-- [x] `examples/codable`: every derivation rule in one program
-- [x] `examples/crypto`: every published test vector — FIPS 180-4, RFC 4231,
+- [x] `examples/features/codable`: every derivation rule in one program
+- [x] `examples/features/crypto`: every published test vector — FIPS 180-4, RFC 4231,
       RFC 2202, RFC 4648 and the RFC 7515 A.1 token — plus the decoder
       refusals and 5000 monotonic v7 ids
-- [x] `examples/time`: the RFC 3339 grammar and its leniencies, the leap
+- [x] `examples/features/time`: the RFC 3339 grammar and its leniencies, the leap
       second, the calendar across 1970 and the year 2000, the three HTTP-date
       forms and the refusals, and the round trips for `Duration` and
       `Timestamp`. Only the last section reads the host clock, and only for
@@ -1179,7 +1209,7 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 - Q59: mutable singleton state without a lock or a dedicated OS thread
   (`veles-patterns.md` P2). Offered: a serial executor, `executor
-  metrics(serial: true) { var … }` (D150's rules on the shared pool, one
+metrics(serial: true) { var … }` (D150's rules on the shared pool, one
   task at a time; recommended, with suspension refused inside its code), the
   same but reentrant across suspension (Swift actors), or leaving `Mutex`
   and thread executors. User, 2026-10-26: "not sure yet, not to be decided
@@ -1187,14 +1217,17 @@ list as it was is in `archive/progress-log-2026-09.md` and git history).
 
 - Q60: a spelling for replaceable globals (dependency injection, test
   fakes; `veles-patterns.md` P4). Offered: `context val clock: Clock =
-  SystemClock()` with plain reads and `with clock = Fake()` rebinding, as
+SystemClock()` with plain reads and `with clock = Fake()` rebinding, as
   sugar over D72 (recommended), or documenting `TaskLocal(fallback:)` as
   the pattern. User, 2026-10-26: "probably keyword but do not decide now".
 
+(2026-10-28: Q65, how often a back edge polls, from plan F21: D218.)
+(2026-10-27: Q63 → D216, Q64 → D217.)
 (2026-10-25: Q58, integer overflow in release, from the security review: D209.)
+(2026-10-26: Q61 and Q62, value layout, prepared in `veles-layout-spec.md`: D214, D215.)
 (2026-10-26: the patterns menu, `veles-patterns.md`: P1 → D210, P3 → D211; P2 → Q59, P4 → Q60 open; P5 and R1–R8 not yet asked.)
 
-(2026-10-14: Q32–Q43, prepared in `veles-direction-2026-10-14.md`, were decided the same day:
+(2026-10-14: Q32–Q43, prepared in `archive/veles-direction-2026-10-14.md`, were decided the same day:
 Q32 D157, Q33 D158, Q42 D159, Q39 D160, Q40 + Q41 D161, Q43 D162, Q34 D163, Q36 D164,
 Q37 D165, Q35 D166 (after the full write-up the user asked for), Q38 D167.)
 
@@ -1253,7 +1286,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-25 | Identifiers and invisible characters (notes #21)                                                                                                                                                                                                                                                         | **UAX #31** (user's choice over the recommended fixed list): identifiers are `XID_Start XID_Continue*` plus `_`, so a bidi control, a zero-width character or a no-break space is no longer an identifier byte — the Trojan-source case (CVE-2021-42574) becomes a diagnostic. Costs Unicode tables in the lexer, and in the self-hosted one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 2026-09-25 | Changing a by-value struct parameter (R20 follow-up 1)                                                                                                                                                                                                                                                   | **A warning**: a function that assigns a `var` field of a value-struct parameter, directly or through a method that writes `self`, is told the caller never sees it, with `*T` or returning the value as the fixes. R20's rule (`val`/`var` govern rebinding only) is unchanged. Rejected: Swift's immutable parameters (changes R20).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 2026-09-25 | Guard binding (I1)                                                                                                                                                                                                                                                                                       | **Let-else plus `??` on Result** (user, after `archive/veles-guard-design.md`): `val x = r else { e => ... }` binds or leaves (Result, nullable, variant pattern; one-statement `else return` allowed); `r ?? fallback` / `r ?? { e => ... }` is `?:` for a Result, and each operator on the other kind is an error with a fix that swaps it. Spec D61. Rejected: widening `?:` to Result (the recommendation), a `Fallible` trait (its own decision, later).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 2026-09-26 | Fewer panics: prove the index (user: "atOrPanic is kind of a cheatcode")                                                                                                                                                                                                                                 | **All four parts, in order A → B → C, D alongside.** A: list patterns in `when` and let-else (`val [h, p, s] = xs else ...`, `[x, ..rest]`). B: bounds facts — `xs.at(i)` is `T` where the checker knows the index is in range (index loops, `i < len` guards, constant indexes after a length check; a `MutableList`'s facts end at any call that could reach it). C: `atOrPanic`/`getOrPanic`/`refOrPanic` removed; the only way left is `?: panic("why")` (user's choice over `.expect("why")` and keeping the method with a lint). D: `indices()`, `splitOnce`, `enumerate`/`zip` on List. Spec D62. Built: **A** (2026-09-26: parser, checker, `list.slice` runtime op for `..rest`, examples/listpatterns, docs 04, std/jwt + std/http request line migrated). **B** (2026-09-26: sema/bounds.go — facts in the smart-cast map; `indices()`; `?:` after a proven read is a warning with a fix; ~20 std sites now plain `at`, the rest are index arithmetic or `self` with calls; found D63 on the way). **C** (2026-09-26: the three names are errors whose fix writes `(x.at(i) ?: panic("TODO: say why this cannot fail"))`; std, examples, bench, docs and tests migrated by hand — list patterns, iteration and `?: return` where they fit, a stated invariant elsewhere (one helper per data structure); codegen now inlines list `len` and the bounds-checked element read: sha256 301→72 ms, json 314→135 ms, sort 295→108 ms). **D** (2026-09-26): `indices()`, `s.splitOnce(sep): (string, string)?`, eager `List.enumerate(): List<(i64, T)>` (`zip` was already on List); splitOnce replaced the hand-split header, target, query, ISO-duration and HTTP-date code in std. |
+| 2026-09-26 | Fewer panics: prove the index (user: "atOrPanic is kind of a cheatcode")                                                                                                                                                                                                                                 | **All four parts, in order A → B → C, D alongside.** A: list patterns in `when` and let-else (`val [h, p, s] = xs else ...`, `[x, ..rest]`). B: bounds facts — `xs.at(i)` is `T` where the checker knows the index is in range (index loops, `i < len` guards, constant indexes after a length check; a `MutableList`'s facts end at any call that could reach it). C: `atOrPanic`/`getOrPanic`/`refOrPanic` removed; the only way left is `?: panic("why")` (user's choice over `.expect("why")` and keeping the method with a lint). D: `indices()`, `splitOnce`, `enumerate`/`zip` on List. Spec D62. Built: **A** (2026-09-26: parser, checker, `list.slice` runtime op for `..rest`, examples/features/listpatterns, docs 04, std/jwt + std/http request line migrated). **B** (2026-09-26: sema/bounds.go — facts in the smart-cast map; `indices()`; `?:` after a proven read is a warning with a fix; ~20 std sites now plain `at`, the rest are index arithmetic or `self` with calls; found D63 on the way). **C** (2026-09-26: the three names are errors whose fix writes `(x.at(i) ?: panic("TODO: say why this cannot fail"))`; std, examples, bench, docs and tests migrated by hand — list patterns, iteration and `?: return` where they fit, a stated invariant elsewhere (one helper per data structure); codegen now inlines list `len` and the bounds-checked element read: sha256 301→72 ms, json 314→135 ms, sort 295→108 ms). **D** (2026-09-26): `indices()`, `s.splitOnce(sep): (string, string)?`, eager `List.enumerate(): List<(i64, T)>` (`zip` was already on List); splitOnce replaced the hand-split header, target, query, ISO-duration and HTTP-date code in std. |
 | 2026-09-26 | A `catch` block for panics                                                                                                                                                                                                                                                                               | **Not added; D52 stands** (user: "we use gather"). Panics are the bug channel, not exceptions: they stay unrecoverable inside a task and are observed only where a task ends (`gather`). Presented: function-level `fun f() { … } catch { p => … }` (recommended), a catch after any block, or none. Should it be revisited, the panic is bound with the D61 handler form `catch { p => … }`, not `this`, since `this` would hide a method's receiver.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 2026-09-26 | `self` becomes `this` (user)                                                                                                                                                                                                                                                                             | **Built 2026-09-26.** The receiver is spelled `this` across the language, std, docs and tooling (spec D65, v0.40). `self` still parses as the receiver with an error whose fix writes `this` (`veles check --fix`, LSP quick fix, inside interpolations too); 1,520 sites migrated by a token-level rewrite (code only, never comments or string text), prose by hand; `Self` the type is unchanged; the VS Code grammar highlights `this`, flags `self`, and no longer marks `enum`/`for` illegal.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 2026-09-26 | A MutableList where a List is expected (found by D62)                                                                                                                                                                                                                                                    | **Moved when unescaped, otherwise `.toList()`** (user, recommended of four): the checker passed the same handle, contradicting D35 (a List could shrink during a call, or be shared with a task while written). Now a fresh local that never escaped converts at its last use with no copy; anything else is an error with a `.toList()`/`.toMap()`/`.toSet()` fix. Rejected: implicit copy, always explicit, keeping the view. Spec D63. Built 2026-09-26 (sema/move.go; `==` and compiler-written code compare without converting; std: 4 `.toList()` copies, the sha leftover buffer and crypto padding).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -1262,7 +1295,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-09-26 | FFI shape (§9.8)                                                                                                                                                                                                                                                                                         | **Hand-written `extern` blocks in any package + a `[native]` table in `veles.toml`** (`libs`, `pkg-config`, Windows lib paths), `extern struct`, C function-pointer types for callbacks; "maybe" a `veles bindgen` later that writes the same form (user). User asked that every extern be unsafe — it already is: a call needs `unsafe`, and an extern cannot be taken as a value. Spec D67. Rejected: `@cImport`-style header import. _Not built._                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 2026-09-26 | Signals and graceful shutdown                                                                                                                                                                                                                                                                            | **A signal is awaited** (user, recommended of three): `os.shutdownSignal(): os.Signal` suspends until SIGINT/SIGTERM (Ctrl+C/Break/close on Windows), installs its handlers only when first asked, a second signal has the default effect; `http.serve(..., stop:, grace:)` stops accepting, drains, cancels after `grace`. Spec D68. Rejected: `os.onSignal` callbacks, signals handled inside `serve` by default.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 2026-09-26 | A std panic caused by the caller (D64's gap)                                                                                                                                                                                                                                                             | **Left as is** (user, over the recommended `@callerLocation` attribute): the std line is reported until stack traces exist.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 2026-09-26 | FFI: strings and buffers                                                                                                                                                                                                                                                                                 | **Explicit copies plus a scoped borrow** (user, recommended of three): `std/ffi` — `CString.of(s)` (Closeable), `ffi.string(p)`, `ffi.bytes(p, n)`, `alloc`/`free` — and `xs.withRaw(p => ...)` lending a `List<u8>`'s storage for a closure. Spec D69. Rejected: explicit only (a copy per big buffer), implicit `string`→`char*` bridging. Built 2026-09-26: `std/ffi` (`CString.of` refuses NUL bytes with `ffi.NulByte`, `readString`/`readBytes`, `alloc`/`free`, `handle`/`Handle<T>.from`), prelude `CLayout` + `withRaw`, raw-pointer casts in `unsafe`, runtime `veles_ffi.c`; examples/ffi.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 2026-09-26 | FFI: strings and buffers                                                                                                                                                                                                                                                                                 | **Explicit copies plus a scoped borrow** (user, recommended of three): `std/ffi` — `CString.of(s)` (Closeable), `ffi.string(p)`, `ffi.bytes(p, n)`, `alloc`/`free` — and `xs.withRaw(p => ...)` lending a `List<u8>`'s storage for a closure. Spec D69. Rejected: explicit only (a copy per big buffer), implicit `string`→`char*` bridging. Built 2026-09-26: `std/ffi` (`CString.of` refuses NUL bytes with `ffi.NulByte`, `readString`/`readBytes`, `alloc`/`free`, `handle`/`Handle<T>.from`), prelude `CLayout` + `withRaw`, raw-pointer casts in `unsafe`, runtime `veles_ffi.c`; examples/features/ffi.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 2026-09-26 | FFI: callbacks                                                                                                                                                                                                                                                                                           | **`extern "C" fun name(...) { body }`** (user, recommended of three): C calling convention, `&name` is an `extern fun(...)` pointer, no suspend/throw, a panic ends the process. Spec D69. Rejected: `@cabi` attribute, no callbacks. Built 2026-09-26 (parser `parseExportedFun`, `types.Func.C`, codegen `exportWrapper`; C can also call it by symbol — TestNativeLinking).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 2026-09-26 | `?.` through a chain (R8)                                                                                                                                                                                                                                                                                | **Swift's rule** (user, recommended): a null after `?.` skips the rest of the postfix chain; `a?.b.c()` is `R?`. Spec D70. Rejected: Kotlin's one-step rule. Built 2026-09-26 (`safeBelow`/`safeChain` in sema/check_safe.go; `Grouped` on MemberExpr/CallExpr marks parentheses; a nullable place is used in place, so a mutating call lands).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 2026-09-26 | Arithmetic operator traits (§9.11)                                                                                                                                                                                                                                                                       | **The full set** (user, recommended of three): `+ - * /` and unary `-` on user types call `plus`/`minus`/`times`/`dividedBy`/`negate` through prelude traits with a right-hand and an output type; `+=` follows; `Duration`/`Timestamp` adopt them. Spec D71. Rejected: `+`/`-` only; methods only. Built 2026-09-26 (sema/operators.go; associated types inferred from the written method, a general rule; `Duration`/`Timestamp` adopted; `negated()` renamed `negate()`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -1409,11 +1442,11 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-20 | Empty values and `lazy` fields (the user: "would it be good for performance if we added `lazy` for variables and fields?"; then "check for map, set, stringbuilder … write this to the spec … decided, not done by accident")                                                                            | **An empty value owns no storage beyond its header; immutable empties are shared constants; no `lazy` fields ("do not add them")** (user's direction; spec D187). Rejected: `lazy var/val` fields (a flag and a branch on every read, nothing saved over an empty header; `Lazy<T>` covers the expensive field). Built the same day with `TestEmptyListNoStorage` and `bench/emptycoll`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 2026-10-20 | Mutable → immutable (the user: "maybe we should have a possibility to copy mutable list to List and explicit it … and another thing for moving mutable to List without copy?"; "compile time is tempting … maybe both would be the best (but freeze explicitly … documented as only when it is needed)") | **Both: D63's proof grows (fields of unshared local structs, arguments to functions that do not keep them — with the escape analysis), then an explicit `freeze()` that panics on a later mutation through an alias** (user, own pick over the recommended compile-time-first-and-`freeze()`-later; spec D188). Rejected: a `.move()` spelling alone, `freeze()` alone, an implicit copy. Open: Q56 (a pointer taken before the freeze). Built 2026-10-20: the summary and the wider proof, the `redundant_copy` lint with ~55 std sites fixed, stack headers for collections that never leave their function, the move inlay hint, and `freeze()` (Q56 answered the same day).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 2026-10-20 | Q56: `freeze()` and a pointer taken before it (the user: "tempting to get them to stay local but the real production grade code probably needs passing pointers… how can we improve it ?"; also asked for no `unsafe {}` everywhere)                                                                     | **An "exposed" flag on the collection: `freeze()` always freezes the old names (later writes panic), shares the storage when no pointer was ever handed out, and copies it once when one was** (user, recommended of 3; spec D188). Rejected: pointers that stay local (breaks accessors that return `ref`), `unsafe fun freeze`, a compile-time refusal alone, a panic on an exposed collection. Built next.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 2026-10-20 | Syntax review (the user: "let's think about more places that syntax could be better … a lot of them … think them through and explain and ask"; prepared in `veles-syntax-ideas.md` and `veles-syntax-decisions.md`)                                                                                      | **Counter loops: two lints, no syntax (recommended). `x in c` / `x !in c`: the contains operator, with both a byte and a substring in a string ("like in js, no?" — Python's model; D189). `loop (val x = e)`: recommended (D190). Compound assignments: bit and wrapping (D191). `string.slice` (D192) and a look at views. Variants nested in a sealed trait (D193). Extension functions on enums (D194).** (user, recommended of 2–4 each, except `in`, where the user added the substring form, and `slice`, where the user added the view question). Generators (I1): "investigate problem further, give a lot of different examples" — `veles-research-generators.md`, open. Rejected: a step clause or C-style loop, `&&=`/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |     | =`, `u8 in string`as a method, the data-only variant short form,`implement Trait for Enum`. Lints built the same day (`redundant_discard`, `loop_is_range`, `continue_skips_step`, `else_if_ladder`). Not built: D189–D194. |
-| 2026-10-21 | Explicit scheduler yielding (D197)                                                                                                                                                                                                                                                                       | **Reserved statement `cede`; remove the executable prelude `yieldNow()` in the implementing migration** (user, recommended statement-only of 3, reserved of 2, scheduling opportunity of 2). No next-task/global-order guarantee; preserve inferred effects, cancellation, cleanup and executor affinity. Rejected: status quo helper, Unit-valued expression, contextual keyword, global round-robin promise. Specified in `veles-cede-spec.md`; **not implemented**, plan F20. Generator design I1 remains open and returns to planning next.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 2026-10-23 | `copy` (D164) on a type whose `init` takes parameters, and on an `extern union` (gaps found while building B21) | **Refused, both** (user, recommended of 4 and of 2; D164 addendum v0.105). Rejected: copying without running `init` (derived fields go stale); running `init` with the parameters' defaults (wrong input, silently); `init`'s parameters as required arguments of `copy` (a construction under another name; can be added later); for the union, writing the named field over the receiver's bytes. |
-| 2026-10-23 | Large sealed values (plan S7: `selfhost`'s `ast.Expr` was 180 bytes under D12's inline layout; Go's 16) | **Recursive sealed types box their variants automatically; `indirect struct` boxes one anywhere, `inline struct` keeps one in the value; a lint suggests `indirect` for a lopsided non-tree type** (user: "B + C with lint from A", target "more like golang, not 1.3x worse"; then the recommended of 3 for which types box, and of 2 for the opt-out; D198). Rejected: boxing by size in every sealed type (`Result<Big, E>` would allocate per call); D12 with only the lint (hand-written `data: *IfData` fields). |
-| 2026-10-23 | Source files that are not valid UTF-8 (plan S6: Go's front end accepted such a byte in a comment, the self-hosted one could not read the file) | **As Go: every undecodable sequence is an error, comments included; the file does not compile** (user: "make it work like Go", over the recommended "reject up front" with one error; D199). Rejected: a byte-level self-hosted lexer keeping the lenient rule; leaving the front ends to disagree. |
+| 2026-10-20 | Syntax review (the user: "let's think about more places that syntax could be better … a lot of them … think them through and explain and ask"; prepared in `veles-syntax-ideas.md` and `archive/veles-syntax-decisions.md`)                                                                                      | **Counter loops: two lints, no syntax (recommended). `x in c` / `x !in c`: the contains operator, with both a byte and a substring in a string ("like in js, no?" — Python's model; D189). `loop (val x = e)`: recommended (D190). Compound assignments: bit and wrapping (D191). `string.slice` (D192) and a look at views. Variants nested in a sealed trait (D193). Extension functions on enums (D194).** (user, recommended of 2–4 each, except `in`, where the user added the substring form, and `slice`, where the user added the view question). Generators (I1): "investigate problem further, give a lot of different examples" — `veles-research-generators.md`, open. Rejected: a step clause or C-style loop, `&&=`/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |     | =`, `u8 in string`as a method, the data-only variant short form,`implement Trait for Enum`. Lints built the same day (`redundant_discard`, `loop_is_range`, `continue_skips_step`, `else_if_ladder`). Not built: D189–D194. |
+| 2026-10-21 | Explicit scheduler yielding (D197)                                                                                                                                                                                                                                                                       | **Reserved statement `cede`; remove the executable prelude `yieldNow()` in the implementing migration** (user, recommended statement-only of 3, reserved of 2, scheduling opportunity of 2). No next-task/global-order guarantee; preserve inferred effects, cancellation, cleanup and executor affinity. Rejected: status quo helper, Unit-valued expression, contextual keyword, global round-robin promise. Specified in `veles-cede-spec.md`; built 2026-10-27 (plan F20). Generator design I1 remains open and returns to planning next.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2026-10-23 | `copy` (D164) on a type whose `init` takes parameters, and on an `extern union` (gaps found while building B21)                                                                                                                                                                                          | **Refused, both** (user, recommended of 4 and of 2; D164 addendum v0.105). Rejected: copying without running `init` (derived fields go stale); running `init` with the parameters' defaults (wrong input, silently); `init`'s parameters as required arguments of `copy` (a construction under another name; can be added later); for the union, writing the named field over the receiver's bytes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 2026-10-23 | Large sealed values (plan S7: `selfhost`'s `ast.Expr` was 180 bytes under D12's inline layout; Go's 16)                                                                                                                                                                                                  | **Recursive sealed types box their variants automatically; `indirect struct` boxes one anywhere, `inline struct` keeps one in the value; a lint suggests `indirect` for a lopsided non-tree type** (user: "B + C with lint from A", target "more like golang, not 1.3x worse"; then the recommended of 3 for which types box, and of 2 for the opt-out; D198). Rejected: boxing by size in every sealed type (`Result<Big, E>` would allocate per call); D12 with only the lint (hand-written `data: *IfData` fields).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2026-10-23 | Source files that are not valid UTF-8 (plan S6: Go's front end accepted such a byte in a comment, the self-hosted one could not read the file)                                                                                                                                                           | **As Go: every undecodable sequence is an error, comments included; the file does not compile** (user: "make it work like Go", over the recommended "reject up front" with one error; D199). Rejected: a byte-level self-hosted lexer keeping the lenient rule; leaving the front ends to disagree.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 | 2026-10-24 | How large the heap grows before the first collection (bench/parse: 32 MiB made the Windows parse ~5% faster; plan S16 leftovers) | **Defaults stay (8 MiB, goal 100); a `[runtime] gc.minHeap` / `gc.goal` setting and `VELES_GC_MIN_HEAP` / `VELES_GC_GOAL` overrides, D200** (user, recommended of 3). Rejected: a 32 MiB default (memory in every churning program for one benchmark); the environment variable alone. |
 | 2026-10-24 | D188's move for a field of a local whose methods were called (`Scan(tokens: lexer.tokens.toList(), …)` copied every token) | **The proof widens: methods whose summary says `this` is not kept, and no later use of the field, D201** (user, recommended of 3). Rejected: `freeze()` in the compiler's source; keeping the copy. |
@@ -1430,12 +1463,109 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-26 | Singletons (user: "how we'll support 'singleton' pattern … and different other common patterns"; menu `veles-patterns.md` P1) | **`lazy val` on module and static `val`s, spec D210** (user, recommended of 3): built on the first read, once, with `Lazy`'s rules; reads are plain names; eager stays the default; not on fields. Rejected: `Lazy` + `.get()` only; every global lazy (Swift). |
 | 2026-10-26 | A module `var` of a synchronized type was reassignable (found building B29 part 1: `var total = Mutex(value: 0)` reassigned while tasks locked it printed 200 002 of 200 000) | **No module-level `var`; every module global is a `val` of a `Sendable` type, D66 addendum v0.114** (user, recommended of 4): fix `var` → `val`, hints `set`/`store`/`reset`; executor state keeps `var`. Rejected: an atomic slot (the two-lock race remains); assignment only before the first task; documenting it. |
 | 2026-10-26 | An immutable data type (user's `to_figure_out.md` 1: "`const struct` … a `data class` without methods and immutability enforced") | **`const struct`: deeply immutable, checked at the declaration, Sendable by construction; methods allowed, spec D212** (user, recommended of 4). Rejected: an inferred `Immutable` marker; `data struct` without methods; leaving structs shallow. |
-| 2026-10-26 | `suspend loop`, a cede at every iteration (`to_figure_out.md` 2) | **Not added; D145's automatic yield and `cede` (D197) stay** (user, recommended of 3: "we'd need check if the current approach is good. but ok, leave it"; spec note after D213). The check is plan F21. Rejected: `suspend loop`; a per-executor time slice (not offered as a decision yet; F21 may raise it). |
+| 2026-10-26 | `suspend loop`, a cede at every iteration (`to_figure_out.md` 2) | **Not added; D145's automatic yield and `cede` (D197) stay** (user, recommended of 3: "we'd need check if the current approach is good. but ok, leave it"; spec note after D213). The check is plan F21 (measured 2026-10-27: the slice stays; Q65 raised). Rejected: `suspend loop`; a per-executor time slice (not offered as a decision yet; F21 may raise it). |
 | 2026-10-26 | Allocation inlay hints (`to_figure_out.md` 3) | **Opt-in `heap` hints at allocating sites, with hover; `veles explain --alloc`, spec D213** (user, recommended of 4). Rejected for now: `@noAlloc` with an inferred effect (to ask again after the hints); a runtime allocation profile. |
 | 2026-10-26 | A singleton with a lifecycle (menu P3) | **Made in `main` and handed down, spec D211** (user, recommended of 2): module initializers still cannot throw or suspend, and nothing is closed after `main`. Rejected: throwing/suspending initializers in the root package with globals closed after `main`; a `service` declaration. |
+| 2026-10-26 | Q61: a local `var x: T` with no value (`veles-layout-spec.md`; it was zero-filled, so `*T` and handles could be null) | **Definite assignment before any read, `&`, capture or method call, spec D214** (user, recommended of 3), with the validity invariant `unsafe` must keep. Rejected: Go-style zero values for the types whose zero is valid; leaving it. |
+| 2026-10-26 | Q62: what a plain struct's layout promises | **Declaration order with C's alignment rule is guaranteed; `compact struct` (a contextual word, like `inline`/`indirect`) lets the compiler place fields for minimal size; encodings of `T?`, sealed, error unions, closures and trait objects are unspecified, spec D215** (user: "declaration order guaranteed" plus "a modifier … I prefer a keyword"; then `compact`, recommended of 3). Rejected: automatic reordering of every struct (0.4 % measured); `@compact`; no opt-in. |
+| 2026-10-27 | Q63: definite assignment through `break` (D214) | **A variable assigned on every way out of a loop — each `break` leaving it, and the normal end of a loop with a condition — is assigned after it, spec D216** (user, recommended of 3). Rejected for now: `break value` loops (could come later on top); leaving the search loop refused. |
+| 2026-10-27 | Q64: a plain function where a parameter may suspend (D40, D116) | **A function value without `suspends` (named or a variable) is accepted for a `suspends` parameter of a conditionally suspending function; the call is plain; a parameter the callee keeps still refuses, spec D217** (user, recommended of 3). Rejected: adapters everywhere (a hidden closure for a variable); leaving `xs.map(double)` refused. |
+| 2026-10-28 | Q65: how often a loop's back edge polls (plan F21) | **A counted loop whose body calls nothing and does not suspend checks once per chunk of at most 1024 rounds; every other loop on every round; spec D218** (user, recommended of 4, after asking whether chunking leaves more for `cede` — it does not). Rejected: every round (tight loops 3–9× slower than C); an `@unpolled` annotation (blocks collections, uncancellable); signal preemption as Go (a redesign). |
 
 ## 11. Known limitations to revisit
 
+- [ ] **`lazy val` left over (D210, plan B29 part 2 built 2026-10-27).**
+      (a) D210 says the ready check is hoisted out of a loop; it is not: an
+      acquire load is never hoisted, and a monotonic load plus a fence on
+      the slow path would be, at the price of a fence on ARM. Measured
+      today: a read is ~10% over a plain module `val` when the read is the
+      whole of a non-inlined function (`bench/lazyval`), less inside a
+      loop body that does work.
+- [ ] **Allocation hints left over (D213, plan B31 built 2026-10-27).**
+      (a) Sites are checked against the generated code by statement line,
+      the line table's granularity: two sites on one line are not told
+      apart. Expression-level line entries in codegen would make the check
+      exact (and help a debugger). (b) Other editors than VS Code need the
+      `allocationHints` initialization option documented in their setup.
+      (c) `@noAlloc` with an inferred effect is to be asked again (D213's
+      rejected-for-now) now that the hints exist.
+- [ ] **`const struct` left over (D212, plan B30 built 2026-10-27).**
+      (a) Removing `const` from a public type is an API break that
+      `veles apidiff` should report; the tool does not exist yet (plan G1,
+      on S12's interface files). (b) Sharing a large const struct by
+      address with no defensive copy: immutability of the value is not
+      enough, since a `var` holding it can be reassigned during the call;
+      D121's caller rule already lends what is safe. Measure before
+      anything more. (c) `selfhost/` could declare its tokens, spans and
+      AST nodes `const struct` (D212's self-hosting note) once the AST
+      settles (S13).
+- [ ] **A nullable niche in `string` and in sealed values** (parked with
+      numbers, `veles-layout-spec.md` §5.5): a `string?` or sealed `T?`
+      still carries a flag word. A string niche needs every empty string to
+      have a non-null pointer (C-produced ones included); a sealed one needs
+      1-based tags at every tag site, for 2 uses in `selfhost`.
+- [x] **Value layout left over (plan B32 step 6), done 2026-10-27:** exact
+      GC maps for sealed and error payloads (the union of the variants'
+      pointer words); `@align(n)` kept inside tuples, nullables and sealed
+      or error payloads (D120 note); `noalias nocapture readonly` on
+      borrowed big parameters (D121 note). Found on the way and fixed: a
+      suspending function's frame was allocated 8-aligned while LLVM laid
+      it out for an over-aligned local, so a release build crashed on a
+      large `@align(64)` local kept across a suspension (frames now come
+      at `llvm.coro.align`; golden `overalign` runs it in release).
+- [ ] **`http.serve`: `idleTimeout` also bounds a new connection's first
+      request** (`std/http/http.vs` `requestLine`; found 2026-10-27 when
+      `std/http`'s "closed while idle is replaced" test failed once in the
+      full WSL suite: with `idleTimeout: 100ms` the fresh connection the
+      client retried on was closed before its request arrived). Go keeps
+      the two apart (`ReadHeaderTimeout` for the first request,
+      `IdleTimeout` between requests). The test's margins were widened
+      (400 ms / 1.2 s); whether the server should have a separate
+      first-request limit is a public API question (`Limits`) for
+      `veles-decide`.
+- [x] **Fixed 2026-10-27 (Windows): a string spanning lines kept the
+      file's `\r`.** With `core.autocrlf`, `examples/todo` printed `\r\n` in
+      its help text (a plain `"…"` over several lines; text blocks already
+      dropped the `\r`), and `veles fmt` copied the `\r` of a literal into
+      its LF output, so `TestCorpus` flagged the CRLF checkouts of
+      `examples/regex` and `examples/todo`. Both lexers (Go and `selfhost/`)
+      now read `\r\n` inside a string as `\n`; the formatter's `raw` writes
+      LF. Pinned by `TestStringLineBreaksIgnoreCRLF` and `TestLineEndings`.
+- [x] **Fixed 2026-10-27: `veles fmt` was not idempotent on a one-line
+      receiver block holding a `when`** (`A { when (0) { () => 0 } }`,
+      found by `FuzzFormat`): the first run kept the block on one line with
+      the `when` broken inside it, the second expanded it. `receiverBlock`
+      now falls back to a block when a statement prints over several lines.
+      Pinned by `TestReceiverBlockWithWhenIsIdempotent` and the fuzz seed.
+
+- [x] **Layout bugs found 2026-10-26 (veles-layout-spec.md §4).** All four
+      fixed the same day. (1) `var x: T` with no value in a function was
+      zero-filled with no definite-assignment check: `var p: *Named` passed
+      as `(*Named)?` read as `null`, and `var xs: List<i64>; xs.len()`
+      exited 255 with no message — now refused (D214, plan B32 step 2,
+      `sema/testdata/conform/D214-definite-assignment.vs`). (2) a constant
+      table of an `@align` or packed struct failed in clang — constants are
+      built from the struct's slots (`structSlots`), pinned by
+      `TestConstantTablesOfPaddedStructs`; (3) the memory class starts at
+      128 bytes as D121 says; (4) `types.PayloadOffset` is the one payload
+      offset (GC descriptors, the fail-fast launch), and the runtime stops
+      with an internal error if the compiler passes another.
+- [x] **Fixed 2026-10-26: run-time crashes on macOS arm64.** `veles test
+  std/compress` exited 255, and `TestHashFlooding`,
+      `TestReactorPollFallback` (segfaults), `TestStdRegexUnitTests` ("list
+      was frozen by freeze()"), `TestTLSServer`,
+      `TestReactorManyConnections` and `TestStdHttpUnitTests` failed. Cause:
+      a dead large object's span is given back with `os_decommit`, and a
+      later span carved from that place is taken to read as zeros
+      (`new_span`, the `virgin` slots); Darwin's `MADV_DONTNEED` keeps the
+      bytes, so new objects started with stale words — a list header with
+      its frozen bit set, stale pointers. On macOS `os_decommit` now maps
+      fresh pages over the range (`mmap` `MAP_FIXED`). Pinned by
+      `TestReleasedMemoryReadsAsZeros` (fails without the fix); `go test
+    ./...` green on this Mac (the Unicode tables regenerated the same day,
+      with Go pinned to 1.27.1).
+      Linux (`MADV_DONTNEED` zero-fills private anonymous pages) and Windows
+      (`MEM_DECOMMIT`) were not affected.
 - [x] **Fixed 2026-10-26 (plan B29 part 1):** `sema/check_fn.go`
       `checkGlobal` refuses a module or `static val` whose type is not
       `Sendable` (an executor's state is exempt), with a hint per kind:
@@ -1471,13 +1601,13 @@ Every new public std API (http cookies/forms/client, `std/log`,
       (veles-decide).
 
 - **B19 / D157 (implemented 2026-10-22; verified on Windows and Linux with
-      the B22 runs, 2026-10-23; staticcheck reports nothing new).**
-      Result and task interpolation is rejected in strings, format specs and
-      template values; explicit `Result.toString()` remains available. Checker,
-      CLI repair/debug/release, LSP and migrated examples/docs are covered.
-      The specified generic limit remains: a parameter declared `T` can be
-      interpolated when instantiated as a Result; direct parameter coverage
-      pins this exception, not a generic-effect or wrapper analysis.
+  the B22 runs, 2026-10-23; staticcheck reports nothing new).**
+  Result and task interpolation is rejected in strings, format specs and
+  template values; explicit `Result.toString()` remains available. Checker,
+  CLI repair/debug/release, LSP and migrated examples/docs are covered.
+  The specified generic limit remains: a parameter declared `T` can be
+  interpolated when instantiated as a Result; direct parameter coverage
+  pins this exception, not a generic-effect or wrapper analysis.
 - [ ] **Runtime timing-test investigation (2026-10-22).** The initial B19
       full run failed `TestLoopsAreCancellationPoints` at release/8 workers
       (the shielded lock region finished before its timeout). The unchanged
@@ -1561,15 +1691,30 @@ Every new public std API (http cookies/forms/client, `std/log`,
       Windows checkout gives a source, or `.gitattributes` should pin `*.vs`
       to `eol=lf`.
 
-- [ ] **D197 `cede` (specified 2026-10-21, not implemented; plan F20).**
-      Add the reserved statement in both frontends, suspension inference and
-      lowering, context checks, cancellation/fail-fast/cleanup and affinity
-      regressions, resolution-aware removed `yieldNow` errors/fixes, formatter,
-      LSP/grammar and whole-tree source/docs migration. `yieldNow()` still works
-      until that coordinated change; `veles-cede-spec.md` sections 1-7 carry
-      the contract and acceptance matrix. No new runtime performance result or
-      cross-platform cede verification exists. Generator investigation I1 and
-      general call-site suspension inlay hints are not implemented by this decision.
+- [ ] **`cede` and the loop yield, left over (D197 built and D145 measured,
+      plans F20 and F21, 2026-10-27; numbers in `bench/results.md`).**
+      (a) Not run: `driver/cede_test.go` on macOS, and the Linux sanitizer
+      build (`go test ./driver -run TestCede -sanitize` in WSL).
+      (b) A yield under contention: eight tasks ceding at every round cost
+      ~5.3 µs a cede, against ~2.2 µs for Go's `runtime.Gosched` (~90 ns
+      against 85 ns on one thread). Both go through a shared queue under a
+      lock; ours is a spin lock that falls back to `SwitchToThread`. `cede`
+      is meant to be rare; measure before changing where a yield is queued
+      (it decides who may run next).
+      (c) A suspending function's loop that D218 does not chunk (its body
+      calls, or it runs on a condition) stores what it keeps to the
+      coroutine frame on every round, because the back edge's yield path is
+      a suspension point: measured before D218 at half the plain twin's
+      speed (1723 against 865 ps a round). A chunked loop no longer pays it
+      (114 against 107 ps): the inner loop holds no suspension point.
+      Decision-free codegen work for the rest (spill only on the cold path).
+      (d) The poll itself blocked the loop optimizations: D218, built
+      2026-10-28 (plan F22).
+      (e) A plain function's loop cannot yield (D145, by design): beside one,
+      a ticker waits for the whole loop (315 ms of 315 at one worker). The
+      remedy stays `scope(on:)`/`blocking` or making the function suspend.
+      (f) Generators (I1) and call-site "may suspend" hints are not part of
+      D197.
 
 - **macOS validation follow-up (A7, 2026-10-21):** Intel Macs are untested;
   Windows and Linux were not available to rerun this change. Staticcheck was
@@ -1668,121 +1813,121 @@ Every new public std API (http cookies/forms/client, `std/log`,
 bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribute and
   function names confirmed when built).
 - [ ] **S8 debug info (built 2026-10-23), what is left.** (1) A local of a
-  suspending function that lives across a suspension prints nothing once
-  LLVM's coroutine split moves it into the frame (its `dbg.declare` is not
-  carried over; `driver/debuginfo_test.go` keeps such locals in a plain
-  function for that reason). (2) Lists, maps, sets, nullables, sealed
-  values and closures are named and sized only; a gdb pretty-printer or
-  DWARF members would show their contents. (3) std's files are embedded,
-  so a debugger cannot show their text (writing them to a cache directory
-  would). (4) lldb on macOS was not run. (5) `--release` builds carry no
-  line information (`-g` without `!dbg`). (6) Function types in the
-  subprograms are empty (`!DISubroutineType(types: !{})`).
+      suspending function that lives across a suspension prints nothing once
+      LLVM's coroutine split moves it into the frame (its `dbg.declare` is not
+      carried over; `driver/debuginfo_test.go` keeps such locals in a plain
+      function for that reason). (2) Lists, maps, sets, nullables, sealed
+      values and closures are named and sized only; a gdb pretty-printer or
+      DWARF members would show their contents. (3) std's files are embedded,
+      so a debugger cannot show their text (writing them to a cache directory
+      would). (4) lldb on macOS was not run. (5) `--release` builds carry no
+      line information (`-g` without `!dbg`). (6) Function types in the
+      subprograms are empty (`!DISubroutineType(types: !{})`).
 - [ ] **D198 (built 2026-10-23, plan S16), what is left.** (1) A method
-  called on a narrowed boxed variant gets a fresh box as `this`; if the
-  method keeps that pointer (stores it somewhere), a later copy of the
-  sealed value shares the box and a write through the kept pointer is seen
-  by the copy. Every write through the value itself, `&value` included
-  (it points at the tag and pointer, not the box), copies first; the D188
-  escape summary would tell when a kept `this` needs a copy at assignment. (2) A box is copied on every write
-  through a narrowed variable, not once per value (no uniqueness is
-  tracked). (3) `bench/parse` was 1.1× Go on Windows (1.0–1.1× on Linux)
-  before the instruction-count pass of 2026-10-23 (progress log), which
-  found Veles executing ~40% fewer instructions than Go for the same work.
-  The three choices that were left were decided 2026-10-24 as D200 (a
-  `[runtime] gc` setting), D201 (a field moves out of a local whose methods
-  were called) and D202 (`startsWith(prefix, startIndex)`); plan S18–S20.
-  (4) macOS was not run.
+      called on a narrowed boxed variant gets a fresh box as `this`; if the
+      method keeps that pointer (stores it somewhere), a later copy of the
+      sealed value shares the box and a write through the kept pointer is seen
+      by the copy. Every write through the value itself, `&value` included
+      (it points at the tag and pointer, not the box), copies first; the D188
+      escape summary would tell when a kept `this` needs a copy at assignment. (2) A box is copied on every write
+      through a narrowed variable, not once per value (no uniqueness is
+      tracked). (3) `bench/parse` was 1.1× Go on Windows (1.0–1.1× on Linux)
+      before the instruction-count pass of 2026-10-23 (progress log), which
+      found Veles executing ~40% fewer instructions than Go for the same work.
+      The three choices that were left were decided 2026-10-24 as D200 (a
+      `[runtime] gc` setting), D201 (a field moves out of a local whose methods
+      were called) and D202 (`startsWith(prefix, startIndex)`); plan S18–S20.
+      (4) macOS was not run.
 - [ ] **D200–D202 (built 2026-10-24, plan S18–S20), what is left.** (1)
-  D201's method summary is pessimistic where it cannot see: a method
-  reached through a trait (a default body), a decorated or extern one, and
-  a field mention it cannot classify (an index expression, a pointer taken
-  with `&`) keep everything; an element written through `ref` in a method
-  counts as handing out the storage. (2) `endsWith` has no index argument
-  (D202 left it out until something needs it). (3) The Go front end's own
-  lexer was not changed (its operator scan is `strings.HasPrefix` already).
-  (4) macOS was not run.
+      D201's method summary is pessimistic where it cannot see: a method
+      reached through a trait (a default body), a decorated or extern one, and
+      a field mention it cannot classify (an index expression, a pointer taken
+      with `&`) keep everything; an element written through `ref` in a method
+      counts as handing out the storage. (2) `endsWith` has no index argument
+      (D202 left it out until something needs it). (3) The Go front end's own
+      lexer was not changed (its operator scan is `strings.HasPrefix` already).
+      (4) macOS was not run.
 - [ ] **C9 — `std/cli`, `std/build`, D203 (built 2026-10-24), what is
-  left.** (1) **`examples/todo` keeps its own parser**: no command means
-  `ls`, `list`/`do`/`del` are aliases, and `ls -passport` excludes a word —
-  a default subcommand, variant aliases and pass-through arguments are
-  `std/cli` API to decide first. (2) **`T.doc`** (a type's doc comment, a
-  constant) was added for the help's first paragraph; the name is the
-  agent's, not yet confirmed by the user. ~~(3) enum choices in the help~~,
-  ~~(4) `has`/`attr` on `MemberInfo`~~, ~~(5) `internal` trait methods~~,
-  ~~(6) inference through `try`~~, ~~(7) the `'enter'` message~~ — fixed
-  2026-10-24 (D205's `Enumerated` lists the choices). (8) A reserved flag
-  name (`--help`, `--version`, `-h`) or a long short flag is a compile-time
-  `static assert` now, naming the field, but reported at the line in
-  `std/cli` rather than at the user's field (a "required by" note at the
-  use site would be a general improvement). (9) D160's per-OS files
-  (`_windows.vs`, …) are plan P1, not built. (10) macOS was not run.
+      left.** (1) **`examples/todo` keeps its own parser**: no command means
+      `ls`, `list`/`do`/`del` are aliases, and `ls -passport` excludes a word —
+      a default subcommand, variant aliases and pass-through arguments are
+      `std/cli` API to decide first. (2) **`T.doc`** (a type's doc comment, a
+      constant) was added for the help's first paragraph; the name is the
+      agent's, not yet confirmed by the user. ~~(3) enum choices in the help~~,
+      ~~(4) `has`/`attr` on `MemberInfo`~~, ~~(5) `internal` trait methods~~,
+      ~~(6) inference through `try`~~, ~~(7) the `'enter'` message~~ — fixed
+      2026-10-24 (D205's `Enumerated` lists the choices). (8) A reserved flag
+      name (`--help`, `--version`, `-h`) or a long short flag is a compile-time
+      `static assert` now, naming the field, but reported at the line in
+      `std/cli` rather than at the user's field (a "required by" note at the
+      use site would be a general improvement). (9) D160's per-OS files
+      (`_windows.vs`, …) are plan P1, not built. (10) macOS was not run.
 - [ ] **D207 (built 2026-10-24, plan C11), what is left.** (1) A block
-  passed to a function of one's own (`buildString { … }`) is a closure, not
-  inlined: there is no `inline fun`, so captures cost an allocation there.
-  (2) `return` in a block given to `apply`/`edit` is refused; Kotlin returns
-  from the enclosing function — a decision if wanted. (3) A receiver
-  function value is called `body(x)`; `x.body()` is not offered (a
-  spelling decision). (4) Inside `edit` on a string the receiver is a
-  `StringBuilder`: it has the in-place edits and `len`/`isEmpty`, not yet
-  the read-only string methods (`contains`, `startsWith`, …). (5) In a
-  generic function, a block's bare names are resolved against the receiver
-  type of the first instance checked. (6) `edit` on a struct copies it
-  shallowly, as `copy()` does: a mutable collection in a field is shared
-  with the original. (7) Inside an argument list that already failed, a
-  block is not checked (its errors appear once the call is fixed). (8) A
-  method calling `this.apply { … }` makes its callers' receivers escape
-  (heap) whatever the block does — the receiver pass sees a pointer into
-  `this` handed out. (9) Not measured on Linux.
+      passed to a function of one's own (`buildString { … }`) is a closure, not
+      inlined: there is no `inline fun`, so captures cost an allocation there.
+      (2) `return` in a block given to `apply`/`edit` is refused; Kotlin returns
+      from the enclosing function — a decision if wanted. (3) A receiver
+      function value is called `body(x)`; `x.body()` is not offered (a
+      spelling decision). (4) Inside `edit` on a string the receiver is a
+      `StringBuilder`: it has the in-place edits and `len`/`isEmpty`, not yet
+      the read-only string methods (`contains`, `startsWith`, …). (5) In a
+      generic function, a block's bare names are resolved against the receiver
+      type of the first instance checked. (6) `edit` on a struct copies it
+      shallowly, as `copy()` does: a mutable collection in a field is shared
+      with the original. (7) Inside an argument list that already failed, a
+      block is not checked (its errors appear once the call is fixed). (8) A
+      method calling `this.apply { … }` makes its callers' receivers escape
+      (heap) whatever the block does — the receiver pass sees a pointer into
+      `this` handed out. (9) Not measured on Linux.
 - [ ] **Intermittent on Linux (found 2026-10-24): `driver TestExecutors`
-  panics "deadlock: every task is blocked"** in case 12 (a task waiting for
-  a `Thread`) or 13 (`runBlocking`), about 1 run in 10 under `-count`;
-  reproduced at the committed HEAD with none of the day's changes, so it
-  predates D207/D208. Not diagnosed.
+      panics "deadlock: every task is blocked"** in case 12 (a task waiting for
+      a `Thread`) or 13 (`runBlocking`), about 1 run in 10 under `-count`;
+      reproduced at the committed HEAD with none of the day's changes, so it
+      predates D207/D208. Not diagnosed.
 - [ ] **D208 (built 2026-10-24, plan C12), what is left.** (1) The report
-  for "the program failed, the compiler passed" is built but not pinned by a
-  test (there is no hook to make the runtime wrong). (2) A test that uses
-  `try` does not run in the compiler (a `const fun` cannot throw yet, D113),
-  nor does a test under a suite's `skip`/`skipIf` gate. (3) Each test has
-  the whole constant step budget; a suite of slow tests the compiler can
-  run makes `veles test` slower by that much — not measured. (4) Helper
-  call sites inside a failing compile-time run are not listed under the
-  failure as the runtime lists them.
+      for "the program failed, the compiler passed" is built but not pinned by a
+      test (there is no hook to make the runtime wrong). (2) A test that uses
+      `try` does not run in the compiler (a `const fun` cannot throw yet, D113),
+      nor does a test under a suite's `skip`/`skipIf` gate. (3) Each test has
+      the whole constant step budget; a suite of slow tests the compiler can
+      run makes `veles test` slower by that much — not measured. (4) Helper
+      call sites inside a failing compile-time run are not listed under the
+      failure as the runtime lists them.
 - [ ] **D199 (built 2026-10-24, plan S17), what is left.** (1) The gate
-  modes that print a file's text (`--lines`, `--render`, `--quote`) skip a
-  file that is not UTF-8: a Veles string cannot hold its bytes. (2) The
-  language server analyses the disk's bytes only while the editor's buffer
-  is that file with U+FFFD for each undecodable byte; an editor that
-  replaces a run of bad bytes with one U+FFFD (a truncated sequence) can
-  put a later column on that line off by one. (3) `benchParse` still reads
-  with `fs.readFile` (std is UTF-8). (4) macOS was not run.
+      modes that print a file's text (`--lines`, `--render`, `--quote`) skip a
+      file that is not UTF-8: a Veles string cannot hold its bytes. (2) The
+      language server analyses the disk's bytes only while the editor's buffer
+      is that file with U+FFFD for each undecodable byte; an editor that
+      replaces a run of bad bytes with one U+FFFD (a truncated sequence) can
+      put a later column on that line off by one. (3) `benchParse` still reads
+      with `fs.readFile` (std is UTF-8). (4) macOS was not run.
 - [ ] **B22 left open (D166 built 2026-10-23).** (1) **Labels in a generic
-  type's arguments are refused, not kept** (`Box<(lo: i64, hi: i64)>` is an
-  error naming `Box<(i64, i64)>`): one struct or sealed instance serves every
-  labelling and holds none, because codegen, derived operations and several
-  checker tables key instances by identity. Keeping them needs instances per
-  labelling that are `Identical` to each other and emitted once by `Key`.
-  Built-in collections (`List`, `Map`, …), function results and a throwing
-  call's success type keep labels; a `Result` value that is not a direct call
-  (a `Result<(a: …), E>` local, `when (r) { is Ok => … }`) shows its payload
-  unlabelled. The spec says labels do not change the generic instance; it
-  does not say whether a written label may be refused — the user's to
-  confirm or lift. (2) A `loop (e in m)` over a map, and `loop ((k, v) in m)`'s
-  element, stay `(K, V)`: D166 labels `entries()` only. (3) `[(1, 2): x => x]`
-  — a tuple key whose value is a one-parameter lambda without parentheses —
-  still reads as a lambda `(1, 2): x => …` (the return-type scan sees `x =>`);
-  write `(x) => x`. (4) Not done: rename/references of a label (the label is
-  not a declaration the index knows), hover on the label in `t.key` (not
-  built or checked), and moving the selfhost's const tables (`range.1 < r`) to labels.
-  Windows and Linux (WSL) green.
+      type's arguments are refused, not kept** (`Box<(lo: i64, hi: i64)>` is an
+      error naming `Box<(i64, i64)>`): one struct or sealed instance serves every
+      labelling and holds none, because codegen, derived operations and several
+      checker tables key instances by identity. Keeping them needs instances per
+      labelling that are `Identical` to each other and emitted once by `Key`.
+      Built-in collections (`List`, `Map`, …), function results and a throwing
+      call's success type keep labels; a `Result` value that is not a direct call
+      (a `Result<(a: …), E>` local, `when (r) { is Ok => … }`) shows its payload
+      unlabelled. The spec says labels do not change the generic instance; it
+      does not say whether a written label may be refused — the user's to
+      confirm or lift. (2) A `loop (e in m)` over a map, and `loop ((k, v) in m)`'s
+      element, stay `(K, V)`: D166 labels `entries()` only. (3) `[(1, 2): x => x]`
+      — a tuple key whose value is a one-parameter lambda without parentheses —
+      still reads as a lambda `(1, 2): x => …` (the return-type scan sees `x =>`);
+      write `(x) => x`. (4) Not done: rename/references of a label (the label is
+      not a declaration the index knows), hover on the label in `t.key` (not
+      built or checked), and moving the selfhost's const tables (`range.1 < r`) to labels.
+      Windows and Linux (WSL) green.
 - [ ] **B21 left open (D163–D165 built 2026-10-23).** One choice that is the
-  user's: D163's migration of the tree's `throw X(message: …)` sites "by
-  `--fix`, as the user chooses when built" — it needs a lint that offers the
-  positional form on a one-parameter construction (a style rule: which
-  spelling to prefer, on by default or not); nothing was migrated. (`copy`
-  on a type whose `init` takes parameters and on an `extern union`: decided
-  2026-10-23, refused — D164 addendum v0.105.)
-- **Found by the direction review (2026-10-14, `veles-direction-2026-10-14.md`), open:**
+      user's: D163's migration of the tree's `throw X(message: …)` sites "by
+      `--fix`, as the user chooses when built" — it needs a lint that offers the
+      positional form on a one-parameter construction (a style rule: which
+      spelling to prefer, on by default or not); nothing was migrated. (`copy`
+      on a type whose `init` takes parameters and on an `extern union`: decided
+      2026-10-23, refused — D164 addendum v0.105.)
+- **Found by the direction review (2026-10-14, `archive/veles-direction-2026-10-14.md`), open:**
   ~~`implement Codable` on a struct with a tuple field fails with "no method 'encode'"~~
   (fixed with B22, 2026-10-23: the derive names the field); ~~no debug info~~ (S8 built 2026-10-23: gdb steps Veles source; what is left above); no per-target
   code in Veles, every OS difference is in `runtime/c` (D160); `std/net` has no UDP,
@@ -1835,7 +1980,7 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
   lock was the other suspect, but it holds the lock for one pass over the pools' threads every
   5 ms — microseconds, not the milliseconds of the tail, 2026-10-11).
 
-- **Found by the concurrency review (2026-10-09, `veles-concurrency-review.md`), not fixed yet**
+- **Found by the concurrency review (2026-10-09, `archive/veles-concurrency-review.md`), not fixed yet**
   (B1–B6 and the child start latency are fixed — F1–F12): (B4) `bench/idle` measures 249 bytes per
   parked task since F12 (2026-10-11; 345 before; Go 8.7 KB per goroutine), the review's 250 met by
   one byte: the task 160 (its slot), the smallest frame 80, the benchmark's own handle 8. Lower
@@ -2095,7 +2240,7 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
   parse back: the parser stops where `secs * 1000000 + micros` would leave
   the i64, and recovering those two seconds needs arithmetic split across
   the boundary that no reader could check. Everything between them round
-  trips (`examples/time` asserts both ends print).
+  trips (`examples/features/time` asserts both ends print).
 - `Offset.local(at:)` outside what the host's C library will convert — a
   negative `time_t` or past the year 3000 on the Microsoft CRT — is the
   offset for the _same date in a year the host can do_, not the offset that
@@ -2204,7 +2349,7 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
 - **User-defined annotations (D174, built 2026-10-18, plan B26): what is left.** ~~`T.members`~~ (built 2026-10-24, D203: `inline loop (m in T.members)` reads names, docs, `Type` and annotations; in a `const fun` a `MemberInfo` has name, doc and index, but `m.has<A>()`/`m.attr<A>()` on a `MemberInfo` value are not built — only on the loop's handle) and `f.set(x, v)` are not built; an annotation `on fun` or `on trait` is checked and kept but nothing reads it yet (it would be reflection over a module's functions); `veles doc` and completion do not list annotations or show their values; hover shows the declaration only; the diagnostics, the AST and the docs still say "attribute" for the compiler's own `@names` and for the family `attributes` (the user's word is "annotation"); the unread warning does not look at generic owners or sealed families; `T.build` skips fields an `init` assigns and respects the visibility of a defaulted field as a constructor does; the Go `Codable` derive (`sema/derive.go`, `derive_print.go`, `derive_schema.go`) and `@key`/`@skip`/`@required`/`@tag` are not yet ordinary annotations in `std/codec` (the point of D174 for the self-hosted compiler); `std/cli` (plan C9) is to be written on it. The reflection answers are compile-time only by design: a function that reads them cannot be called from code that runs, and its emitted body is never reached.
 - **Typed decorators (D176, built 2026-10-18): what is left.** Hover on a decorated function does not name the wrapper, and a backtrace shows the lambda frame the rewrite adds; `veles doc` does not mark a decorated function; a decorator on a trait method that has a default is rewritten for the default only (an `implement` that overrides it is not wrapped); the second wrapper shape cannot wrap a function with a variadic parameter; the arguments of an annotation that has a wrapper are checked where the annotation stands, so they cannot name the function's parameters; a bare argument (`@Retry(3)`) needs exactly one parameter until D163 is built, so a decorator with a defaulted second parameter is written `@Retry(times: 3)`.
 - **Lint levels and formatter options (D177, parts 1–2 built 2026-10-18, plan B27): what is left.** Part 3 (rules written in Veles: `std/lint`, the reflected AST, the evaluator's speed measured first) is not built. `[lint.forbid]` is not built. Library lints cannot be named yet: the TOML reader has no dotted keys, so they will be written as quoted keys (`"acme.no_sleep" = "warn"`) or move with `package.vs` (D131); the manifest says "not available yet". The warnings now all have registry names (stale-reference, parameter-copy and self-address added 2026-10-18); still outside it are `implicit_return` (an error with its own setting) and the removed-syntax errors in `lint_index.go`, which are not lints. `long_line` counts text blocks (`"""…"""`) and comments like any other line, and a tab as four columns. `trailing_commas` covers parameter lists and broken lists/arguments/literals; a `when` arm's pattern list and `use { }` lists are unaffected (the latter never had one). `line_endings = "auto"` decides per file from its content; a new empty file gets LF.
-- **Lint rules written in Veles (D177, plan B27 part 3, built 2026-10-19): what is left.** Built: the evaluator holds sealed variants and `*T` fields while it runs a `const fun` (`CVariant`; a _result_ still cannot be sealed), `std/lint` (`Rule`, `Visitor` with an `on<Node>` callback per `selfhost/ast` struct, `Context.report(span, message, fix:)`, `Fix`; `ast.vs`, `kind.vs`, `source.vs`, `visitor.vs` are generated from `selfhost/` by `go test ./selfhost -run LintAPI -update`), the Go-to-Veles tree reflector and runner (`sema/lintrules.go`, fields matched by name, `ruleFieldAlias` for the spelled-around ones, tested by `TestRuleASTFields`), `[lint] dep.rule = "warn"` (bare dotted, table or quoted keys; bare dotted keys now parse anywhere in `veles.toml`), the dependency's root module loaded for it, `veles check --fix`, `examples/lintrules`. Measured: 8,600 lines / 260 KB with three rules (one with five node callbacks) 0.22 s -> 0.29 s; the evaluator itself runs ~2.8 us per node per pass (294k-node probe), mostly allocation (a `big.Int` per integer, a map per call), and was not tuned. Not built: (a) `[lint.forbid]` (TOML shape undecided: `veles-decide`); (b) type-aware rules: a rule sees the parser's tree only; (c) exit callbacks (`Visitor` enters nodes only); (d) `Rule.level` is not read yet and `veles lint --list` does not list a dependency's rules; (e) the package key is the dependency alias, which is an identifier (D177's `acme-lints.` hyphen cannot be written); (f) the checker's own tree nodes (`ResolvedType`, `CheckedExpr`, …) reach a rule as the family's `Bad` node, and a missing one (a Type or Pattern family without a `Bad` node) fails the rule's run with a message; (g) `rules()` runs once per module of the package and the reflection is per file, with no per-file cache and no run in the language server's fast path; (h) rules from git/registry dependencies load through the same resolver but are untested; (i) evaluator speed (`big.Int` -> unboxed small integers, slot-indexed frames) would help every `const fun` and rule sets far bigger than the probe.
+- **Lint rules written in Veles (D177, plan B27 part 3, built 2026-10-19): what is left.** Built: the evaluator holds sealed variants and `*T` fields while it runs a `const fun` (`CVariant`; a _result_ still cannot be sealed), `std/lint` (`Rule`, `Visitor` with an `on<Node>` callback per `selfhost/ast` struct, `Context.report(span, message, fix:)`, `Fix`; `ast.vs`, `kind.vs`, `source.vs`, `visitor.vs` are generated from `selfhost/` by `go test ./selfhost -run LintAPI -update`), the Go-to-Veles tree reflector and runner (`sema/lintrules.go`, fields matched by name, `ruleFieldAlias` for the spelled-around ones, tested by `TestRuleASTFields`), `[lint] dep.rule = "warn"` (bare dotted, table or quoted keys; bare dotted keys now parse anywhere in `veles.toml`), the dependency's root module loaded for it, `veles check --fix`, `examples/features/lintrules`. Measured: 8,600 lines / 260 KB with three rules (one with five node callbacks) 0.22 s -> 0.29 s; the evaluator itself runs ~2.8 us per node per pass (294k-node probe), mostly allocation (a `big.Int` per integer, a map per call), and was not tuned. Not built: (a) `[lint.forbid]` (TOML shape undecided: `veles-decide`); (b) type-aware rules: a rule sees the parser's tree only; (c) exit callbacks (`Visitor` enters nodes only); (d) `Rule.level` is not read yet and `veles lint --list` does not list a dependency's rules; (e) the package key is the dependency alias, which is an identifier (D177's `acme-lints.` hyphen cannot be written); (f) the checker's own tree nodes (`ResolvedType`, `CheckedExpr`, …) reach a rule as the family's `Bad` node, and a missing one (a Type or Pattern family without a `Bad` node) fails the rule's run with a message; (g) `rules()` runs once per module of the package and the reflection is per file, with no per-file cache and no run in the language server's fast path; (h) rules from git/registry dependencies load through the same resolver but are untested; (i) evaluator speed (`big.Int` -> unboxed small integers, slot-indexed frames) would help every `const fun` and rule sets far bigger than the probe.
 - **Security review (2026-10-25): what it left open.** Vulnerability classes were checked against the tree
   (Log4Shell-style lookups, deserialization gadgets, SQL/command injection, memory safety, ReDoS, path traversal,
   request smuggling, decompression bombs, TLS defaults, secrets, Trojan Source, supply chain — all closed by design or

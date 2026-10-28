@@ -1,0 +1,8 @@
+start
+building the keyword table
+5 keywords among 8 words; the table was built 1 time
+loading UTC
+UTC 0
+round 1: 'x' is not a number
+round 2: 'x' is not a number
+exit=0

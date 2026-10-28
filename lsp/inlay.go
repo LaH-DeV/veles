@@ -29,6 +29,7 @@ type inlayHint struct {
 	Kind         int         `json:"kind"`
 	PaddingLeft  bool        `json:"paddingLeft,omitempty"`
 	PaddingRight bool        `json:"paddingRight,omitempty"`
+	Tooltip      *markup     `json:"tooltip,omitempty"`
 }
 
 func (s *Server) inlayHints(params json.RawMessage) any {
@@ -94,10 +95,43 @@ func (s *Server) inlayHints(params json.RawMessage) any {
 			out = append(out, h)
 		}
 	}
+	if s.allocHints {
+		for _, h := range allocHints(f, a.index.Allocs) {
+			if in(positionToOffset(f, h.Position)) {
+				out = append(out, h)
+			}
+		}
+	}
 	for sp := range a.index.Moved {
 		if sp.File == f && in(sp.End) {
 			out = append(out, inlayHint{Position: offsetToPosition(f, sp.End), Label: "moved immutable", Kind: hintType, PaddingLeft: true})
 		}
+	}
+	return out
+}
+
+// allocHints puts `heap` after each expression that allocates on the heap
+// (D213), with what it allocates and how to avoid it in its tooltip; two
+// sites ending at one place share a hint. Shown only when the client asks:
+// nothing is said where a value stays on the stack, the default.
+func allocHints(f *source.File, sites []sema.AllocSite) []inlayHint {
+	var out []inlayHint
+	at := map[int]int{} // end offset -> index in out
+	for _, s := range sites {
+		if s.Span.File != f {
+			continue
+		}
+		text := s.What
+		if s.Avoid != "" {
+			text += " — " + s.Avoid
+		}
+		if i, ok := at[s.Span.End]; ok {
+			out[i].Tooltip.Value += "\n\n" + text
+			continue
+		}
+		at[s.Span.End] = len(out)
+		out = append(out, inlayHint{Position: offsetToPosition(f, s.Span.End), Label: "heap", Kind: hintType, PaddingLeft: true,
+			Tooltip: &markup{Kind: "markdown", Value: text}})
 	}
 	return out
 }

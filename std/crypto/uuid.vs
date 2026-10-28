@@ -17,7 +17,7 @@ use time
 ///
 /// UUIDs compare and sort by their bytes, so a list of v7 ids sorts into
 /// creation order.
-public struct Uuid {
+public const struct Uuid {
   private data: List<u8>
 
   /// A random UUID (version 4): 122 random bits. The version and variant

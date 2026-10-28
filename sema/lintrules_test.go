@@ -86,12 +86,12 @@ func TestRuleASTFields(t *testing.T) {
 	}
 }
 
-// libraryLintRun checks a copy of examples/lintrules with the app's manifest
+// libraryLintRun checks a copy of examples/features/lintrules with the app's manifest
 // and main.vs replaced, and returns the rendered diagnostics.
 func libraryLintRun(t *testing.T, manifest, main string) (*source.Diagnostics, string) {
 	t.Helper()
 	root := t.TempDir()
-	copyTree(t, "../examples/lintrules/acme-lints", filepath.Join(root, "acme-lints"))
+	copyTree(t, "../examples/features/lintrules/acme-lints", filepath.Join(root, "acme-lints"))
 	app := filepath.Join(root, "app")
 	if err := os.MkdirAll(app, 0o755); err != nil {
 		t.Fatal(err)

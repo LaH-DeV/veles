@@ -149,12 +149,17 @@ write the words on a lambda.
 
 **A function value does not change its type.** A named function or a
 stored closure has fixed effects, and it fits a parameter only when they
-match: `needsSuspend(plain, 1)` is an error when `plain` does not suspend,
-because the two are compiled differently. The fix is the one the message
-suggests, a lambda that calls it: `needsSuspend(n => plain(n), 1)`. The one
-exception is `sendable`: it is a property the value either has or lacks,
-and a sendable function is accepted wherever a plain one is, never the
-reverse.
+match, because a function that suspends and one that does not are
+compiled differently. One case is the exception, and it is the common
+one: a parameter that only _may_ suspend — the collection operations'
+(`map`, `filter`, `fold`, `forEach`, …) and any function that only calls
+what it is given — takes a plain function as it is, and the call is
+plain, so `xs.map(double)` and `xs.filter(isOdd)` work (D217). Where the
+function keeps what it is given, or another argument makes the call
+suspend, a plain function value is still refused, and the fix is the one
+the message suggests, a lambda that calls it: `register(n => plain(n))`.
+`sendable` is a property the value either has or lacks: a sendable
+function is accepted wherever a plain one is, never the reverse.
 
 **Generic code names the effects it passes through.** A function that
 takes a callback and may fail _because the callback does_ is written

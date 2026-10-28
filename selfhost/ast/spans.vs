@@ -53,6 +53,7 @@ fun spansOfStmt(node: Stmt, out: MutableList<string>) {
     is ThrowStmt        => spansOfThrowStmt(node, out)
     is BreakStmt        => spansOfBreakStmt(node, out)
     is ContinueStmt     => spansOfContinueStmt(node, out)
+    is CedeStmt         => spansOfCedeStmt(node, out)
     is LoopStmt         => spansOfLoopStmt(node, out)
     is WithStmt         => spansOfWithStmt(node, out)
     is ScopeStmt        => spansOfScopeStmt(node, out)
@@ -294,8 +295,8 @@ fun spansOfValDecl(node: ValDecl, out: MutableList<string>) {
     spansOfAttribute(x1, out)
   }
   spansOfIdent(node.name, out)
-  if (val x8 = node.typ) spansOfType(*x8, out)
-  if (val x9 = node.value) spansOfExpr(*x9, out)
+  if (val x9 = node.typ) spansOfType(*x9, out)
+  if (val x10 = node.value) spansOfExpr(*x10, out)
   out.push("ValDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
@@ -566,6 +567,10 @@ fun spansOfContinueStmt(node: ContinueStmt, out: MutableList<string>) {
     spansOfIdent(x1, out)
   }
   out.push("ContinueStmt.pos ${node.pos.start} ${node.pos.end}")
+}
+
+fun spansOfCedeStmt(node: CedeStmt, out: MutableList<string>) {
+  out.push("CedeStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
 fun spansOfLoopStmt(node: LoopStmt, out: MutableList<string>) {

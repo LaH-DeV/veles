@@ -212,7 +212,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			} else if callee.Name == "check" {
 				// Kotlin's check(cond) — and this compiler's own, briefly
 				f.errorf(callee.Pos, "unknown function 'check'; an invariant is 'assert(cond, \"why it must hold\")' (D78)")
-			} else if !f.removedFactory(callee.Name, e) {
+			} else if !f.removedYieldNowCall(e) && !f.removedFactory(callee.Name, e) {
 				hint, fix := f.unknownNameHint(callee.Pos, callee.Name, false)
 				f.c.errorFix(callee.Pos, fix, "unknown function '%s'%s", callee.Name, hint)
 			}
@@ -237,7 +237,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			return f.panicCall(e)
 		}
 		sym := f.c.preludeSym(callee.Name)
-		if sym == nil || sym.Kind != SymFunc {
+		if sym == nil || sym.Kind != SymFunc && sym.Kind != SymType {
 			panic("synthesized call to a missing prelude function " + callee.Name)
 		}
 		return f.callSymbol(sym, callee.Name, typeArgs, e, want)
@@ -578,6 +578,11 @@ func (f *fnCtx) callTemplate(t *FuncTemplate, ownerSubst map[*types.TypeParam]ty
 func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypeParam]types.Type, typeArgs []types.Type, recv Expr, args []ast.Arg, span source.Span, want types.Type) Expr {
 	f.c.resolveSignature(t)
 	f.noteUse(t, span)
+	// a type the call's inference instantiates has no span of its own: an
+	// error about it (checkConstArgs) is the call's
+	outer := f.c.typeSite
+	f.c.typeSite = span
+	defer func() { f.c.typeSite = outer }()
 	if t.Extern && f.unsafe == 0 {
 		f.errorf(span, "calling extern \"C\" function '%s' requires an 'unsafe' block (D44)", t.Name)
 	}
@@ -1024,7 +1029,7 @@ func (f *fnCtx) constructStruct(st *types.Struct, args []ast.Arg, span source.Sp
 		result = f.runInit(st, initFn, lit, args, span)
 	}
 	if st.Sealed != nil && !variantWanted(want, st) {
-		result = &MakeVariant{exprBase{st.Sealed}, st.Sealed, st, result}
+		result = f.c.noteAlloc(&MakeVariant{exprBase{st.Sealed}, st.Sealed, st, result}, span)
 	}
 	return result
 }
@@ -2357,7 +2362,7 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 		return bad()
 	}
 	f.c.noteBoxed(t)
-	return &Box{exprBase{trait}, x, trait, methods}
+	return f.c.noteAlloc(&Box{exprBase{trait}, x, trait, methods}, span)
 }
 
 // objectMethods instantiates the methods of t's table as a trait's object,

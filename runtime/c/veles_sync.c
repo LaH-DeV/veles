@@ -341,9 +341,26 @@ void veles_park_wake(veles_park *p) {
 /* Windows wakes a waiting thread on its timer tick, 15.6 ms unless a
  * process asks for less; the executor's timers want milliseconds, so the
  * runtime asks for 1 ms once (per process since Windows 10 2004). winmm is
- * loaded for it, not linked. Elsewhere waits are precise already. */
+ * loaded for it, not linked. Elsewhere waits are precise already.
+ *
+ * Windows 11 may stop honouring that request for a process it judges to
+ * be in the background — no visible window, as a server or a test run
+ * has — and it did, seconds into a run: the monitor's 5 ms looks became
+ * 15.6 ms ones, and a loop's yield after ~10 ms (D145) one after ~46 ms
+ * (plan F21). So the process also opts out of that throttling of its timer
+ * resolution (SetProcessInformation, Windows 11; a no-op before). */
 void veles_timer_period(void) {
 #if defined(_WIN32)
+    typedef struct { ULONG version, control, state; } throttling_state;
+    typedef BOOL (WINAPI *set_info_fn)(HANDLE, int, LPVOID, DWORD);
+    HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
+    set_info_fn set_info = kernel ? (set_info_fn)(void *)GetProcAddress(kernel, "SetProcessInformation") : NULL;
+    if (set_info) {
+        /* ProcessPowerThrottling (4), version 1: IGNORE_TIMER_RESOLUTION
+         * (4) taken under control and switched off — always honour it */
+        throttling_state s = {1, 4, 0};
+        set_info(GetCurrentProcess(), 4, &s, sizeof s);
+    }
     HMODULE winmm = LoadLibraryW(L"winmm.dll");
     if (!winmm) return;
     typedef UINT (WINAPI *begin_fn)(UINT);

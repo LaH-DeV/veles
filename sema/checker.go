@@ -31,6 +31,20 @@ type Checker struct {
 	// the final round's are kept (D45 fixpoint).
 	roundDiags *source.Diagnostics
 	seen       map[string]bool
+	// lazyOf maps the hidden global of a `lazy val` to the value it builds
+	// (D210), for messages; lazyInit the span of each one's initializer
+	// plainFuncAt: each plain function value accepted where a parameter may
+	// suspend, and where it was written (D217)
+	plainFuncAt map[*Cast]source.Span
+	lazyOf   map[*Global]*Global
+	lazyInit map[source.Span]*Global
+	lazyDecl map[*Global]*ast.ValDecl // the declaration as written, for hover
+	// typeSite: the generic call being checked, where a type its inference
+	// instantiates is reported (checkConstArgs)
+	typeSite source.Span
+	// allocAt: where each allocating node was written, kept across rounds
+	// (Program.allocAt)
+	allocAt map[Expr]source.Span
 	// exportedC: the `extern "C" fun`s by C symbol (D69), by declaration so
 	// a later inference round sees the same one again
 	exportedC map[string]*ast.FunDecl
@@ -602,7 +616,7 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 		} else {
 			attrs = c.attrsOf(d.Attrs, "struct")
 		}
-		s := &types.Struct{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Internal: d.Internal, Extern: d.Extern, Union: d.Union, Decl: d, Instances: map[string]*types.Struct{}}
+		s := &types.Struct{Name: d.Name.Name, Module: m.prefix(), Pub: d.Pub, Internal: d.Internal, Extern: d.Extern, Union: d.Union, Const: d.Const, Decl: d, Instances: map[string]*types.Struct{}}
 		c.layoutAttrs(s, d, attrs)
 		ctx := &declCtx{module: m, file: f, decl: d, tps: map[string]*types.TypeParam{}}
 		for i, tp := range d.TypeParams {
@@ -650,10 +664,12 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 			}
 			c.attrsOf(sv.Attrs, "value")
 			g := &Global{Name: m.prefix() + "." + d.Name.Name + "." + sv.Name.Name, Display: d.Name.Name + "." + sv.Name.Name, Span: sv.Name.Pos}
-			c.globals[g] = sv
 			c.globalMod[g] = m
 			c.globalFile[g] = f
 			c.staticOwner[g] = s
+			if !c.lazyGuard(g, sv, s) {
+				c.globals[g] = sv
+			}
 			c.staticVals[s][sv.Name.Name] = &Symbol{Name: sv.Name.Name, Kind: SymGlobal, Pub: sv.Pub, Internal: sv.Internal, Module: m, Span: sv.Name.Pos, Global: g}
 		}
 	case *ast.ErrorAliasDecl:
@@ -725,9 +741,11 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 	case *ast.ValDecl:
 		c.attrsOf(d.Attrs, "value")
 		g := &Global{Name: m.prefix() + "." + d.Name.Name, Display: d.Name.Name, Mutable: d.Kind == ast.BindVar, Span: d.Name.Pos}
-		c.globals[g] = d
 		c.globalMod[g] = m
 		c.globalFile[g] = f
+		if !c.lazyGuard(g, d, nil) {
+			c.globals[g] = d
+		}
 		c.insert(m, &Symbol{Name: d.Name.Name, Kind: SymGlobal, Pub: d.Pub, Internal: d.Internal, Module: m, Span: d.Name.Pos, Global: g})
 	case *ast.ExecutorDecl:
 		c.declareExecutor(m, f, d)
@@ -2551,6 +2569,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 	c.resolveStruct(tmpl)
 	c.checkTypeArgBounds(tmpl.Name, tmpl.TypeParams, args, span)
 	c.checkSecretArg(tmpl, args, span)
+	c.checkConstArgs(tmpl, args, span)
 	args = stripLabels(args) // shared by every labelling (D166), as instances of functions are
 	key := argsKey(args)
 	if inst, ok := tmpl.Instances[key]; ok {
@@ -2560,7 +2579,7 @@ func (c *Checker) instantiateStruct(tmpl *types.Struct, args []types.Type, span 
 	for i, tp := range tmpl.TypeParams {
 		m[tp] = args[i]
 	}
-	inst := &types.Struct{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Internal: tmpl.Internal, Extern: tmpl.Extern, Packed: tmpl.Packed, Align: tmpl.Align, Union: tmpl.Union, Transparent: tmpl.Transparent, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl, Tag: tmpl.Tag}
+	inst := &types.Struct{Name: tmpl.Name, Module: tmpl.Module, Pub: tmpl.Pub, Internal: tmpl.Internal, Extern: tmpl.Extern, Packed: tmpl.Packed, Align: tmpl.Align, Union: tmpl.Union, Transparent: tmpl.Transparent, Compact: tmpl.Compact, Const: tmpl.Const, TypeArgs: args, Template: tmpl, Decl: tmpl.Decl, Tag: tmpl.Tag}
 	tmpl.Instances[key] = inst
 	for _, f := range tmpl.Fields {
 		nf := *f
@@ -2780,6 +2799,7 @@ func unify(pattern, concrete types.Type, m map[*types.TypeParam]types.Type) bool
 
 func (c *Checker) runRound() *Program {
 	c.changed = false
+	c.checkConstStructs() // D212: reported with the bodies, not stopping them
 	if c.index != nil {
 		c.index.Refs = c.index.Refs[:c.collectRefs] // keep signature refs recorded during collection
 	}
@@ -2793,6 +2813,11 @@ func (c *Checker) runRound() *Program {
 		}
 	}
 	c.prog.ResultType = func(ok, err types.Type) types.Type { return c.ResultType(ok, err) }
+	// one table for every round: a node made once (a field default) is reused
+	if c.allocAt == nil {
+		c.allocAt = map[Expr]source.Span{}
+	}
+	c.prog.allocAt = c.allocAt
 	c.queue = nil
 	c.instances = map[string]*Func{}
 	c.funcs = nil
@@ -2825,6 +2850,12 @@ func (c *Checker) runRound() *Program {
 		c.checkGlobal(g)
 		if c.globals[g].Kind != ast.BindConst { // a constant is written in where it is used (D113)
 			c.prog.Globals = append(c.prog.Globals, g)
+		}
+		// a lazy value's own storage, filled by its first read (D210): it
+		// has no initializer to run with the others
+		if lazy := c.lazyOf[g]; lazy != nil && lazy.Type != nil && !types.IsInvalid(lazy.Type) {
+			lazy.Init = nil
+			c.prog.Globals = append(c.prog.Globals, lazy)
 		}
 	}
 	c.executorsHIR()

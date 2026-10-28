@@ -176,7 +176,7 @@ public fun daysInMonth(year: i64, month: i64): i64 => when (month) {
 /// `Display` and `Parsable` are RFC 3339, and so is `Codable`: a `Timestamp`
 /// field in a derived struct is an RFC 3339 string on the wire, never a
 /// number of microseconds.
-public struct Timestamp {
+public const struct Timestamp {
   private us: i64
 
   /// 1970-01-01T00:00:00Z.
@@ -294,7 +294,7 @@ public struct Timestamp {
 /// not enough to answer "what is 09:30 local on the morning the clocks go
 /// forward" — a question that needs the IANA database, which is a later
 /// item. Build a `DateTime` with an explicit offset, or stay in UTC.
-public struct Offset {
+public const struct Offset {
   private mins: i64
 
   /// No offset. What `Display` prints as `Z`.
@@ -399,7 +399,7 @@ public enum Weekday {
 /// is January of the next year, and `day + 40` is a date forty days later.
 /// That is what makes calendar arithmetic writable without a second API.
 /// Text, on the other hand, is strict: `parseRfc3339` refuses month 13.
-public struct DateTime {
+public const struct DateTime {
   public year:   i64
   public month:  i64
   public day:    i64

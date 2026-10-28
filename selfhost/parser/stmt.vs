@@ -67,8 +67,13 @@ extend Parser {
   }
 
   fun parseStmt(): ast.Stmt {
-    val start = this.span()
+    var start = this.span()
     if (this.atStaticAssert()) return ast.StaticAssertStmt(assert: this.parseStaticAssert())
+    if (this.lazyAt(0)) {
+      this.errorAt(this.span(), "'lazy' is for a module-level 'val' or a 'static val' (D210); a local built on first use is 'val x = Lazy(() => …)', read with 'x.get()'")
+      this.next()
+      start = this.span()
+    }
     when (this.cur().kind) {
       Kind.KwVal, Kind.KwVar, Kind.KwConst => return this.parseValStmt(start)
       Kind.KwReturn => {
@@ -101,6 +106,7 @@ extend Parser {
         if (isBreak) return ast.BreakStmt(label, pos: this.spanFrom(start))
         return ast.ContinueStmt(label, pos: this.spanFrom(start))
       }
+      Kind.KwCede => return this.parseCede()
       Kind.KwLoop => return this.parseLoop(start)
       Kind.KwFor => {
         this.errorAt(this.span(), "there is no 'for'; every loop is spelled 'loop': 'loop (x in xs)', 'loop (cond)' or 'loop { }'")
@@ -133,7 +139,10 @@ extend Parser {
     // an expression or an assignment
     val x = this.parseExpr()
     if (x is ast.BadExpr) {
-      this.syncStmt()
+      // an expression that took all its tokens (`await cede`) left the
+      // statement's end for the caller: skipping it would make the next
+      // statement look like a second one on the same line
+      if (!this.atAny(Kind.Semi, Kind.RBrace, Kind.EOF)) this.syncStmt()
       return ast.BadStmt(pos: start)
     }
     if (this.atAssignOp()) {

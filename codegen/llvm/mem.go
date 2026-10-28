@@ -2,6 +2,8 @@ package llvm
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/LaH-DeV/veles/sema"
 	"github.com/LaH-DeV/veles/types"
@@ -12,21 +14,29 @@ import (
 // with one in it, a nullable or sealed value around one — is never an LLVM
 // SSA value: LLVM scalarises a first-class aggregate element by element, so
 // a copy of a kilobyte array would be a kilobyte of instructions and a
-// megabyte one would not compile. Such a value lives in memory:
+// megabyte one would not compile. Nor is any aggregate over wideThreshold
+// bytes: passing one by value cost twice its address (B32, bench/bigargs).
+// Such a value lives in memory:
 //
 //   - a register that stands for it holds its address (vt is "ptr");
 //   - a copy is a memmove, a store of it a memmove into the destination,
 //     a read of it the address itself — `loadVal` returns the place, so a
 //     read costs nothing and the user of the value copies where one is due;
-//   - an argument is the address of a copy the caller made for the call, a
+//   - an argument is an address: of the caller's own variable when nothing
+//     can change it during the call, else of a copy (exprArg); a callee
+//     that writes or lends its parameter copies it first (Var.ReadOnly); a
 //     result is written through a hidden `sret` pointer;
 //   - an expression that builds a value (a literal, a call) builds it in
 //     storage of its own, and one that names a place (a variable, a field)
 //     yields the place: whoever keeps the value copies it (exprOwned).
 //
-// Everything smaller keeps its SSA form and its IR, byte for byte.
+// Everything smaller keeps its SSA form.
 
 const memThreshold = 128
+
+// wideThreshold: by value at 64 bytes cost about what an address does,
+// at 96 a third more, at 144 twice (arm64, B32)
+const wideThreshold = 64
 
 // isMem reports whether values of t are in the memory class.
 func (g *gen) isMem(t types.Type) bool {
@@ -44,7 +54,8 @@ func (g *gen) isMem(t types.Type) bool {
 	}
 	g.memo[key] = false // a type that contains itself by value was refused earlier
 	size, _ := g.layout(t)
-	v := size > memThreshold && g.holdsArray(t, map[string]bool{})
+	v := size > wideThreshold || size >= memThreshold && g.holdsArray(t, map[string]bool{}) ||
+		g.layouter().PayloadOffset(t) > 8 // its tag is not an LLVM field (taggedBody)
 	g.memo[key] = v
 	return v
 }
@@ -172,13 +183,47 @@ func freshMem(e sema.Expr) bool {
 
 // exprOwned evaluates e to a value in storage that is the caller's own: a
 // fresh result as it is, a place (a variable, a field, an element) copied.
-// An argument, a stored value and a returned one are made this way.
+// A stored value and a returned one are made this way.
 func (g *gen) exprOwned(e sema.Expr) string {
 	v := g.expr(e)
 	if !g.isMem(e.Type()) || freshMem(e) {
 		return v
 	}
 	return g.ownCopy(e.Type(), v)
+}
+
+// exprArg is a memory-class argument a of a Veles call with arguments all:
+// the address of the caller's own variable (or a field of it) when nothing
+// can change it until the callee returns — it is a local nothing points
+// into or captures, and no other argument writes it — and otherwise
+// exprOwned. The callee copies what it would write (gen.go, Var.ReadOnly).
+func (g *gen) exprArg(a sema.Expr, all []sema.Expr) string {
+	v := sema.RootVar(a)
+	if !g.isMem(a.Type()) || v == nil || v.IsGlobal || v.AddrTaken || v.Captured || v.IsSelf || !fieldsOf(a) {
+		return g.exprOwned(a)
+	}
+	for _, b := range all {
+		if b != a && sema.MayWrite(b, v) {
+			return g.exprOwned(a)
+		}
+	}
+	return g.expr(a)
+}
+
+// fieldsOf: e is a variable or a chain of fields and tuple elements of one.
+func fieldsOf(e sema.Expr) bool {
+	for {
+		switch x := e.(type) {
+		case *sema.VarRef:
+			return true
+		case *sema.FieldGet:
+			e = x.X
+		case *sema.TupleGet:
+			e = x.X
+		default:
+			return false
+		}
+	}
 }
 
 // fieldPtr is the address of element idx of the aggregate stored at base.
@@ -309,6 +354,12 @@ func (g *gen) extractTaggedT(t types.Type, v string, payloadT types.Type) string
 
 // nullFlag is the presence flag of the nullable value v (not pointer-like).
 func (g *gen) nullFlag(nt *types.Nullable, v string) string {
+	if n, ok := g.niche(nt); ok {
+		w := g.nicheWord(nt.Elem, v, n.Path)
+		r := g.newTmp()
+		g.emit("%s = icmp ne ptr %s, null", r, w)
+		return r
+	}
 	r := g.newTmp()
 	if g.isMem(nt) {
 		g.emit("%s = load i1, ptr %s", r, g.fieldPtr(g.llType(nt), v, 0))
@@ -320,12 +371,96 @@ func (g *gen) nullFlag(nt *types.Nullable, v string) string {
 
 // nullVal is the value inside the nullable value v (not pointer-like).
 func (g *gen) nullVal(nt *types.Nullable, v string) string {
+	if _, ok := g.niche(nt); ok {
+		return v
+	}
 	if g.isMem(nt) {
-		return g.loadVal(nt.Elem, g.fieldPtr(g.llType(nt), v, 1))
+		return g.loadVal(nt.Elem, g.nullPayloadPtr(nt, v))
 	}
 	r := g.newTmp()
-	g.emit("%s = extractvalue %s %s, 1", r, g.llType(nt), v)
+	g.emit("%s = extractvalue %s %s, %d", r, g.llType(nt), v, g.fidx(nt, 1))
 	return r
+}
+
+// nullPayloadPtr is the address of the value inside the nullable stored at
+// base: base itself for a pointer-like one and one laid out as its value.
+// With storeNullFlag, makeNullable, nullFlag and nullVal, the only code
+// that knows how a `T?` is laid out.
+func (g *gen) nullPayloadPtr(nt *types.Nullable, base string) string {
+	if isPtrLike(nt.Elem) {
+		return base
+	}
+	if _, ok := g.niche(nt); ok {
+		return base
+	}
+	return g.fieldPtr(g.llType(nt), base, g.fidx(nt, 1))
+}
+
+// storeNullFlag sets whether the nullable stored at base (not pointer-like)
+// is present. Laid out as its value, a present one is its value and an
+// absent one all zeros, so present must then be "true" or "false".
+func (g *gen) storeNullFlag(nt *types.Nullable, present, base string) {
+	if _, ok := g.niche(nt); ok {
+		switch present {
+		case "true":
+		case "false":
+			g.emit("call void @llvm.memset.p0.i64(ptr %s, i8 0, i64 %d, i1 false)", base, g.memSize(nt))
+		default:
+			panic("storeNullFlag: a run-time flag for a nullable laid out as its value")
+		}
+		return
+	}
+	g.emit("store i1 %s, ptr %s", present, g.fieldPtr(g.llType(nt), base, 0))
+}
+
+// niche is where a value inside nt is never zero, when nt is laid out as
+// that value alone, all zeros standing for null (types.Layout.Niche).
+func (g *gen) niche(nt *types.Nullable) (types.NichePath, bool) {
+	if isPtrLike(nt.Elem) {
+		return types.NichePath{}, false
+	}
+	return g.layouter().Niche(nt.Elem)
+}
+
+// nicheWord is the pointer at path inside the value v of type t: loaded
+// through its address for a value in memory, extracted otherwise.
+func (g *gen) nicheWord(t types.Type, v string, path []int) string {
+	var idx []string
+	cur := t
+	p := v
+	for _, i := range path {
+		k, next := g.nicheStep(cur, i)
+		if g.isMem(t) {
+			p = g.fieldPtr(g.llType(cur), p, k)
+		}
+		idx = append(idx, strconv.Itoa(k))
+		cur = next
+	}
+	if !g.isMem(t) && len(idx) == 0 {
+		return v
+	}
+	w := g.newTmp()
+	if g.isMem(t) {
+		g.emit("%s = load ptr, ptr %s", w, p)
+		return w
+	}
+	g.emit("%s = extractvalue %s %s, %s", w, g.llType(t), v, strings.Join(idx, ", "))
+	return w
+}
+
+// nicheStep is the LLVM index of part i of a value of type t on a niche
+// path, and the type of that part (nil for a closure's or trait object's
+// pointer, where a path ends).
+func (g *gen) nicheStep(t types.Type, i int) (int, types.Type) {
+	switch t := t.(type) {
+	case *types.Struct:
+		return g.fidx(t, i), t.Fields[i].Type
+	case *types.Tuple:
+		return g.fidx(t, i), t.Elems[i]
+	case *types.Array:
+		return 0, t.Elem
+	}
+	return i, nil
 }
 
 // callRet emits a call of callee and returns the value of retT it yields:

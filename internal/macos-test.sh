@@ -7,8 +7,8 @@ if [[ $(uname -s) != Darwin ]]; then
 fi
 
 cd "$(dirname "$0")/.."
-export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.23.2}
-command -v go >/dev/null || { printf '%s\n' 'macos-test: install Go 1.23 or newer' >&2; exit 2; }
+export GOTOOLCHAIN=${GOTOOLCHAIN:-go1.27.1}
+command -v go >/dev/null || { printf '%s\n' 'macos-test: install Go 1.21 or newer (it fetches the pinned 1.27.1)' >&2; exit 2; }
 compiler=${VELES_CLANG:-clang}
 command -v "$compiler" >/dev/null || { printf '%s\n' 'macos-test: install Xcode Command Line Tools with xcode-select --install' >&2; exit 2; }
 

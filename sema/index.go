@@ -34,6 +34,9 @@ type Index struct {
 	// Moved marks each mutable collection that D63 hands over as its immutable
 	// form without a copy (D188): the editor says so after it.
 	Moved map[source.Span]bool
+	// Allocs are the heap allocation sites of the package's own code (D213),
+	// for the editor's opt-in `heap` hints
+	Allocs []AllocSite
 }
 
 // TypeDecl is where the type of a value is declared, for
@@ -176,6 +179,7 @@ func (c *Checker) indexInferred(prog *Program) {
 		return
 	}
 	c.index.Inferred = map[source.Span]Inferred{}
+	c.index.Allocs = AllocSites(prog)
 	for _, fn := range prog.Funcs {
 		t := fn.tmpl
 		if fn.IsClosure || t == nil || t.Decl == nil || t.Sig == nil || !t.Decl.Name.Pos.IsValid() {
@@ -407,6 +411,9 @@ func (c *Checker) refGlobal(span source.Span, name string, g *Global) {
 	if c.index == nil || g == nil || !span.IsValid() {
 		return
 	}
+	if g.Guard != nil && g.Type == nil {
+		c.checkGlobal(g.Guard) // gives the lazy value its type (D210)
+	}
 	ref := Ref{Span: span, Def: g.Span, Kind: "val", Name: name, Type: g.Type, Doc: c.globalDoc(g), Shape: c.shapeFrom(g.Type, c.viewFrom(span))}
 	if g.Mutable {
 		ref.Kind = "var"
@@ -422,6 +429,9 @@ func (c *Checker) refGlobal(span source.Span, name string, g *Global) {
 func (c *Checker) globalDecl(name string, g *Global) string {
 	d := c.globals[g]
 	if d == nil {
+		d = c.lazyDecl[g]
+	}
+	if d == nil {
 		kind := "val"
 		if g.Mutable {
 			kind = "var"
@@ -433,6 +443,9 @@ func (c *Checker) globalDecl(name string, g *Global) string {
 	if c.staticOwner[g] != nil {
 		sb.WriteString("static ")
 	}
+	if d.Lazy {
+		sb.WriteString("lazy ")
+	}
 	sb.WriteString(d.Kind.String() + " " + name + typeSuffix(g.Type))
 	if d.Value != nil {
 		if t := srcText(d.Value); t != "" && len(t) <= 60 && !strings.Contains(t, "\n") {
@@ -440,6 +453,9 @@ func (c *Checker) globalDecl(name string, g *Global) string {
 		} else {
 			sb.WriteString(" = ...")
 		}
+	}
+	if d.Lazy {
+		sb.WriteString("  // lazy: built on first read (D210)")
 	}
 	if g.Const != nil && d.Value != nil {
 		// what the compiler computed (D113), when it is not what is written
@@ -895,6 +911,9 @@ func structHead(st *types.Struct) string {
 	case tmpl.Inline:
 		head = "inline " + head
 	}
+	if tmpl.Const {
+		head = "const " + head // D212
+	}
 	head = visPrefix(pub, internal, false) + head
 	if len(st.TypeParams) > 0 && len(st.TypeArgs) == 0 {
 		head += st.Name + typeParamList(st.TypeParams)
@@ -905,13 +924,42 @@ func structHead(st *types.Struct) string {
 		head += " : " + st.Sealed.Name
 		if !tmpl.Indirect && !tmpl.Inline && st.Sealed.IsRecursive() && len(st.TypeArgs) == len(st.TypeParams) {
 			lay := &types.Layout{}
-			lay.Sealed = func(s *types.Sealed) int { return 8 + 8*lay.SealedPayloadWords(s) }
 			if lay.VariantBoxed(st) {
 				head += " — boxed: '" + st.Sealed.Name + "' is a tree"
 			}
 		}
 	}
 	return head
+}
+
+// layoutLine is a struct's size, alignment and padding for its hover, and
+// what `compact` would make it (D215); "" for a generic one or a union.
+func layoutLine(st *types.Struct) string {
+	if st.Union || len(st.TypeParams) > 0 && len(st.TypeArgs) == 0 {
+		return ""
+	}
+	lay := &types.Layout{}
+	p := lay.StructPlan(st)
+	used := 0
+	for _, f := range st.Fields {
+		size, _ := lay.Of(f.Type)
+		used += size
+	}
+	line := fmt.Sprintf("%d bytes, aligned %d", p.Size, p.Align)
+	if pad := p.Size - used; pad > 0 {
+		line += fmt.Sprintf(", %d of padding", pad)
+	}
+	if st.Compact {
+		return line + "; fields placed by the compiler (compact)"
+	}
+	if !st.Extern && !st.Packed && !st.Transparent && len(st.Fields) > 1 {
+		c := *st
+		c.Compact = true
+		if cp := lay.StructPlan(&c); cp.Size < p.Size {
+			line += fmt.Sprintf("; 'compact' would make it %d", cp.Size)
+		}
+	}
+	return line
 }
 
 // methodDecl renders an inherent method for a struct's shape: visibility,
@@ -1261,6 +1309,9 @@ func (c *Checker) shapeFrom(t types.Type, v viewpoint) string {
 		if !d.Extern {
 			// what a caller must (and may) give to build one, from here
 			sb.WriteString("  // " + constructorLine(tt, v) + "\n")
+		}
+		if line := layoutLine(tt); line != "" && !d.Error {
+			sb.WriteString("  // " + line + "\n")
 		}
 		for _, fld := range tt.Fields {
 			if !v.sees(tt, fld.Pub, fld.Internal, fld.Private) {
@@ -1710,6 +1761,9 @@ func (c *Checker) compactStructShape(st *types.Struct) string {
 	kw := "struct "
 	if d, ok := tmpl.Decl.(*ast.StructDecl); ok && d.Error {
 		kw = "error "
+	}
+	if tmpl.Const {
+		kw = "const " + kw // D212
 	}
 	if len(st.Fields) == 0 {
 		return kw + st.String()

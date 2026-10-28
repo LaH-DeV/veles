@@ -13,14 +13,14 @@ what follows is track S of `veles-plan.md`.
 
 ```bash
 go build -o veles.exe .
-./veles.exe run examples/hello              # compile and run a module directory
-./veles.exe build examples/tasks -o tasks   # produce an executable
-./veles.exe test examples/testing           # run the tests (D78; --filter text, --timeout 30s)
-./veles.exe check examples/errors           # type-check only (--fix applies lint corrections)
-./veles.exe parse examples/syntax_tour.vs   # dump the syntax tree
-./veles.exe build examples/hello --emit-llvm   # write the LLVM IR instead of linking
-./veles.exe fmt examples std                 # format sources in place (--check lists, --stdout prints)
-./veles.exe lsp                              # language server over stdio (see editors/vscode)
+./veles.exe run examples/hello                      # compile and run a module directory
+./veles.exe build examples/calc -o calc              # produce an executable
+./veles.exe test examples/features/testing           # run the tests (D78; --filter text, --timeout 30s)
+./veles.exe check examples/features/errors           # type-check only (--fix applies lint corrections)
+./veles.exe parse examples/features/syntax_tour.vs   # dump the syntax tree
+./veles.exe build examples/hello --emit-llvm         # write the LLVM IR instead of linking
+./veles.exe fmt examples std                         # format sources in place (--check lists, --stdout prints)
+./veles.exe lsp                                      # language server over stdio (see editors/vscode)
 ```
 
 New to the language? Start with [docs/documentation/index.md](docs/documentation/index.md): twenty-five
@@ -28,7 +28,14 @@ tutorial chapters for three levels of reader plus a cheat sheet, a
 standard-library reference and a guide to error messages. Every program in
 them is compiled and run by `go test ./docs/`.
 
-Requirements: Go 1.23 and `clang` (LLVM 17+) on `PATH`, or `VELES_CLANG`.
+Requirements: Go 1.27.1 and `clang` (LLVM 17+) on `PATH`, or `VELES_CLANG`.
+The Go version is pinned for every machine: `go.mod` asks for 1.27.1, so an
+older Go (1.21 or newer) downloads and uses it, and the test scripts set
+`GOTOOLCHAIN=go1.27.1`. The generated Unicode tables (`selfhost/lexer`,
+`std/regex`) come from that Go's Unicode data (17.0.0), and their freshness
+tests fail under a Go with other data; move the pin and regenerate them
+together (`go test ./selfhost -run UnicodeTables -update`,
+`go test ./std -run RegexUnicodeTables -update-unicode`).
 `--release` disables overflow checks (D21) and optimises; the default is a
 checked debug build. `run` and `test` build into a temporary directory; only
 `build` leaves an executable behind. The C runtime is compiled once per
@@ -41,20 +48,20 @@ program (docs chapter 13).
 
 ### macOS
 
-Apple Silicon is supported and tested with Go 1.23.2 and Apple clang 21.
+Apple Silicon is supported and tested with Go 1.27.1 and Apple clang 21.
 Install Xcode Command Line Tools (`xcode-select --install`) and Go. TLS
 uses Homebrew OpenSSL 3 (`brew install openssl@3`); the runtime loads it
 from `/opt/homebrew/lib` or `/usr/local/lib`, without extra linker flags.
 
 ```bash
-GOTOOLCHAIN=go1.23.2 go build -o veles .
+GOTOOLCHAIN=go1.27.1 go build -o veles .
 ./veles run examples/hello
 bash internal/macos-test.sh
 ```
 
-The script runs build, vet and every test with Go 1.23.2 by default, or a
+The script runs build, vet and every test with Go 1.27.1 by default, or a
 supplied command, such as `bash internal/macos-test.sh go test ./examples -sanitize`.
-`GOTOOLCHAIN` may override that version, but newer Go releases with different
+`GOTOOLCHAIN` may override that version, but Go releases with different
 Unicode data fail the generated-table freshness checks until the tables are
 updated together. The runtime cache is under `~/Library/Caches/veles/rt`.
 Sockets use kqueue; Intel Macs are not yet validated. Thread names work;
@@ -79,7 +86,7 @@ non-default priorities and CPU affinity are refused rather than ignored.
 | `editors/vscode/` | VS Code extension: TextMate grammar and client for `veles lsp`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `docs/`           | tutorials and reference; `go test ./docs/` runs every code block                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `selfhost/`       | the front end rewritten in Veles (veles-selfhost-frontend-plan.md), phase by phase; `go test ./selfhost` builds it and checks its output against the Go front end's, byte for byte, on every Veles file in the repository                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `examples/`       | 64 programs with expected output; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`; a `name.vss` script is a test when `name.expected.txt` exists, fed `name.stdin.txt` when present)                                                                                                                                                                                                                                                                                                                                                                 |
+| `examples/`       | programs with expected output, real tools at the top and one short program per language feature in `features/`; `go test ./...` compiles and runs them (a `commands.txt` scripts a command-line tool, `-update` rewrites `expected.txt`; a `name.vss` script is a test when `name.expected.txt` exists, fed `name.stdin.txt` when present)                                                                                                                                                                                                                                                                                                                                                                 |
 
 `go test ./...` is the regression suite. The parser, formatter and checker also
 have native fuzz targets — `go test -fuzz=FuzzParse ./parser`, `-fuzz=FuzzFormat

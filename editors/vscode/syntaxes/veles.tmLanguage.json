@@ -67,13 +67,23 @@
           "end": "\\}",
           "patterns": [
             { "name": "keyword.control.import.veles", "match": "\\bas\\b" },
-            { "name": "entity.name.function.veles", "match": "[A-Za-z_][A-Za-z0-9_]*" },
+            {
+              "name": "entity.name.function.veles",
+              "match": "[A-Za-z_][A-Za-z0-9_]*"
+            },
             { "include": "#punctuation" }
           ]
         },
         { "name": "keyword.control.import.veles", "match": "\\bas\\b" },
-        { "comment": "use m extend / use m { A } extend { f } (D185): the clause that brings extension functions", "name": "keyword.control.import.veles", "match": "\\bextend\\b" },
-        { "name": "entity.name.namespace.veles", "match": "[A-Za-z_][A-Za-z0-9_]*" },
+        {
+          "comment": "use m extend / use m { A } extend { f } (D185): the clause that brings extension functions",
+          "name": "keyword.control.import.veles",
+          "match": "\\bextend\\b"
+        },
+        {
+          "name": "entity.name.namespace.veles",
+          "match": "[A-Za-z_][A-Za-z0-9_]*"
+        },
         { "include": "#punctuation" }
       ]
     },
@@ -102,8 +112,16 @@
           "end": "$",
           "patterns": [
             { "include": "#comments" },
-            { "comment": "`on field, enumMember`; a parameter named `on` is followed by `:`", "name": "keyword.other.on.veles", "match": "\\bon\\b(?=\\s+[A-Za-z])" },
-            { "comment": "the targets after `on` (D174, D178): words of the declaration, as `fun` and `struct` are", "name": "keyword.other.target.veles", "match": "(?<=\\bon\\s|,\\s|\\bon\\s\\s|,)\\b(field|struct|fun|trait|enum|enumMember|variant|test|suite)\\b(?!\\s*:)" },
+            {
+              "comment": "`on field, enumMember`; a parameter named `on` is followed by `:`",
+              "name": "keyword.other.on.veles",
+              "match": "\\bon\\b(?=\\s+[A-Za-z])"
+            },
+            {
+              "comment": "the targets after `on` (D174, D178): words of the declaration, as `fun` and `struct` are",
+              "name": "keyword.other.target.veles",
+              "match": "(?<=\\bon\\s|,\\s|\\bon\\s\\s|,)\\b(field|struct|fun|trait|enum|enumMember|variant|test|suite)\\b(?!\\s*:)"
+            },
             { "name": "keyword.other.for.veles", "match": "\\bfor\\b" },
             { "include": "#literals" },
             { "include": "#strings" },
@@ -143,10 +161,7 @@
           },
           "end": "(\\bwith\\b)|(?=\\{)|$",
           "endCaptures": { "1": { "name": "keyword.other.with.veles" } },
-          "patterns": [
-            { "include": "#types" },
-            { "include": "#punctuation" }
-          ]
+          "patterns": [{ "include": "#types" }, { "include": "#punctuation" }]
         },
         {
           "comment": "init { }  (contextual: only directly before a brace)",
@@ -184,7 +199,7 @@
         },
         {
           "comment": "val / var / const binding",
-          "match": "\\b(public\\s+)?(val|var|const)\\s+(?!fun\\b)([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(public\\s+)?(val|var|const)\\s+(?!(?:fun|struct|compact|extern)\\b)([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.modifier.veles" },
             "2": { "name": "storage.type.veles" },
@@ -212,22 +227,77 @@
     },
     "keywords": {
       "patterns": [
-        { "name": "keyword.control.conditional.veles", "match": "\\b(if|else|when|is)\\b" },
-        { "comment": "inline loop (f in T.fields) { } (contextual: only directly before `loop`, D174)", "name": "keyword.control.loop.veles", "match": "(?<![.\\w])inline\\b(?=\\s+loop\\b)" },
-        { "comment": "indirect struct / inline struct / indirect sealed trait: where a variant is stored (contextual, D198)", "name": "storage.modifier.veles", "match": "(?<![.\\w])(indirect|inline)\\b(?=\\s+(struct|sealed)\\b)" },
-        { "comment": "fun on T(A): R, a receiver function type (contextual: only directly after `fun`, D207)", "match": "\\b(fun)\\s+(on)\\b(?=\\s+[A-Za-z(])", "captures": { "1": { "name": "storage.type.function.veles" }, "2": { "name": "keyword.other.on.veles" } } },
-        { "name": "keyword.control.loop.veles", "match": "\\b(loop|break|continue|in)\\b" },
-        { "name": "keyword.control.flow.veles", "match": "\\b(return|throw|try|do|catch|with)\\b" },
-        { "name": "keyword.control.concurrency.veles", "match": "\\b(async|await|scope|gather|race)\\b" },
-        { "comment": "select { } (contextual: only directly before a brace, D169)", "name": "keyword.control.concurrency.veles", "match": "(?<![.\\w])select\\b(?=\\s*\\{)" },
-        { "name": "storage.modifier.veles", "match": "\\b(public|private|internal|protected|override|unsafe|extern|mut|static|sealed|sendable)\\b" },
-        { "name": "storage.modifier.veles", "match": "\\b(lazy)\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*\\s*:)" },
-        { "name": "storage.type.veles", "match": "\\b(fun|struct|trait|implement|enum|val|var|const|type)\\b" },
-        { "name": "keyword.operator.expression.veles", "match": "\\b(as|raw|for)\\b" },
-        { "name": "keyword.operator.expression.veles", "match": "\\b(implements)\\b" },
+        {
+          "name": "keyword.control.conditional.veles",
+          "match": "\\b(if|else|when|is)\\b"
+        },
+        {
+          "comment": "inline loop (f in T.fields) { } (contextual: only directly before `loop`, D174)",
+          "name": "keyword.control.loop.veles",
+          "match": "(?<![.\\w])inline\\b(?=\\s+loop\\b)"
+        },
+        {
+          "comment": "indirect struct / inline struct / indirect sealed trait: where a variant is stored (contextual, D198)",
+          "name": "storage.modifier.veles",
+          "match": "(?<![.\\w])(indirect|inline)\\b(?=\\s+(compact\\s+)?(struct|sealed)\\b)"
+        },
+        {
+          "comment": "compact struct: the compiler places the fields (contextual, D215)",
+          "name": "storage.modifier.veles",
+          "match": "(?<![.\\w])compact\\b(?=\\s+(extern\\s+)?struct\\b)"
+        },
+        {
+          "comment": "fun on T(A): R, a receiver function type (contextual: only directly after `fun`, D207)",
+          "match": "\\b(fun)\\s+(on)\\b(?=\\s+[A-Za-z(])",
+          "captures": {
+            "1": { "name": "storage.type.function.veles" },
+            "2": { "name": "keyword.other.on.veles" }
+          }
+        },
+        {
+          "name": "keyword.control.loop.veles",
+          "match": "\\b(loop|break|continue|in)\\b"
+        },
+        {
+          "name": "keyword.control.flow.veles",
+          "match": "\\b(return|throw|try|do|catch|with)\\b"
+        },
+        {
+          "name": "keyword.control.concurrency.veles",
+          "match": "\\b(async|await|scope|gather|race|cede)\\b"
+        },
+        {
+          "comment": "select { } (contextual: only directly before a brace, D169)",
+          "name": "keyword.control.concurrency.veles",
+          "match": "(?<![.\\w])select\\b(?=\\s*\\{)"
+        },
+        {
+          "name": "storage.modifier.veles",
+          "match": "\\b(public|private|internal|protected|override|unsafe|extern|mut|static|sealed|sendable)\\b"
+        },
+        {
+          "name": "storage.modifier.veles",
+          "comment": "a lazy parameter (D90), or a lazy val built on its first read (D210)",
+          "match": "\\b(lazy)\\b(?=\\s+([A-Za-z_][A-Za-z0-9_]*\\s*:|(val|var|const)\\b))"
+        },
+        {
+          "name": "storage.type.veles",
+          "match": "\\b(fun|struct|trait|implement|enum|val|var|const|type)\\b"
+        },
+        {
+          "name": "keyword.operator.expression.veles",
+          "match": "\\b(as|raw|for)\\b"
+        },
+        {
+          "name": "keyword.operator.expression.veles",
+          "match": "\\b(implements)\\b"
+        },
         { "name": "variable.language.this.veles", "match": "\\b(this)\\b" },
         { "name": "support.type.self.veles", "match": "\\b(This)\\b" },
-        { "name": "invalid.illegal.reserved.veles", "match": "\\b(self|match|defer|go|yield|where|super|catch|interface|class|while|do|finally|import|package|module|let)\\b" }
+        {
+          "name": "invalid.illegal.reserved.veles",
+          "match": "\\b(self|match|defer|go|yield|where|super|catch|interface|class|while|do|finally|import|package|module|let)\\b"
+        }
       ]
     },
     "effects": {
@@ -236,13 +306,31 @@
     },
     "literals": {
       "patterns": [
-        { "name": "constant.language.boolean.veles", "match": "\\b(true|false)\\b" },
+        {
+          "name": "constant.language.boolean.veles",
+          "match": "\\b(true|false)\\b"
+        },
         { "name": "constant.language.null.veles", "match": "\\b(null)\\b" },
-        { "name": "constant.numeric.hex.veles", "match": "\\b0[xX][0-9a-fA-F_]+([iu](8|16|32|64))?\\b" },
-        { "name": "constant.numeric.binary.veles", "match": "\\b0[bB][01_]+([iu](8|16|32|64))?\\b" },
-        { "name": "constant.numeric.float.veles", "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9]+)?(f32|f64)?\\b" },
-        { "name": "constant.numeric.float.veles", "match": "\\b[0-9][0-9_]*[eE][+-]?[0-9]+(f32|f64)?\\b" },
-        { "name": "constant.numeric.integer.veles", "match": "\\b[0-9][0-9_]*([iu](8|16|32|64)|f32|f64)?\\b" }
+        {
+          "name": "constant.numeric.hex.veles",
+          "match": "\\b0[xX][0-9a-fA-F_]+([iu](8|16|32|64))?\\b"
+        },
+        {
+          "name": "constant.numeric.binary.veles",
+          "match": "\\b0[bB][01_]+([iu](8|16|32|64))?\\b"
+        },
+        {
+          "name": "constant.numeric.float.veles",
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9]+)?(f32|f64)?\\b"
+        },
+        {
+          "name": "constant.numeric.float.veles",
+          "match": "\\b[0-9][0-9_]*[eE][+-]?[0-9]+(f32|f64)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.veles",
+          "match": "\\b[0-9][0-9_]*([iu](8|16|32|64)|f32|f64)?\\b"
+        }
       ]
     },
     "templateTag": {
@@ -254,17 +342,32 @@
       "comment": "D172: a text block, `\"\"\"` on its own line to `\"\"\"`; escapes and interpolation work as in a string",
       "name": "string.quoted.triple.veles",
       "begin": "\"\"\"",
-      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.veles" } },
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.veles" }
+      },
       "end": "\"\"\"",
-      "endCaptures": { "0": { "name": "punctuation.definition.string.end.veles" } },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.veles" }
+      },
       "patterns": [
-        { "name": "constant.character.escape.veles", "match": "\\\\(u\\{[0-9a-fA-F]+\\}|[nrt0\\\\\"'$])" },
+        {
+          "name": "constant.character.escape.veles",
+          "match": "\\\\(u\\{[0-9a-fA-F]+\\}|[nrt0\\\\\"'$])"
+        },
         {
           "name": "meta.interpolation.veles",
           "begin": "\\$\\{",
-          "beginCaptures": { "0": { "name": "punctuation.definition.template-expression.begin.veles" } },
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.template-expression.begin.veles"
+            }
+          },
           "end": "\\}",
-          "endCaptures": { "0": { "name": "punctuation.definition.template-expression.end.veles" } },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.template-expression.end.veles"
+            }
+          },
           "contentName": "meta.embedded.line.veles",
           "patterns": [{ "include": "$self" }]
         },
@@ -272,7 +375,9 @@
           "name": "meta.interpolation.veles meta.embedded.line.veles",
           "match": "(\\$)([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
-            "1": { "name": "punctuation.definition.template-expression.begin.veles" },
+            "1": {
+              "name": "punctuation.definition.template-expression.begin.veles"
+            },
             "2": { "name": "variable.other.readwrite.veles" }
           }
         }
@@ -282,9 +387,13 @@
       "comment": "D172: a backtick string is raw — no escapes, no interpolation — and may span lines",
       "name": "string.quoted.other.raw.veles",
       "begin": "`",
-      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.veles" } },
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.veles" }
+      },
       "end": "`",
-      "endCaptures": { "0": { "name": "punctuation.definition.string.end.veles" } }
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.veles" }
+      }
     },
     "regex": {
       "comment": "D182: /pattern/flags where a value may start, i.e. not right after a name, a number, a string, ')', ']' or '}' (the compiler's lexer decides by the previous token; this is the usual editor approximation). Inside, the pattern's own parts are coloured.",
@@ -365,18 +474,33 @@
     "strings": {
       "name": "string.quoted.double.veles",
       "begin": "\"",
-      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.veles" } },
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.veles" }
+      },
       "end": "\"",
-      "endCaptures": { "0": { "name": "punctuation.definition.string.end.veles" } },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.veles" }
+      },
       "patterns": [
-        { "name": "constant.character.escape.veles", "match": "\\\\(u\\{[0-9a-fA-F]+\\}|[nrt0\\\\\"'$])" },
+        {
+          "name": "constant.character.escape.veles",
+          "match": "\\\\(u\\{[0-9a-fA-F]+\\}|[nrt0\\\\\"'$])"
+        },
         {
           "comment": "`${expr}` — contentName meta.embedded makes themes drop the string colour inside, so the expression is coloured as code",
           "name": "meta.interpolation.veles",
           "begin": "\\$\\{",
-          "beginCaptures": { "0": { "name": "punctuation.definition.template-expression.begin.veles" } },
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.template-expression.begin.veles"
+            }
+          },
           "end": "\\}",
-          "endCaptures": { "0": { "name": "punctuation.definition.template-expression.end.veles" } },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.template-expression.end.veles"
+            }
+          },
           "contentName": "meta.embedded.line.veles",
           "patterns": [{ "include": "$self" }]
         },
@@ -385,7 +509,9 @@
           "name": "meta.interpolation.veles meta.embedded.line.veles",
           "match": "(\\$)([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
-            "1": { "name": "punctuation.definition.template-expression.begin.veles" },
+            "1": {
+              "name": "punctuation.definition.template-expression.begin.veles"
+            },
             "2": { "name": "variable.other.readwrite.veles" }
           }
         }
@@ -398,9 +524,18 @@
     },
     "types": {
       "patterns": [
-        { "name": "support.type.primitive.veles", "match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|string|char)\\b" },
-        { "name": "support.type.collection.veles", "match": "\\b(List|MutableList|Array|Map|MutableMap|Set|MutableSet|Channel|Range|Option|Result|Task|Iterator|Iterable|Closeable|Mutex|Atomic|Panic|Sendable)\\b" },
-        { "name": "support.function.prelude.veles", "match": "\\b(Some|None|Ok|Err|sleep)\\b" },
+        {
+          "name": "support.type.primitive.veles",
+          "match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|string|char)\\b"
+        },
+        {
+          "name": "support.type.collection.veles",
+          "match": "\\b(List|MutableList|Array|Map|MutableMap|Set|MutableSet|Channel|Range|Option|Result|Task|Iterator|Iterable|Closeable|Mutex|Atomic|Panic|Sendable)\\b"
+        },
+        {
+          "name": "support.function.prelude.veles",
+          "match": "\\b(Some|None|Ok|Err|sleep)\\b"
+        },
         {
           "comment": "Capitalised identifiers are types or variants",
           "name": "entity.name.type.veles",
@@ -416,9 +551,15 @@
       "patterns": [
         { "name": "keyword.operator.arrow.veles", "match": "=>" },
         { "name": "keyword.operator.range.veles", "match": "\\.\\.<|\\.\\." },
-        { "name": "keyword.operator.nullable.veles", "match": "\\?\\?|\\?:|\\?!|\\?\\.|\\?" },
+        {
+          "name": "keyword.operator.nullable.veles",
+          "match": "\\?\\?|\\?:|\\?!|\\?\\.|\\?"
+        },
         { "name": "keyword.operator.wrapping.veles", "match": "[+\\-*]%" },
-        { "name": "keyword.operator.comparison.veles", "match": "==|!=|<=|>=|<|>" },
+        {
+          "name": "keyword.operator.comparison.veles",
+          "match": "==|!=|<=|>=|<|>"
+        },
         { "name": "keyword.operator.logical.veles", "match": "&&|\\|\\||!" },
         { "name": "keyword.operator.assignment.veles", "match": "[+\\-*/%]?=" },
         { "name": "keyword.operator.arithmetic.veles", "match": "[+\\-*/%]" },

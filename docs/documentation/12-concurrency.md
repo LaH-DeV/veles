@@ -1092,6 +1092,70 @@ is not seen inside a lock region (`withLock`, `with m.lock()`) or a
 `close()`, which always run to their end. `checkCancelled()` adds a check
 anywhere else.
 
+A tight counted loop — over a range or a list, its body calling no
+function — makes that check once per chunk of up to 1024 rounds instead
+(D218), about a microsecond of work: the check would otherwise keep the
+compiler from unrolling and vectorizing it, and nothing can tell the two
+apart but a clock.
+
+### Giving the executor a turn: `cede`
+
+A task keeps its thread until it reaches a suspension point, and a loop in
+a suspending function gives it up by itself once it has run for about
+10 ms while others wait (D145). The statement `cede` is a suspension point
+you place: the task offers its executor a turn and goes on at the next
+statement when it is picked again — which may be at once (D197). It suits
+a long computation that shares an executor with tasks that should not wait
+for all of it, given a turn between its chunks:
+
+```veles
+use io
+
+/// FNV-1a over the data, offering the executor a turn after each 64 KiB
+fun fnv1a(data: List<u8>): u64 {
+  var hash: u64 = 0xcbf29ce484222325
+  loop (chunk in data.chunked(65536)) {
+    loop (b in chunk) hash = (hash ^ b.toU64()) *% 0x100000001b3
+    cede
+  }
+  hash
+}
+
+fun main() {
+  val data = MutableList<u8>.make(1 << 20, i => (i % 251).wrapU8())
+  val digest = async fnv1a(data)
+  io.println("hashing alongside")
+  io.println("${await digest:x}")
+}
+```
+
+Output:
+
+```text
+hashing alongside
+4c568eccaeaf6c44
+```
+
+- `cede` is a statement, alone on its line or before `;`, `}` or `else`:
+  it has no value and takes nothing. `cede()`, `await cede`,
+  `val x = cede` are errors that say so, and an expression body is
+  written as a block: `fun pause() { cede }`, `() => { cede }`,
+  `async { cede }`.
+- A function that cedes suspends, and so does every caller, as with any
+  suspension point; it is refused where suspending is — in a lock region,
+  a global initializer, a `const fun`, a callback whose type does not
+  suspend.
+- It is where a cancellation is seen and where a scope body notices a
+  failed child. In a `close()` that suspends it still gives the turn, but
+  the cancellation waits until the close is done (D47).
+- It promises nothing about who runs next — not the oldest waiting task,
+  not every other task first — and no delay. It is not synchronisation:
+  to wait for something, wait on it (a channel, an `await`, an `Event`);
+  a loop that cedes until a flag changes only burns the thread.
+- The task stays where it is: on an `Executor.thread` it goes on on that
+  thread. `await sleep(Duration.zero)` does the same as `cede`;
+  `checkCancelled()` checks for a cancellation without giving a turn.
+
 ### Time limits: `withTimeout`
 
 The prelude's `withTimeout(limit, f)` calls `f` and gives up once `limit`
@@ -1438,7 +1502,7 @@ var lock = Mutex(value: 0)  // error: … the lock is inside the value, so decla
 val seen = MutableMap<string, i64>()   // error: … 'MutableMap<string, i64>', which is not Sendable …
 val served = Atomic(value: 0)      // ok: served.add(1)
 val cache = Mutex(value: MutableMap<string, string>())
-val table = Lazy(init: () => buildTable())   // ok: built on first use
+lazy val table = buildTable()                // ok: built on its first read (below)
 val ports = ["http": 80, "https": 443]       // ok: an immutable Map is Sendable
 ```
 
@@ -1449,7 +1513,59 @@ taking the new one. The value changes through its own methods
 Clock = SystemClock()`, needs a
 trait that requires `Sendable` of every implementor (`trait Clock :
 Sendable`). State that only one thread uses can be kept in an executor
-without a lock (D150).
+without a lock (D150). A resource — a database pool, a client, a file —
+is not a module value at all: it is made in `main` and handed down
+(chapter 26).
+
+### Built on first read: `lazy val`
+
+A module `val` is built before `main`, in the order the source gives,
+whether or not the program needs it. One that is expensive — a table, a
+parsed embedded file, a compiled set of patterns — can be `lazy` instead:
+built on its first read, once, by whichever task gets there first, while
+the others wait for it (D210). A read is a plain name.
+
+```veles
+use io
+
+lazy val keywords = buildKeywords()
+
+fun buildKeywords(): Set<string> {
+  io.println("building")
+  ["fun", "val", "var", "loop"].toSet()
+}
+
+fun isKeyword(word: string): bool => keywords.contains(word)
+
+struct Zone {
+  name: string
+
+  static lazy val utc = Zone(name: "UTC")
+}
+
+fun main() {
+  io.println("start")
+  io.println("${isKeyword("val")} ${isKeyword("x")} ${Zone.utc.name}")
+}
+```
+
+Output:
+```text
+start
+building
+true false UTC
+```
+
+The rules are `Lazy`'s, below: a panic in the initializer is raised again
+by every later read, and the initializer may not suspend or throw — it
+runs inside whichever read comes first, which neither waits nor handles
+an error — so a value that needs either is built in `main` and passed
+down. Its type must be `Sendable`, like any module value's, and it takes
+part in the order of the module's values (a cycle is still an error). A
+`const` cannot read one. Once built, a read is one load of a flag, a
+branch and the value. `lazy` goes only on a module `val` or a `static
+val`: on a field it would put a flag in every value, so a field, a local or
+a value passed around holds a `Lazy<T>` and calls `get()`.
 
 ## More shared state: `RwLock`, `Event`, `Lazy`, `Broadcast`, `Watch`
 
@@ -1737,8 +1853,9 @@ use.
 A task gives up its thread at a suspension point, and a loop in a
 suspending function also gives it up by itself once it has run for about
 10 ms while other tasks wait (D145). A function that does not suspend
-keeps its thread until it returns (the other threads go on); `yieldNow()`
-in its loop gives the thread up, and makes the function suspend. A call that blocks the thread itself — a C
+keeps its thread until it returns (the other threads go on); `cede` in
+its loop gives the thread up, and makes the function suspend. A call that
+blocks the thread itself — a C
 function, a read from the terminal, waiting for a child process — is
 noticed by a monitor within about a millisecond, and the thread's queue
 of tasks goes to a spare thread until the call returns (D66).

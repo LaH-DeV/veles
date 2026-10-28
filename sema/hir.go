@@ -26,6 +26,10 @@ type Program struct {
 	// (D4); nil when main does not throw.
 	MainReport *Func
 	Release    bool
+	// allocAt is where an allocating node without a span of its own was
+	// written (a literal, a closure, a box, a launch, a variant): what
+	// AllocSites reports (D213)
+	allocAt map[Expr]source.Span
 	// DebugInfo asks codegen for line tables and local variables (plan S8):
 	// the driver sets it for a debug build.
 	DebugInfo bool
@@ -165,6 +169,9 @@ type Var struct {
 	Captured  bool // inside a closure: read through the environment
 	IsSelf    bool // a method's receiver (or its stand-in inside a lambda): a pointer read as the value
 	IsParam   bool // a function or lambda parameter
+	// ReadOnly: a parameter whose place the body never writes or lends (the
+	// receiver pass), so a large argument can be the caller's own value
+	ReadOnly bool
 
 	InitText string // a local binding's initializer as written, for the hover
 	ErrPoly  bool   // a parameter declared `fun(..) throws E` with E a type parameter of the enclosing function
@@ -178,12 +185,19 @@ type Var struct {
 	// checker reports when they are never read (see reportUnused).
 	used     bool
 	checkUse bool
+	// noInit: a local `var` declared without a value, unreadable until it
+	// is assigned on every path (D214)
+	noInit bool
 }
 
 type Global struct {
 	Name    string // mangled
 	Display string
 	Type    types.Type
+	// Guard: a `lazy val` (D210) has no storage of its own; it is built by
+	// this hidden global, `Lazy(init: () => value)`, whose get() every read
+	// calls. nil for any other global.
+	Guard *Global
 	Mutable bool
 	Init    Expr
 	Span    source.Span
@@ -250,9 +264,15 @@ type Loop struct {
 	Post []Stmt
 	ID   int
 	Pos  source.Span
+	// Chunk: the loop looks for attention once per chunk of rounds, not
+	// on every round (D218); nil for every other loop
+	Chunk *LoopChunk
 
 	hasBreak    bool
 	hasContinue bool
+	// breakAssigned: the variables assigned on the way to every `break`
+	// that leaves this loop so far (D216)
+	breakAssigned facts
 }
 
 type Break struct {
@@ -783,11 +803,23 @@ type With struct {
 	Init  Expr
 	Close Expr // the close() call on Var
 	Body  *Block
+	// Pos is the binding as written: where the line table puts it
+	Pos source.Span
 	// Lock: a `with … = m.lock()` (D107), whose body may not suspend
 	Lock *HeldLock
 }
 
 func (*With) hirStmt() {}
+
+// LazyRead is a read of a `lazy val` (D210): the value's own global once
+// its ready flag is set, one acquire load and a branch; before that, Build —
+// the hidden Lazy's get(), which builds it once and raises a panic in its
+// initializer again — gives it, and it is stored and the flag set.
+type LazyRead struct {
+	exprBase
+	Value *Var // the lazy value's global
+	Build Expr
+}
 
 // Box coerces a value to a trait object (D9): the value is copied to the
 // heap and paired with the vtable of its impl. Methods lists the concrete

@@ -14,15 +14,15 @@ compiler be written with this?" (veles-plan.md, Principles and track S).
 
 ## Where the truth lives
 
-| File | Holds | Rule |
-|---|---|---|
-| `veles-spec.md` | language decisions, `D`/`M`-numbered | IDs never renumbered; a superseded entry is struck through |
-| `veles-checklist.md` | production-readiness work; §9 open decisions (`Q`-labels, removed when decided), §10 decision log, §11 known limits | tick only what is built, tested and documented |
-| `veles-plan.md` | order of work (tracks A–E) + acceptance; progress log at the bottom | continue from the first unfinished step of its "Build order" list (D100–D135), then track A, then B |
-| `notes_to_change.txt` | the user's open design notes and standing directions | read at session start; never rewrite the user's text; a done item leaves the file (status lines of ours start with `→`) |
-| `veles-selfhost-frontend-plan.md` | the Veles rewrite of lexer/parser | gates on byte-identical output vs the Go front end |
-| `veles-code-review-plan.md` | the review of all Veles code (std, selfhost, examples): scope, checks, waves, findings log | no behaviour change without a decision; findings not fixed go to checklist §11 |
-| `archive/` | finished plans, decided design notes, the old logs and notes | read-only history; nothing there is open |
+| File                              | Holds                                                                                                               | Rule                                                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `veles-spec.md`                   | language decisions, `D`/`M`-numbered                                                                                | IDs never renumbered; a superseded entry is struck through                                                              |
+| `veles-checklist.md`              | production-readiness work; §9 open decisions (`Q`-labels, removed when decided), §10 decision log, §11 known limits | tick only what is built, tested and documented                                                                          |
+| `veles-plan.md`                   | order of work (tracks A–E) + acceptance; progress log at the bottom                                                 | continue from the first unfinished step of its "Build order" list (D100–D135), then track A, then B                     |
+| `notes_to_change.txt`             | the user's open design notes and standing directions                                                                | read at session start; never rewrite the user's text; a done item leaves the file (status lines of ours start with `→`) |
+| `veles-selfhost-frontend-plan.md` | the Veles rewrite of lexer/parser                                                                                   | gates on byte-identical output vs the Go front end                                                                      |
+| `veles-code-review-plan.md`       | the review of all Veles code (std, selfhost, examples): scope, checks, waves, findings log                          | no behaviour change without a decision; findings not fixed go to checklist §11                                          |
+| `archive/`                        | finished plans, decided design notes, the old logs and notes                                                        | read-only history; nothing there is open                                                                                |
 
 ## Rules
 
@@ -64,6 +64,10 @@ clone at `~/veles` inside WSL; from Git Bash set `MSYS_NO_PATHCONV=1` first,
 and write a `$` meant for `cmd` as `\$` (wsl.exe re-parses its command line).
 Go is in `~/.local/go` there, clang 18 from apt. A change to the runtime,
 codegen, std or a test's expected output is verified there too.
+
+Go 1.27.1 is pinned on every machine (`go.mod`; the scripts set
+`GOTOOLCHAIN=go1.27.1`): the generated Unicode tables follow that Go's
+Unicode data, so move the pin only together with regenerating them (README).
 
 ## Done means
 

@@ -26,6 +26,7 @@ public struct Visitor {
   public onCallExpr:         (fun(CallExpr, Context))? = null
   public onCastExpr:         (fun(CastExpr, Context))? = null
   public onCatchExpr:        (fun(CatchExpr, Context))? = null
+  public onCedeStmt:         (fun(CedeStmt, Context))? = null
   public onCharLit:          (fun(CharLit, Context))? = null
   public onCoalesceExpr:     (fun(CoalesceExpr, Context))? = null
   public onConstType:        (fun(ConstType, Context))? = null

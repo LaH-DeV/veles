@@ -307,8 +307,8 @@ them becomes one.
 The cost of that model is the one it has everywhere: a task that computes
 for a long time in a function that does not suspend keeps its thread from
 the other connections. A loop in a suspending function gives the thread up
-by itself after about 10 ms (D145); elsewhere call `yieldNow()` in long
-work, or keep it out of the serving tasks.
+by itself after about 10 ms (D145); elsewhere write `cede` between the
+chunks of long work (D197), or keep it out of the serving tasks.
 
 Next: [An HTTP server](17-http.md), which is this module used in anger, or
 back to [Concurrency](12-concurrency.md) for what `scope`, `gather` and

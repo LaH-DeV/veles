@@ -22,12 +22,13 @@ var keywordDocs = map[string]keywordDoc{
 	"fun":       {"Declares a function. A one-expression body is written `=> expr`; a block's last expression is its value.", "fun area(w: f64, h: f64): f64 => w * h", "03-functions-and-control-flow.md#declaring-functions"},
 	"val":       {"Binds a name that is never reassigned. `val x = e else { … }` takes the value or leaves (let-else).", "val n = 5\nval [first, ..] = xs else return", "02-values-and-strings.md"},
 	"var":       {"Binds a name that may be reassigned; on a field, the field may be assigned after construction.", "var total = 0\ntotal += 1", "02-values-and-strings.md"},
-	"const":     {"A value computed while compiling (D113); `const fun` is a function the compiler can run for one.", "const LIMIT: i64 = 4 * 1024\nconst fun kib(n: i64): i64 => n * 1024", "02-values-and-strings.md"},
+	"const":     {"A value computed while compiling (D113); `const fun` is a function the compiler can run for one; `const struct` is a type immutable all the way down, whose values can be shared and used as keys (D212).", "const LIMIT: i64 = 4 * 1024\nconst fun kib(n: i64): i64 => n * 1024\nconst struct Point { x: f64; y: f64 }", "02-values-and-strings.md"},
 	"if":        {"A condition, and an expression: both branches give its value. `if (val x = e)` binds `x` when `e` is not null (D95).", "val sign = if (n < 0) -1 else 1\nif (val user = find(id)) greet(user)", "03-functions-and-control-flow.md#if-is-an-expression"},
 	"else":      {"The other branch of an `if`, the fallback arm of a `when`, or what a let-else does when there is no value.", "val sign = if (n < 0) \"-\" else \"+\"\nval user = find(id) else return", "03-functions-and-control-flow.md#if-is-an-expression"},
 	"loop":      {"The one loop keyword: `loop (x in xs)`, `loop (cond)`, or `loop { }` forever. `break` and `continue` work in all three.", "loop (i in 0..<n) total += i\nloop (queue.isNotEmpty()) step()", "03-functions-and-control-flow.md#one-loop-keyword"},
 	"break":     {"Leaves the innermost loop, or the labelled one (`break outer`).", "loop (line in lines) { if (line.isEmpty()) break }", "03-functions-and-control-flow.md#one-loop-keyword"},
 	"continue":  {"Starts the next round of the innermost loop, or of the labelled one.", "loop (x in xs) { if (x < 0) continue\n  use(x) }", "03-functions-and-control-flow.md#one-loop-keyword"},
+	"cede":      {"Yields execution to the current executor's scheduler. May resume immediately. Cancellation is checked unless cleanup is shielded. A statement: it has no value and makes the function suspend (D197).", "loop (chunk in data.chunked(65536)) {\n  hash = mix(hash, chunk)\n  cede\n}", "12-concurrency.md#giving-the-executor-a-turn-cede"},
 	"return":    {"Leaves the function with a value; at the end of a body the last expression is returned without it.", "if (xs.isEmpty()) return 0", "03-functions-and-control-flow.md#the-last-expression-is-the-result"},
 	"struct":    {"Declares a value type with fields; methods and `implement` blocks go in its body.", "struct Point {\n  x: f64\n  y: f64\n  fun len(): f64 => (x * x + y * y).sqrt()\n}", "05-structs-and-methods.md"},
 	"trait":     {"Declares a set of methods types implement; a default body is shared by every implementing type.", "trait Shape { fun area(): f64 }", "08-traits-and-generics.md"},
@@ -89,6 +90,10 @@ func inAnnotationDecl(toks []lexer.Token, i int) bool {
 }
 
 var contextualDocs = map[string][]contextualDoc{
+	"lazy": {
+		{keywordDoc{"`lazy val`: a module value, or a type's `static lazy val`, built on its first read, once, by whichever task gets there first; the others wait. A panic in the initializer is raised again by every later read (D210).", "lazy val keywords = buildKeywords()\nstruct Zone { static lazy val utc = Zone.load(\"UTC\") }", "12-concurrency.md#built-on-first-read-lazy-val"},
+			func(toks []lexer.Token, i int) bool { return nextIs(toks, i, lexer.KwVal) }},
+	},
 	"inline": {
 		{keywordDoc{"`inline loop (f in T.fields) { … }` is unrolled while compiling: the body is checked and compiled once per field (or member), each copy with that field's own type in `f.Type`. There is no `break` or `continue`: there are copies, not rounds (D174).", "inline loop (f in This.fields) {\n  if (val min = f.attr<Min>()) {\n    if (f.get(this) < min.value) out.push(f.name)\n  }\n}", "14-attributes-and-testing.md#reading-them"},
 			func(toks []lexer.Token, i int) bool { return nextIs(toks, i, lexer.KwLoop) }},
@@ -97,6 +102,10 @@ var contextualDocs = map[string][]contextualDoc{
 	},
 	"indirect": {
 		{keywordDoc{"`indirect struct`: a variant stored behind a pointer, so a large one does not make every value of the family as big (D198).", "sealed trait Event {\n  indirect struct Upload { name: string; bytes: List<u8> }\n}", "09-sealed-types.md"},
+			func(toks []lexer.Token, i int) bool { return nextIs(toks, i, lexer.KwStruct) }},
+	},
+	"compact": {
+		{keywordDoc{"`compact struct`: the compiler places the fields for the smallest size, by alignment, largest first. Only memory changes: construction, printing, `==`, `Codable` and `T.fields` keep the declared order. Without it, fields lie in the order written (D215).", "compact struct Sample {\n  flag: u8\n  at:   i64\n  kind: u8\n}   // 16 bytes, not 24", "13-memory-and-ffi.md#field-order-and-compact-structs"},
 			func(toks []lexer.Token, i int) bool { return nextIs(toks, i, lexer.KwStruct) }},
 	},
 	"annotation": {

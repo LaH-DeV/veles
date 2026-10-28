@@ -314,7 +314,7 @@ func (f *fnCtx) execMember(info *execInfo, e *ast.MemberExpr) Expr {
 	f.c.refSym(e.Name.Pos, sym)
 	if f.exec == info {
 		if sym.Kind == SymGlobal {
-			return f.globalValue(sym.Global)
+			return f.globalValue(sym.Global, e.Name.Pos)
 		}
 		return f.funcValue(sym.Func, e.Name.Pos)
 	}

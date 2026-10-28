@@ -230,15 +230,38 @@ func (g *gen) constInit(v sema.ConstVal, at string) string {
 		if isPtrLike(v.T.Elem) {
 			return g.constInit(v.V, at)
 		}
-		return fmt.Sprintf("{ i1 true, %s %s }", g.llType(v.T.Elem), g.constInit(v.V, at))
-	case *sema.CTuple:
-		return g.constFields(v.T.Elems, v.Elems, at)
-	case *sema.CStruct:
-		ts := make([]types.Type, len(v.T.Fields))
-		for i, f := range v.T.Fields {
-			ts[i] = f.Type
+		if _, ok := g.niche(v.T); ok {
+			return g.constInit(v.V, at) // a nullable laid out as its value
 		}
-		return g.constFields(ts, v.Fields, at)
+		return g.constPlaced([]types.Type{types.TBool, v.T.Elem}, []string{"i1 true", g.llType(v.T.Elem) + " " + g.constInit(v.V, at)})
+	case *sema.CTuple:
+		parts := make([]string, len(v.Elems))
+		for i, x := range v.Elems {
+			parts[i] = g.llType(v.T.Elems[i]) + " " + g.constInit(x, at+"."+strconv.Itoa(i))
+		}
+		return g.constPlaced(v.T.Elems, parts)
+	case *sema.CStruct:
+		if len(v.Fields) == 0 || v.T.Union {
+			ts := make([]types.Type, len(v.T.Fields))
+			for i, f := range v.T.Fields {
+				ts[i] = f.Type
+			}
+			return g.constFields(ts, v.Fields, at)
+		}
+		g.structType(v.T)
+		var parts []string
+		for _, sl := range g.structSlots(v.T) {
+			if sl.field < 0 {
+				parts = append(parts, fmt.Sprintf("[%d x i8] zeroinitializer", sl.pad))
+				continue
+			}
+			parts = append(parts, g.llType(v.T.Fields[sl.field].Type)+" "+g.constInit(v.Fields[sl.field], at+"."+strconv.Itoa(sl.field)))
+		}
+		body := "{ " + strings.Join(parts, ", ") + " }"
+		if v.T.Packed {
+			body = "<" + body + ">"
+		}
+		return body
 	case *sema.CArray:
 		// inline in what holds it: `[N x T] [...]` (D121)
 		parts := make([]string, len(v.Elems))
@@ -254,6 +277,23 @@ func (g *gen) constInit(v sema.ConstVal, at string) string {
 		return g.constTable(v, at)
 	}
 	panic(fmt.Sprintf("constInit: %T", v))
+}
+
+// constPlaced is the constant of a tuple or flagged nullable from its
+// members' typed constants, with the padding placedType put between them.
+func (g *gen) constPlaced(elems []types.Type, members []string) string {
+	if len(members) == 0 {
+		return "zeroinitializer"
+	}
+	var parts []string
+	for _, sl := range g.placedSlots(elems) {
+		if sl.field < 0 {
+			parts = append(parts, fmt.Sprintf("[%d x i8] zeroinitializer", sl.pad))
+			continue
+		}
+		parts = append(parts, members[sl.field])
+	}
+	return "{ " + strings.Join(parts, ", ") + " }"
 }
 
 func (g *gen) constFields(ts []types.Type, xs []sema.ConstVal, at string) string {

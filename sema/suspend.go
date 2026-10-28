@@ -76,8 +76,12 @@ func (w susp) argSuspends(a Expr) bool {
 		if w.plainVar(v.Var) {
 			return false
 		}
+	case *FuncRef:
+		return v.Fn.Suspends || v.Fn.suspends // a named function suspends as it does (D217)
 	}
-	return funcTypeSuspends(a.Type())
+	// the value's own type: a plain one passed where the parameter may
+	// suspend is under a Cast that says it does (D217)
+	return funcTypeSuspends(FuncValueOf(a).Type())
 }
 
 // FuncValueOf is the function value an expression passes on unchanged:
@@ -262,6 +266,7 @@ func (c *Checker) inferSuspension(prog *Program) {
 		}
 	}
 	c.checkDeclaredSuspension(prog)
+	c.checkPlainFuncArgs(prog)
 }
 
 // suspensionFixpoint computes Suspends and Conditional for every function.
@@ -293,6 +298,8 @@ func (c *Checker) checkDeclaredSuspension(prog *Program) {
 		if fn.IsClosure {
 			if fn.Sig.Effects.Suspends {
 				fn.Suspends = true
+			} else if lazy := c.lazyInit[fn.Span]; fn.Suspends && lazy != nil {
+				c.errorf(fn.Span, "the initializer of 'lazy val %s' cannot throw or suspend: it runs inside whichever read comes first, which neither handles an error nor waits; build the value in 'main' and pass it down (D210)", lazy.Display)
 			} else if fn.Suspends {
 				c.errorf(fn.Span, "this lambda suspends, so its type must be a suspending function type: 'fun(...): T suspends' (D40)")
 			}
@@ -417,7 +424,7 @@ func (w susp) expr(e Expr) bool {
 		return w.expr(e.Obj) || w.any(e.Args)
 	case *Builtin:
 		switch e.Op {
-		case "chan.send", "chan.recv", "task.sleep", "task.ioWait", "task.runWithin":
+		case "chan.send", "chan.recv", "task.sleep", "task.cede", "task.ioWait", "task.runWithin":
 			return true
 		}
 		return w.any(e.Args)

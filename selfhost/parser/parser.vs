@@ -148,6 +148,11 @@ struct Parser {
 
   // the identifier at the cursor, taken; null, reported, when there is none
   fun expectIdent(): ast.Ident? {
+    if (this.at(Kind.KwCede)) {
+      // a name that became a keyword (D197): what to do about it
+      this.errorAt(this.span(), "expected identifier, found keyword 'cede': 'cede' is a statement now (D197); rename this and every use of it")
+      return null
+    }
     if (!this.at(Kind.Ident)) {
       this.errorExpected("identifier")
       return null
@@ -336,6 +341,19 @@ struct Parser {
       }
       Kind.KwStruct => return this.parseStruct(head, false)
       Kind.Ident => {
+        if (this.atWord("compact") && (this.peek(1).kind == Kind.KwStruct || this.peek(1).kind == Kind.KwExtern && this.peek(2).kind == Kind.KwStruct)) {
+          this.next()  // the compiler places the fields (D215); refused on an extern struct by the checker
+          val isExtern = this.accept(Kind.KwExtern)
+          var d = this.parseStruct(head, isExtern)
+          d.compact = true
+          return d
+        }
+        if (this.lazyAt(0)) {
+          this.next()  // `lazy val`: built on its first read (D210); the checker refuses `var` and `const`
+          var d = this.parseValDecl(head)
+          d.isLazy = true
+          return d
+        }
         if (this.atWord("indirect") && this.peek(1).kind == Kind.KwSealed) {
           this.next()  // every variant behind a pointer (D198)
           val d = this.parseTrait(head)
@@ -382,6 +400,18 @@ struct Parser {
         return this.parseImpl(head.attrs, false)
       }
       Kind.KwConst => {
+        if (this.structWordsAt(1) > 0) {
+          // `const struct`: immutable all the way down (D212), checked by the
+          // checker; then `compact` (D215) and `extern` as without it
+          this.next()
+          val compact = this.atWord("compact")
+          if (compact) this.next()
+          val isExtern = this.accept(Kind.KwExtern)
+          var d = this.parseStruct(head, isExtern)
+          d.isConst = true
+          d.compact = compact
+          return d
+        }
         // `const fun` (D113), or a constant
         if (this.peek(1).kind == Kind.KwFun) return this.topLevelFun(head, this.parseFun(head.attrs, FunContext.Free))
         return this.parseValDecl(head)
@@ -706,6 +736,8 @@ struct Parser {
           // a body in braces has no arrow (D140); the block is read as the body
           this.diags.errorAt(arrow.span, "a body in braces has no '=>': write 'fun ${fn.name.name}(…) { … }' (D140)")
           fn.body = this.parseBlock()
+        } else if (this.at(Kind.KwCede)) {
+          fn.body = this.cedeFunBody(fn.name.name)
         } else {
           fn.exprBody = &this.parseExpr()
         }

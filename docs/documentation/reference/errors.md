@@ -60,6 +60,18 @@ index-of family (`indexOf`, `indexOfFirst`, `lastIndexOf`, `binarySearch`,
 for null. Better still: `val i = xs.indexOf(v) ?: return`, after which
 `xs.at(i)` is a `T`, or `contains` when the index is not needed.
 
+#### `'yieldNow()' was removed (D197): write the statement 'cede'`
+
+The prelude's `yieldNow()` became the statement `cede`. A call standing
+as a statement is fixed to `cede`; `fun pause() => yieldNow()` to
+`fun pause() { cede }`; `() => yieldNow()` to `() => { cede }`;
+`async yieldNow()` to `async { cede }`; the function passed as a value,
+where a `fun()` that may suspend is wanted, to `() => { cede }`. A call
+inside a larger expression, or one given arguments, has no fix: `cede`
+has no value, so move it to a line of its own where the call was
+evaluated, keeping whatever the arguments computed. A `yieldNow` the
+program declares itself is its own and is not touched.
+
 #### `the receiver is spelled 'this'`
 
 A method's receiver is `this`, as in most languages that have one. `self`
@@ -217,8 +229,21 @@ for no particular reason — use `i64` unless the width matters.
 
 #### `a function value does not take on 'suspends' or 'throws'`
 
-A named function passed where a `suspends` or `throws` function type is
-wanted: pass a lambda that calls it, `(x) => f(x)` (D40).
+A named function or a function variable passed where its effects do not
+fit: one that throws where the parameter does not, for instance. Pass a
+lambda that calls it, `(x) => f(x)`; a lambda written in place takes the
+effects the parameter asks for (D40). A plain function where the
+parameter only _may_ suspend is no error (`xs.map(double)`, D217).
+
+#### `a function that does not suspend cannot stand here`
+
+A plain function value accepted where a parameter may suspend (D217) is
+refused when the call would run it as a suspending function after all:
+the function it is passed to keeps it (stores or returns it), another
+argument makes the call suspend, it is passed through a function value or
+a trait object, or it is not an argument at all
+(`val g: fun(i64): i64 suspends = double`). The fix is the lambda that
+calls it, `(x) => f(x)`, which is compiled as a suspending function.
 
 #### `type mismatch: expected '(y: i64, x: i64)', found '(x: i64, y: i64)'; the labels differ`
 
@@ -516,6 +541,15 @@ need each other — through the functions their initializers call as well. A
 value that needs itself, directly or round a cycle, has no first value:
 compute it in a function, or pass it as a parameter.
 
+A `lazy val` (D210) is built on its first read instead, so its errors are
+about that read: `the initializer of 'lazy val thrown' cannot throw or
+suspend` (the read that builds it neither handles an error nor waits —
+handle the error inside, or build the value in `main`), `'fine' is a lazy
+value, built at run time on its first read; a constant cannot read it`,
+and `lazy` on a `var` or a `const`, which is a contradiction: a lazy value
+is built once and never changes, and a `const` is computed while
+compiling.
+
 ### operators
 
 **An operator the type does not have.** `operator '-' is not defined for
@@ -627,6 +661,19 @@ no collection — the way to grow a worklist while walking it. A change
 made where the compiler cannot see it (a function handed the same list)
 panics instead, when the loop next steps: `'xs' changed while a loop
 walked it`.
+
+#### `'items' is a 'MutableList<i64>'; a const struct holds only immutable data: use 'List<i64>'`
+
+A `const struct` promises that nothing reached through its values
+changes (D212), so each field must be deeply immutable. The message names
+the field and what to use: the immutable collection, `string` for a
+`StringBuilder`, `const struct` on a plain struct you declared (the
+promise is written at every level), a `const` variant for a sealed type.
+A `var` field is refused the same way; build a changed value with
+`copy`. Pointers, functions, trait objects, channels, task handles and
+`Mutex`/`Atomic` are state, not data: keep them beside the value. For a
+generic one the error is where the type arguments are written:
+`'Pair' is a const struct, so its field 'second' is a 'MutableList<i64>'`.
 
 ### references
 
@@ -752,6 +799,25 @@ extending a `Result` or an `Option`. See
 `protected var count: i64`. A bare field is never assigned by anyone, and
 so has nothing to protect (D22).
 
+#### `'xs' is used before it is assigned on every path to here`
+
+A local `var` may be declared without a value (`var name: string`) when the
+branches below give it one, but nothing may read it, take `&` of it,
+capture it in a lambda, call a method on it or write one of its fields until
+every path to that point has assigned it (D214). An assignment inside a
+loop body does not count after the loop, since the body may run no times;
+one inside a lambda counts only inside it. Give the variable a value where
+it is declared, or assign it on each branch above the use.
+
+#### `an extern struct is laid out as C lays it out … drop 'compact'`
+
+`compact struct` lets the compiler place a struct's fields for the smallest
+size (D215). It is refused where the layout is not the compiler's to choose:
+an `extern struct` (C's order; `@packed` applies only there) and a
+`@transparent` one (it is its one field). On a struct with fewer than two
+fields it is a warning: there is nothing to place. See
+[chapter 13](../13-memory-and-ffi.md#field-order-and-compact-structs).
+
 ### traits
 
 **What a type must provide to be used as a trait.** `'Point' does not
@@ -861,6 +927,18 @@ it, D156), inside `scope { }` when the block should wait for many (a pool
 of workers), or as `with t = async f()` when it runs in the background
 until the block ends, which cancels it then (D100) — a server in a test,
 a ticker.
+
+#### `'cede' is a statement and has no value`
+
+`cede` offers the executor a turn (D197). It is a statement on its own:
+no arguments, no operand, no value, no `await`. So `cede()` (the fix
+removes the parentheses), `cede x`, `cede.m`, `cede + 1`, `await cede` and
+`try cede` (the fixes remove the prefix), `val x = cede`, `f(cede)` and
+`return cede` are errors. Where a body was meant, write a block:
+`fun pause() { cede }` for `fun pause() => cede`, `() => { cede }` for a
+lambda or a `when` arm, `async { cede }` for `async cede` — each comes with
+the fix. A program that named something `cede` before the keyword existed
+renames it: `expected identifier, found keyword 'cede'`.
 
 #### `module-level 'val cache' has type 'MutableMap<i64, i64>', which is not Sendable`
 

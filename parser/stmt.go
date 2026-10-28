@@ -98,6 +98,11 @@ func (p *Parser) parseStmt() ast.Stmt {
 	if p.atStaticAssert() {
 		return p.parseStaticAssert()
 	}
+	if p.lazyAt(0) {
+		p.errorf(p.span(), "'lazy' is for a module-level 'val' or a 'static val' (D210); a local built on first use is 'val x = Lazy(() => …)', read with 'x.get()'")
+		p.next()
+		start = p.span()
+	}
 	switch p.cur().Kind {
 	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
 		s := &ast.ValStmt{}
@@ -177,6 +182,9 @@ func (p *Parser) parseStmt() ast.Stmt {
 		}
 		return &ast.ContinueStmt{Label: label, Pos: p.spanFrom(start)}
 
+	case lexer.KwCede:
+		return p.parseCede()
+
 	case lexer.KwLoop:
 		return p.parseLoop(start)
 
@@ -221,7 +229,12 @@ func (p *Parser) parseStmt() ast.Stmt {
 	// expression or assignment
 	x := p.parseExpr()
 	if _, bad := x.(*ast.BadExpr); bad {
-		p.syncStmt()
+		// an expression that took all its tokens (`await cede`) left the
+		// statement's end for the caller: skipping it would make the next
+		// statement look like a second one on the same line
+		if !p.at(lexer.Semi, lexer.RBrace, lexer.EOF) {
+			p.syncStmt()
+		}
 		return &ast.BadStmt{Pos: start}
 	}
 	if p.cur().Kind.IsAssign() {

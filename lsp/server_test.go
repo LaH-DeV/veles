@@ -854,7 +854,7 @@ func TestHoverSpellsOutModifiers(t *testing.T) {
 		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
 		return string(res)
 	}
-	want := `public struct Notes {\n  // Notes(items: bool = ..., count: i64 = ...)\n  val items: bool = ...\n  public protected var count: i64 = ...\n  static val empty: Notes = ...\n  public fun add(text: string)\n  public static fun of(n: i64): Notes\n  // ... and 2 members not visible from here\n}`
+	want := `public struct Notes {\n  // Notes(items: bool = ..., count: i64 = ...)\n  // 24 bytes, aligned 8, 7 of padding\n  val items: bool = ...\n  public protected var count: i64 = ...\n  static val empty: Notes = ...\n  public fun add(text: string)\n  public static fun of(n: i64): Notes\n  // ... and 2 members not visible from here\n}`
 	if h := hover(16, 11); !strings.Contains(h, want) {
 		t.Errorf("struct hover: %s\nwant %s", h, want)
 	}

@@ -1,9 +1,9 @@
 # Cede: explicit cooperative scheduling
 
-Research and specification, 2026-10-21. **D197: specified, not implemented.**
-The user approved a reserved, statement-only keyword and a scheduling
-opportunity rather than an ordering barrier. `yieldNow()` still exists until
-the implementation and whole-tree migration land together.
+Research and specification, 2026-10-21. **D197: built 2026-10-27** (plan
+F20; see "Implementation status" at the end). The user approved a reserved,
+statement-only keyword and a scheduling opportunity rather than an ordering
+barrier. `yieldNow()` is gone; its uses are errors with fixes.
 
 Sections 1-7 are normative under [D197](veles-spec.md); the research above
 them and implementation guidance below them are explanatory. Earlier
@@ -418,3 +418,40 @@ and I1 planning: compare ownership of iterator state, early-exit cleanup,
 errors, suspension, borrowing/retention and implementation costs across
 languages before choosing generator syntax or lowering. D197 frees the
 scheduler vocabulary from that choice; it does not settle it.
+
+## Implementation status (2026-10-27)
+
+Built in one change with the migration (plan F20). Sections 1-7 are met
+as follows; what was not run is listed, not claimed.
+
+- Lexer/parser, keyword reservation, invalid grammar, tooling: both front
+  ends, gated byte for byte by the self-host corpus file `p-cede` (every
+  form of section 1 and 6, CRLF, comments, EOF, a chain after the keyword,
+  `ceded`); `parser/cede_test.go` (trees, one error per mistake, the next
+  statement still parsed, every fix applied and re-parsed); formatter;
+  `veles parse`; hover (section 6 text), completion, the VS Code grammar.
+- Effects and lock safety: `sema/cede_test.go` and conformance
+  `D197-cede.vs` (helpers, recursion, D116 instances that stay plain, trait
+  contracts, D147 closes; refused under `withLock`, a lock guard directly
+  and through a helper, `RwLock`, a global initializer, `const fun`,
+  `lazy val`, `Thread.start`, an unannotated lambda as D40 requires).
+- Removal: `sema/cede_test.go` and `D197-yieldnow-removed.vs` (each fix
+  applied and re-checked; no fix for a call in a value, with arguments, or
+  a value where the wanted type does not suspend; a program's own
+  function, local or parameter named `yieldNow` untouched).
+- Continuation, scheduling, cancellation, failure, shielded cleanup,
+  executors, sleep coexistence: `driver/cede_test.go`, debug and release,
+  `VELES_THREADS=1/2/4/8`, `VELES_GC_THRESHOLD=4096`, `VELES_GC_POISON=1`.
+  A peer is shown to run by a flag only it sets, waited for by recursion
+  (no loop back edge can stand in for the boundary); affinity by the OS
+  thread id; cancellation by deadlines that pass inside a lock region, so
+  the `cede` after it is the first point that can see them. Running that
+  case twice found a runtime bug: a yield abandoned by a cancellation left
+  `TB_YIELDED` set, and the next `cede` returned at once without a turn or
+  a cancellation check (fixed in `veles_task_leave_waits_impl` and
+  `veles_task_cancelled`).
+- Codegen: golden `codegen/llvm/golden/cede`.
+- Platforms: Windows and Linux (WSL). Not run: macOS, and the Linux
+  sanitizer build (checklist section 11).
+- Performance: `bench/results.md`, 2026-10-27 (yield cost before and
+  after, regression benchmarks, and plan F21).

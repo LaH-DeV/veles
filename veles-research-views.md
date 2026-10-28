@@ -1,7 +1,7 @@
 # Views over text and bytes — what Veles has, what other languages do (2026-10-20)
 
 Asked by the user while settling the string `slice` (decision 4 of
-`veles-syntax-decisions.md`): "add recommended slice but we should also take a
+`archive/veles-syntax-decisions.md`): "add recommended slice but we should also take a
 look at a view/Span type". Research only; nothing here is built.
 
 ## 1. What Veles already has (checked in `runtime/c/veles_rt.c`)

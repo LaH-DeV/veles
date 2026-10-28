@@ -1,6 +1,8 @@
 package sema
 
 import (
+	"strings"
+
 	"github.com/LaH-DeV/veles/ast"
 	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
@@ -131,6 +133,89 @@ func (f *fnCtx) removedFactory(key string, e *ast.CallExpr) bool {
 	}
 	f.c.errorFix(span, fix, "'%s' was removed: construct it — '%s' — every value is made by its type's constructor (D73)", key, shape)
 	return true
+}
+
+// D197: the prelude's `yieldNow()` is gone; the statement `cede` says it.
+// Only a name that would have meant the prelude's function is reported — a
+// program's own `yieldNow` is its own. A fix is offered where the rewrite
+// keeps the meaning: the call standing as a statement, as a body, or after
+// `async`. A call inside a value, or one given arguments, is explained and
+// left to the author: `cede` has no value, and what an argument computes
+// must not vanish with it.
+
+// yieldNowCall is x when it is `yieldNow()` naming the removed function.
+func (f *fnCtx) yieldNowCall(x ast.Expr) *ast.CallExpr {
+	call, ok := x.(*ast.CallExpr)
+	if !ok || call.Async || len(call.Args) > 0 || len(call.TypeArgs) > 0 {
+		return nil
+	}
+	if n, ok := call.Fun.(*ast.NameExpr); !ok || n.Name != "yieldNow" || f.lookup(n.Name) != nil {
+		return nil
+	}
+	return call
+}
+
+// removedYieldNowStmt reports `yieldNow()` written as a statement, with the
+// fix to `cede`, and checks it as `cede`, so nothing cascades.
+func (f *fnCtx) removedYieldNowStmt(call *ast.CallExpr) Stmt {
+	f.c.errorFix(call.Pos, fixReplace("Replace with 'cede'", call.Pos, "cede"), "'yieldNow()' was removed (D197): write the statement 'cede'")
+	return f.cede(call.Pos)
+}
+
+// removedYieldNowBody reports `=> yieldNow()`, the whole body of a function
+// or a lambda, with the fix rewriting replace to `{ cede }`; the body is
+// checked as that block.
+func (f *fnCtx) removedYieldNowBody(call *ast.CallExpr, replace source.Span) *Block {
+	f.c.errorFix(call.Pos, fixReplace("Replace with '{ cede }'", replace, "{ cede }"), "'yieldNow()' was removed (D197): 'cede' is a statement, so the body is the block '{ cede }'")
+	return &Block{Stmts: []Stmt{f.cede(call.Pos)}, Type: types.TUnit}
+}
+
+// removedYieldNowCall reports any other call of the removed function (the
+// name resolved to nothing): `async yieldNow()` with the fix to
+// `async { cede }`, and one in a value or with arguments with how to
+// restructure it. False when the call is not of `yieldNow`.
+func (f *fnCtx) removedYieldNowCall(e *ast.CallExpr) bool {
+	if n, ok := e.Fun.(*ast.NameExpr); !ok || n.Name != "yieldNow" {
+		return false
+	}
+	switch {
+	case len(e.Args) > 0 || len(e.TypeArgs) > 0:
+		f.errorf(e.Pos, "'yieldNow()' was removed (D197), and it took no arguments: write the statement 'cede' on a line of its own, keeping what the arguments compute")
+	case e.Async || f.launching == e: // launch checks a copy without the flag
+		f.c.errorFix(e.Pos, fixReplace("Replace with 'async { cede }'", e.Pos, "async { cede }"), "'yieldNow()' was removed (D197): a task that cedes is 'async { cede }'")
+	default:
+		f.errorf(e.Pos, "'yieldNow()' was removed (D197): 'cede' is a statement and has no value — write it on a line of its own, where this expression evaluated the call")
+	}
+	return true
+}
+
+// removedYieldNowRef reports the removed function used as a value. Where a
+// `fun()` that may suspend is wanted, the fix passes a lambda that cedes.
+func (f *fnCtx) removedYieldNowRef(e *ast.NameExpr, want types.Type) Expr {
+	if ft, ok := want.(*types.Func); ok && len(ft.Params) == 0 && types.IsUnit(ft.Ret) && ft.Effects.Suspends {
+		f.c.errorFix(e.Pos, fixReplace("Replace with '() => { cede }'", e.Pos, "() => { cede }"), "'yieldNow' was removed (D197): 'cede' is a statement, not a function — pass '() => { cede }'")
+	} else {
+		f.errorf(e.Pos, "'yieldNow' was removed (D197): 'cede' is a statement, not a function — where a function that may suspend is wanted, pass '() => { cede }'")
+	}
+	return bad()
+}
+
+// arrowThrough is the span from the `=>` before body to body's end: what a
+// fix replaces to turn an expression body into a block. Just body's span
+// when no arrow is found there.
+func arrowThrough(body ast.Expr) source.Span {
+	sp := body.Span()
+	if sp.File == nil {
+		return sp
+	}
+	i := sp.Start
+	for i > 0 && strings.ContainsRune(" \t\r\n", rune(sp.File.Content[i-1])) {
+		i--
+	}
+	if i >= 2 && sp.File.Content[i-2:i] == "=>" {
+		sp.Start = i - 2
+	}
+	return sp
 }
 
 // typeHead is a type's bare name, without type arguments or module.

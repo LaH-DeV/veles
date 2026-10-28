@@ -324,7 +324,12 @@ type StructDecl struct {
 	// in a recursive sealed type (D198)
 	Indirect bool
 	Inline   bool
-	Pos      source.Span
+	// Compact: `compact struct` — the compiler places the fields for the
+	// smallest size (D215)
+	Compact bool
+	// Const: `const struct` — immutable all the way down (D212)
+	Const bool
+	Pos   source.Span
 }
 
 type AssocTypeDecl struct {
@@ -408,10 +413,12 @@ type ValDecl struct {
 	Pub      bool
 	Internal bool // `internal`: the module level written out (M5); the default
 	Kind     BindKind
-	Name     Ident
-	Type     Type
-	Value    Expr
-	Pos      source.Span
+	// Lazy: `lazy val` — built on its first read, once (D210)
+	Lazy  bool
+	Name  Ident
+	Type  Type
+	Value Expr
+	Pos   source.Span
 }
 
 // ExecutorDecl is `executor name(args) { state and functions }` (D150): a
@@ -667,6 +674,11 @@ type ContinueStmt struct {
 	Pos   source.Span
 }
 
+// CedeStmt is `cede`: the task offers its executor a turn (D197).
+type CedeStmt struct {
+	Pos source.Span
+}
+
 // LoopStmt covers `loop { }`, `loop (cond) { }` and `loop (x in c) { }`.
 type LoopStmt struct {
 	// Inline: `inline loop (f in T.fields) { … }` (D174) is unrolled while
@@ -730,6 +742,7 @@ func (s *ReturnStmt) Span() source.Span   { return s.Pos }
 func (s *ThrowStmt) Span() source.Span    { return s.Pos }
 func (s *BreakStmt) Span() source.Span    { return s.Pos }
 func (s *ContinueStmt) Span() source.Span { return s.Pos }
+func (s *CedeStmt) Span() source.Span     { return s.Pos }
 func (s *LoopStmt) Span() source.Span     { return s.Pos }
 
 func (s *ScopeStmt) Span() source.Span { return s.Pos }
@@ -745,6 +758,7 @@ func (*ReturnStmt) stmtNode()   {}
 func (*ThrowStmt) stmtNode()    {}
 func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
+func (*CedeStmt) stmtNode()     {}
 func (*LoopStmt) stmtNode()     {}
 
 func (*ScopeStmt) stmtNode() {}

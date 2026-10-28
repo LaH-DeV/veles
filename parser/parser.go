@@ -179,6 +179,11 @@ func (p *Parser) expectIdent() (ast.Ident, bool) {
 		t := p.next()
 		return ast.Ident{Name: t.Text, Pos: t.Span}, true
 	}
+	if p.at(lexer.KwCede) {
+		// a name that became a keyword (D197): what to do about it
+		p.errorf(p.span(), "expected identifier, found keyword 'cede': 'cede' is a statement now (D197); rename this and every use of it")
+		return ast.Ident{Name: "_", Pos: p.span()}, false
+	}
 	p.errorExpected("identifier")
 	return ast.Ident{Name: "_", Pos: p.span()}, false
 }
@@ -493,6 +498,23 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 	case lexer.KwStruct:
 		return p.parseStruct(attrs, pub, false, start)
 	case lexer.Ident:
+		if p.cur().Text == "compact" && (p.peek(1).Kind == lexer.KwStruct || p.peek(1).Kind == lexer.KwExtern && p.peek(2).Kind == lexer.KwStruct) {
+			p.next() // the compiler places the fields (D215); refused on an extern struct by the checker
+			extern := p.accept(lexer.KwExtern)
+			d := p.parseStruct(attrs, pub, extern, start)
+			if sd, ok := d.(*ast.StructDecl); ok {
+				sd.Compact = true
+			}
+			return d
+		}
+		if p.lazyAt(0) {
+			p.next() // `lazy val`: built on its first read (D210); the checker refuses `var` and `const`
+			d := p.parseValDecl(attrs, pub, start)
+			if vd, ok := d.(*ast.ValDecl); ok {
+				vd.Lazy = true
+			}
+			return d
+		}
 		if p.cur().Text == "indirect" && p.peek(1).Kind == lexer.KwSealed {
 			p.next() // every variant behind a pointer (D198)
 			d := p.parseTrait(attrs, pub, start)
@@ -549,6 +571,21 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 		}
 		return p.parseImpl(attrs, false)
 	case lexer.KwConst:
+		if n := p.structWordsAt(1); n > 0 {
+			// `const struct`: immutable all the way down (D212), checked by
+			// the checker; then `compact` (D215) and `extern` as without it
+			p.next()
+			compact := p.cur().Text == "compact"
+			if compact {
+				p.next()
+			}
+			extern := p.accept(lexer.KwExtern)
+			d := p.parseStruct(attrs, pub, extern, start)
+			if sd, ok := d.(*ast.StructDecl); ok {
+				sd.Const, sd.Compact = true, compact
+			}
+			return d
+		}
 		if p.peek(1).Kind == lexer.KwFun {
 			fn := p.parseFun(attrs, funContextFree) // `const fun` (D113)
 			fn.Pub = pub
@@ -1001,6 +1038,10 @@ done:
 			fn.Body = p.parseBlock()
 			break
 		}
+		if p.at(lexer.KwCede) {
+			fn.Body = p.cedeFunBody(arrow, fn.Name.Name)
+			break
+		}
 		fn.ExprBody = p.parseExpr()
 	case p.at(lexer.Assign):
 		// `fun f() = expr`: the spelling before v0.72 (D140), read as `=>`
@@ -1120,7 +1161,7 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 				}
 				d.Fields = append(d.Fields, p.parseField(mattrs, vis == lexer.KwPub, vis == lexer.KwPrivate, vis == lexer.KwInternal, hasVis))
 			case lexer.KwStatic:
-				if p.peek(at+1).Kind == lexer.KwVal || p.peek(at+1).Kind == lexer.KwVar {
+				if p.peek(at+1).Kind == lexer.KwVal || p.peek(at+1).Kind == lexer.KwVar || p.lazyAt(at+1) {
 					if hasVis {
 						p.next()
 					}
@@ -1160,11 +1201,15 @@ func (p *Parser) parseStaticVal(attrs []*ast.Attribute, pub, internal bool) *ast
 	start := p.span()
 	doc := p.takeDoc()
 	p.next() // static
+	lazy := p.lazyAt(0)
+	if lazy {
+		p.next() // built on its first read (D210)
+	}
 	if p.at(lexer.KwVar) {
 		p.errorf(p.span(), "a static member is a 'val': a type's constants do not change (a mutable global belongs at module level)")
 	}
 	p.next() // val / var
-	d := &ast.ValDecl{Attrs: attrs, Doc: doc, Pub: pub, Internal: internal, Kind: ast.BindVal}
+	d := &ast.ValDecl{Attrs: attrs, Doc: doc, Pub: pub, Internal: internal, Kind: ast.BindVal, Lazy: lazy}
 	d.Name, _ = p.expectIdent()
 	if p.accept(lexer.Colon) {
 		d.Type = p.parseType()
@@ -1191,6 +1236,10 @@ func (p *Parser) parseField(attrs []*ast.Attribute, pub, private, internal, hasV
 		p.next()
 	}
 	f := &ast.Field{Attrs: attrs, Pub: pub, Private: private, Internal: internal, Doc: doc}
+	if p.lazyAt(0) {
+		p.errorf(p.span(), "'lazy' is for a module-level 'val' or a 'static val' (D210): on a field it would put a flag and a branch in every value; hold a 'Lazy<T>' field and read it with '.get()'")
+		p.next()
+	}
 	// mutability (D22): bare or `val` = set once by the constructor; `var`
 	// = assignable by anyone who sees the field; `protected var` =
 	// assignable only by the type's own declarations
@@ -1253,15 +1302,32 @@ func (p *Parser) parseTrait(attrs []*ast.Attribute, pub bool, start source.Span)
 		p.skipSemis()
 		for !p.at(lexer.RBrace, lexer.EOF) {
 			mattrs := p.parseAttributes()
-			if p.at(lexer.Ident) && (p.cur().Text == "indirect" || p.cur().Text == "inline") && p.peek(1).Kind == lexer.KwStruct {
-				// `indirect struct` / `inline struct`: where the variant is stored (D198)
+			if n := p.variantWords(); n > 0 {
+				// `indirect struct` / `inline struct`: where the variant is stored
+				// (D198); `compact struct`: how its fields are placed (D215); `const
+				// struct`: immutable all the way down (D212)
 				doc := p.takeDoc() // on the word, before it is taken
-				word := p.next()
+				first := p.cur()
+				var isConst, indirect, inline, compact bool
+				for i := 0; i < n; i++ {
+					switch p.next().Text {
+					case "const":
+						isConst = true
+					case "indirect":
+						indirect = true
+					case "inline":
+						inline = true
+					case "compact":
+						compact = true
+					}
+				}
 				p.parseNestedVariant(d, mattrs, doc)
 				if n := len(d.Variants); n > 0 {
-					d.Variants[n-1].Indirect = word.Text == "indirect"
-					d.Variants[n-1].Inline = word.Text == "inline"
-					d.Variants[n-1].Pos = word.Span.To(d.Variants[n-1].Pos)
+					d.Variants[n-1].Indirect = indirect
+					d.Variants[n-1].Inline = inline
+					d.Variants[n-1].Compact = compact
+					d.Variants[n-1].Const = isConst
+					d.Variants[n-1].Pos = first.Span.To(d.Variants[n-1].Pos)
 				}
 				p.parseMemberSeparator()
 				continue
@@ -1981,6 +2047,58 @@ func (p *Parser) peekIdentAfterTypeParams() string {
 		}
 	}
 	return "name"
+}
+
+// lazyAt reports whether peek(n) is the word `lazy` before a binding — `val`,
+// `var` or `const` (D210; a parameter's `lazy` is D90's, read elsewhere).
+func (p *Parser) lazyAt(n int) bool {
+	t := p.peek(n)
+	if t.Kind != lexer.Ident || t.Text != "lazy" {
+		return false
+	}
+	switch p.peek(n + 1).Kind {
+	case lexer.KwVal, lexer.KwVar, lexer.KwConst:
+		return true
+	}
+	return false
+}
+
+// structWordsAt is how many tokens from peek(n) on lead to a `struct` after
+// `const`: `struct` itself, or `compact` and/or `extern` before it — 0 when
+// they do not.
+func (p *Parser) structWordsAt(n int) int {
+	i := n
+	if t := p.peek(i); t.Kind == lexer.Ident && t.Text == "compact" {
+		i++
+	}
+	if p.peek(i).Kind == lexer.KwExtern {
+		i++
+	}
+	if p.peek(i).Kind != lexer.KwStruct {
+		return 0
+	}
+	return i - n + 1
+}
+
+// variantWords is how many words before a `struct` in a sealed trait's body
+// say what the variant is (`const`, D212), how it is stored (`indirect` or
+// `inline`, D198) and laid out (`compact`, D215), in that order — or 0 when
+// the cursor is not at such words.
+func (p *Parser) variantWords() int {
+	n := 0
+	if p.at(lexer.KwConst) {
+		n++
+	}
+	if t := p.peek(n); t.Kind == lexer.Ident && (t.Text == "indirect" || t.Text == "inline") {
+		n++
+	}
+	if t := p.peek(n); t.Kind == lexer.Ident && t.Text == "compact" {
+		n++
+	}
+	if n == 0 || p.peek(n).Kind != lexer.KwStruct {
+		return 0
+	}
+	return n
 }
 
 // parseNestedVariant parses a `struct` in the body of a sealed trait (D193):

@@ -262,14 +262,35 @@ and a cancellation is seen at the next point outside (D145, D47) — a value
 behind a `Mutex` is never left half-changed, a resource never half-closed.
 `checkCancelled()` is the same check at a point of your choosing.
 
+**A tight counted loop checks once per chunk (D218).** A loop over a range
+or a list whose body calls no function and does not suspend makes the
+check — for a cancellation, a deadline, a failed sibling, a collection's
+stop, the ~10 ms yield — once per chunk of at most 1024 rounds (fewer for a
+large body), not on every round. The work between two checks stays about
+a microsecond, and in exchange the loop can be unrolled, vectorized or
+folded: a sum of squares goes from ~360 ps a round to a few.
+
 **A long loop gives its thread up.** A loop in a suspending function that
 has run for about 10 ms while other tasks wait for its thread gives the
-thread up at the end of an iteration, as `yieldNow()` does. A function that
+thread up at the end of an iteration, as `cede` does. A function that
 does not suspend cannot give its thread up (it has no frame to come back
 to); its loop keeps the thread until it ends, and the other threads of the
 pool run everything else. Under `VELES_THREADS=1`, or when every thread
-computes, call `yieldNow()` in such a loop now and then (which makes its
+computes, write `cede` in such a loop now and then (which makes its
 function suspend).
+
+**`cede` (D197).** A statement that offers the task's executor a turn: the
+task is queued again on the same executor and goes on at the next
+statement when it is picked — perhaps at once. It is a suspension point
+(the function suspends; cancellation and a failed sibling are seen there;
+in a suspending `close()` it gives the turn but the cancellation waits),
+starts no task and arms no timer, and keeps the executor and, on
+`Executor.thread`, the OS thread. It guarantees no order between tasks,
+no turn for any particular one, no delay and no memory ordering. It has
+no value and takes no operand: `cede()`, `await cede`, `val x = cede` and
+`fun f() => cede` are compile errors that name the fix. It replaces the
+prelude's `yieldNow()`, now a compile error with a fix to `cede`; a
+program's own `yieldNow` is unaffected.
 
 `sleep(d)` sleeps **at least** `d` (D60), and a select's `sleep(d)` arm
 wins no earlier: deadlines are kept in nanoseconds, and one idle thread
@@ -798,7 +819,7 @@ the exit code is 101.
 | Waiting while holding a lock                       | compile error (D35, D107)                                                                                                                                  |
 | `try` on an `await` in a scope                     | compile error with a fix (D141)                                                                                                                            |
 | Ignoring a task's failure                          | impossible: it fails the scope                                                                                                                             |
-| A long loop that never waits                       | stopped by a cancellation at the end of an iteration (D145); in a function that does not suspend it keeps its thread — `yieldNow()` gives it up            |
+| A long loop that never waits                       | stopped by a cancellation at the end of an iteration (D145); in a function that does not suspend it keeps its thread — `cede` gives it up                 |
 | `await` on a task you cancelled                    | panic (`awaited task was cancelled`) unless it had finished                                                                                                |
 | `send` on a closed channel                         | panic (`send on a closed channel`)                                                                                                                         |
 | Locking a `Mutex` you already hold                 | panic, not a hang                                                                                                                                          |

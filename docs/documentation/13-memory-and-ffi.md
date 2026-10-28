@@ -57,6 +57,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 24975000
 ```
@@ -88,6 +89,40 @@ marks while the program runs however small the heap (on Linux it asks for
 the kernel's soft-dirty bits, when they work); `=all` takes every page as
 written, which is slow and only for testing the collector.
 
+### Where a program allocates
+
+Most values never reach the heap: numbers, structs, tuples, arrays, enums
+and nullables of them live in a variable, a field or an argument, and
+constants are static data. The heap is used at a few places the compiler
+decides, and it can show you each of them (D213):
+
+- a collection literal or the result of a collection operation (`map`,
+  `filter`, `keys`, `split`, …), and a mutable collection's storage, which
+  comes with its first write (`reserve(n)` sizes it once);
+- string building — interpolation and `+` — except where one piece is the
+  whole result;
+- a lambda that captures, for its environment, and a local a lambda
+  captures or `&` points at, which lives in a heap cell;
+- a value turned into a trait object, an `&` of a temporary, and an
+  `indirect` or tree variant (D198);
+- a task started with `async`, and a channel.
+
+`veles explain --alloc <dir> [function]` lists them, one a line, with what
+is allocated and, where there is one, how to avoid it:
+
+```text
+main.vs:4:14: summary: a closure capturing 'limit' — pass 'limit' as a parameter, or use a named function
+main.vs:5:14: summary: a new 'List<string>' from 'filter'
+main.vs:6:3: summary: a new string: the pieces are copied into one — in a loop, collect the pieces in a StringBuilder
+```
+
+The editor shows the same as a `heap` hint after each such expression,
+when the `veles.inlayHints.allocations` setting is on (it is off by
+default, so code is not covered in labels). A call of a function that
+allocates inside is not marked; that function's own lines are. The sites
+come from the decisions the code generator follows, and a test holds them
+to the allocation calls in the generated code of every example.
+
 ## Values versus pointers
 
 A struct is a value: assigning copies it, passing it copies it (D7).
@@ -118,6 +153,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 6 6 106
 ```
@@ -125,6 +161,47 @@ Output:
 Rule of thumb: values for small data and anything you want to copy
 freely; pointers for identity (two places must see the same object) and
 for recursive structures.
+
+## Field order and compact structs
+
+A struct's fields lie in memory in the order they are written, each at the
+next offset its alignment allows, as in C (D215). A `u8` before an `i64`
+leaves seven bytes of padding, and you control that by ordering the fields
+yourself. `compact struct` hands the placement to the compiler instead: it
+puts the fields by alignment, largest first, which leaves no padding
+between them.
+
+```veles
+use io
+
+compact struct Sample {   // 16 bytes; as a plain struct, 24
+  flag: u8
+  at:   i64
+  kind: u8
+}
+
+fun main() {
+  val s = Sample(flag: 1, at: 2, kind: 3)
+  io.println("$s")
+}
+```
+
+Output:
+
+```text
+Sample(flag: 1, at: 2, kind: 3)
+```
+
+Only memory changes. Construction, printing, `==`, hashing, `Codable` and
+`T.fields` keep the declared order. Hover on a struct shows its size,
+alignment and padding, and what `compact` would make it. An `extern struct`
+is C's layout and cannot be `compact` (nor, so, a `@packed` one), nor can a
+`@transparent` one. In a sealed trait's body the word goes after
+`indirect`/`inline`: `indirect compact struct Upload { … }`.
+
+How other values are encoded — a `T?`, a sealed value, a closure — is the
+compiler's and may change between versions; a `T?` of a type that holds a
+pointer, collection, closure or trait object is as big as the type (D5).
 
 ## Cleanup with `with`
 
@@ -178,6 +255,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 open a
 open b
@@ -205,7 +283,7 @@ statement it would close at once (a warning), and it is refused where
 there is no "rest of the block" — at module level, as an expression
 body, inside an expression, or as a body without braces.
 
-To close a resource *before* its block ends, give it a block of its
+To close a resource _before_ its block ends, give it a block of its
 own: `with (x = e) { ... }` closes `x` at that `}`. The block form also
 opens several at once, `with (a = …, b = …) { }`, and is an expression:
 its value is the body's, and the resources are closed before that value
@@ -233,6 +311,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 close b
 close a
@@ -255,7 +334,7 @@ lambda that captures it. Return what you read from it instead. Lending
 it is fine: passing the resource, or a lambda that uses it, as an
 argument compiles, because the call ends before the block does. The
 compiler does not follow the value into the function you pass it to, so
-a function that *keeps* what it was lent is not caught — do not keep a
+a function that _keeps_ what it was lent is not caught — do not keep a
 resource you were passed. Nor is a `with` value closed by hand: `with`
 closes it already, so `r.close()` on it is an error (D136) — use the block
 form to close it earlier.
@@ -327,6 +406,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 close b
 close a
@@ -380,6 +460,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 working
 closed session
@@ -392,7 +473,7 @@ so the function holding it suspends, as a call of a suspending function
 would make it; a `with` on any other resource is unchanged. Every way out
 of the block waits for it — the end, `return`, `throw`, a cancellation,
 and a panic, whose close still runs before the resources outside it, so
-everything closes innermost first. The close is *shielded*: a
+everything closes innermost first. The close is _shielded_: a
 cancellation that arrives while it waits lets it finish and is seen
 afterwards. That cuts both ways: a close that hangs keeps its block from
 ending, so a close that talks to a peer bounds its own wait (the
@@ -469,6 +550,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 4000 values, sum 7998000
 ```
@@ -480,13 +562,13 @@ processor and the compiler move other memory accesses past the atomic
 one, which is cheaper on some machines (ARM most of all) and correct only
 when paired as below:
 
-| Order | Means | Takes it |
-|---|---|---|
-| `Relaxed` | the operation is atomic and nothing more: a statistics counter read at the end | every operation |
+| Order     | Means                                                                                          | Takes it                     |
+| --------- | ---------------------------------------------------------------------------------------------- | ---------------------------- |
+| `Relaxed` | the operation is atomic and nothing more: a statistics counter read at the end                 | every operation              |
 | `Release` | what this task wrote before the store is visible to a task that loads the value with `Acquire` | a store; a read-modify-write |
-| `Acquire` | the other half: after this load, what the releasing task wrote is visible | a load; a read-modify-write |
-| `AcqRel` | both, on an operation that reads and writes | a read-modify-write |
-| `SeqCst` | `AcqRel`, plus the single order every task agrees on | every operation |
+| `Acquire` | the other half: after this load, what the releasing task wrote is visible                      | a load; a read-modify-write  |
+| `AcqRel`  | both, on an operation that reads and writes                                                    | a read-modify-write          |
+| `SeqCst`  | `AcqRel`, plus the single order every task agrees on                                           | every operation              |
 
 An order an operation cannot take is a compile error: a load does not
 release, a store does not acquire.
@@ -515,12 +597,12 @@ guarantees of chapter 12 might not hold (D44).
 
 There are two pointer types, and the difference is the whole point:
 
-| | `*T` | `*raw T` |
-|---|---|---|
-| comes from | `&x` | C, or unmanaged allocation |
-| kept alive by the GC | yes | no |
-| dereference | anywhere | `unsafe` only |
-| arithmetic | no | `unsafe` only, C-style (D50) |
+|                      | `*T`     | `*raw T`                     |
+| -------------------- | -------- | ---------------------------- |
+| comes from           | `&x`     | C, or unmanaged allocation   |
+| kept alive by the GC | yes      | no                           |
+| dereference          | anywhere | `unsafe` only                |
+| arithmetic           | no       | `unsafe` only, C-style (D50) |
 
 Arithmetic on a `*raw T` is C's: `p + n` and `p - n` step by whole
 elements (`*raw u8` steps by bytes), `p - q` counts the elements between
@@ -549,6 +631,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 8 5
 ```
@@ -580,11 +663,11 @@ the checks it can prove (chapter 4). For the hot loop where it cannot —
 a lexer walking its input byte by byte — three accesses skip the check
 in a release build (D114):
 
-| Access | On | Checked spelling |
-|---|---|---|
-| `xs.atUnchecked(i): T` | `List`, `MutableList` | `xs.at(i)` |
-| `xs.setUnchecked(i, v)` | `MutableList` | `xs.set(i, v)` |
-| `s.byteAtUnchecked(i): u8` | `string` | `s.byteAt(i)` |
+| Access                     | On                    | Checked spelling |
+| -------------------------- | --------------------- | ---------------- |
+| `xs.atUnchecked(i): T`     | `List`, `MutableList` | `xs.at(i)`       |
+| `xs.setUnchecked(i, v)`    | `MutableList`         | `xs.set(i, v)`   |
+| `s.byteAtUnchecked(i): u8` | `string`              | `s.byteAt(i)`    |
 
 They are allowed only inside `unsafe`, and `i` is the plain offset
 (`0 <= i < len`, no counting from the end). A debug build still checks
@@ -613,6 +696,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 7
 ```
@@ -645,6 +729,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 48.0 65
 ```
@@ -683,6 +768,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 10000000000 remainder 1
 ```
@@ -724,6 +810,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 5 3 2 4
 ```
@@ -740,8 +827,9 @@ Output:
 - **`@align(n)`** raises an alignment: on a field of an extern struct
   (C's `_Alignas`), or on any struct. `n` is a power of two from 1 to 4096,
   never below the natural alignment. An over-aligned struct is aligned
-  wherever it lives — locals, globals, list storage, the heap — which is
-  what keeps two hot counters on different cache lines.
+  wherever it lives — locals, globals, list storage, the heap, inside a
+  tuple, a `T?` or a sealed value — which is what keeps two hot counters
+  on different cache lines.
 - **`@transparent`** on a struct with one field gives a binding its own
   handle types at no cost: C sees the field, in registers and all.
 
@@ -776,6 +864,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [7, 7, 7, 4, 5, 6] 8
 ```
@@ -788,9 +877,13 @@ rule for each size.
 
 ### Large values live in memory
 
-A value of 128 bytes or more that holds an array is never an SSA value: it
-is copied with `memmove`, handed to a function as the address of a copy, and
-returned through a pointer the caller gives (the memory class, D121). It
+A value of 128 bytes or more that holds an array, and any struct, tuple,
+nullable or sealed value over 64 bytes, is never an SSA value: it is copied
+with `memmove`, handed to a function as an address, and returned through a
+pointer the caller gives (the memory class, D121). The address is of the
+caller's own variable when nothing can change it during the call, so a
+large value passed down a chain of calls is not copied at each one; a
+function that changes its parameter works on a copy of its own. It
 applies in the same way when the value is an argument to a C function, which
 is how a 160-byte extern struct reaches C as C expects it, and it is why a
 megabyte array on the stack costs a `memcpy` per copy and no more.
@@ -887,6 +980,7 @@ fun main() throws ffi.NulByte {
 ```
 
 Output:
+
 ```text
 [3, 7, 19, 42] hello
 ```
@@ -897,7 +991,7 @@ may not suspend. A panic inside it ends the process with its location:
 it cannot unwind through C's frames. `p.cast<*raw T>()` reinterprets a raw
 pointer (C's `void *`), and `(&x).cast<*raw u8>()` gives C the address of a
 Veles value for the length of a call; both need `unsafe`, as does calling
-through an `extern fun` value. `examples/ffi` puts all of it together.
+through an `extern fun` value. `examples/features/ffi` puts all of it together.
 
 ### Variadic C functions
 
@@ -925,6 +1019,7 @@ fun main() throws ffi.NulByte {
 ```
 
 Output:
+
 ```text
 12 items, 37.5% full, queue
 ```

@@ -81,6 +81,7 @@ type fnCtx struct {
 	initOwned   map[string]int // checking an `init { }` block: the fields it must assign, by index (D28)
 	selfAsRecv  bool           // the next `this` is a method receiver, not a value (init blocks)
 	isGlobal    bool           // checking a global initializer
+	constInit   bool           // checking a `const` initializer (D113)
 	staticOwner *types.Struct  // the struct whose `static val` this global initializer is, if any
 	looseArgs   int            // inside checkArgsLoosely: the call already failed, its lambdas have no expected type
 	inlineBase  []int          // len(loops) at the start of each inline loop body being checked: a jump to a loop at or below it would leave the unrolled body (D174)
@@ -335,6 +336,11 @@ func (c *Checker) checkBody(fn *Func) {
 			f.allowHeld(es.X, heldReturn)
 		}
 	}
+	if call := f.yieldNowCall(t.Decl.ExprBody); call != nil && (f.retType == nil || types.IsUnit(f.retType)) {
+		fn.Sig.Ret, f.retType = types.TUnit, types.TUnit
+		fn.Body = f.removedYieldNowBody(call, arrowThrough(t.Decl.ExprBody))
+		return
+	}
 	if t.Decl.ExprBody != nil {
 		f.pushScope()
 		var body *Block
@@ -456,6 +462,7 @@ func (c *Checker) checkGlobal(g *Global) {
 	env := &typeEnv{module: m, file: file, tps: map[string]*types.TypeParam{}}
 	f := c.newFnCtx(nil, m, file, env, nil)
 	f.isGlobal = true
+	f.constInit = d.Kind == ast.BindConst
 	f.staticOwner = c.staticOwner[g] // a `static val` initializer is inside its type
 	if info := c.stateOwner[g]; info != nil {
 		f.exec = info // its executor's state: initialised on its thread (D150)
@@ -507,6 +514,16 @@ func (c *Checker) checkGlobal(g *Global) {
 		if c.staticOwner[g] != nil {
 			what, decl = fmt.Sprintf("'static %s %s'", d.Kind, g.Display), "static val "+d.Name.Name
 		}
+		if lazy := c.lazyOf[g]; lazy != nil {
+			// the value a `lazy val` builds, not the hidden handle (D210)
+			what, decl = fmt.Sprintf("'lazy val %s'", lazy.Display), "lazy val "+lazy.Display
+			if c.staticOwner[g] != nil {
+				what, decl = fmt.Sprintf("'static lazy val %s'", lazy.Display), "static lazy val "+lazy.Display
+			}
+			if st, ok := declared.(*types.Struct); ok && len(st.TypeArgs) == 1 {
+				declared = st.TypeArgs[0]
+			}
+		}
 		fix := fmt.Sprintf("keep it behind a lock ('%s = Mutex(value: ...)') or in an executor's state (D150)", decl)
 		switch t := declared.(type) {
 		case *types.List, *types.Map, *types.Set:
@@ -518,6 +535,11 @@ func (c *Checker) checkGlobal(g *Global) {
 	}
 	g.Type = declared
 	g.Init = init
+	if lazy := c.lazyOf[g]; lazy != nil {
+		if st, ok := declared.(*types.Struct); ok && len(st.TypeArgs) == 1 {
+			lazy.Type = st.TypeArgs[0] // what a read of the lazy value gives (D210)
+		}
+	}
 }
 
 // isSynchronized: a Mutex, an Atomic or a D146 type, whose operations take their lock
@@ -714,6 +736,9 @@ func (f *fnCtx) checkStmtAt(s ast.Stmt) (stmts []Stmt, term bool) {
 	case *ast.ValStmt:
 		return f.checkValStmt(s), false
 	case *ast.ExprStmt:
+		if call := f.yieldNowCall(s.X); call != nil {
+			return []Stmt{f.removedYieldNowStmt(call)}, false
+		}
 		x := f.checkExpr(s.X, types.TUnit)
 		if call, ok := x.(*Call); ok && call.Fn.tmpl != nil {
 			if _, must := call.Fn.tmpl.Attrs["mustUse"]; must && !types.IsUnit(call.Type()) {
@@ -741,6 +766,7 @@ func (f *fnCtx) checkStmtAt(s ast.Stmt) (stmts []Stmt, term bool) {
 		if lp == nil {
 			return nil, true
 		}
+		f.noteBreakAssigned(lp, !lp.hasBreak)
 		lp.hasBreak = true
 		f.leaveAwaited(s.Pos, f.loopIndex(lp))
 		return []Stmt{&Break{Loop: lp}}, true
@@ -755,6 +781,8 @@ func (f *fnCtx) checkStmtAt(s ast.Stmt) (stmts []Stmt, term bool) {
 		lp.hasContinue = true
 		f.leaveAwaited(s.Pos, f.loopIndex(lp))
 		return []Stmt{&Continue{Loop: lp}}, true
+	case *ast.CedeStmt:
+		return []Stmt{f.cede(s.Pos)}, false
 	case *ast.LoopStmt:
 		f.lintContinueSkipsStep(s)
 		stmts := f.checkLoop(s)
@@ -847,6 +875,8 @@ func (f *fnCtx) checkValStmt(s *ast.ValStmt) []Stmt {
 		if s.Value != nil {
 			v.InitText = srcText(s.Value) // for the hover
 			f.c.refVar(b.Name.Pos, v)     // re-record the declaration with it
+		} else if mutable {
+			v.noInit = true
 		}
 		// an alias of a `with` resource may not leave its block either (D100);
 		// looked up before the name is declared, which may shadow it
@@ -1000,6 +1030,11 @@ func (f *fnCtx) checkAssignInner(s *ast.AssignStmt) []Stmt {
 		value = f.coerce(raw, target.Type(), s.Value.Span())
 	} else {
 		op := BinOpFromToken(s.Op)
+		if n, isName := s.Target.(*ast.NameExpr); isName && root != nil {
+			if sym := f.scope.Lookup(n.Name); sym != nil && sym.Kind == SymLocal {
+				f.requireAssigned(sym.Var, root, n.Pos) // `x += 1` reads x
+			}
+		}
 		var pre []Stmt
 		target, pre = f.hoistPlace(target)
 		if rawPointer(target.Type()) != nil {
@@ -1115,7 +1150,72 @@ func (f *fnCtx) assignPlace(targetAst ast.Expr, target Expr, root *Var, value Ex
 			}
 		}
 	}
+	if _, whole := target.(*VarRef); whole && root != nil && declaredWithoutValue(root) {
+		f.narrow[assignedFact(root)] = types.TUnit // D214
+	}
 	return &Assign{Target: target, Value: value}
+}
+
+// noteBreakAssigned keeps, for the loop a `break` leaves, the variables
+// assigned on the way to it and to every earlier break of it (D216).
+func (f *fnCtx) noteBreakAssigned(lp *Loop, first bool) {
+	now := facts{}
+	for k, v := range f.narrow {
+		if k.path == pathAssigned {
+			now[k] = v
+		}
+	}
+	if first {
+		lp.breakAssigned = now
+		return
+	}
+	lp.breakAssigned = mergeFacts(lp.breakAssigned, now)
+}
+
+// declaredWithoutValue: v, or the variable a lambda's capture v stands for,
+// is a local `var` declared without a value (D214).
+func declaredWithoutValue(v *Var) bool {
+	for ; v != nil; v = v.Outer {
+		if v.noInit {
+			return true
+		}
+	}
+	return false
+}
+
+// assignedFact is the flow fact "v has been assigned on every path to
+// here", which a local `var` declared without a value needs before any use
+// (D214). Assignments to v do not drop it (invalidatePlace).
+func assignedFact(v *Var) place { return place{v: v, path: pathAssigned} }
+
+const pathAssigned = "$assigned"
+
+// requireAssigned refuses a use of decl, as cur in this function (its
+// capture inside a lambda), before it is assigned on every path to here.
+// An assignment in an enclosing function before the lambda counts; one in
+// the lambda counts only inside it.
+func (f *fnCtx) requireAssigned(decl, cur *Var, pos source.Span) {
+	if !decl.noInit {
+		return
+	}
+	for ctx := f; ctx != nil; ctx = ctx.parent {
+		v := decl
+		if !ctx.owns(decl) {
+			inner, ok := ctx.captures[decl]
+			if !ok {
+				continue
+			}
+			v = inner
+		}
+		if _, ok := ctx.narrow[assignedFact(v)]; ok {
+			return
+		}
+		if ctx.owns(decl) {
+			break
+		}
+	}
+	f.errorf(pos, "'%s' is used before it is assigned on every path to here; it was declared without a value, so it holds nothing yet: give it one ('var %s: %s = ...') or assign it on each branch above (D214)", decl.Name, decl.Name, decl.Type)
+	f.narrow[assignedFact(cur)] = types.TUnit // one error per path
 }
 
 // checkLValue checks an assignable expression. It returns the lvalue and,
@@ -1148,6 +1248,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 				// a field write or address-of reads the binding; a plain
 				// assignment to the name itself does not
 				markUsed(v)
+				f.requireAssigned(sym.Var, v, e.Pos)
 			}
 			f.c.refVar(e.Pos, v) // the name at an assignment hovers like a read
 			return &VarRef{exprBase{v.Type}, v}, v
@@ -1160,6 +1261,11 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 					where = "a 'val' of its executor's state"
 				}
 				f.errorf(e.Pos, "cannot assign to '%s': it is %s%s", e.Name, where, f.c.globalWriteHint(g))
+			}
+			if g.Guard != nil {
+				// a lazy value has no storage to point at: its value, as a temporary
+				f.c.refGlobal(e.Pos, e.Name, g)
+				return f.lazyRead(g, e.Pos), nil
 			}
 			v := f.globalVar(g)
 			f.c.refGlobal(e.Pos, e.Name, g)
@@ -1352,7 +1458,10 @@ func (f *fnCtx) lookupField(st *types.Struct, name string, span source.Span) *ty
 
 // globalValue is a module-level binding read as a value: a constant is its
 // value written in (D113), anything else a read of the global.
-func (f *fnCtx) globalValue(g *Global) Expr {
+func (f *fnCtx) globalValue(g *Global, span source.Span) Expr {
+	if g.Guard != nil {
+		return f.lazyRead(g, span)
+	}
 	v := f.globalVar(g)
 	if g.Const != nil {
 		x := constExpr(g.Const)
@@ -1411,7 +1520,17 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 	// `break` may leave before it; what held on entry still does (the
 	// variables the body assigns were dropped above).
 	entry := f.saveNarrow()
-	defer func() { f.restoreNarrow(mergeFacts(entry, f.saveNarrow())) }()
+	defer func() {
+		after := mergeFacts(entry, f.saveNarrow())
+		if s.Cond == nil && s.Iter == nil && lp.hasBreak {
+			// a loop with no condition ends only by `break`: what every break
+			// had assigned is assigned after it (D216)
+			for k, v := range lp.breakAssigned {
+				after[k] = v
+			}
+		}
+		f.restoreNarrow(after)
+	}()
 	if s.Cond != nil {
 		f.lintLoopTrue(s)
 	}
@@ -1478,6 +1597,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			f.loops = f.loops[:len(f.loops)-1]
 			body.Stmts = append(append([]Stmt{&VarDecl{Var: v, Init: &VarRef{exprBase{it.Elem}, idx}}}, parts...), body.Stmts...)
 			lp.Body = body
+			f.chunkLoop(lp, idx, &pre)
 		case *types.Array:
 			return f.arrayLoop(s, iter, it, lp, label)
 		case *types.List:
@@ -1516,6 +1636,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			}
 			body.Stmts = append(append(append(guard, &VarDecl{Var: v, Init: get}), parts...), body.Stmts...)
 			lp.Body = body
+			f.chunkLoop(lp, idx, &pre)
 		case *types.Map, *types.Set:
 			if mt, isMap := it.(*types.Map); isMap && s.Var.Name == nil && len(s.Var.Tuple) == 2 && s.Var.Tuple[1].Ref && !s.Var.Tuple[0].Ref {
 				return f.mapRefLoop(s, iter, mt, lp, label)
@@ -1824,6 +1945,11 @@ func (f *fnCtx) iteratorLoop(s *ast.LoopStmt, iter Expr, lp *Loop, label string)
 	default:
 		return nil, false
 	}
+	for _, d := range pre {
+		// evaluated where the iterable is written: the line table, and the
+		// allocation sites, place them there (D213)
+		d.(*VarDecl).Pos = s.Iter.Span()
+	}
 	next := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(itVar, s.Iter.Span()), Name: ast.Ident{Name: "next", Pos: s.Iter.Span()}, Pos: s.Iter.Span()}, Pos: s.Iter.Span()}
 	nx := f.checkExpr(next, nil)
 	nt, ok := nx.Type().(*types.Nullable)
@@ -1907,6 +2033,15 @@ func (f *fnCtx) withExpr(e *ast.WithExpr, want types.Type) Expr {
 	return &BlockExpr{exprBase{out.Type}, out}
 }
 
+// withPos is where binding i of a `with` is written: its name and value.
+func withPos(s *ast.WithExpr, i int) source.Span {
+	b := s.Bindings[i]
+	if b.Name.Name == "" {
+		return b.Value.Span()
+	}
+	return b.Name.Pos.To(b.Value.Span())
+}
+
 func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, want types.Type, asValue bool, result **Var) ([]Stmt, types.Type) {
 	if i == len(s.Bindings) {
 		if !asValue {
@@ -1980,7 +2115,7 @@ func (f *fnCtx) withBindings(s *ast.WithExpr, i int, closeable *types.Trait, wan
 	if types.IsNever(bodyT) {
 		body.Type = types.TNever
 	}
-	return []Stmt{&With{Var: v, Init: init, Close: closeCall, Body: body}}, bodyT
+	return []Stmt{&With{Var: v, Init: init, Close: closeCall, Body: body, Pos: withPos(s, i)}}, bodyT
 }
 
 // withTask is `with t = async f(...)` (D100 part 2): f runs as a background

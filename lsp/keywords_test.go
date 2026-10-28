@@ -64,6 +64,14 @@ func TestKeywordHover(t *testing.T) {
 			t.Errorf("line %d %q: want %q in %q", c.line+1, c.word, c.want, got)
 		}
 	}
+	// D197's hover, word for word; a longer name is not the keyword
+	ceded := source.NewFile("c.vs", "fun f() {\n  cede\n  ceded()\n}\n")
+	if got := text(keywordHover(ceded, strings.Index(ceded.Content, "cede"))); !strings.Contains(got, "— Yields execution to the current executor's scheduler. May resume immediately. Cancellation is checked unless cleanup is shielded.") {
+		t.Errorf("cede: %q", got)
+	}
+	if got := text(keywordHover(ceded, strings.Index(ceded.Content, "ceded"))); got != "" {
+		t.Errorf("ceded: want no hover, got %q", got)
+	}
 	// `test fun` is a helper, `test "…"` a test; `implements` asks about a type
 	more := source.NewFile("t.vs", "test fun sample(): i64 => 1\ntest \"one\" { }\nfun f<T>(x: T): bool => T implements Display\n")
 	for _, c := range []struct {

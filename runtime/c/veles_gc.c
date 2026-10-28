@@ -281,10 +281,17 @@ static int os_commit(char *p, size_t n) {
 #endif
 }
 
-/* gives the memory of [p, p + n) back; the range stays reserved */
+/* gives the memory of [p, p + n) back; the range stays reserved and reads
+ * as zeros when it is used again (new_span relies on it) */
 static void os_decommit(char *p, size_t n) {
 #if defined(_WIN32)
     VirtualFree(p, n, MEM_DECOMMIT);
+#elif defined(__APPLE__)
+    /* Darwin's MADV_DONTNEED keeps the bytes until the kernel wants the
+     * pages: a fresh mapping over the range is what reads as zeros */
+    if (mmap(p, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_NORESERVE, -1, 0) == MAP_FAILED) {
+        memset(p, 0, n);
+    }
 #else
     madvise(p, n, MADV_DONTNEED);
 #endif
@@ -631,6 +638,23 @@ void *veles_alloc(int64_t size) {
 void *veles_alloc_words(int64_t size) {
     /* every word may be a pointer (runtime containers) */
     return veles_gc_alloc(&desc_words, size);
+}
+
+/* veles_alloc_words with the body aligned to align, a power of two from 16
+ * to 4096 (@align's range, D120): a task's frame holding an over-aligned
+ * value (veles_frame_alloc) */
+void *veles_alloc_words_aligned(int64_t size, int64_t align) {
+    /* desc_words with an alignment, laid out as a veles_desc with one offset */
+    static struct { int64_t size, kind, nptrs, offsets[1]; } aligned[9] = {
+        {8, 1 | (16 << DESC_ALIGN_SHIFT), 1, {0}}, {8, 1 | (32 << DESC_ALIGN_SHIFT), 1, {0}},
+        {8, 1 | (64 << DESC_ALIGN_SHIFT), 1, {0}}, {8, 1 | (128 << DESC_ALIGN_SHIFT), 1, {0}},
+        {8, 1 | (256 << DESC_ALIGN_SHIFT), 1, {0}}, {8, 1 | (512 << DESC_ALIGN_SHIFT), 1, {0}},
+        {8, 1 | (1024 << DESC_ALIGN_SHIFT), 1, {0}}, {8, 1 | (2048 << DESC_ALIGN_SHIFT), 1, {0}},
+        {8, 1 | (4096 << DESC_ALIGN_SHIFT), 1, {0}},
+    };
+    int i = 0;
+    while (i < 8 && ((int64_t)16 << i) < align) i++;
+    return veles_gc_alloc((veles_desc *)(void *)&aligned[i], size);
 }
 
 void veles_gc_root(void *addr, veles_desc *desc) {

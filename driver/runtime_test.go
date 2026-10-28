@@ -68,6 +68,63 @@ fun main() {
 	}
 }
 
+// A large object's span gives its memory back when the object dies, and a
+// later span carved from that place is taken to read as zeros. On macOS
+// MADV_DONTNEED kept the bytes, so new list headers came out "frozen" (and
+// other objects with stale pointers): std/compress and std/regex failed and
+// several programs crashed. Large lists full of set bits are freed, then
+// many small lists are made in their place.
+func TestReleasedMemoryReadsAsZeros(t *testing.T) {
+	t.Parallel()
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io { println }
+
+extern "C" {
+  fun veles_gc_collect()
+}
+
+fun main() {
+  var made = 0
+  loop (round in 0..<10) {
+    val big: MutableList<MutableList<u8>> = []
+    loop (k in 0..<8) {
+      big.push(MutableList<u8>.repeat(255, 200000 + k))
+    }
+    big.clear()
+    // SAFETY: a runtime hook that takes nothing; the second collection frees
+    // the arena places of the large spans
+    unsafe { veles_gc_collect() }
+    // SAFETY: as above
+    unsafe { veles_gc_collect() }
+    val small: MutableList<MutableList<i64>> = []
+    loop (k in 0..<20000) {
+      val l: MutableList<i64> = []
+      l.push(k)
+      small.push(l)
+    }
+    made += small.len()
+  }
+  println("made $made")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "zeros.exe")
+	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe}); code != 0 {
+		t.Fatalf("build failed with exit %d", code)
+	}
+	run := exec.Command(exe)
+	run.Env = append(os.Environ(), "VELES_THREADS=1")
+	out, err := run.CombinedOutput()
+	if err != nil || strings.TrimSpace(string(out)) != "made 200000" {
+		t.Fatalf("got %q, %v", out, err)
+	}
+}
+
 // The collector marks and sweeps with helper threads (2026-10-10):
 // markers share work through a list, claim objects by an atomic exchange
 // on the mark byte, and sweep chunks of spans each. A long-lived table every
@@ -609,7 +666,7 @@ fun consumer(s: Stack, sum: Atomic<i64>, count: Atomic<i64>, want: i64) {
       val _ = sum.add(v, order: MemoryOrder.Relaxed)
       val _ = count.add(1)
     } else {
-      yieldNow()
+      cede
     }
   }
 }
@@ -630,7 +687,7 @@ fun publish(data: Atomic<i64>, ready: Atomic<bool>) {
 fun observe(data: Atomic<i64>, ready: Atomic<bool>): i64 {
   loop {
     if (ready.load(order: MemoryOrder.Acquire)) return data.load(order: MemoryOrder.Relaxed)
-    yieldNow()
+    cede
   }
 }
 
@@ -1958,7 +2015,7 @@ fun main() {
   permits.send(true)
   scope {
     val t = async waitsOnChannel(permits, never)
-    yieldNow()                // it blocks in its send
+    cede                      // it blocks in its send
     val _ = permits.tryRecv() // its send completes: it is queued
     t.cancel()                // and cancelled before it runs
   }
@@ -1966,7 +2023,7 @@ fun main() {
   val sw = time.Stopwatch.start()
   scope {
     val t = async waitsOnTimer(permits)
-    yieldNow()
+    cede
     val _ = permits.tryRecv()
     t.cancel()
   }

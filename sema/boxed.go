@@ -89,7 +89,6 @@ func reachesSealed(t types.Type, target *types.Sealed, seen map[any]bool) bool {
 // value is sized for it, so most values carry room they never use.
 func (c *Checker) lintLargeVariants() {
 	lay := &types.Layout{}
-	lay.Sealed = func(s *types.Sealed) int { return 8 + 8*lay.SealedPayloadWords(s) }
 	for _, s := range c.sealeds {
 		if s.Recursive || len(s.TypeParams) > 0 || len(s.Variants) < 2 {
 			continue // a tree is boxed already; a generic one's sizes wait for its arguments

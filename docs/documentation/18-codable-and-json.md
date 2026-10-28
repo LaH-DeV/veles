@@ -5,7 +5,7 @@ row, the environment — implements `Encodable` and `Decodable`, together
 `Codable`. You almost never write them: one line asks the compiler to.
 `json` reads and writes anything `Codable`, and the same derived code
 would drive any other format, because the traits do not know about JSON.
-`examples/codable` is the whole of this chapter as one program.
+`examples/features/codable` is the whole of this chapter as one program.
 
 ## One line
 

@@ -89,21 +89,6 @@ extern "C" {
   fun veles_check_cancelled()
 }
 
-/// Gives the thread up once: every other task that can run gets a turn
-/// before this one goes on (D145). A long loop in a suspending function
-/// gives its thread up by itself after about 10 ms when others wait; this
-/// is for code that wants a turn taken at a particular point.
-///
-/// ```veles
-/// loop (chunk in chunks) {
-///   process(chunk)
-///   yieldNow()
-/// }
-/// ```
-public fun yieldNow() {
-  await sleep(Duration.zero)
-}
-
 /// Unwinds the task here if it has been cancelled — its `with` blocks
 /// close, innermost first — and otherwise does nothing (D145). Every loop
 /// already checks at the end of each iteration; this is a check at a point
@@ -113,7 +98,7 @@ public fun yieldNow() {
 /// ```veles
 /// fun digest(blocks: List<List<u8>>): u64 {
 ///   var h: u64 = 0
-///   for (b in blocks) {
+///   loop (b in blocks) {
 ///     h = mix(h, b)
 ///   }
 ///   checkCancelled()

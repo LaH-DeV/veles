@@ -17,7 +17,7 @@ func parse(t *testing.T, src string) (*ast.File, *source.Diagnostics) {
 }
 
 func TestSyntaxTourParsesCleanly(t *testing.T) {
-	data, err := os.ReadFile("../examples/syntax_tour.vs")
+	data, err := os.ReadFile("../examples/features/syntax_tour.vs")
 	if err != nil {
 		t.Skip("syntax tour missing")
 	}
@@ -936,5 +936,40 @@ func TestD140ArrowBodies(t *testing.T) {
 	}
 	if e := braced.Fix.Edits[0]; !strings.Contains(braced.Message, "a body in braces has no '=>'") || e.NewText != "" || src[e.Span.Start:e.Span.End] != "=> " {
 		t.Errorf("'=> {': %s %+v", braced.Message, braced.Fix)
+	}
+}
+
+// D210: `lazy` before a module-level `val` and after `static` in a type's
+// body; the word keeps meaning a lazy parameter (D90) and stays a name
+// elsewhere. On a local or a field it is an error that names the form to use.
+func TestLazyVal(t *testing.T) {
+	src := `
+lazy val keywords = table()
+public lazy val units: List<string> = []
+struct Tz {
+  static lazy val utc = Tz()
+  public static lazy val local: Tz = Tz()
+}
+fun lazy(lazy: i64): i64 => lazy
+fun pick(x: i64, lazy fallback: fun(): i64): i64 => x
+`
+	f, diags := parse(t, src)
+	if diags.HasErrors() {
+		t.Fatalf("parse errors:\n%s", diags.Render())
+	}
+	dump := ast.Dump(f)
+	for _, want := range []string{"(lazy val keywords", "(public lazy val units", "(static lazy utc", "(static lazy local", "fun lazy"} {
+		if !strings.Contains(dump, want) {
+			t.Errorf("dump lacks %q:\n%s", want, dump)
+		}
+	}
+	for _, c := range []struct{ src, msg string }{
+		{"fun f() { lazy val x = 1 }", "a local built on first use is 'val x = Lazy(() => …)'"},
+		{"struct S { lazy val x: i64 }", "hold a 'Lazy<T>' field"},
+	} {
+		_, diags := parse(t, c.src)
+		if !strings.Contains(diags.Render(), c.msg) {
+			t.Errorf("%q: expected an error mentioning %q, got:\n%s", c.src, c.msg, diags.Render())
+		}
 	}
 }

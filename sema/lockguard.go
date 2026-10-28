@@ -134,7 +134,7 @@ func (f *fnCtx) withLocked(s *ast.WithExpr, i int, call *ast.CallExpr, init Expr
 	if types.IsNever(bodyT) {
 		body.Type = types.TNever
 	}
-	return []Stmt{&With{Var: pair, Init: init, Close: closeCall, Body: body, Lock: h}}, bodyT
+	return []Stmt{&With{Var: pair, Init: init, Close: closeCall, Body: body, Lock: h, Pos: withPos(s, i)}}, bodyT
 }
 
 // refLock records the hover of the `with` keyword of a lock (D107).

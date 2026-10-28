@@ -74,6 +74,7 @@ type gen struct {
 	label            int
 	term             bool
 	storage          map[*sema.Var]string
+	borrowed         map[*sema.Var]bool // parameters read in the caller's storage (mem.go exprArg)
 	loops            map[*sema.Loop]loopLabels
 	fnResult         types.Type  // Result<T, E> sealed when the function throws
 	cleanups         []sema.Expr // active `with` close calls, innermost last
@@ -182,6 +183,9 @@ func Generate(prog *sema.Program) string {
 	sb.WriteString("\n")
 	for _, gl := range prog.Globals {
 		llt := g.llType(gl.Type)
+		if gl.Guard != nil {
+			fmt.Fprintf(&sb, "@%s.ready = internal global i8 0\n", mangleGlobal(gl)) // a lazy value is built (D210)
+		}
 		if a := g.overAlign[llt]; a > 0 {
 			fmt.Fprintf(&sb, "@%s = global %s zeroinitializer, align %d\n", mangleGlobal(gl), llt, a) // @align(n) (D120)
 			continue
@@ -616,6 +620,7 @@ func (g *gen) resetFn(fn *sema.Func) {
 	g.label = 0
 	g.term = false
 	g.storage = map[*sema.Var]string{}
+	g.borrowed = map[*sema.Var]bool{}
 	g.loops = map[*sema.Loop]loopLabels{}
 	g.fnResult = nil
 	g.cleanups = nil
@@ -758,11 +763,18 @@ func (g *gen) function(fn *sema.Func) {
 	}
 	bind := func(v *sema.Var, i int) {
 		llt := g.vt(v.Type)
-		params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
 		if g.isMem(v.Type) {
-			// a memory-class argument is the address of a copy made for this call:
-			// the variable's own storage, unless it is a heap cell or the function
-			// is a coroutine, whose frame keeps its own
+			// the callee only reads the argument, in place or by copying it
+			// below, and keeps no pointer to it; nothing else writes it
+			// during the call, which exprArg's lending rule ensures
+			params = append(params, fmt.Sprintf("ptr noalias nocapture readonly %%p%d", i))
+		} else {
+			params = append(params, fmt.Sprintf("%s %%p%d", llt, i))
+		}
+		if g.isMem(v.Type) {
+			// a memory-class argument is an address the caller may have lent
+			// from its own storage (exprArg): read in place by a body that
+			// never writes or lends it, copied by any other
 			size := g.memSize(v.Type)
 			move := func(dst string) {
 				prologue = append(prologue, fmt.Sprintf("  call void @llvm.memmove.p0.p0.i64(ptr %s, ptr %%p%d, i64 %d, i1 false)", dst, i, size))
@@ -775,8 +787,11 @@ func (g *gen) function(fn *sema.Func) {
 				move(fmt.Sprintf("%%cell%d", i))
 			case fn.Suspends:
 				move(g.varStorage(v, true))
-			default:
+			case v.ReadOnly:
 				g.storage[v] = fmt.Sprintf("%%p%d", i)
+				g.borrowed[v] = true
+			default:
+				move(g.varStorage(v, true))
 			}
 			return
 		}
@@ -1044,6 +1059,10 @@ func (g *gen) retValue(value sema.Expr) {
 }
 
 func (g *gen) loop(l *sema.Loop) {
+	if l.Chunk != nil {
+		g.chunkedLoop(l)
+		return
+	}
 	labels := loopLabels{cond: g.newLabel("loop.cond"), post: g.newLabel("loop.post"), end: g.newLabel("loop.end")}
 	body := g.newLabel("loop.body")
 	g.loops[l] = labels
@@ -1064,6 +1083,53 @@ func (g *gen) loop(l *sema.Loop) {
 	for _, s := range l.Post {
 		g.stmt(s)
 	}
+	g.safepointPoll()
+	g.emitTerm("br label %%%s", labels.cond)
+	g.placeLabel(labels.end)
+}
+
+// chunkedLoop is a counted loop that looks for attention once per chunk of
+// rounds (D218, sema/chunk.go):
+//
+//	cond:    if !cond goto end
+//	         limit = min(idx + rounds, i64 max); goto body   // a chunk's first round
+//	inner:   if !(cond & idx < limit) goto looked
+//	body:    …; post: step; goto inner
+//	looked:  the safepoint poll; goto cond
+//
+// The inner loop's one exit is a single branch on both conditions, which
+// LLVM folds into one bound it can count — what lets it unroll, vectorize
+// or fold the loop. `continue` goes to post and `break` to end, as in any
+// loop.
+func (g *gen) chunkedLoop(l *sema.Loop) {
+	c := l.Chunk
+	labels := loopLabels{cond: g.newLabel("chunk.cond"), post: g.newLabel("chunk.post"), end: g.newLabel("chunk.end")}
+	inner, body, looked := g.newLabel("chunk.inner"), g.newLabel("chunk.body"), g.newLabel("chunk.looked")
+	g.loops[l] = labels
+	g.loopCleanupDepth[l] = len(g.cleanups)
+	g.placeLabel(labels.cond)
+	first := g.newLabel("chunk.start")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", g.expr(l.Cond), first, labels.end)
+	g.placeLabel(first)
+	g.stmt(c.SetLimit)
+	g.emitTerm("br label %%%s", body)
+	g.placeLabel(inner)
+	both := g.newTmp()
+	cond := g.expr(l.Cond)
+	in := g.expr(c.InChunk)
+	g.emit("%s = and i1 %s, %s", both, cond, in)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", both, body, looked)
+	g.placeLabel(body)
+	g.block(l.Body)
+	if !g.term {
+		g.emitTerm("br label %%%s", labels.post)
+	}
+	g.placeLabel(labels.post)
+	for _, s := range l.Post {
+		g.stmt(s)
+	}
+	g.emitTerm("br label %%%s", inner)
+	g.placeLabel(looked)
 	g.safepointPoll()
 	g.emitTerm("br label %%%s", labels.cond)
 	g.placeLabel(labels.end)

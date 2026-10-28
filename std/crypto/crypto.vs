@@ -40,7 +40,7 @@ use hex
 /// form a URL or a JWT wants, and `==` compares in constant time. Wrap
 /// bytes that arrived from outside with `Digest.of` to compare them
 /// safely.
-public struct Digest {
+public const struct Digest {
   private data: List<u8>
 
   /// Bytes from elsewhere — a signature out of a header, a hash out of a

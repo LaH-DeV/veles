@@ -1,6 +1,6 @@
 # Generators and lazy sequences — approaches, with examples (2026-10-20)
 
-Asked by the user (decision 7 of `veles-syntax-decisions.md`, I1): "investigate
+Asked by the user (decision 7 of `archive/veles-syntax-decisions.md`, I1): "investigate
 problem further, give a lot of different examples from other languages and how
 could we benefit from each viable approach". Research only; nothing is built or
 decided. The same four small programs are written each way so the approaches

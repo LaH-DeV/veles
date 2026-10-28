@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.115** — decisions D1–D213. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.118** — decisions D1–D218. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -103,6 +103,8 @@ Rationale: Kotlin's collapsing `T?` makes generic lookups ambiguous — `map[key
 - `String??` arises only from generic instantiation, essentially never from hand-written source
 
 **Representation is dual:** nullable pointer → niche-optimized, zero cost. Nullable value struct → tagged union with a discriminant. Nesting costs a discriminant only at the nested level. Does not disturb D8: nullable and non-nullable pointers are the same GC shape.
+
+_2026-10-26 (plan B32 step 4, `veles-layout-spec.md` §5.2; behaviour unchanged, the encoding is unspecified per D215): a `T?` is as big as `T` when `T` holds a value that is never zero (D214) at a fixed place — a pointer, a collection, channel or task handle, a closure, a trait object, through struct fields, tuple elements and an array's first element — and null is all zeros; otherwise it carries a discriminant. Strings, numbers, sealed values, C's types and raw pointers keep it. Nesting adds a discriminant at each further level._
 
 **Precedence with pointers:** `?` binds tighter than `*`, so `*User?` is a pointer to a nullable `User`. A nullable pointer is written `(*User)?`.
 
@@ -3223,7 +3225,7 @@ statement-position sites (38 in std and examples, 14 in docs samples, 4 in
 std doc comments), and the `scope { … t.cancel() }` shapes
 in `std/http` (tests, the acceptor of `acceptAndServe`), `examples/httpd`,
 `session`, `fuzz` and docs chapters 12 and 17; the cancels in
-`examples/cancel` and in `serve`'s grace race are what those programs are
+`examples/features/cancel` and in `serve`'s grace race are what those programs are
 about, and stay.
 
 ### D101 — Which heads write `val` (v0.60)
@@ -4011,7 +4013,7 @@ leaves does not make the code after it unreachable for other instances.
 `static assert` and `const` contexts come with B14. `implements` is a word
 only after a name in an expression; the built-in types print, compare and hash
 without the traits, so `i64 implements Display` is false. Conformance
-`D117-implements`, `D135-is-on-trait-objects`; `examples/generics`,
+`D117-implements`, `D135-is-on-trait-objects`; `examples/features/generics`,
 `traitobjects`; chapter 8.
 
 ### D118 — User-defined derivation: later, through compile-time reflection (v0.63)
@@ -4057,7 +4059,7 @@ enum cannot implement any trait (D57), so it cannot write `default()` by hand
 either — the D57 error stands. A struct whose `init` takes a parameter with no
 default is not derived. The example above said `make(n, …)`, which takes a
 function of the index; `repeat(value, n)` is the value form. Conformance
-`D119-default`, `examples/generics`, chapter 8, the stdlib reference.
+`D119-default`, `examples/features/generics`, chapter 8, the stdlib reference.
 
 ### D120 — C layout: `@packed`, `@align(n)`, `extern union`, `@transparent` (v0.64)
 
@@ -4082,7 +4084,8 @@ D51 intends attributes to be.
 - **`@packed`** on an `extern struct` or `extern union`: no padding, alignment
   1. A field read copies with an unaligned load; `&s.field` on a packed field
      is an error (the pointer would be misaligned — Rust's rule). Refused on a
-     plain struct (its layout is the compiler's).
+     plain struct (its layout is the compiler's; _D215: declaration order,
+     or the compiler's placement under `compact struct`_).
 - **`@align(n)`** on any struct, or on a field of an `extern struct`: `n` a
   power of two not below the natural alignment (else an error naming it);
   the size rounds up to it. On a plain struct it is the low-level tool for
@@ -4107,9 +4110,9 @@ literal power of two from 1 to 4096 (a page; the collector's spans are
 aligned to more). An over-aligned struct is aligned where it is stored —
 locals, globals, fields, list storage, boxed and captured values (the
 collector hands out a body that aligned, from a size class the alignment
-divides) — but not when it sits inside a tuple, a nullable or a sealed
-payload, which LLVM lays out by its own rules (a copy there is still
-correct, only not over-aligned). A field of a `@packed` struct is read and
+divides), and since 2026-10-27 (plan B32) inside a tuple, a nullable and a
+sealed or error payload too, which then start at the value's alignment
+with padding before them. A field of a `@packed` struct is read and
 written through the whole struct, so the compiler never forms a pointer of
 the field's type: `&p.field` is refused, and a method called on such a
 field gets a copy. A `@packed` struct does not cross into C by value yet
@@ -4120,7 +4123,11 @@ blocks; its fields are C types. `@transparent` applies to plain structs
 `raw`, which is a keyword; it is `handle` in the docs. Found with it: a
 coroutine frame told LLVM it was 16-byte aligned (`llvm.coro.id(i32 0)`)
 while the collector gives 8 — harmless while nothing needed more than 8;
-it now says 8, so LLVM realigns any stricter field itself.
+it now says 8. That did not make LLVM realign a stricter field: it lays
+the frame out for its most aligned field and assumes the storage is that
+aligned, so a release build crashed on a large `@align(64)` local kept
+across a suspension; since 2026-10-27 the frame is allocated at
+`llvm.coro.align`.
 
 ### D121 — `Array<T, N>`: fixed-size inline arrays, and const generic parameters (v0.64)
 
@@ -4198,6 +4205,18 @@ _Built 2026-10-03 (B16)._ Settled while building:
   closure taking one, a task argument, a channel element, a map value and a
   trait object's method all work; an extern struct of that size crosses to C
   by value as C passes it.
+  _2026-10-26 (plan B32 step 3, `veles-layout-spec.md` §5.3; behaviour
+  unchanged): any aggregate over 64 bytes is in the memory class too, array
+  or not. An argument is the address of the caller's own variable (or a
+  field of it) when nothing can change it during the call — a local nothing
+  points into or captures, which no other argument of the call writes —
+  and of a copy otherwise; a callee that writes its parameter or lends a
+  pointer into it copies it on entry. Measured on `bench/bigargs`: 88 ms →
+  46 ms (Go 90 ms). 2026-10-27: the parameter is `noalias nocapture
+  readonly` — the callee only reads it, and the rule above is what makes
+  `noalias` true; the GC and thread stress runs pass with it. A sealed,
+  `Result` or error union value with an over-aligned payload is in the
+  memory class whatever its size (its tag is not an LLVM field)._
 - **Reads.** `a.at(i)` is `T?`, and `T` where the index is a constant in
   range (an out-of-range constant is an error), where a bounds fact proves it
   (`loop (i in a.indices())`, `loop (i in 0..<K.len())`, `loop (i < 4)`), and
@@ -4614,7 +4633,7 @@ Decodable>(sql): List<T>`, `queryOne<T>(sql): T?`, `exec(sql): i64` (rows
 
 _Part 2 built 2026-10-05 (E2)._ `std/db` is the wire protocol written in Veles (version 3, the extended query protocol with every value a separate bind field; SCRAM-SHA-256 on `std/crypto`; TLS through `std/tls`) — **not libpq**, so no native library is needed on any platform and waiting is a task suspension. `Sql` is `(parts, args)`: splicing is concatenating parts, so no scan of the text renumbers anything. `db.Param` is `fun toArg(): db.Arg` (type OID, text or bytes, secret flag); a `string` is sent with no type so the server reads it as the column's type. Errors are one `DbError` with a `kind` and the SQLSTATE `code`. `db.open` takes `Secret<string>`: `postgres://user:password@host:port/database?sslmode=…&sslrootcert=…&application_name=…`; TLS is **on and verified by default for any host but loopback**, `sslmode=disable` and `sslmode=insecure` (TLS without the check) are the only others, there is no `prefer`, and an unknown query parameter is an error. Rows decode through a `codec.Decoder` of format `"db"` (snake_case, `@key(db:)`). A statement past its time or a cancelled task drops its connection. **Deviation, forced by the language:** `with tx = pool.begin()` cannot send `ROLLBACK` at its close (`Closeable.close()` cannot suspend), so a transaction left without `commit()` drops its connection and the server rolls back (`tx.rollback()` returns the connection to the pool) — the same question as `otel.start`'s flush. Password hashing (D130): `crypto.hashPassword`/`verifyPassword` are Argon2id **in Veles** (RFC 9106; ~60 ms for 19 MiB/2 passes at -O2) instead of the libargon2 binding, with `Uuid` made `Codable` on the way; recorded here for the user.
 
-_Part 1 built 2026-10-04._ `ast.TemplateExpr{Tag, Lit}`; the parser makes one when a string token starts exactly where a name (or `module.name`, not `?.`, no type arguments) ends — with a space it is an error that says to write `sql"…"`. The checker lowers `tag"a ${x} b ${y}"` to the call `tag(["a ", " b ", ""], [x, y])` (pieces always one more than values, escapes processed), so values convert to the element type as list elements do (a trait object boxes each) and every call diagnostic applies; a tag that is not a function, or a function not marked `@template`, is an error at the tag, and `@template` itself is checked at the declaration (a module-level function of `(parts: List<string>, values: List<V>)`; `V` may be generic). The formatter prints the literal as written; `ast.Dump` prints `(template tag (str …))`; the VS Code grammar colours the tag. Hover and go-to-definition work through the call. Example `examples/templates` (`html` that escapes, `sql` that keeps values apart); docs chapter 2 and the attributes table. `std/db` (E2) and the std tags (`html`, `regex`) are not built.
+_Part 1 built 2026-10-04._ `ast.TemplateExpr{Tag, Lit}`; the parser makes one when a string token starts exactly where a name (or `module.name`, not `?.`, no type arguments) ends — with a space it is an error that says to write `sql"…"`. The checker lowers `tag"a ${x} b ${y}"` to the call `tag(["a ", " b ", ""], [x, y])` (pieces always one more than values, escapes processed), so values convert to the element type as list elements do (a trait object boxes each) and every call diagnostic applies; a tag that is not a function, or a function not marked `@template`, is an error at the tag, and `@template` itself is checked at the declaration (a module-level function of `(parts: List<string>, values: List<V>)`; `V` may be generic). The formatter prints the literal as written; `ast.Dump` prints `(template tag (str …))`; the VS Code grammar colours the tag. Hover and go-to-definition work through the call. Example `examples/features/templates` (`html` that escapes, `sql` that keeps values apart); docs chapter 2 and the attributes table. `std/db` (E2) and the std tags (`html`, `regex`) are not built.
 
 Self-hosting: neutral (the compiler emits IR through `StringBuilder`).
 
@@ -5294,7 +5313,7 @@ with audio = try Thread.start(name: "audio", priority: Priority.High, cpus: [3],
 _(The example as amended 2026-10-10, below; it was `Executor(threads: 4, name: "cpu")`
 and `Thread.start(…) { audioLoop() }`.)_
 
-The concurrency review (2026-10-09, `veles-concurrency-review.md`) found
+The concurrency review (2026-10-09, `archive/veles-concurrency-review.md`) found
 that the only control over threads was `VELES_THREADS`: a task resumes on
 any worker after any wait, so a library that must be called from one thread
 (a GL context, COM, a GUI's main thread), work that must not take the cores
@@ -5535,10 +5554,12 @@ task that never suspended never gave its thread up.
 - ~~**`yieldNow()`** gives the thread up once (what `await sleep(Duration.zero)`
   was used for, which keeps working); **`checkCancelled()`** is the
   cancellation check at any point, plain functions included. Both prelude.~~
-  **Amended by D197 (specified, not implemented):** `cede` replaces the
+  **Amended by D197 (built 2026-10-27):** `cede` replaces the
   prelude yield function; `checkCancelled()` and zero-duration sleep remain.
   Ceding offers scheduling, not an ordering guarantee over runnable tasks.
 - The check is a load and a branch folded into the safepoint poll's.
+  (Amended by D218, 2026-10-28: a tight counted loop makes it once per
+  chunk of at most 1024 rounds.)
 
 Both levels: `withTimeout` and scope cancellation now simply work; the
 low-level escape from back-edge cancellation is a lock region (or a
@@ -6348,7 +6369,7 @@ staying legal.
 
 ### D157 — A `Result` or a task handle cannot be interpolated (v0.82)
 
-Q32, found by the 2026-10-14 review (`veles-direction-2026-10-14.md` §4): a
+Q32, found by the 2026-10-14 review (`archive/veles-direction-2026-10-14.md` §4): a
 failing call inside `"${…}"` compiled, and its error became text.
 
 ```veles
@@ -6732,7 +6753,7 @@ convention, but a `-1` used as an index is a bug no checker sees).
 ### D166 — Labelled tuples (v0.82)
 
 Q35 (user, recommended of 3, after asking to see "all of the use cases and
-pros and cons" — `veles-direction-2026-10-14.md` §4 Q35). Amends D37.
+pros and cons" — `archive/veles-direction-2026-10-14.md` §4 Q35). Amends D37.
 _(Built 2026-10-23, plan B22. An implementation limit, open to the user:
 labels written in a generic struct's or sealed type's type arguments are
 refused rather than kept — checklist §11 "B22 left open".)_
@@ -6859,7 +6880,7 @@ fun main() {
 ```
 
 - **Entry points.** `cli.parse<T: Args>(args: List<string>): T throws
-  cli.Error` throws, as `config.load` and `json.decode` do — for tests and
+cli.Error` throws, as `config.load` and `json.decode` do — for tests and
   programs that decide themselves; `cli.args<T: Args>(): T` reads
   `os.args()`, and on a `cli.Error` prints its text (to stdout for help and
   version, to stderr for a usage error) and exits 0 or 2. D167's
@@ -7645,7 +7666,7 @@ The clause is last on the spec, after the braced names, on the same line (a new 
 
 Rejected: `extensions: false` (all or nothing, and an opt-out where the default is to include); a per-name list inside the braces (`use regex { Regex, find }`: a name and a method share one list, and `find` could mean either); keeping the old default (a use brings all extensions) with the new clause only restricting it — a braced list would not be exact, and a reader could not tell from the `use` line what methods a file has.
 
-Migration: the examples (`examples/extensions`, `examples/regex`), the docs and the tests that used a module's extensions now say `extend`; the compiler's message names the exact clause. Not built: the editor's auto-import of an extension name, `veles check --fix` writing the clause, and a warning for an `extend { f }` name the file never calls (checklist §11).
+Migration: the examples (`examples/features/extensions`, `examples/regex`), the docs and the tests that used a module's extensions now say `extend`; the compiler's message names the exact clause. Not built: the editor's auto-import of an extension name, `veles check --fix` writing the clause, and a warning for an `extend { f }` name the file never calls (checklist §11).
 
 ### D186 — `std/version`: `Version` and `Constraint` (v0.100)
 
@@ -7753,7 +7774,7 @@ Rejected: an explicit compile-time `.move()` alone (the proof is the limit, not 
 
 ### D189 — `x in c` and `x !in c` (v0.103)
 
-2026-10-20, from the style review (`veles-syntax-ideas.md` S4, prepared in `veles-syntax-decisions.md` §1). The user: "contains operator but in string I would like both byte in string and substring in string (would be like in js, no?)" — the model is Python's (`"b" in "abc"`); JavaScript's `in` tests object keys and its substring test is `includes`.
+2026-10-20, from the style review (`veles-syntax-ideas.md` S4, prepared in `archive/veles-syntax-decisions.md` §1). The user: "contains operator but in string I would like both byte in string and substring in string (would be like in js, no?)" — the model is Python's (`"b" in "abc"`); JavaScript's `in` tests object keys and its substring test is `includes`.
 
 ```veles
 if (b in [' ', '\t', '\r', '\n']) …       // a byte among bytes
@@ -7887,15 +7908,13 @@ Built 2026-10-21 (`veles_list_view` in the runtime, chosen in codegen by the rec
 and deletion of `yieldNow()`, before returning to generator planning. User
 selected the recommended statement-only form, a reserved keyword, and a
 scheduler opportunity rather than "every runnable task gets a turn".
-**Decided, not implemented.** Implementation and migration are plan F20.
+Built 2026-10-27 (plan F20), with the whole-tree migration from `yieldNow()`.
 
 ```veles
 fun checkpoint() {
   cede
 }
 ```
-
-This is proposed syntax. The current compiler still requires `yieldNow()`.
 
 1. `cede` is a reserved, operand-free statement, permitted in ordinary
    executable blocks and unbraced bodies where suspension is allowed. It
@@ -7940,6 +7959,21 @@ a contextual keyword, `yield suspend`/`await cede` ceremony, and a global
 round-robin promise. Separating scheduler ceding from generator yielding
 does not decide generators; I1 remains open and is the next planning topic.
 
+Built 2026-10-27: `ast.CedeStmt` in both front ends (`parser/cede.go`,
+`selfhost/parser/cede.vs`, gated byte for byte by the `p-cede` corpus file);
+the checker lowers it to its own operation, `task.cede`, a direct
+suspension seed, and codegen to the runtime's zero sleep (one trip through
+the executor's queue, then the resume's cancellation and fail-fast checks).
+The statement may be followed on its line by `else` only. A body written
+`=> cede` (a function, a lambda, a `when` or `race` arm) is reported and read
+as `{ cede }`, so nothing cascades; the fix writes the block. The removed
+`yieldNow` is reported only where the name resolves to nothing
+(`sema/removed.go`). A yield abandoned by a cancellation no longer leaves
+the task's yield flag set (the next `cede` returned at once, unchecked).
+Tests: `parser/cede_test.go`, `sema/cede_test.go`, conformance `D197-*`,
+`driver/cede_test.go`, golden `cede`. Not run: macOS and the Linux
+sanitizer gates (checklist §11).
+
 ### D198 — Trees are boxed: recursive sealed types, `indirect`, `inline` (v0.106; amends D12)
 
 Q from plan S7 (2026-10-23). D12 lays a sealed value out inline, sized for
@@ -7965,7 +7999,7 @@ sealed trait Message {                  // not recursive: inline, as D12
 }
 ```
 
-- **Automatic, for trees.** A sealed type is *recursive* when one of its
+- **Automatic, for trees.** A sealed type is _recursive_ when one of its
   variants holds the type itself — directly, behind a pointer, in a
   collection or a nullable, or through another type's field (`*Expr`,
   `List<Stmt>` in `Block` in a `Stmt`). In a recursive sealed type every
@@ -7973,7 +8007,7 @@ sealed trait Message {                  // not recursive: inline, as D12
   value is its tag and one word. Non-recursive sealed types — `Result`,
   `Message` above — stay inline exactly as D12 says.
 - **`indirect struct V`** in a sealed trait's body (or `indirect sealed trait
-  T` for all its variants) boxes that variant in any sealed type.
+T` for all its variants) boxes that variant in any sealed type.
 - **`inline struct V`** keeps a variant in the value in a type that would
   box it (low-level control: a hot, small node); the value is then sized for
   the largest inline variant.
@@ -8008,7 +8042,7 @@ the self-hosted front end could not read such a file at all. The user:
 - Every byte sequence that is not UTF-8 is an error at its position — in
   code, a string, a character literal or a comment alike — and the file does
   not compile: `main.vs:3:7: the text is not valid UTF-8 here (byte 0xE9):
-  save the file as UTF-8` (Go: `illegal UTF-8 encoding`). Each bad sequence
+save the file as UTF-8` (Go: `illegal UTF-8 encoding`). Each bad sequence
   is reported, as Go does; a byte-order mark at the start stays allowed.
 - Both front ends report it the same way: the self-hosted one reads the
   file as bytes, reports these errors and lexes nothing more (gate G3 covers
@@ -8237,8 +8271,8 @@ Os.MacOS.toString(case: Case.Kebab)        // "mac-os"
   whose fix writes `Case`.
 - **`Enumerated`** (prelude) is the trait every enum implements without
   writing anything: `static fun values(): List<This>`, `static fun
-  parse(text: string, case: Case = Case.AsWritten): This?`, `fun
-  toString(case: Case): string`; it requires `Display`, `Parsable` and
+parse(text: string, case: Case = Case.AsWritten): This?`, `fun
+toString(case: Case): string`; it requires `Display`, `Parsable` and
   `Comparable`. Generic code asks `V implements Enumerated` (`std/cli`
   lists an enum flag's choices with it).
 - **Overriding.** An enum may write `implement Enumerated for Os { … }` and
@@ -8370,7 +8404,7 @@ the function it is written in — no closure — so `server.apply { port = 8080
 }` costs what the assignment does (measured: 0.33 ns per call, as the
 assignment; ~25 ns as a closure). It follows that a `try` in it reaches
 that function, while `return`, and a `break`/`continue` that would leave the
-block, are refused (the block runs to its end); a receiver function *value*
+block, are refused (the block runs to its end); a receiver function _value_
 given to `apply`/`edit` may not throw. In a block, a bare name is the
 innermost receiver's member that has it, then an enclosing receiver's (a
 method's), as for locals. The variable the block works on stays on the
@@ -8511,6 +8545,21 @@ Both levels: `lazy val` is the high level; `Lazy<T>` and `isReady()` stay the
 low level. Self-hosting: the compiler's keyword, operator and builtin tables
 are built only by a run that needs them.
 
+_Built 2026-10-27 (B29 part 2)._ Settled while building: a `lazy val` is
+`Lazy` underneath — a hidden module value `Lazy(init: () => value)`, made
+with the others, builds it — and the name has storage of its own and a
+ready flag, so once built a read is an acquire load of the flag, a branch
+and the value (the first reads call the hidden `get()` out of line, store
+the value and set the flag; two first readers store the same value).
+Ordering follows the initializer as for any module value, so a cycle
+through a lazy value is the usual error. A `lazy` local or field is a
+parse error that names `Lazy<T>`; `lazy var` and `lazy const` are refused
+by the checker. Measured on `bench/lazyval` (a table read 50 million times
+through a function that is not inlined): 0.4× Go's `sync.OnceValue`, and
+about 10% over the same read of a plain module `val` — the flag's load and
+branch. Not built: hoisting the check out of a loop (an acquire load is
+not hoisted, and a cheaper form needs a fence on ARM; checklist §11).
+
 ### D211 — A resource is made in `main`, not by a global initializer (v0.113)
 
 ```veles
@@ -8532,9 +8581,12 @@ by I/O cannot be replaced in a test, and every `veles test` run would open
 it; Go's experience with `init()` doing I/O is the evidence. Rejected:
 throwing and suspending initializers in the program's own package with
 `Closeable` globals closed after `main` in reverse order; a `service`
-declaration with start/stop (a container's policy in the language). Still
-to do: a docs chapter on application structure, showing `main` → handlers,
-and test fakes through task-locals.
+declaration with start/stop (a container's policy in the language). _Docs
+written 2026-10-27 (B29 part 3): chapter 26, "Application structure" —
+where each kind of shared value lives, resources made in `main` with
+`with`, handed down as a parameter (often one struct of what the handlers
+need) or a task-local (what code only consults on the way), and fakes in
+tests through both._
 
 ### D212 — `const struct`: a type immutable all the way down (v0.115)
 
@@ -8606,6 +8658,21 @@ pointers, locks and `var` fields stays the low level. Self-hosting: tokens,
 AST nodes and types as const structs can be shared by a parallel compiler's
 threads and used as interning keys.
 
+_Built 2026-10-27 (B30)._ Settled while building: `const` is the first
+modifier after visibility, so `public const compact extern struct`, and in
+a sealed trait's body `const indirect compact struct`. The check runs with
+the function bodies, so its errors come together with theirs. An instance
+made by a generic call's inference (`pairUp(MutableSet<i64>())` returning
+`Pair<i64, T>`) is reported at that call. An error type cannot be declared
+`const`; it counts as immutable when its fields are. The standard
+library's value types became `const struct`: `Duration`, `Timestamp`,
+`Offset`, `DateTime`, `Digest`, `Uuid`. Not built: `veles apidiff`
+reporting a removed `const` (the tool does not exist yet, plan G1), and
+the pass-by-address optimisation, which needs more than immutability: a
+`var` holding the value can still be reassigned during a call, so the
+caller rule of D121 applies unchanged. A `const` of a const struct that
+holds a sealed value is refused, as any sealed constant is (D113).
+
 ### D213 — Allocation hints in the editor (v0.115)
 
 ```veles
@@ -8620,6 +8687,7 @@ fun summary(items: List<Item>, limit: i64): string {
 From the user's open notes (`to_figure_out.md` 3: "inlay hints to show the
 type of memory allocations"). Veles allocates on the GC heap in a small set
 of places, and the checker already decides each of them:
+
 - mutable collections, on the first write (D187);
 - non-empty collection literals and the results of collection operations;
 - string building (interpolation, `+`, except where a side is shared);
@@ -8652,12 +8720,283 @@ annotation with an inferred "allocates" effect (to be asked again once the
 hints show where the allocations are); a runtime allocation profile mapped
 back to source; no hints.
 
+_Built 2026-10-27 (B31)._ Settled while building: the sites are
+`sema.AllocSites`, read by the language server (setting
+`veles.inlayHints.allocations`, sent as `initializationOptions` and
+`workspace/didChangeConfiguration`) and by `veles explain --alloc <dir>
+[fun]`. Beyond the eight kinds above, three more allocate and are sites: a
+channel, an `&` of a temporary (D10), and a temporary whose method keeps a
+pointer to it (a heap copy the compiler makes). An allocation written
+elsewhere but made in a statement — a field default, the standard
+library's code inlined there — is shown on that statement. Not shown:
+tests (their sites are mostly failure messages), code the compiler writes
+(derived methods), and messages built on the way to a panic.
+`codegen/llvm/allocsite_test.go` checks every example and benchmark both
+ways against the allocation calls of the generated code, line by line.
+Found on the way: the checker's walker skipped the value a task-holding
+`with` receives (D111), so analyses built on it never saw that
+expression; a `with` and a loop's iterable had no line of their own in the
+line table.
+
 _The same day (`to_figure_out.md` 2): `suspend loop`, sugar for ceding at
 the end of every iteration, is not added. D145's automatic yield at
 back-edges and an explicit `cede` (D197) stay. User: "we'd need check if the
 current approach is good. but ok, leave it" — so D145's yield policy (the
 ~10 ms slice, a lone task, fixed-thread executors, the cost of `cede` per
 iteration) is to be measured; plan F21._
+
+_Measured 2026-10-27 (plan F21, `bench/preempt`, numbers in
+`bench/results.md`): the slice stays as it is. A ticker beside busy
+suspending loops wakes at most ~16 ms late on Windows and ~14.5 ms on Linux,
+at 1 and 8 workers, and on a one-thread executor (D150) too — Go's
+asynchronous preemption in the same program: 20–28 ms. Nothing to change in
+the language; the runtime had to opt out of Windows 11's throttling of the
+process's timer resolution, which had turned it into ~46 ms. The measurements
+raised Q65 (how often a back edge polls) and two runtime/codegen items in
+checklist §11._
+
+### D214 — A local `var` is assigned before it is read (v0.116)
+
+```veles
+fun label(on: bool): string {
+  var name: string
+  if (on) name = "on" else name = "off"
+  name                                  // fine: assigned on every path
+}
+fun count(): i64 {
+  var xs: List<i64>
+  xs.len()                              // error: 'xs' is read before it is assigned
+}
+```
+
+Found 2026-10-26 (`veles-layout-spec.md` §4). A `var x: T` with no value
+was zero-filled. That gave values no program could otherwise make: a
+non-nullable `*T` that is null (so `(*T)?` read it as `null`, breaking D5's
+pointer niche), a `List` that exits the program with status 255 and no
+message on `len()`, closures and trait objects with no code.
+
+- **Definite assignment.** A local `var` declared without a value may not
+  be read, have `&` taken, be captured by a lambda, or have a method called
+  on it until it is assigned on every path to that point. The facts are the
+  `init` block's (D73): they join at `if`/`when`, an assignment inside a
+  loop body does not count after the loop, and a path that leaves
+  (`return`, `throw`, `break`, `continue`, a `Never` call) does not need
+  one. The error names the variable and says what to do: "'xs' is read
+  before it is assigned on every path; give it a value
+  (`var xs: List<i64> = []`) or assign it on each branch above".
+- `val` still needs a value where it is declared (unchanged).
+- **The validity invariant this makes true.** Every value a program can
+  observe is valid for its type: a non-nullable pointer, collection or task
+  handle, closure and trait object is never null; a sealed value's tag names
+  one of its variants; a string's length is not negative and its pointer is
+  not null when the length is not 0. Code in `unsafe` that makes an invalid
+  value has undefined behaviour. A value typed by C (`*raw T`, extern
+  fields, `CLayout`) has C's validity only: raw pointers may be null.
+
+User, 2026-10-26, recommended of 3. Rejected: zero values for the types
+whose zero is valid (numbers, `bool`, `string`, `T?`, structs of those) and
+an error for the rest (Go's model: two rules where one does); leaving it.
+No code in std, `selfhost`, the examples, the benchmarks or the docs used
+the form.
+
+Both levels: nothing changes for code that gives its variables values. The
+invariant is what lets the compiler store `T?` without a flag word where
+`T` has a value that is never zero (`veles-layout-spec.md` §5.2), with no
+change to the source.
+
+### D215 — Struct layout: declaration order, and `compact struct` (v0.116)
+
+```veles
+struct Header {            // fields where they are written: 32 bytes
+  flag: u8                 // offset 0
+  at:   i64                // offset 8
+  kind: u8                 // offset 16
+  n:    i32                // offset 20
+  ok:   bool               // offset 24
+}
+compact struct Sample {    // the compiler places the fields: 16 bytes
+  flag: u8
+  at:   i64
+  kind: u8
+  n:    i32
+  ok:   bool
+}
+```
+
+D120 said a plain struct's layout is "the compiler's" and nothing more.
+
+- **Guaranteed:** a struct's fields, and a tuple's elements, lie in
+  declaration order, each at the next offset its alignment allows (raised by
+  `@align(n)`, D120), and the size is a multiple of the alignment. This is
+  C's rule, and what the debugger shows.
+- **`compact struct`** lets the compiler place the fields for the smallest
+  size: by alignment, largest first, and in declaration order among equals.
+  That always gives the least padding Veles types allow. Only the placement
+  changes. Construction, `Codable`, `Comparable`, `T.fields`, printing,
+  `==`, hashing, positional patterns and the C-facing rules all keep
+  declaration order. A generic `compact struct` is placed per instance.
+- **Spelling.** `compact` is a contextual word before `struct`, like
+  `inline`/`indirect` (D198), and reserves nothing. The modifier order is
+  `public const compact struct`. In a sealed trait's body it goes after
+  `inline`/`indirect`: `indirect compact struct V`.
+- **Refused:** `compact extern struct` (C fixes the order) and `compact`
+  with `@packed` or `@transparent`, each with an error that says why.
+  _(As built, 2026-10-26: `@packed` applies only to extern structs, so it
+  is refused through the first error.)_
+  `compact` on a struct with fewer than two fields gets a warning that it
+  changes nothing.
+- **Hover** on a struct shows its size, alignment and padding. When
+  `compact` would make it smaller it says so ("32 bytes, 15 of padding;
+  `compact` would make it 16"). There is no lint: in `selfhost` only 9 of
+  437 structs would gain, 8 bytes each.
+- **Unspecified** (may change between compiler versions): how `T?`, sealed
+  values, error unions, closures and trait objects are encoded. Programs
+  depend only on the layouts of `extern`/`CLayout` types (D69, D120) and on
+  the struct rule above.
+
+User, 2026-10-26: "declaration order guaranteed. MAYBE WE COULD ADD A
+MODIFIER FOR THE STRUCT THAT WOULD DO IT (if not, the attribute would be ok,
+but I prefer a keyword if is good and not problematic)"; then `compact
+struct`, recommended of 3. Rejected: every struct's layout unspecified, with
+fields reordered automatically (Rust's default; measured gain 0.4 %, and
+the layout stops being predictable); `@compact` (an attribute, as `@packed`
+and `@align` are; those are C layout, and `compact` is Veles's own, like
+`inline`/`indirect`); no opt-in.
+
+Both levels: by default the layout is what is written, for those who
+manage memory by hand. `compact` asks the compiler to do it. Self-hosting:
+the self-hosted lexer, parser and formatter learn the word with the Go
+front end (gate G1–G5).
+
+### D216 — A variable assigned before every `break` is assigned after the loop (v0.117)
+
+```veles
+fun firstNegative(xs: List<i64>): i64 {
+  var found: i64
+  var i = 0
+  loop {
+    if (i == xs.len()) {
+      found = -1
+      break
+    }
+    if ((xs.at(i) ?: 0) < 0) {
+      found = i
+      break
+    }
+    i += 1
+  }
+  found              // assigned: every way out of the loop assigned it
+}
+```
+
+Amends D214 (checklist Q63, raised by the 2026-10-27 review). D214 counted
+nothing assigned inside a loop body after the loop, which refused the usual
+search loop; Rust (`loop`), Swift and Kotlin (`while (true)`) and
+TypeScript accept it.
+
+- **Rule.** What is assigned after a loop is what is assigned on _every way
+  out_ of it: each `break` that leaves it — a labelled `break outer` from a
+  loop inside included — and, for a loop with a condition or over a
+  collection (`loop (cond)`, `loop (x in xs)`), its normal end, where what
+  held before the loop holds (the body may not run). A `loop { }` with no
+  condition ends only by `break`, so the `break`s alone decide. `return`,
+  `throw`, `continue` and a call that never returns are not ways out of the
+  loop.
+- Unchanged: an assignment the body makes on only some paths still does not
+  count; everything else in D214 stands.
+
+User, 2026-10-27, recommended of 3. Rejected for now: a loop that gives a
+value, `val found = loop { … break i }` (Rust) — new syntax; it could be
+added on top of this later. Rejected: leaving it (a placeholder value is
+what D214 exists to discourage).
+
+### D217 — A plain function where a parameter may suspend (v0.117)
+
+```veles
+fun double(n: i64): i64 => n * 2
+
+val total = [1, 2].map(double).sum()        // accepted: map's parameter only may suspend
+```
+
+Amends D116 and D40 (checklist Q64, found 2026-10-27). D116 makes a
+`suspends` parameter mean _may suspend_, and a call of a conditionally
+suspending function plain when nothing passed to such a parameter
+suspends; a lambda written in place adapts. A function value did not: its
+type says no `suspends`, so `xs.map(double)` was refused, although D116
+already compiles the plain copy of `map` that such a call needs. (`throws`
+was not the problem: `E` of a `throws E` parameter already follows the
+argument.)
+
+- **Rule.** A function value whose type does not say `suspends` — a named
+  function or a variable — is accepted for a `suspends` parameter of a
+  conditionally suspending function (`map`, `filter`, `forEach`, `fold`,
+  `withLock`, `TaskLocal.withValue`, …). The call is plain, exactly as with
+  a plain lambda; nothing is wrapped and nothing costs more.
+- A parameter the function _keeps_ — stores, returns, or hands to a function
+  that is not conditional (D116's "not conditional") — is truly
+  suspending: a plain function value there stays an error, with the message
+  saying the function keeps it and the fix `(x) => f(x)`.
+
+User, 2026-10-27, recommended of 3. Rejected: adapting a plain function
+value everywhere (a hidden closure for a variable, where the parameter is
+kept); leaving it (point-free code never worked with the collection
+operations).
+
+### D218 — A tight counted loop looks for attention once per chunk (v0.118)
+
+```veles
+fun fnv1a(data: List<u8>): u64 {
+  var h: u64 = 0xcbf29ce484222325
+  loop (i in 0..<data.len()) h = (h ^ data.at(i).toU64()) *% 0x100000001b3   // one check per chunk
+  h
+}
+```
+
+Amends D145 and D66 (checklist Q65, raised by plan F21, 2026-10-27). A
+loop's back edge loads the attention word (a collection waiting, a
+cancellation, a request to yield) on every round. In a tight counted loop
+that load is the whole cost: it keeps clang from unrolling, reassociating,
+vectorizing or folding the loop (a multiply-add chain 865 ps a round
+against C's 100, a sum of squares 358 ps against its closed form; the same
+C loop with the same check runs at Veles's speed).
+
+- **Rule.** A loop over a range — `loop (i in a..<b)`, `a..b`, `.indices()`,
+  a list's elements, which are walked by index — whose body calls no Veles
+  function and does not suspend is run in chunks of at most 1024 rounds,
+  fewer when the body is large: the check is made once per chunk, between
+  chunks. Every other loop checks on every round, as before.
+- **What a program sees.** A cancellation, a timeout, a failed sibling, a
+  collection's stop and the ~10 ms yield are seen at the end of a round,
+  or, in such a loop, within one chunk of a body that calls nothing (about
+  a microsecond). They arrive at a moment the loop does not choose, so no
+  program can tell the two apart except by a clock; the slice is unchanged.
+- `break`, `continue` and `return` mean what they meant; the chunks are the
+  compiler's. A loop that cedes, awaits or calls is not chunked. A loop the
+  compiler proves shorter than a chunk needs no check of its own.
+  `inline loop` (D174) is unrolled and unaffected. Debug and release builds
+  behave alike.
+
+`cede` (D197) is unaffected: the automatic yield still comes after ~10 ms,
+and a `cede` stays the coarse, explicit turn between large pieces of work.
+
+User, 2026-10-28, recommended of 4 (after asking whether chunking leaves
+more for `cede` to do — it does not: a chunk is a microsecond, the slice
+ten milliseconds). As HotSpot's loop strip mining (chunks of 1000).
+Rejected: a check on every round (tight loops 3–9× slower than C); an
+`@unpolled` annotation (a loop without checks blocks every thread's
+collection and cannot be cancelled, and no measured loop needs it);
+preemption by signal as Go does (a redesign of the collector and codegen
+for what chunking gives).
+
+Built 2026-10-28 (plan F22): the checker marks the loop (`sema/chunk.go`:
+an i64 index stepped only by the loop, no call, suspension, task, `with`
+or inner loop in the condition, body or step; 16–1024 rounds by the body's
+size) and codegen runs the chunk as an inner loop whose one exit is
+`cond & idx < limit` (`chunkedLoop`). The multiply-add chain went from 865
+to 107 ps a round (C: 100), the sum of squares from 358 to 4; the
+suspending twins, which also stored to their frame every round, from 1723
+and 698 to 114 and 5. A loop over a narrower integer range is not chunked
+yet (rarely the hot loop).
 
 ### I1 — generators: investigated, not decided
 

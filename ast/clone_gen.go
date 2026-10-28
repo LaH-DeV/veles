@@ -1231,6 +1231,15 @@ func (c *cloner) fixContinueStmt(n *ContinueStmt) {
 	n.Label = c.cloneIdent(n.Label)
 }
 
+func (c *cloner) cloneCedeStmt(x *CedeStmt) *CedeStmt {
+	if x == nil {
+		return nil
+	}
+	n := new(CedeStmt)
+	*n = *x
+	return n
+}
+
 func (c *cloner) cloneLoopStmt(x *LoopStmt) *LoopStmt {
 	if x == nil {
 		return nil
@@ -2310,6 +2319,8 @@ func (c *cloner) cloneNode(v Node) Node {
 		return c.cloneCastExpr(v)
 	case *CatchExpr:
 		return c.cloneCatchExpr(v)
+	case *CedeStmt:
+		return c.cloneCedeStmt(v)
 	case *CharLit:
 		return c.cloneCharLit(v)
 	case *CheckedExpr:
@@ -2550,6 +2561,8 @@ func (c *cloner) cloneStmt(v Stmt) Stmt {
 		return c.cloneBlock(v)
 	case *BreakStmt:
 		return c.cloneBreakStmt(v)
+	case *CedeStmt:
+		return c.cloneCedeStmt(v)
 	case *ContinueStmt:
 		return c.cloneContinueStmt(v)
 	case *ExprStmt:

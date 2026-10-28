@@ -429,6 +429,46 @@ type ExplainOptions struct {
 	Path     string
 	Derive   bool
 	TypeName string
+	// Alloc: list where the program allocates on the heap (D213); TypeName
+	// then narrows it to the functions of that name
+	Alloc bool
+}
+
+// ExplainAlloc prints the heap allocation sites of the package's own code,
+// one a line, as the editor's `heap` hints show them (D213).
+func ExplainAlloc(opts ExplainOptions) int {
+	diags := &source.Diagnostics{}
+	pkg, err := sema.LoadPackage(opts.Path, diags)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "veles:", err)
+		return 1
+	}
+	prog := sema.Check(pkg, diags, false)
+	if diags.HasErrors() || prog == nil {
+		fmt.Fprint(os.Stderr, diags.Render())
+		return 1
+	}
+	n := 0
+	for _, s := range sema.AllocSites(prog) {
+		if opts.TypeName != "" && s.Fun != opts.TypeName && !strings.HasSuffix(s.Fun, "."+opts.TypeName) {
+			continue
+		}
+		line, col := s.Span.File.Position(s.Span.Start)
+		text := fmt.Sprintf("%s:%d:%d: %s: %s", s.Span.File.Path, line, col, s.Fun, s.What)
+		if s.Avoid != "" {
+			text += " — " + s.Avoid
+		}
+		fmt.Println(text)
+		n++
+	}
+	if n == 0 {
+		who := "this package"
+		if opts.TypeName != "" {
+			who = "'" + opts.TypeName + "'"
+		}
+		fmt.Fprintf(os.Stderr, "veles: %s allocates nothing on the heap\n", who)
+	}
+	return 0
 }
 
 func Explain(opts ExplainOptions) int {

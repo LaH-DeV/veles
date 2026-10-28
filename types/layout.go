@@ -1,5 +1,7 @@
 package types
 
+import "sort"
+
 // Layout is how a value lies in memory: C's rules — each field at the next
 // offset its alignment allows, the size a multiple of the alignment — with
 // D120's attributes on structs. The checker reads it for `@align`'s
@@ -13,11 +15,6 @@ package types
 // without explicit padding, while a struct's LLVM type carries padding
 // wherever its fields' offsets need more than LLVM would do (StructPlan).
 type Layout struct {
-	// Sealed and ErrorUnion size the tagged types, which the code
-	// generator lays out in words; nil means 8 bytes of tag and nothing else.
-	Sealed     func(*Sealed) int
-	ErrorUnion func(*ErrorUnion) int
-
 	plans map[*Struct]StructPlan
 }
 
@@ -51,9 +48,14 @@ func (l *Layout) Of(t Type) (size, align int) {
 		if PtrLike(t.Elem) {
 			return 8, 8
 		}
-		return l.natural([]Type{TBool, t.Elem})
+		if _, ok := l.Niche(t.Elem); ok {
+			return l.Of(t.Elem)
+		}
+		_, size, align := l.Placed([]Type{TBool, t.Elem})
+		return size, align
 	case *Tuple:
-		return l.natural(t.Elems)
+		_, size, align := l.Placed(t.Elems)
+		return size, align
 	case *Array:
 		size, align := l.Of(t.Elem)
 		n, _ := t.N()
@@ -64,19 +66,111 @@ func (l *Layout) Of(t Type) (size, align int) {
 		p := l.StructPlan(t)
 		return p.Size, p.Align
 	case *Sealed:
-		if l.Sealed != nil {
-			return l.Sealed(t), 8
-		}
-		return 8, 8
+		words := l.SealedPayloadWords(t)
+		off := l.PayloadOffset(t)
+		return roundUp(off+8*words, off), off
 	case *ErrorUnion:
-		if l.ErrorUnion != nil {
-			return l.ErrorUnion(t), 8
+		words := 0
+		for _, m := range t.Members {
+			s, _ := l.Of(m)
+			words = max(words, (s+7)/8)
 		}
-		return 8, 8
+		off := l.PayloadOffset(t)
+		return roundUp(off+8*words, off), off
 	case *Enum:
 		return l.Of(t.Base)
 	}
 	return 8, 8
+}
+
+// PayloadOffset is where a sealed value's or an error union's payload
+// starts: after the tag, at 8, or at the alignment of an over-aligned
+// variant or member, so its `@align(n)` holds there too. The value is as
+// aligned as its payload. The runtime's fail-fast `await` is told it
+// (veles_task_set_unwrap).
+func (l *Layout) PayloadOffset(t Type) int {
+	off := 8
+	switch t := t.(type) {
+	case *Sealed:
+		for _, v := range t.Variants {
+			if t.IsRecursive() && !variantInline(v) {
+				// boxed, or a word at most: sizing it would come back here
+				// through the variant that holds the type itself
+				continue
+			}
+			if !l.VariantBoxed(v) {
+				_, a := l.Of(v)
+				off = max(off, a)
+			}
+		}
+	case *ErrorUnion:
+		for _, m := range t.Members {
+			_, a := l.Of(m)
+			off = max(off, a)
+		}
+	}
+	return off
+}
+
+// NichePath leads to a word that is never zero in a valid value (D214):
+// Path indexes struct fields, tuple elements, element 0 of an array and
+// the part of a closure (its code) or trait object (its method table);
+// Offset is that word's byte offset.
+type NichePath struct {
+	Offset int
+	Path   []int
+}
+
+// Niche finds the first never-zero word of t, so that `t?` can be t
+// itself with all-zero bits for null (veles-layout-spec.md §5.2): a
+// non-raw pointer, a collection, channel or task handle, a closure's code,
+// a trait object's table, at a fixed offset through struct fields, tuple
+// elements and the first element of an array. C's types (extern structs
+// and unions, raw and C function pointers) and anything whose zero is a
+// value (numbers, strings, nullables, sealed values) have none.
+func (l *Layout) Niche(t Type) (NichePath, bool) {
+	switch t := t.(type) {
+	case *Pointer:
+		return NichePath{}, !t.Raw
+	case *List, *Map, *Set, *Channel, *Task:
+		return NichePath{}, true
+	case *Func:
+		return NichePath{Path: []int{0}}, !t.C
+	case *Trait:
+		return NichePath{Offset: 8, Path: []int{1}}, true
+	case *Struct:
+		if t.Extern || t.Union || t.Packed {
+			return NichePath{}, false
+		}
+		p := l.StructPlan(t)
+		for i, f := range t.Fields {
+			if n, ok := l.Niche(f.Type); ok {
+				return NichePath{Offset: p.Offsets[i] + n.Offset, Path: append([]int{i}, n.Path...)}, true
+			}
+		}
+	case *Tuple:
+		offs, _, _ := l.Placed(t.Elems)
+		for i, e := range t.Elems {
+			if n, ok := l.Niche(e); ok {
+				return NichePath{Offset: offs[i] + n.Offset, Path: append([]int{i}, n.Path...)}, true
+			}
+		}
+	case *Array:
+		if n, _ := t.N(); n >= 1 {
+			if in, ok := l.Niche(t.Elem); ok {
+				return NichePath{Offset: in.Offset, Path: append([]int{0}, in.Path...)}, true
+			}
+		}
+	}
+	return NichePath{}, false
+}
+
+// variantInline: the variant is declared `inline` (D198).
+func variantInline(v *Struct) bool {
+	if v.Template != nil {
+		return v.Template.Inline
+	}
+	return v.Inline
 }
 
 // VariantBoxed reports whether a variant is stored behind a pointer in its
@@ -156,7 +250,25 @@ func (l *Layout) Offsets(elems []Type) []int {
 	return offs
 }
 
-// natural lays elems out as LLVM would (a tuple, a nullable, a range).
+// Placed lays out the members of a tuple, or a nullable's flag and value:
+// each at the next multiple of its guaranteed alignment, so an
+// over-aligned struct keeps its `@align(n)` inside them too. Where no
+// member is over-aligned this is LLVM's own placement; otherwise the code
+// generator pads the LLVM type to match, as it does for structs.
+func (l *Layout) Placed(elems []Type) (offs []int, size, align int) {
+	offs = make([]int, len(elems))
+	align = 1
+	end := 0
+	for i, e := range elems {
+		s, a := l.Of(e)
+		align = max(align, a)
+		offs[i] = roundUp(end, a)
+		end = offs[i] + s
+	}
+	return offs, roundUp(end, align), align
+}
+
+// natural lays elems out as LLVM would (a range).
 func (l *Layout) natural(elems []Type) (size, align int) {
 	align = 1
 	end := 0
@@ -197,7 +309,8 @@ func (l *Layout) StructPlan(s *Struct) StructPlan {
 func (l *Layout) plan(s *Struct) StructPlan {
 	p := StructPlan{Offsets: make([]int, len(s.Fields)), Align: 1, LLAlign: 1}
 	end := 0
-	for i, f := range s.Fields {
+	for _, i := range l.placementOrder(s) {
+		f := s.Fields[i]
 		fs, fa := l.Of(f.Type)
 		lla := l.LLAlign(f.Type)
 		if f.Align > fa {
@@ -232,6 +345,26 @@ func (l *Layout) plan(s *Struct) StructPlan {
 	}
 	p.Size = roundUp(end, p.Align)
 	return p
+}
+
+// placementOrder is the order a struct's fields are placed in: as declared,
+// or for a `compact struct` by alignment, largest first, as declared among
+// equals — which leaves no padding between fields whose sizes are
+// multiples of their alignments, as every Veles type's is (D215).
+func (l *Layout) placementOrder(s *Struct) []int {
+	order := make([]int, len(s.Fields))
+	for i := range order {
+		order[i] = i
+	}
+	if !s.Compact || s.Packed || s.Union {
+		return order
+	}
+	align := make([]int, len(s.Fields))
+	for i, f := range s.Fields {
+		_, align[i] = l.Of(f.Type)
+	}
+	sort.SliceStable(order, func(a, b int) bool { return align[order[a]] > align[order[b]] })
+	return order
 }
 
 // PtrLike reports whether a value of t is one machine pointer, so `t?` is

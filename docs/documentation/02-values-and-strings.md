@@ -15,6 +15,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 hello 10
 ```
@@ -38,13 +39,72 @@ fun main() {
 }
 ```
 
+A `var` with a type may also start without a value, when the code below
+gives it one on every path. Until then it cannot be used: reading it, taking
+`&` of it or capturing it is an error that names the variable (D214).
+
+```veles
+use io
+
+fun main() {
+  val hour = 14
+  var part: string
+  if (hour < 12) part = "morning" else part = "afternoon"
+  io.println(part)
+}
+```
+
+Output:
+
+```text
+afternoon
+```
+
+An `if` used as a value usually reads better (`val part = if (hour < 12)
+"morning" else "afternoon"`); the form above is for values built across
+several statements. A loop counts too: after a `loop { }` with no
+condition, which ends only by `break`, a variable assigned before every
+`break` is assigned (D216). A loop with a condition, or over a list, may
+end without running its body, so what it assigns does not count there.
+
+```veles
+use io
+
+fun firstNegative(xs: List<i64>): i64 {
+  var found: i64
+  var i = 0
+  loop {
+    if (i == xs.len()) {
+      found = -1
+      break
+    }
+    if ((xs.at(i) ?: 0) < 0) {
+      found = i
+      break
+    }
+    i += 1
+  }
+  found
+}
+
+fun main() {
+  io.println("${firstNegative([4, 2, -7, 1])} ${firstNegative([1])}")
+}
+```
+
+Output:
+
+```text
+2 -1
+```
+
 ## Numbers
 
-| Type | Meaning |
-|---|---|
+| Type                   | Meaning                           |
+| ---------------------- | --------------------------------- |
 | `i8` `i16` `i32` `i64` | signed integers of that many bits |
-| `u8` `u16` `u32` `u64` | unsigned |
-| `f32` `f64` | floating point |
+| `u8` `u16` `u32` `u64` | unsigned                          |
+| `f32` `f64`            | floating point                    |
 
 An integer literal is `i64` unless the context asks for something else —
 the same type `len()`, indices and counts use, so ordinary code has one
@@ -77,6 +137,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 3 1 3.5
 7000000000 44 200 null -3
@@ -115,6 +176,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 -2147483648
 ```
@@ -145,6 +207,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 2 11 160 11111111 -1
 0.667 000042 0.667 1235
@@ -167,6 +230,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 3ff8000000000000 1.5
 false true
@@ -195,6 +259,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 Veles was born in 2026; next year is 2027
 6 bytes, starts with h: true, has ll: true
@@ -211,7 +276,7 @@ Two things worth knowing early:
   counts them and `chars()` gives them as a `List<string>` of
   one-character strings: `"héllo".charCount()` is 5 and
   `"héllo".chars()` is `[h, é, l, l, o]`. Both build a whole list; when you
-  need to walk characters *without* building one — a scanner, a lexer, a
+  need to walk characters _without_ building one — a scanner, a lexer, a
   validator over bytes off a socket — `use utf8` steps one at a time:
   `utf8.decode(s, i)` gives the code point at a byte offset and how wide it
   is, `utf8.encodeTo(out, code)` writes one back
@@ -263,6 +328,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 <h1>Tea</h1>
   <p>tab:	done</p>
@@ -306,6 +372,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [tea     ] [***tea***] [      3.14] [25.6%] [000000ff] [0b11111111] [1,234,567]
 ```
@@ -362,6 +429,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 <p>1 &lt; 2 &amp; 3 &gt; 2</p><p>7 votes</p>
 ```
@@ -373,7 +441,7 @@ says, never input, and there is always one more than the values; `tag"…"` is
 the call `tag(pieces, values)` and has the function's result type, which is
 not a `string`. A name that is not `@template` cannot tag a literal, and a
 space (`html "…"`) is an error that says so. A module's function is tagged
-`db.sql"…"`. `examples/templates` writes an `html` and an `sql` tag; a
+`db.sql"…"`. `examples/features/templates` writes an `html` and an `sql` tag; a
 database module (`std/db`) uses the same to make injection impossible.
 
 ### Regular expressions
@@ -400,6 +468,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 ERROR: disk full
 a#b#c#
@@ -441,6 +510,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 true false true
 ```
@@ -463,11 +533,12 @@ fun main() {
 ```
 
 Output:
+
 ```text
 3 2 3 2 true
 ```
 
-Destructuring also works as an *assignment* to existing places. The right
+Destructuring also works as an _assignment_ to existing places. The right
 side is evaluated completely before anything is stored, so a swap needs no
 temporary — and the same goes for list elements and struct fields:
 
@@ -489,6 +560,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 2 1 [30, 20, 10] 55
 ```
@@ -511,6 +583,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 == report == 3
 ```
@@ -544,6 +617,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 page of 4096 bytes, 5, 443
 not one page
@@ -589,6 +663,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 256 entries; the last is 755167117
 ```
@@ -642,19 +717,19 @@ a raw pointer (`unsafe`), call C, read a file, wait for a task, or read a
 
 #### What it may call
 
-| A `const fun` may call | It may not call |
-|---|---|
-| other `const fun`s, generic or not, and `const fun` methods | an ordinary `fun` — mark it `const` if it qualifies |
-| a struct's constructor and its `init` block; lambdas, and `const fun`s passed as values | a call through a trait object (`val s: Shape = …; s.area()`) |
-| std's helpers that take a function: `map`, `filter`, `fold`, `forEach`, `any`, `all`, `find`, `count`, `flatMap`, `mapNotNull`, `partition`, `sortedBy`, `sortedWith`, `minBy`, `maxBy`, `distinctBy`, `binarySearch`…, `MutableList.make`, `MutableList.updateAt`; a `Map`'s `mapValues`, `filter`, `forEach`, `getOrPut` | a lambda that does any of the things on this side |
-| `MutableList`, `MutableMap`, `MutableSet`: `push`, `pop`, `set`, `get`, `at`, `remove`, `clear`, `addAll`, `slice`, `reserve`, `toList`… | anything that suspends: `sleep`, channels, `async`, `await` |
-| `string`: `len`, `substring`, `split`, `startsWith`, `contains`, `toInt`, `bytes`, and std's `const fun` string helpers (`trim`, `replace`, `indexOf`, `padStart`, `toUpper`, `repeat`, `lines`…) | `io`, `fs`, `os`, `net`, `time`, `random` |
-| `StringBuilder`, interpolation, `toString`, `compareTo` | `unsafe`, `extern` functions |
-| integer and float arithmetic, conversions (`toI64()`, `wrapU8()`…), `abs`, `min`, `max`, `sqrt`, rounding | `sin`, `cos`, `exp`, `log`, `pow` on floats |
-| an enum's `values()`, `parse`, `toString`; `panic` | `throw` (a failure in the compiler is a `panic`) |
-| `List` helpers that take no function: `take`, `drop`, `concat`, `distinct`, `chunked`, `windowed`, `enumerate`, `zip`, `min`, `max`, `sum`, `sortedDescending`, `toSet`; `MutableList`'s `insert`, `removeAt`, `swap`, `fill`, `sort`, `repeat` | a `Result` (`Ok`, `Err`) or another sealed variant as a value |
-| ranges: `len`, `contains`, `step`, `reversed`, and looping over them | the decoders that throw: `hex.decode`, `base64.decode` |
-| `Duration`: its constructors, operators, accessors, `toString` and `parse`; `hex.encode`, `base64.encode`, `base64.encodeUrl`; `std/utf8` | |
+| A `const fun` may call                                                                                                                                                                                                                                                                                                     | It may not call                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| other `const fun`s, generic or not, and `const fun` methods                                                                                                                                                                                                                                                                | an ordinary `fun` — mark it `const` if it qualifies           |
+| a struct's constructor and its `init` block; lambdas, and `const fun`s passed as values                                                                                                                                                                                                                                    | a call through a trait object (`val s: Shape = …; s.area()`)  |
+| std's helpers that take a function: `map`, `filter`, `fold`, `forEach`, `any`, `all`, `find`, `count`, `flatMap`, `mapNotNull`, `partition`, `sortedBy`, `sortedWith`, `minBy`, `maxBy`, `distinctBy`, `binarySearch`…, `MutableList.make`, `MutableList.updateAt`; a `Map`'s `mapValues`, `filter`, `forEach`, `getOrPut` | a lambda that does any of the things on this side             |
+| `MutableList`, `MutableMap`, `MutableSet`: `push`, `pop`, `set`, `get`, `at`, `remove`, `clear`, `addAll`, `slice`, `reserve`, `toList`…                                                                                                                                                                                   | anything that suspends: `sleep`, channels, `async`, `await`   |
+| `string`: `len`, `substring`, `split`, `startsWith`, `contains`, `toInt`, `bytes`, and std's `const fun` string helpers (`trim`, `replace`, `indexOf`, `padStart`, `toUpper`, `repeat`, `lines`…)                                                                                                                          | `io`, `fs`, `os`, `net`, `time`, `random`                     |
+| `StringBuilder`, interpolation, `toString`, `compareTo`                                                                                                                                                                                                                                                                    | `unsafe`, `extern` functions                                  |
+| integer and float arithmetic, conversions (`toI64()`, `wrapU8()`…), `abs`, `min`, `max`, `sqrt`, rounding                                                                                                                                                                                                                  | `sin`, `cos`, `exp`, `log`, `pow` on floats                   |
+| an enum's `values()`, `parse`, `toString`; `panic`                                                                                                                                                                                                                                                                         | `throw` (a failure in the compiler is a `panic`)              |
+| `List` helpers that take no function: `take`, `drop`, `concat`, `distinct`, `chunked`, `windowed`, `enumerate`, `zip`, `min`, `max`, `sum`, `sortedDescending`, `toSet`; `MutableList`'s `insert`, `removeAt`, `swap`, `fill`, `sort`, `repeat`                                                                            | a `Result` (`Ok`, `Err`) or another sealed variant as a value |
+| ranges: `len`, `contains`, `step`, `reversed`, and looping over them                                                                                                                                                                                                                                                       | the decoders that throw: `hex.decode`, `base64.decode`        |
+| `Duration`: its constructors, operators, accessors, `toString` and `parse`; `hex.encode`, `base64.encode`, `base64.encodeUrl`; `std/utf8`                                                                                                                                                                                  |                                                               |
 
 If you call something on the right, the error names the rule at the function's
 declaration, so you find out when you write the `const fun`, not when someone

@@ -140,6 +140,8 @@ public sealed trait Decl {
     // `inline struct`: kept in the value even in a tree (D198)
     public var indirect: bool = false
     public var isInline: bool = false
+    public var compact:  bool = false  // `compact struct`: the compiler places the fields (D215)
+    public var isConst:  bool = false  // `const struct`: immutable all the way down (D212)
     public var pos:      Span = Span.none()
   }
   /// `trait Name { type Item; fun m() }`, or `sealed trait Name`.
@@ -184,6 +186,7 @@ public sealed trait Decl {
     public var pub:        bool = false
     public var isInternal: bool = false
     public var kind:       BindKind = BindKind.Val
+    public var isLazy:     bool = false  // `lazy val`: built on its first read, once (D210)
     public var name:       Ident = Ident()
     public var typ:        (*Type)? = null
     public var value:      (*Expr)? = null
@@ -465,6 +468,10 @@ public sealed trait Stmt {
   struct ContinueStmt {
     public var label: Ident? = null
     public var pos:   Span = Span.none()
+  }
+  /// `cede`: the task offers its executor a turn (D197).
+  struct CedeStmt {
+    public var pos: Span = Span.none()
   }
   /// `loop { }`, `loop (cond) { }`, `loop (x in c) { }`.
   struct LoopStmt {
@@ -912,6 +919,7 @@ public fun stmtSpan(s: Stmt): Span => when (s) {
   is ThrowStmt        => s.pos
   is BreakStmt        => s.pos
   is ContinueStmt     => s.pos
+  is CedeStmt         => s.pos
   is LoopStmt         => s.pos
   is WithStmt         => s.pos
   is ScopeStmt        => s.pos

@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/LaH-DeV/veles/types"
@@ -15,7 +16,8 @@ import (
 //	f32, f64    float, double
 //	string      %str = { ptr, i64 }
 //	*T, *raw T  ptr
-//	T?          ptr when T is a pointer (niche), else { i1, T }
+//	T?          ptr when T is a pointer (niche), T when T holds a word that
+//	            is never zero (null: all zeros), else { i1, T }
 //	(A, B)      { A, B }
 //	Range<T>    { T, T, i1 }
 //	Array<T, N> [N x T]                                   (inline, D121)
@@ -57,13 +59,12 @@ func (g *gen) llType(t types.Type) string {
 		if isPtrLike(t.Elem) {
 			return "ptr"
 		}
-		return "{ i1, " + g.llType(t.Elem) + " }"
-	case *types.Tuple:
-		parts := make([]string, len(t.Elems))
-		for i, e := range t.Elems {
-			parts[i] = g.llType(e)
+		if _, ok := g.niche(t); ok {
+			return g.llType(t.Elem) // null is all zeros (veles-layout-spec.md §5.2)
 		}
-		return "{ " + strings.Join(parts, ", ") + " }"
+		return g.placedType(t, []types.Type{types.TBool, t.Elem})
+	case *types.Tuple:
+		return g.placedType(t, t.Elems)
 	case *types.Array:
 		return fmt.Sprintf("[%d x %s]", arrayLen(t), g.llType(t.Elem))
 	case *types.Range:
@@ -116,7 +117,8 @@ func (g *gen) structType(s *types.Struct) string {
 // structBody writes a struct's LLVM type from its layout (D120). A packed
 // struct is LLVM's packed struct; a union an integer as aligned as the
 // union and the bytes after it, read and written through memory. Otherwise
-// the fields in order, with `[n x i8]` before a field wherever its offset
+// the fields in memory order (declaration order but for a `compact struct`,
+// D215), with `[n x i8]` before a field wherever its offset
 // needs more than LLVM's own placement would give (an `@align(n)` field, a
 // field of an over-aligned struct type) and after the last one when the
 // size needs more. Such a struct records where each field went (fidx), and
@@ -134,30 +136,18 @@ func (g *gen) structBody(s *types.Struct) string {
 		}
 		return body + " }"
 	}
-	var parts []string
+	slots := g.structSlots(s)
+	parts := make([]string, len(slots))
 	idx := make([]int, len(s.Fields))
 	remapped := false
-	at := 0
-	for i, f := range s.Fields {
-		natural := at
-		if !s.Packed {
-			natural = roundUpTo(at, g.llAlign(f.Type))
+	for j, sl := range slots {
+		if sl.field < 0 {
+			parts[j] = fmt.Sprintf("[%d x i8]", sl.pad)
+			continue
 		}
-		if p.Offsets[i] > natural {
-			parts = append(parts, fmt.Sprintf("[%d x i8]", p.Offsets[i]-at))
-			remapped = true
-		}
-		idx[i] = len(parts)
-		parts = append(parts, g.llType(f.Type))
-		fs, _ := g.layout(f.Type)
-		at = p.Offsets[i] + fs
-	}
-	llSize := at
-	if !s.Packed {
-		llSize = roundUpTo(at, p.LLAlign)
-	}
-	if llSize != p.Size {
-		parts = append(parts, fmt.Sprintf("[%d x i8]", p.Size-at))
+		idx[sl.field] = j
+		remapped = remapped || j != sl.field
+		parts[j] = g.llType(s.Fields[sl.field].Type)
 	}
 	if remapped {
 		g.fieldMap[mangleType(s)] = idx
@@ -172,16 +162,110 @@ func (g *gen) structBody(s *types.Struct) string {
 	return body
 }
 
+// structSlot is a member of a non-union struct's LLVM type: field `field`,
+// or (field -1) `pad` bytes of padding.
+type structSlot struct{ field, pad int }
+
+// structSlots places a struct's fields as structBody writes them: in order,
+// with padding before a field wherever its offset needs more than LLVM's
+// own placement would give and after the last when the size needs more.
+// Constants are built from the same list, so they match the type.
+func (g *gen) structSlots(s *types.Struct) []structSlot {
+	p := g.layouter().StructPlan(s)
+	order := make([]int, len(s.Fields))
+	for i := range order {
+		order[i] = i
+	}
+	// in memory order: a `compact struct` places fields out of declaration order (D215)
+	sort.SliceStable(order, func(a, b int) bool { return p.Offsets[order[a]] < p.Offsets[order[b]] })
+	var slots []structSlot
+	at := 0
+	for _, i := range order {
+		f := s.Fields[i]
+		natural := at
+		if !s.Packed {
+			natural = roundUpTo(at, g.llAlign(f.Type))
+		}
+		if p.Offsets[i] > natural {
+			slots = append(slots, structSlot{field: -1, pad: p.Offsets[i] - at})
+		}
+		slots = append(slots, structSlot{field: i})
+		fs, _ := g.layout(f.Type)
+		at = p.Offsets[i] + fs
+	}
+	llSize := at
+	if !s.Packed {
+		llSize = roundUpTo(at, p.LLAlign)
+	}
+	if llSize != p.Size {
+		slots = append(slots, structSlot{field: -1, pad: p.Size - at})
+	}
+	return slots
+}
+
 // fidx is the LLVM index of field i of a value of type t: i itself, unless
 // the struct's type carries padding before it (structBody).
 func (g *gen) fidx(t types.Type, i int) int {
-	if st, ok := t.(*types.Struct); ok {
-		g.structType(st)
-		if m := g.fieldMap[mangleType(st)]; m != nil {
+	switch t.(type) {
+	case *types.Struct, *types.Tuple, *types.Nullable:
+		g.llType(t)
+		if m := g.fieldMap[mangleType(t)]; m != nil {
 			return m[i]
 		}
 	}
 	return i
+}
+
+// placedType is the LLVM type of a tuple, or of a nullable with a flag
+// (members: the flag, then the value): the members where Layout.Placed
+// puts them, with `[n x i8]` wherever that is past LLVM's own placement —
+// only around an over-aligned member — recorded for fidx and overAlign as
+// structBody does.
+func (g *gen) placedType(t types.Type, elems []types.Type) string {
+	slots := g.placedSlots(elems)
+	parts := make([]string, len(slots))
+	idx := make([]int, len(elems))
+	remapped := false
+	for j, sl := range slots {
+		if sl.field < 0 {
+			parts[j] = fmt.Sprintf("[%d x i8]", sl.pad)
+			continue
+		}
+		idx[sl.field] = j
+		remapped = remapped || j != sl.field
+		parts[j] = g.llType(elems[sl.field])
+	}
+	body := "{ " + strings.Join(parts, ", ") + " }"
+	if remapped {
+		g.layouter() // makes fieldMap
+		g.fieldMap[mangleType(t)] = idx
+	}
+	if _, _, align := g.layouter().Placed(elems); align > g.llAlign(t) {
+		g.overAlign[body] = align
+	}
+	return body
+}
+
+// placedSlots is structSlots for the members of a tuple or flagged
+// nullable, placed by Layout.Placed.
+func (g *gen) placedSlots(elems []types.Type) []structSlot {
+	offs, size, _ := g.layouter().Placed(elems)
+	var slots []structSlot
+	at, llAlign := 0, 1
+	for i, e := range elems {
+		a := g.llAlign(e)
+		llAlign = max(llAlign, a)
+		if offs[i] > roundUpTo(at, a) {
+			slots = append(slots, structSlot{field: -1, pad: offs[i] - at})
+		}
+		slots = append(slots, structSlot{field: i})
+		es, _ := g.layout(e)
+		at = offs[i] + es
+	}
+	if roundUpTo(at, llAlign) != size {
+		slots = append(slots, structSlot{field: -1, pad: size - at})
+	}
+	return slots
 }
 
 func roundUpTo(n, a int) int {
@@ -197,9 +281,28 @@ func (g *gen) sealedType(s *types.Sealed) string {
 		return name
 	}
 	g.typeDecls[name] = ""
-	g.typeDecls[name] = fmt.Sprintf("{ i32, [%d x i64] }", g.payloadWords(s))
+	g.typeDecls[name] = g.taggedBody(name, s, g.payloadWords(s))
 	g.typeOrder = append(g.typeOrder, name)
 	return name
+}
+
+// taggedBody is the LLVM type of a sealed value or an error union: the tag,
+// then the payload words at index 1. A payload aligned past 8 bytes (an
+// over-aligned variant or member) starts at its alignment: the tag then
+// lies in the first bytes of an `[n x i8]`, read and written through
+// memory (isMem), so the payload's index stays 1.
+func (g *gen) taggedBody(name string, t types.Type, words int) string {
+	off := g.layouter().PayloadOffset(t)
+	if off == 8 {
+		return fmt.Sprintf("{ i32, [%d x i64] }", words)
+	}
+	g.overAlign[name] = off
+	size, _ := g.layout(t)
+	body := fmt.Sprintf("{ [%d x i8], [%d x i64]", off, words)
+	if tail := size - off - 8*words; tail > 0 {
+		body += fmt.Sprintf(", [%d x i8]", tail)
+	}
+	return body + " }"
 }
 
 func (g *gen) unionType(u *types.ErrorUnion) string {
@@ -208,7 +311,7 @@ func (g *gen) unionType(u *types.ErrorUnion) string {
 		return name
 	}
 	g.typeDecls[name] = ""
-	g.typeDecls[name] = fmt.Sprintf("{ i32, [%d x i64] }", g.unionWords(u))
+	g.typeDecls[name] = g.taggedBody(name, u, g.unionWords(u))
 	g.typeOrder = append(g.typeOrder, name)
 	return name
 }
@@ -238,10 +341,7 @@ func (g *gen) payloadWords(t types.Type) int {
 // layouter is the layout state, made on first use.
 func (g *gen) layouter() *types.Layout {
 	if g.lay == nil {
-		g.lay = &types.Layout{
-			Sealed:     func(s *types.Sealed) int { return 8 + 8*g.payloadWords(s) },
-			ErrorUnion: func(u *types.ErrorUnion) int { return 8 + 8*g.unionWords(u) },
-		}
+		g.lay = &types.Layout{}
 		g.fieldMap = map[string][]int{}
 		g.overAlign = map[string]int{}
 	}

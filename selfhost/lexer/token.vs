@@ -118,6 +118,7 @@ enum Kind {
   KwFor
   KwDo
   KwCatch
+  KwCede
   // reserved for future use: lexed as keywords so they cannot be names
   KwReserved
   KeywordEnd
@@ -145,7 +146,7 @@ const KEYWORDS: Map<string, Kind> = [
   "extern": Kind.KwExtern, "mut": Kind.KwMut, "override": Kind.KwOverride, "static": Kind.KwStatic,
   "true": Kind.KwTrue, "false": Kind.KwFalse, "null": Kind.KwNull, "this": Kind.KwThis,
   "This": Kind.KwSelfType, "raw": Kind.KwRaw, "type": Kind.KwType, "enum": Kind.KwEnum, "for": Kind.KwFor,
-  "do": Kind.KwDo, "catch": Kind.KwCatch,
+  "do": Kind.KwDo, "catch": Kind.KwCatch, "cede": Kind.KwCede,
   "match": Kind.KwReserved, "defer": Kind.KwReserved, "go": Kind.KwReserved, "yield": Kind.KwReserved,
   "where": Kind.KwReserved, "super": Kind.KwReserved, "interface": Kind.KwReserved,
   "class": Kind.KwReserved, "while": Kind.KwReserved, "finally": Kind.KwReserved,

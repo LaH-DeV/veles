@@ -322,7 +322,7 @@ rather than during it.
 >   `isSurrogate`, `isContinuation`, `isStart`, `combineSurrogates`,
 >   `isValid`, `count`, and `utf8.Rune { code, size }`. `std/json` decodes
 >   its `\u` escapes through it now, so it has a caller from day one, and
->   `examples/utf8` pins it against the Unicode Table 3-7 and Kuhn stress
+>   `examples/features/utf8` pins it against the Unicode Table 3-7 and Kuhn stress
 >   vectors. The lexer's three decode sites are `utf8.decode(s, i)`.
 > - **`unicode.IsPrint` turned out not to be a gap at all** (decision 2,
 >   and *neither* of its options). The call is unreachable for anything
@@ -348,7 +348,7 @@ rather than during it.
 >   `tooDeepMessage(limit)` so every caller reports the same sentence, and
 >   `Depth.of(n)` with `enter`/`leave`/`deepest` for a walk that keeps no
 >   stack of its own, which is exactly the parser's shape —
->   `examples/recursion` is that parser in miniature, and is the shape P5
+>   `examples/features/recursion` is that parser in miniature, and is the shape P5
 >   should copy. Writing it closed a hole in `std/json` on the way past: the
 >   *encoder* was unbounded, so a tree too deep to decode could still be
 >   walked on the way out.
@@ -587,7 +587,7 @@ table.
 | Emitting a float constant in LLVM's hex form | **has, since 2026-09-29 (D93)** | `x.toBits()` / `f64.fromBits(bits)`; was **partial**, see below |
 | Deep recursion | **gap, closed 2026-09-29 (D92)** | see below |
 
-**Partial — float bits (closed the same day, D93: `toBits()` / `fromBits()` in std, `examples/floatbits`).** As found: there was no `f64` ↔ `u64` bit reinterpretation in
+**Partial — float bits (closed the same day, D93: `toBits()` / `fromBits()` in std, `examples/features/floatbits`).** As found: there was no `f64` ↔ `u64` bit reinterpretation in
 std. It works with an `unsafe` cast (`p.cast<*raw u64>()`: 1.5 gives
 0x3FF8000000000000), but a code generator should not need `unsafe` for it. A
 safe `toBits()` / `fromBits()` is a std decision; it goes through

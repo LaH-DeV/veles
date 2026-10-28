@@ -92,6 +92,21 @@ func TestTextBlock(t *testing.T) {
 	}
 }
 
+// A line break inside a string is "\n" in a CRLF file too, so a program
+// prints the same text whatever the checkout's line ends (Windows with
+// core.autocrlf printed "\r\n" from a plain string spanning lines).
+func TestStringLineBreaksIgnoreCRLF(t *testing.T) {
+	for _, src := range []string{
+		"val s = \"a\r\nb ${x}\r\nc\"\r\n",
+		"val s = \"\"\"\r\n  a\r\n  b ${x}\r\n  c\r\n  \"\"\"\r\n",
+	} {
+		parts, diags := strParts(t, src)
+		if diags != "" || len(parts) != 3 || parts[0].Text != "a\nb " || parts[2].Text != "\nc" {
+			t.Errorf("%q: parts %#v, diagnostics %s", src, parts, diags)
+		}
+	}
+}
+
 // D172: a backtick string is raw — no escapes, no interpolation — and may
 // span lines.
 func TestRawString(t *testing.T) {

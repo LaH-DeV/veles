@@ -1,0 +1,4 @@
+offsets 64 64
+(1, Counter(hits: 3)) 4 hot 5 cold c
+frame 13 24
+tasks 15 -1

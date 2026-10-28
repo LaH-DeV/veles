@@ -452,7 +452,8 @@ func TestTrailingCommas(t *testing.T) {
 // `[format] line_endings`: "lf" (the default) writes "\n", "crlf" "\r\n", and
 // "auto" keeps the file's own.
 func TestLineEndings(t *testing.T) {
-	lf := "fun main() {\n  val x = 1\n}\n"
+	// the strings span lines: their breaks follow the setting too
+	lf := "fun main() {\n  val x = 1\n  val help = \"a\n  b\"\n  val block = \"\"\"\n    c\n    \"\"\"\n}\n"
 	crlf := strings.ReplaceAll(lf, "\n", "\r\n")
 	for _, c := range []struct {
 		name  string
@@ -470,6 +471,17 @@ func TestLineEndings(t *testing.T) {
 		if diags.HasErrors() || got != c.want {
 			t.Errorf("%s:\n got %q\nwant %q\n%s", c.name, got, c.want, diags.Render())
 		}
+	}
+}
+
+// A receiver block written on one line stays on one line only when its
+// statements do; one holding a `when` is laid out as a block at once, so a
+// second run changes nothing (found by FuzzFormat).
+func TestReceiverBlockWithWhenIsIdempotent(t *testing.T) {
+	out := checkRoundTrip(t, "t.vs", "fun f() {\n  s.apply { when (k) { 0 => g() } }\n  s.apply { port = 5 }\n}\n")
+	want := "fun f() {\n  s.apply {\n    when (k) {\n      0 => g()\n    }\n  }\n  s.apply { port = 5 }\n}\n"
+	if out != want {
+		t.Errorf("got:\n%s\nwant:\n%s", out, want)
 	}
 }
 

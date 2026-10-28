@@ -596,8 +596,8 @@ public fun twice(x: i64): i64 => x * 2
   a standard module's. A manifest has no `exports` list: what a package
   shows is written in source.
 
-`examples/packages` in the repository is a small project you can run:
-`veles run examples/packages/app` uses a path dependency (`mathlib`) and a
+`examples/features/packages` in the repository is a small project you can run:
+`veles run examples/features/packages/app` uses a path dependency (`mathlib`) and a
 registry package (`greeter`) that is vendored in `vendor/` with its hash in
 `veles.sum`, so it builds with no network.
 

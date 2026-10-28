@@ -2,6 +2,7 @@ package llvm
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/LaH-DeV/veles/types"
@@ -10,7 +11,8 @@ import (
 // Type descriptors for the collector (I3): each heap object's header points
 // at a descriptor listing the byte offsets of the words that may hold
 // pointers. The collector validates candidates against its page table, so
-// payloads that are pointers only for some variants are listed anyway.
+// a word that is a pointer in only some of a sealed value's variants is
+// listed anyway.
 
 const gcDecls = `declare ptr @veles_gc_alloc(ptr, i64)
 declare ptr @veles_alloc_words(i64)
@@ -19,12 +21,6 @@ declare void @veles_gc_collect()
 declare i64 @veles_gc_collections()
 declare i64 @veles_gc_live_bytes()
 `
-
-// fieldOffsets returns the byte offset of each element of an unpadded
-// aggregate (a tuple, a range, an argument block): where LLVM puts them.
-func (g *gen) fieldOffsets(fields []types.Type) []int {
-	return g.layouter().Offsets(fields)
-}
 
 // pointerOffsets lists the candidate pointer words inside a value of type t.
 func (g *gen) pointerOffsets(t types.Type) []int {
@@ -49,11 +45,18 @@ func (g *gen) pointerOffsets(t types.Type) []int {
 		if isPtrLike(tt.Elem) {
 			return []int{0}
 		}
-		ea := g.llAlign(tt.Elem)
-		base := (1 + ea - 1) / ea * ea
-		return shift(g.pointerOffsets(tt.Elem), base)
+		if _, ok := g.niche(tt); ok {
+			return g.pointerOffsets(tt.Elem)
+		}
+		offs, _, _ := g.layouter().Placed([]types.Type{types.TBool, tt.Elem})
+		return shift(g.pointerOffsets(tt.Elem), offs[1])
 	case *types.Tuple:
-		return g.compositeOffsets(tt.Elems)
+		offs, _, _ := g.layouter().Placed(tt.Elems)
+		var out []int
+		for i, e := range tt.Elems {
+			out = append(out, shift(g.pointerOffsets(e), offs[i])...)
+		}
+		return out
 	case *types.Range:
 		return nil
 	case *types.Array:
@@ -77,30 +80,38 @@ func (g *gen) pointerOffsets(t types.Type) []int {
 			out = append(out, shift(g.pointerOffsets(tt.Fields[i].Type), off)...)
 		}
 		return out
-	case *types.Sealed, *types.ErrorUnion:
-		words := g.payloadWords(t)
+	case *types.Sealed:
+		// the union of what the variants hold: a word of a number is not
+		// scanned, so it cannot keep garbage alive by looking like an address
 		var offs []int
-		for i := 0; i < words; i++ {
-			offs = append(offs, 8+8*i)
+		for _, v := range tt.Variants {
+			if g.layouter().VariantBoxed(v) {
+				offs = append(offs, 0) // the box (D198)
+			} else {
+				offs = append(offs, g.pointerOffsets(v)...)
+			}
 		}
-		return offs
+		return shift(distinctSorted(offs), g.layouter().PayloadOffset(t))
+	case *types.ErrorUnion:
+		var offs []int
+		for _, m := range tt.Members {
+			offs = append(offs, g.pointerOffsets(m)...)
+		}
+		return shift(distinctSorted(offs), g.layouter().PayloadOffset(t))
 	}
 	return nil
+}
+
+// distinctSorted sorts offs and drops repeats.
+func distinctSorted(offs []int) []int {
+	slices.Sort(offs)
+	return slices.Compact(offs)
 }
 
 func shift(offs []int, by int) []int {
 	out := make([]int, len(offs))
 	for i, o := range offs {
 		out[i] = o + by
-	}
-	return out
-}
-
-func (g *gen) compositeOffsets(fields []types.Type) []int {
-	var out []int
-	offs := g.fieldOffsets(fields)
-	for i, f := range fields {
-		out = append(out, shift(g.pointerOffsets(f), offs[i])...)
 	}
 	return out
 }

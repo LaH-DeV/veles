@@ -234,11 +234,12 @@ once. Such a loop can offer its thread now and then:
 // fragment
 loop (i in 0..<10000000) {
   total += work(i)
-  if (i % 100000 == 0) yieldNow()   // let the others have a turn
+  if (i % 100000 == 0) cede   // offer the others a turn
 }
 ```
 
-`yieldNow()` does not wait at all; it just goes to the back of the line.
+`cede` does not wait for anything; it offers the executor a turn, and the
+task goes on when it is picked again — perhaps at once (D197).
 And a cancellation stops a loop at the end of an iteration, whichever
 kind of function it is in, so a long computation can always be stopped.
 

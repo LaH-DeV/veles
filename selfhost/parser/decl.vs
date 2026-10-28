@@ -40,7 +40,7 @@ extend Parser {
           }
         }
         Kind.KwStatic => {
-          if (afterMember in [Kind.KwVal, Kind.KwVar]) {
+          if (afterMember in [Kind.KwVal, Kind.KwVar] || this.lazyAt(at + 1)) {
             if (hasVis) this.next()
             if (vis == Kind.KwPrivate) this.errorAt(this.prevSpan(), "a static value cannot be 'private'; it is the module's unless 'public' (D23)")
             statics.push(this.parseStaticVal(memberAttrs, vis == Kind.KwPublic, vis == Kind.KwInternal))
@@ -104,9 +104,11 @@ extend Parser {
     val start = this.span()
     val doc = this.takeDoc()
     this.next()  // static
+    val isLazy = this.lazyAt(0)
+    if (isLazy) this.next()  // built on its first read (D210)
     if (this.at(Kind.KwVar)) this.errorAt(this.span(), "a static member is a 'val': a type's constants do not change (a mutable global belongs at module level)")
     this.next()  // val / var
-    var d: ast.ValDecl = ast.ValDecl(attrs, doc, pub, isInternal, kind: ast.BindKind.Val)
+    var d: ast.ValDecl = ast.ValDecl(attrs, doc, pub, isInternal, kind: ast.BindKind.Val, isLazy)
     d.name = this.ident()
     if (this.accept(Kind.Colon)) d.typ = &this.parseType()
     if (this.expect(Kind.Assign)) d.value = &this.parseExpr()
@@ -124,6 +126,10 @@ extend Parser {
     val isInternal = vis == Kind.KwInternal
     if (pub || isPrivate || isInternal) this.next()
     var f = ast.Field(attrs, pub, isInternal, isPrivate, doc)
+    if (this.lazyAt(0)) {
+      this.errorAt(this.span(), "'lazy' is for a module-level 'val' or a 'static val' (D210): on a field it would put a flag and a branch in every value; hold a 'Lazy<T>' field and read it with '.get()'")
+      this.next()
+    }
     // mutability (D22)
     if (this.at(Kind.KwProtected)) {
       val protectedAt = this.next().span
@@ -161,14 +167,30 @@ extend Parser {
       val variants: MutableList<ast.StructDecl> = []
       loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
         val memberAttrs = this.parseAttributes()
-        if ((this.atWord("indirect") || this.atWord("inline")) && this.peek(1).kind == Kind.KwStruct) {
-          // where the variant is stored (D198); its doc is on the word, taken first
+        val words = this.variantWords()
+        if (words > 0) {
+          // what the variant is (D212), where it is stored (D198) and how its
+          // fields are placed (D215); its doc is on the first word, taken first
           val doc = this.takeDoc()
-          val word = this.next()
+          val first = this.cur()
+          var isConst = false
+          var indirect = false
+          var isInline = false
+          var compact = false
+          loop (_ in 0..<words) {
+            when (this.next().text) {
+              "const"    => isConst = true
+              "indirect" => indirect = true
+              "inline"   => isInline = true
+              else       => compact = true
+            }
+          }
           var variant = this.parseNestedVariant(d, memberAttrs, doc)
-          variant.indirect = word.text == "indirect"
-          variant.isInline = word.text == "inline"
-          variant.pos = word.span.to(variant.pos)
+          variant.isConst = isConst
+          variant.indirect = indirect
+          variant.isInline = isInline
+          variant.compact = compact
+          variant.pos = first.span.to(variant.pos)
           variants.push(variant)
           this.parseMemberSeparator()
           continue
@@ -200,6 +222,41 @@ extend Parser {
     }
     d.pos = this.spanFrom(head.start)
     d
+  }
+
+  // whether peek(n) is the word `lazy` before a binding: `val`, `var` or
+  // `const` (D210; a parameter's `lazy` is D90's, read elsewhere)
+  fun lazyAt(n: i64): bool {
+    val t = this.peek(n)
+    if (t.kind != Kind.Ident || t.text != "lazy") return false
+    this.peek(n + 1).kind in [Kind.KwVal, Kind.KwVar, Kind.KwConst]
+  }
+
+  // how many tokens from peek(n) on lead to a `struct` after `const`:
+  // `struct` itself, or `compact` and/or `extern` before it; 0 when they do
+  // not
+  fun structWordsAt(n: i64): i64 {
+    var i = n
+    val t = this.peek(i)
+    if (t.kind == Kind.Ident && t.text == "compact") i += 1
+    if (this.peek(i).kind == Kind.KwExtern) i += 1
+    if (this.peek(i).kind != Kind.KwStruct) return 0
+    i - n + 1
+  }
+
+  // how many words before a `struct` in a sealed trait's body say what the
+  // variant is (`const`, D212), how it is stored (`indirect` or `inline`,
+  // D198) and laid out (`compact`, D215), in that order; 0 when the cursor
+  // is not at such words
+  fun variantWords(): i64 {
+    var n = 0
+    if (this.at(Kind.KwConst)) n += 1
+    val storage = this.peek(n)
+    if (storage.kind == Kind.Ident && (storage.text == "indirect" || storage.text == "inline")) n += 1
+    val t = this.peek(n)
+    if (t.kind == Kind.Ident && t.text == "compact") n += 1
+    if (n == 0 || this.peek(n).kind != Kind.KwStruct) return 0
+    n
   }
 
   /// A `struct` in the body of a sealed trait (D193): an ordinary struct that

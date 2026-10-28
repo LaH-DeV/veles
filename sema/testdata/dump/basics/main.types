@@ -14,6 +14,7 @@ fun v_main.main: fun()
   local $tmp11#4: i64
   local $tmp12#5: bool
   local i#6: i64
+  local $tmp13#7: i64
 struct Point
   x: i64
   y: i64

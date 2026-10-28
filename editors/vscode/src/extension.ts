@@ -34,7 +34,13 @@ async function startClient(context: vscode.ExtensionContext): Promise<void> {
   };
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "veles" }],
+    // the server reads `allocationHints` at start; later changes to the
+    // `veles` settings reach it as workspace/didChangeConfiguration
+    initializationOptions: {
+      allocationHints: vscode.workspace.getConfiguration("veles").get<boolean>("inlayHints.allocations") ?? false,
+    },
     synchronize: {
+      configurationSection: "veles",
       fileEvents: vscode.workspace.createFileSystemWatcher("**/{*.vs,*.vss,veles.toml}"),
     },
   };
