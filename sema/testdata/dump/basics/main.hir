@@ -111,6 +111,11 @@ fun v_main.main: fun()
           Var: $tmp12#5
           Init:
             BoolConst: bool
+        VarDecl
+          Var: $tmp13#6
+          Init:
+            IntConst: i64
+              Value: 0
         Loop
           Cond:
             If: bool
@@ -162,7 +167,7 @@ fun v_main.main: fun()
             Block
               Stmts:
                 VarDecl
-                  Var: i#6
+                  Var: i#7
                   Init:
                     VarRef: i64
                       Var: $tmp10#3
@@ -178,7 +183,7 @@ fun v_main.main: fun()
                           Var: total#1
                       R:
                         VarRef: i64
-                          Var: i#6
+                          Var: i#7
               Type: ()
           Post:
             ExprStmt
@@ -232,6 +237,54 @@ fun v_main.main: fun()
                                   Value: 1
                       Type: ()
           ID: 3
+          Chunk:
+            LoopChunk
+              Idx: $tmp10#3
+              Limit: $tmp13#6
+              SetLimit:
+                Assign
+                  Target:
+                    VarRef: i64
+                      Var: $tmp13#6
+                  Value:
+                    If: i64
+                      Cond:
+                        Binary: bool
+                          Op: >
+                          L:
+                            VarRef: i64
+                              Var: $tmp10#3
+                          R:
+                            IntConst: i64
+                              Value: 9223372036854775387
+                      Then:
+                        Block
+                          Value:
+                            IntConst: i64
+                              Value: 9223372036854775807
+                          Type: i64
+                      Else:
+                        Block
+                          Value:
+                            Binary: i64
+                              Op: +
+                              L:
+                                VarRef: i64
+                                  Var: $tmp10#3
+                              R:
+                                IntConst: i64
+                                  Value: 420
+                          Type: i64
+              InChunk:
+                Binary: bool
+                  Op: <
+                  L:
+                    VarRef: i64
+                      Var: $tmp10#3
+                  R:
+                    VarRef: i64
+                      Var: $tmp13#6
+              Rounds: 420
         ExprStmt
           X:
             Call: ()

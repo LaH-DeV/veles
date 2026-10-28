@@ -1059,6 +1059,10 @@ func (g *gen) retValue(value sema.Expr) {
 }
 
 func (g *gen) loop(l *sema.Loop) {
+	if l.Chunk != nil {
+		g.chunkedLoop(l)
+		return
+	}
 	labels := loopLabels{cond: g.newLabel("loop.cond"), post: g.newLabel("loop.post"), end: g.newLabel("loop.end")}
 	body := g.newLabel("loop.body")
 	g.loops[l] = labels
@@ -1079,6 +1083,53 @@ func (g *gen) loop(l *sema.Loop) {
 	for _, s := range l.Post {
 		g.stmt(s)
 	}
+	g.safepointPoll()
+	g.emitTerm("br label %%%s", labels.cond)
+	g.placeLabel(labels.end)
+}
+
+// chunkedLoop is a counted loop that looks for attention once per chunk of
+// rounds (D218, sema/chunk.go):
+//
+//	cond:    if !cond goto end
+//	         limit = min(idx + rounds, i64 max); goto body   // a chunk's first round
+//	inner:   if !(cond & idx < limit) goto looked
+//	body:    …; post: step; goto inner
+//	looked:  the safepoint poll; goto cond
+//
+// The inner loop's one exit is a single branch on both conditions, which
+// LLVM folds into one bound it can count — what lets it unroll, vectorize
+// or fold the loop. `continue` goes to post and `break` to end, as in any
+// loop.
+func (g *gen) chunkedLoop(l *sema.Loop) {
+	c := l.Chunk
+	labels := loopLabels{cond: g.newLabel("chunk.cond"), post: g.newLabel("chunk.post"), end: g.newLabel("chunk.end")}
+	inner, body, looked := g.newLabel("chunk.inner"), g.newLabel("chunk.body"), g.newLabel("chunk.looked")
+	g.loops[l] = labels
+	g.loopCleanupDepth[l] = len(g.cleanups)
+	g.placeLabel(labels.cond)
+	first := g.newLabel("chunk.start")
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", g.expr(l.Cond), first, labels.end)
+	g.placeLabel(first)
+	g.stmt(c.SetLimit)
+	g.emitTerm("br label %%%s", body)
+	g.placeLabel(inner)
+	both := g.newTmp()
+	cond := g.expr(l.Cond)
+	in := g.expr(c.InChunk)
+	g.emit("%s = and i1 %s, %s", both, cond, in)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", both, body, looked)
+	g.placeLabel(body)
+	g.block(l.Body)
+	if !g.term {
+		g.emitTerm("br label %%%s", labels.post)
+	}
+	g.placeLabel(labels.post)
+	for _, s := range l.Post {
+		g.stmt(s)
+	}
+	g.emitTerm("br label %%%s", inner)
+	g.placeLabel(looked)
 	g.safepointPoll()
 	g.emitTerm("br label %%%s", labels.cond)
 	g.placeLabel(labels.end)

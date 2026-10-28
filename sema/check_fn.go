@@ -1597,6 +1597,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			f.loops = f.loops[:len(f.loops)-1]
 			body.Stmts = append(append([]Stmt{&VarDecl{Var: v, Init: &VarRef{exprBase{it.Elem}, idx}}}, parts...), body.Stmts...)
 			lp.Body = body
+			f.chunkLoop(lp, idx, &pre)
 		case *types.Array:
 			return f.arrayLoop(s, iter, it, lp, label)
 		case *types.List:
@@ -1635,6 +1636,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			}
 			body.Stmts = append(append(append(guard, &VarDecl{Var: v, Init: get}), parts...), body.Stmts...)
 			lp.Body = body
+			f.chunkLoop(lp, idx, &pre)
 		case *types.Map, *types.Set:
 			if mt, isMap := it.(*types.Map); isMap && s.Var.Name == nil && len(s.Var.Tuple) == 2 && s.Var.Tuple[1].Ref && !s.Var.Tuple[0].Ref {
 				return f.mapRefLoop(s, iter, mt, lp, label)

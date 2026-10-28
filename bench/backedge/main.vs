@@ -6,9 +6,9 @@
 // sum whose rounds are independent (what a vectorizer would take).
 //
 // Go's loops have no poll (its preemption is a signal) and Go does not
-// vectorize, so the ratio is the poll's price plus whatever else differs;
-// the price alone, against the same loops in C through the same clang, is
-// in bench/results.md (2026-10-27).
+// vectorize, so the ratio is not the poll's price. That price, against the
+// same loops in C through the same clang, was the whole gap (bench/results.md,
+// 2026-10-27); since D218 these loops poll once per chunk, at C's speed.
 use io { println }
 use time
 

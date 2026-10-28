@@ -195,6 +195,16 @@ answered from the shape, tuples get `Comparable`, enums get
       `checkCancelled()`; the monitor moves a long-running task's runnext to the shared queue.
       TestLoopsAreCancellationPoints (debug/release, 1/2/4/8 threads, GC pressure); docs
       reference/concurrency, chapters 12, 14, 16, concurrency-explained, stdlib
+- [x] A tight counted loop looks for attention once per chunk (D218, plan F22, 2026-10-28): a
+      range or list loop over an i64 index whose condition, body and step call nothing, suspend
+      nowhere and hold no loop (`sema/chunk.go`) runs as chunks of 16–1024 rounds by body size,
+      the back-edge poll once per chunk (`codegen/llvm/gen.go` `chunkedLoop`; the inner loop's one
+      exit is `cond & idx < limit`, which LLVM counts). `bench/backedge`: a multiply-add chain
+      865 → 107 ps a round (C 100), a sum of squares 358 → 4 (C folds it), the suspending twins
+      1723 → 114 and 698 → 5. TestChunkedLoops (sizes around a chunk's edge, empty, negative,
+      inclusive to i64's top, both list kinds, break/continue/return/labels, a deadline and a
+      collection inside a chunked loop; debug/release, 1/2/4/8 threads, GC stress), golden
+      `chunks`; docs chapter 12, reference/concurrency
 - [x] `cede` (D197, plan F20, 2026-10-27): a reserved statement in both front ends (`ast.CedeStmt`,
       `parser/cede.go`, `selfhost/parser/cede.vs`; a newline after it always ends the statement),
       its own operation `task.cede` lowered to the runtime's zero sleep, a direct suspension seed
@@ -1211,20 +1221,7 @@ SystemClock()` with plain reads and `with clock = Fake()` rebinding, as
   sugar over D72 (recommended), or documenting `TaskLocal(fallback:)` as
   the pattern. User, 2026-10-26: "probably keyword but do not decide now".
 
-- Q65: how often a loop's back edge polls (raised by plan F21,
-  2026-10-27). The poll (D66, D145) is a volatile load at every back edge;
-  in a tight loop it stops clang's unrolling, reassociation, vectorizing and
-  closed forms. Measured (`bench/backedge`, Windows): a multiply-add chain
-  865 ps a round against 100 ps for the same loop in C through the same
-  clang, a sum of squares 358 ps against a closed form (~0); C with the same
-  poll in every round runs at Veles's speed (884 / 366 ps), so the poll is
-  the whole gap. Polling once per 64 rounds of a counted loop (an inner loop
-  without it) gives 260 / 129 ps. To offer: every round (today; D145 says
-  a cancellation is seen at the end of every iteration); every N rounds of
-  a counted loop, so cancellation, a yield and a collection's stop wait up
-  to N rounds; no poll in a loop the compiler proves short; an attribute
-  that drops it from one function (low level). Not asked yet.
-
+(2026-10-28: Q65, how often a back edge polls, from plan F21: D218.)
 (2026-10-27: Q63 → D216, Q64 → D217.)
 (2026-10-25: Q58, integer overflow in release, from the security review: D209.)
 (2026-10-26: Q61 and Q62, value layout, prepared in `veles-layout-spec.md`: D214, D215.)
@@ -1473,6 +1470,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-26 | Q62: what a plain struct's layout promises | **Declaration order with C's alignment rule is guaranteed; `compact struct` (a contextual word, like `inline`/`indirect`) lets the compiler place fields for minimal size; encodings of `T?`, sealed, error unions, closures and trait objects are unspecified, spec D215** (user: "declaration order guaranteed" plus "a modifier … I prefer a keyword"; then `compact`, recommended of 3). Rejected: automatic reordering of every struct (0.4 % measured); `@compact`; no opt-in. |
 | 2026-10-27 | Q63: definite assignment through `break` (D214) | **A variable assigned on every way out of a loop — each `break` leaving it, and the normal end of a loop with a condition — is assigned after it, spec D216** (user, recommended of 3). Rejected for now: `break value` loops (could come later on top); leaving the search loop refused. |
 | 2026-10-27 | Q64: a plain function where a parameter may suspend (D40, D116) | **A function value without `suspends` (named or a variable) is accepted for a `suspends` parameter of a conditionally suspending function; the call is plain; a parameter the callee keeps still refuses, spec D217** (user, recommended of 3). Rejected: adapters everywhere (a hidden closure for a variable); leaving `xs.map(double)` refused. |
+| 2026-10-28 | Q65: how often a loop's back edge polls (plan F21) | **A counted loop whose body calls nothing and does not suspend checks once per chunk of at most 1024 rounds; every other loop on every round; spec D218** (user, recommended of 4, after asking whether chunking leaves more for `cede` — it does not). Rejected: every round (tight loops 3–9× slower than C); an `@unpolled` annotation (blocks collections, uncancellable); signal preemption as Go (a redesign). |
 
 ## 11. Known limitations to revisit
 
@@ -1703,12 +1701,15 @@ Every new public std API (http cookies/forms/client, `std/log`,
       lock; ours is a spin lock that falls back to `SwitchToThread`. `cede`
       is meant to be rare; measure before changing where a yield is queued
       (it decides who may run next).
-      (c) A suspending function's tight loop runs at half its plain twin's
-      speed (`bench/backedge`: 1723 against 865 ps a round): what the loop
-      keeps is stored to the coroutine frame on every round, because the
-      back edge's yield path is a suspension point. Decision-free codegen
-      work (keep them in registers, spill only on the cold path).
-      (d) The poll itself blocks the loop optimizations: Q65.
+      (c) A suspending function's loop that D218 does not chunk (its body
+      calls, or it runs on a condition) stores what it keeps to the
+      coroutine frame on every round, because the back edge's yield path is
+      a suspension point: measured before D218 at half the plain twin's
+      speed (1723 against 865 ps a round). A chunked loop no longer pays it
+      (114 against 107 ps): the inner loop holds no suspension point.
+      Decision-free codegen work for the rest (spill only on the cold path).
+      (d) The poll itself blocked the loop optimizations: D218, built
+      2026-10-28 (plan F22).
       (e) A plain function's loop cannot yield (D145, by design): beside one,
       a ticker waits for the whole loop (315 ms of 315 at one worker). The
       remedy stays `scope(on:)`/`blocking` or making the function suspend.

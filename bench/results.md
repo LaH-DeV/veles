@@ -807,3 +807,36 @@ not the slice: the Windows throttling (fixed), the poll's price in tight
 loops (Q65), the coroutine-frame traffic in suspending loops and a yield's
 cost under contention (checklist §11). A plain function's loop still cannot
 yield (D145 by design): a ticker beside it waits for the whole loop.
+
+## 2026-10-28 — D218: a tight counted loop polls once per chunk (plan F22), windows/amd64 (HEAD 5a00cef, plus the working tree)
+
+The four loops of `bench/backedge`, ps a round, best of five (C through
+the same clang at `-O2`, from the 2026-10-27 section):
+
+| loop                  | before (plain) | after (plain) | before (suspending) | after (suspending) |   C |
+| --------------------- | -------------: | ------------: | ------------------: | -----------------: | --: |
+| chain `x = x * a + i` |            865 |           107 |                1723 |                114 | 100 |
+| sum `t += i * i`      |            358 |             4 |                 698 |                  5 |  ~0 |
+
+The suspending twins also lose their frame stores: the chunk's inner loop
+holds no suspension point.
+
+The whole suite, run once each at HEAD and with D218 (`go run ./bench`),
+Veles column:
+
+| benchmark | before   | after    |
+| --------- | -------: | -------: |
+| backedge  |   1.176s | 124.98ms |
+| lexer     |  59.76ms |  49.41ms |
+| sort      |  41.09ms |  34.53ms |
+| suscall   | 177.67ms | 123.56ms |
+| lazyval   |  76.07ms |  62.15ms |
+| bigargs   |  43.03ms |  37.62ms |
+
+and the rest within noise. Six that looked worse in that one run were run
+six times each, alternating the two builds, and overlap: `emptycoll`
+16.2–18.7 ms before / 16.5–19.6 after, `spawn` 32.3–35.4 / 33.0–35.0 (one
+53.4 outlier), `awaitscope` 39.3–46.0 / 38.1–40.4, `awaitall` 37.4–45.1 /
+36.8–40.0, `trees` 144.7–170.2 / 146.7–163.4, `gcpause` 423.8–450.3 /
+435.8–458.9. `preempt`'s loops call a function and are not chunked; its
+worst lateness is unchanged (15.8 ms before, 16.0 after; Go 489 / 415 ms).

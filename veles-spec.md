@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.117** — decisions D1–D217. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.118** — decisions D1–D218. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -5558,6 +5558,8 @@ task that never suspended never gave its thread up.
   prelude yield function; `checkCancelled()` and zero-duration sleep remain.
   Ceding offers scheduling, not an ordering guarantee over runnable tasks.
 - The check is a load and a branch folded into the safepoint poll's.
+  (Amended by D218, 2026-10-28: a tight counted loop makes it once per
+  chunk of at most 1024 rounds.)
 
 Both levels: `withTimeout` and scope cancellation now simply work; the
 low-level escape from back-edge cancellation is a lock region (or a
@@ -8939,6 +8941,62 @@ User, 2026-10-27, recommended of 3. Rejected: adapting a plain function
 value everywhere (a hidden closure for a variable, where the parameter is
 kept); leaving it (point-free code never worked with the collection
 operations).
+
+### D218 — A tight counted loop looks for attention once per chunk (v0.118)
+
+```veles
+fun fnv1a(data: List<u8>): u64 {
+  var h: u64 = 0xcbf29ce484222325
+  loop (i in 0..<data.len()) h = (h ^ data.at(i).toU64()) *% 0x100000001b3   // one check per chunk
+  h
+}
+```
+
+Amends D145 and D66 (checklist Q65, raised by plan F21, 2026-10-27). A
+loop's back edge loads the attention word (a collection waiting, a
+cancellation, a request to yield) on every round. In a tight counted loop
+that load is the whole cost: it keeps clang from unrolling, reassociating,
+vectorizing or folding the loop (a multiply-add chain 865 ps a round
+against C's 100, a sum of squares 358 ps against its closed form; the same
+C loop with the same check runs at Veles's speed).
+
+- **Rule.** A loop over a range — `loop (i in a..<b)`, `a..b`, `.indices()`,
+  a list's elements, which are walked by index — whose body calls no Veles
+  function and does not suspend is run in chunks of at most 1024 rounds,
+  fewer when the body is large: the check is made once per chunk, between
+  chunks. Every other loop checks on every round, as before.
+- **What a program sees.** A cancellation, a timeout, a failed sibling, a
+  collection's stop and the ~10 ms yield are seen at the end of a round,
+  or, in such a loop, within one chunk of a body that calls nothing (about
+  a microsecond). They arrive at a moment the loop does not choose, so no
+  program can tell the two apart except by a clock; the slice is unchanged.
+- `break`, `continue` and `return` mean what they meant; the chunks are the
+  compiler's. A loop that cedes, awaits or calls is not chunked. A loop the
+  compiler proves shorter than a chunk needs no check of its own.
+  `inline loop` (D174) is unrolled and unaffected. Debug and release builds
+  behave alike.
+
+`cede` (D197) is unaffected: the automatic yield still comes after ~10 ms,
+and a `cede` stays the coarse, explicit turn between large pieces of work.
+
+User, 2026-10-28, recommended of 4 (after asking whether chunking leaves
+more for `cede` to do — it does not: a chunk is a microsecond, the slice
+ten milliseconds). As HotSpot's loop strip mining (chunks of 1000).
+Rejected: a check on every round (tight loops 3–9× slower than C); an
+`@unpolled` annotation (a loop without checks blocks every thread's
+collection and cannot be cancelled, and no measured loop needs it);
+preemption by signal as Go does (a redesign of the collector and codegen
+for what chunking gives).
+
+Built 2026-10-28 (plan F22): the checker marks the loop (`sema/chunk.go`:
+an i64 index stepped only by the loop, no call, suspension, task, `with`
+or inner loop in the condition, body or step; 16–1024 rounds by the body's
+size) and codegen runs the chunk as an inner loop whose one exit is
+`cond & idx < limit` (`chunkedLoop`). The multiply-add chain went from 865
+to 107 ps a round (C: 100), the sum of squares from 358 to 4; the
+suspending twins, which also stored to their frame every round, from 1723
+and 698 to 114 and 5. A loop over a narrower integer range is not chunked
+yet (rarely the hot loop).
 
 ### I1 — generators: investigated, not decided
 

@@ -93,7 +93,9 @@ decision-free unless it names a Q.
    D210 `lazy val`, B29 part 3 D211's docs chapter — _all done 2026-10-27_.
 3. [x] **F20** D197 `cede` (`veles-cede-spec.md`; `yieldNow()` migrated in
    the same change) and **F21** (measure D145's automatic yield). _Done
-   2026-10-27; F21 raised Q65 (back-edge poll granularity), open._
+   2026-10-27; F21 raised Q65, decided 2026-10-28 as D218 (F22)._
+3a. [x] **F22** D218: a tight counted loop polls once per chunk. _Done
+    2026-10-28._
 4. [ ] **Self-hosting, front end → checker** (the way, in order):
    - the front end is done: lexer, parser, AST, spans and `Layout` agree
      with Go byte for byte (gates G1–G4, P6, `go test ./selfhost`);
@@ -534,8 +536,20 @@ on Linux).
     change, or make it per executor, which would be a `veles-decide`
     question); any gap goes into checklist §11.
     _Done 2026-10-27: the slice stays (verdict in `bench/results.md`);
-    `bench/preempt` and `bench/backedge` track it; Q65 (poll granularity)
-    and checklist §11 hold what it found._
+    `bench/preempt` and `bench/backedge` track it; Q65 (poll granularity,
+    decided 2026-10-28 as D218, F22) and checklist §11 hold what it found._
+
+22. **F22 D218: a tight counted loop polls once per chunk.** In codegen, a
+    range loop (`a..<b`, `a..b`, `.indices()`, a list's elements) whose body
+    calls no Veles function and does not suspend runs as chunks of at most
+    1024 rounds (fewer for a large body), the back-edge poll once per chunk;
+    every other loop unchanged. Acceptance: `break`/`continue`/`return` and
+    labels across chunk edges, empty and one-round ranges, `a..b` up to
+    `i64.MAX`, a cancellation, a `withTimeout` and a collection's stop seen
+    inside a chunked loop (driver test, 1/2/4/8 threads, debug/release, GC
+    stress), golden IR; `bench/backedge` before and after (the chain and the
+    sum near C), `preempt` and the regression benches unchanged; D145
+    wording in chapter 12 and reference/concurrency.
 
 ---
 
@@ -2934,3 +2948,4 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 - 2026-10-26 — The user's `to_figure_out.md` reasoned through: D212 `const struct` (plan B30), D213 opt-in allocation hints (plan B31), `suspend loop` not added with D145's yield to be measured (plan F21). Probed first: structs already print, compare, `copy` and are `const`, but are shallowly immutable (`t.names.push` through a `val`).
 - 2026-10-27 — F20 built: D197 `cede`. Both front ends (`ast.CedeStmt`; `parser/cede.go`, `selfhost/parser/cede.vs`; a newline after `cede` always ends the statement), `task.cede` in the checker (a direct suspension seed, refused where suspension is), lowered to the runtime's zero sleep; formatter, `veles parse`, hover with D197's text, completion, the VS Code grammar, a diagnostic family. Every wrong form is one error that names the fix, and `=> cede` bodies are read as `{ cede }` so nothing cascades. `yieldNow` left the prelude: its uses are errors with fixes where the rewrite keeps the meaning (statement, function or lambda body, `async`, a value where a suspending `fun()` is wanted), none for a call in a value or with arguments, and a program's own `yieldNow` is untouched; the tree (bench/idle, driver tests, docs) migrated. Found on the way: (1) a yield abandoned by a cancellation left `TB_YIELDED` set, so the next `cede` returned at once with no turn and no cancellation check (pinned by `driver/cede_test.go`, which fails without the fix); (2) a bad expression that had taken all its tokens made both parsers skip the next statement as well. Tests: parser, sema, conformance `D197-*`, `driver/cede_test.go` (debug/release, 1/2/4/8 threads, GC stress and poisoning), golden `cede`, the self-host edge `p-cede`. Windows and Linux; macOS and the Linux sanitizer not run (checklist §11).
 - 2026-10-27 — F21 measured (`bench/preempt` with its F21 matrix, `bench/backedge`; `bench/results.md`): D145's slice stays — a ticker beside busy suspending loops wakes within ~16 ms (Windows) / ~14.5 ms (Linux) at 1 and 8 workers and on a one-thread executor, Go's asynchronous preemption 20–28 ms in the same program. Found: Windows 11 stopped honouring the process's 1 ms timer period seconds into a run (power throttling of a windowless process), so the monitor looked every 15.6 ms and a one-thread executor's slice became ~46 ms; the runtime now opts out (`veles_timer_period`). The poll costs the loop optimizations (a chain 8.8× slower than the same C loop, a sum no longer a closed form; the same poll in C reproduces it exactly) → Q65; a suspending loop pays 2× more for frame stores → checklist §11.
+- 2026-10-28 — Q65 decided as D218 (user, recommended of 4, after asking whether chunking leaves more for `cede` to do — it does not: a chunk is a microsecond, the slice 10 ms) and built (F22): a range or list loop over an i64 index whose condition, body and step call nothing, suspend nowhere and hold no loop runs as chunks of 16–1024 rounds by body size (`sema/chunk.go`), polling once per chunk; codegen's inner loop has the one exit `cond & idx < limit` (`chunkedLoop`), which LLVM counts. Measured first in C (strip-mining reaches C's speed at any chunk size; a register countdown does not help; a data-dependent loop pays nothing for the poll). `bench/backedge` 1.18 s → 0.125 s: the chain 865 → 107 ps a round (C 100), the sum 358 → 4, the suspending twins 1723/698 → 114/5 (their frame stores went with the poll); `lexer`, `sort`, `suscall` faster, the rest within noise (six suspects rerun six times each). TestChunkedLoops (debug/release, 1/2/4/8 threads, GC stress and poisoning; same output as the HEAD compiler), golden `chunks` (exactly the two eligible loops chunked; four goldens' IR regenerated, outputs unchanged); docs chapter 12, reference/concurrency. Found on the way: TestCede case 7 assumed one `cede` lets a child start (it flaked once at one thread, which D197 allows); the child now says it holds its resource. The sema dumps show the loop's chunk.

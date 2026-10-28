@@ -147,10 +147,18 @@ fun failFast(closes: Atomic<i64>) throws Broke {
   }
 }
 
+// the child says it holds its resource: a cede alone promises it no turn
+fun holdsForever(closes: Atomic<i64>, started: Channel<bool>) {
+  with r = Res(closes)
+  started.send(true)
+  loop { cede }
+}
+
 fun abandon(closes: Atomic<i64>): i64 {
+  val started = Channel<bool>(capacity: 1)
   scope {
-    async cedeForever(closes)
-    cede
+    async holdsForever(closes, started)
+    await started.recv()
     return 7
   }
 }

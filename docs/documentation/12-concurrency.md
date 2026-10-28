@@ -1092,6 +1092,12 @@ is not seen inside a lock region (`withLock`, `with m.lock()`) or a
 `close()`, which always run to their end. `checkCancelled()` adds a check
 anywhere else.
 
+A tight counted loop — over a range or a list, its body calling no
+function — makes that check once per chunk of up to 1024 rounds instead
+(D218), about a microsecond of work: the check would otherwise keep the
+compiler from unrolling and vectorizing it, and nothing can tell the two
+apart but a clock.
+
 ### Giving the executor a turn: `cede`
 
 A task keeps its thread until it reaches a suspension point, and a loop in

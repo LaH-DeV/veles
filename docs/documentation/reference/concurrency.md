@@ -262,6 +262,14 @@ and a cancellation is seen at the next point outside (D145, D47) — a value
 behind a `Mutex` is never left half-changed, a resource never half-closed.
 `checkCancelled()` is the same check at a point of your choosing.
 
+**A tight counted loop checks once per chunk (D218).** A loop over a range
+or a list whose body calls no function and does not suspend makes the
+check — for a cancellation, a deadline, a failed sibling, a collection's
+stop, the ~10 ms yield — once per chunk of at most 1024 rounds (fewer for a
+large body), not on every round. The work between two checks stays about
+a microsecond, and in exchange the loop can be unrolled, vectorized or
+folded: a sum of squares goes from ~360 ps a round to a few.
+
 **A long loop gives its thread up.** A loop in a suspending function that
 has run for about 10 ms while other tasks wait for its thread gives the
 thread up at the end of an iteration, as `cede` does. A function that

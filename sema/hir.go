@@ -264,6 +264,9 @@ type Loop struct {
 	Post []Stmt
 	ID   int
 	Pos  source.Span
+	// Chunk: the loop looks for attention once per chunk of rounds, not
+	// on every round (D218); nil for every other loop
+	Chunk *LoopChunk
 
 	hasBreak    bool
 	hasContinue bool
