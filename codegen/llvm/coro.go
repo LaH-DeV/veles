@@ -1203,19 +1203,13 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 		g.emit("%s = call i64 @veles_chan_len(ptr %s)", v, ch)
 		return v, true
 	case "task.sleep":
-		ns := g.expr(e.Args[0]) // the deadline in nanoseconds (F9)
-		loop, done, susp := g.newLabel("sleep"), g.newLabel("sleep.done"), g.newLabel("sleep.susp")
-		g.emitTerm("br label %%%s", loop)
-		g.placeLabel(loop)
-		r := g.newTmp()
-		g.emit("%s = call i64 @veles_task_sleep(ptr %s, i64 %s)", r, g.coro.task, ns)
-		rb := g.newTmp()
-		g.emit("%s = icmp ne i64 %s, 0", rb, r)
-		g.emitTerm("br i1 %s, label %%%s, label %%%s", rb, done, susp)
-		g.placeLabel(susp)
-		g.suspendPoint()
-		g.emitTerm("br label %%%s", loop)
-		g.placeLabel(done)
+		g.sleepLoop(g.expr(e.Args[0]), "sleep") // the deadline in nanoseconds (F9)
+		return "zeroinitializer", true
+	case "task.cede":
+		// D197: the runtime's sleep of zero — the task goes to the back of
+		// its executor's queue once, parked here, and resumes past it; the
+		// park's resume is where a cancellation or a failed sibling is seen
+		g.sleepLoop("0", "cede")
 		return "zeroinitializer", true
 	case "task.runWithin":
 		return g.runWithin(e), true
@@ -1243,6 +1237,24 @@ func (g *gen) taskBuiltin(e *sema.Builtin) (string, bool) {
 		return "zeroinitializer", true
 	}
 	return "", false
+}
+
+// sleepLoop parks the task in veles_task_sleep until it says the wait is
+// over: a deadline ns nanoseconds away, or, for zero, one trip through the
+// run queue. Each resume is a suspension point.
+func (g *gen) sleepLoop(ns, label string) {
+	loop, done, susp := g.newLabel(label), g.newLabel(label+".done"), g.newLabel(label+".susp")
+	g.emitTerm("br label %%%s", loop)
+	g.placeLabel(loop)
+	r := g.newTmp()
+	g.emit("%s = call i64 @veles_task_sleep(ptr %s, i64 %s)", r, g.coro.task, ns)
+	rb := g.newTmp()
+	g.emit("%s = icmp ne i64 %s, 0", rb, r)
+	g.emitTerm("br i1 %s, label %%%s, label %%%s", rb, done, susp)
+	g.placeLabel(susp)
+	g.suspendPoint()
+	g.emitTerm("br label %%%s", loop)
+	g.placeLabel(done)
 }
 
 func isResultType(t types.Type) bool {

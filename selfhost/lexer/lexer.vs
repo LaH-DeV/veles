@@ -185,7 +185,7 @@ struct Lexer {
   fun endsStatement(): bool => when (this.lastKind()) {
     Kind.Ident, Kind.Int, Kind.Float, Kind.String, Kind.Char, Kind.Regex, Kind.KwTrue, Kind.KwFalse, Kind.KwNull,
       Kind.KwThis, Kind.KwSelfType, Kind.KwBreak, Kind.KwContinue, Kind.KwReturn, Kind.KwThrows,
-      Kind.KwSuspends, Kind.RParen, Kind.RBracket, Kind.RBrace, Kind.Question, Kind.Gt, Kind.Under,
+      Kind.KwSuspends, Kind.KwCede, Kind.RParen, Kind.RBracket, Kind.RBrace, Kind.Question, Kind.Gt, Kind.Under,
       Kind.Shr => true  // `List<List<T>>` at a line's end
     else => false
   }
@@ -225,8 +225,10 @@ struct Lexer {
     -1
   }
 
+  // a line that ends in `cede` always ends its statement: the keyword has
+  // no operand for a `.` on the next line to continue (D197)
   fun newline(start: i64) {
-    if (this.semiAllowed() && !this.continuesLine()) {
+    if (this.semiAllowed() && (this.lastKind() == Kind.KwCede || !this.continuesLine())) {
       this.tokens.push(Token(kind: Kind.Semi, text: "\n", span: this.span(start, start + 1), autoSemi: true))
     }
   }

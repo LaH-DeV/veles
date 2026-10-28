@@ -274,6 +274,9 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 		} else if !types.IsUnit(l.retType) && !types.IsNever(body.Type) {
 			f.errorf(e.Pos, "lambda must return a value of type '%s'", l.retType)
 		}
+	} else if call := l.yieldNowCall(e.Body); call != nil && (l.retType == nil || types.IsUnit(l.retType)) {
+		l.retType = types.TUnit
+		body = l.removedYieldNowBody(call, call.Pos)
 	} else {
 		var x Expr
 		exprBodySpan := e.Body.Span()

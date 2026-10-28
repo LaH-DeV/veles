@@ -37,9 +37,9 @@ fun main() {
     val tasks: MutableList<Task<i64>> = []
     tasks.reserve(n)
     loop (_ in 0..<n) tasks.push(async waiter(ch, parked))
-    loop (parked.load() < n) yieldNow()
+    loop (parked.load() < n) cede
     // the last ones counted themselves and are on their way to the channel
-    loop (_ in 0..<100) yieldNow()
+    loop (_ in 0..<100) cede
     perTask = (liveBytes() - before) / n
     loop (i in 0..<n) ch.send(i)
     loop (t in tasks) sum += await t

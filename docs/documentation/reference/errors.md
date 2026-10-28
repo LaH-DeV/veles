@@ -60,6 +60,18 @@ index-of family (`indexOf`, `indexOfFirst`, `lastIndexOf`, `binarySearch`,
 for null. Better still: `val i = xs.indexOf(v) ?: return`, after which
 `xs.at(i)` is a `T`, or `contains` when the index is not needed.
 
+#### `'yieldNow()' was removed (D197): write the statement 'cede'`
+
+The prelude's `yieldNow()` became the statement `cede`. A call standing
+as a statement is fixed to `cede`; `fun pause() => yieldNow()` to
+`fun pause() { cede }`; `() => yieldNow()` to `() => { cede }`;
+`async yieldNow()` to `async { cede }`; the function passed as a value,
+where a `fun()` that may suspend is wanted, to `() => { cede }`. A call
+inside a larger expression, or one given arguments, has no fix: `cede`
+has no value, so move it to a line of its own where the call was
+evaluated, keeping whatever the arguments computed. A `yieldNow` the
+program declares itself is its own and is not touched.
+
 #### `the receiver is spelled 'this'`
 
 A method's receiver is `this`, as in most languages that have one. `self`
@@ -915,6 +927,18 @@ it, D156), inside `scope { }` when the block should wait for many (a pool
 of workers), or as `with t = async f()` when it runs in the background
 until the block ends, which cancels it then (D100) — a server in a test,
 a ticker.
+
+#### `'cede' is a statement and has no value`
+
+`cede` offers the executor a turn (D197). It is a statement on its own:
+no arguments, no operand, no value, no `await`. So `cede()` (the fix
+removes the parentheses), `cede x`, `cede.m`, `cede + 1`, `await cede` and
+`try cede` (the fixes remove the prefix), `val x = cede`, `f(cede)` and
+`return cede` are errors. Where a body was meant, write a block:
+`fun pause() { cede }` for `fun pause() => cede`, `() => { cede }` for a
+lambda or a `when` arm, `async { cede }` for `async cede` — each comes with
+the fix. A program that named something `cede` before the keyword existed
+renames it: `expected identifier, found keyword 'cede'`.
 
 #### `module-level 'val cache' has type 'MutableMap<i64, i64>', which is not Sendable`
 

@@ -157,6 +157,8 @@ func (p *dprinter) stmt(s ast.Stmt, ind int) {
 		p.line(ind, "break"+labelText(s.Label))
 	case *ast.ContinueStmt:
 		p.line(ind, "continue"+labelText(s.Label))
+	case *ast.CedeStmt:
+		p.line(ind, "cede")
 	case *ast.LoopStmt:
 		head := "loop"
 		switch {

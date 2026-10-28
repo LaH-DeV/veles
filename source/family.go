@@ -43,6 +43,8 @@ var families = []family{
 		`is written 'loop`, `are written as lambdas`, `type parameters follow the function name`,
 		`are not imported one by one`, `brackets are for collection literals only`, `^'=' assigns`,
 		`reads better as`, `can be written '`, `never -1 \(D165\)`),
+	// the statement `cede` (D197), whatever form it was mistaken for
+	fam("tasks", `^'cede'`),
 	fam("tests", `\(D78\)`, `says what it checks`, `^a (test|suite)\b`, `^another test`, `\bsuites?\b`,
 		`'test`, `test code`, `the test's body`, `expectThrows`, `'require'`, `'assert'`),
 	fam("constants", `\(D113\)`, `it is a test helper the compiler cannot run`, `^initialization cycle`, `^constant overflow`, `in a constant`, `^the constant`,

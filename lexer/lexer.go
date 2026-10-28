@@ -102,7 +102,7 @@ func (lx *Lexer) semiAllowed() bool {
 	switch lx.lastKind() {
 	case Ident, Int, Float, String, Char, Regex,
 		KwTrue, KwFalse, KwNull, KwSelf, KwSelfTy, KwBreak, KwContinue, KwReturn,
-		KwThrows, KwSuspends,
+		KwThrows, KwSuspends, KwCede,
 		RParen, RBracket, RBrace, Question, Gt, Shr, Under: // Shr: `List<List<T>>` at line end
 		return true
 	}
@@ -142,8 +142,11 @@ func (lx *Lexer) continuesLine() bool {
 	return false
 }
 
+// newline ends the statement where the rules above say so. A line that ends
+// in `cede` always ends there: the keyword has no operand for a `.` on the
+// next line to continue (D197).
 func (lx *Lexer) newline(start int) {
-	if lx.semiAllowed() && !lx.continuesLine() {
+	if lx.semiAllowed() && (lx.lastKind() == KwCede || !lx.continuesLine()) {
 		lx.tokens = append(lx.tokens, Token{Kind: Semi, Text: "\n", Span: lx.span(start, start+1), AutoSemi: true})
 	}
 }

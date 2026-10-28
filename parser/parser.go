@@ -179,6 +179,11 @@ func (p *Parser) expectIdent() (ast.Ident, bool) {
 		t := p.next()
 		return ast.Ident{Name: t.Text, Pos: t.Span}, true
 	}
+	if p.at(lexer.KwCede) {
+		// a name that became a keyword (D197): what to do about it
+		p.errorf(p.span(), "expected identifier, found keyword 'cede': 'cede' is a statement now (D197); rename this and every use of it")
+		return ast.Ident{Name: "_", Pos: p.span()}, false
+	}
 	p.errorExpected("identifier")
 	return ast.Ident{Name: "_", Pos: p.span()}, false
 }
@@ -1031,6 +1036,10 @@ done:
 				Fix:      &source.Fix{Title: "Remove '=>'", Edits: []source.TextEdit{{Span: source.Span{File: arrow.Span.File, Start: arrow.Span.Start, End: p.span().Start}, NewText: ""}}},
 			})
 			fn.Body = p.parseBlock()
+			break
+		}
+		if p.at(lexer.KwCede) {
+			fn.Body = p.cedeFunBody(arrow, fn.Name.Name)
 			break
 		}
 		fn.ExprBody = p.parseExpr()

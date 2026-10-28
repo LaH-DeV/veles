@@ -272,6 +272,17 @@ func (f *fnCtx) suspending(x Expr, span source.Span, what string) Expr {
 	return x
 }
 
+// cede is the statement `cede` (D197): the task offers its executor a turn
+// and goes on at the next statement — at once, when the executor picks it
+// again. It is a suspension point like any other: the function suspends,
+// a held lock or a global initializer refuses it, and a cancellation or a
+// failed sibling is seen there. Its own operation, not a sleep of zero, so
+// what was written survives into the tree and its diagnostics.
+func (f *fnCtx) cede(span source.Span) Stmt {
+	x := f.suspending(&Builtin{exprBase{types.TUnit}, "task.cede", nil, span}, span, "cede")
+	return &ExprStmt{X: x, Pos: span}
+}
+
 // sleepCall handles the prelude `sleep(d)`. The argument is a `Duration`
 // (D60): a bare number would put the unit back in the reader's head, which
 // is what the type exists to prevent. The executor's timers are in

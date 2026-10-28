@@ -264,7 +264,7 @@
         },
         {
           "name": "keyword.control.concurrency.veles",
-          "match": "\\b(async|await|scope|gather|race)\\b"
+          "match": "\\b(async|await|scope|gather|race|cede)\\b"
         },
         {
           "comment": "select { } (contextual: only directly before a brace, D169)",

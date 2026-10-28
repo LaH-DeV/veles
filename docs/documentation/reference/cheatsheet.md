@@ -268,6 +268,7 @@ ch.trySend(1); ch.tryRecv()      // never wait: false when full, null when nothi
 xs.mapConcurrent(f, workers: 4); xs.forEachConcurrent(f, workers: 4)   // the worker pool, results in order; f may suspend/throw
 fun run(f: sendable fun(i64): i64)   // a function that may cross a task boundary: named, or a lambda over vals of Sendable types
 await sleep(d)                   // a Duration: Duration.millis(100), Duration.seconds(5); zero yields
+cede                             // a statement: offer the executor a turn, go on when picked — perhaps at once; no order promised (D197)
 with server = async serve(l)     // a background task until the block ends: then cancelled, then joined; fail-fast; `await server` for its value (D100)
 t.cancel()                       // stop a task at its next suspension point; its `with` cleanups run, the scope still joins it
 val v = try withTimeout(Duration.seconds(1), () => try fetch())   // R throws E | Timeout; the task is cancelled and unwound before Timeout is thrown

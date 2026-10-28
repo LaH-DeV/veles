@@ -685,6 +685,8 @@ func (p *printer) stmt(s Stmt) {
 			p.w(" " + s.Label.Name)
 		}
 		p.w(")")
+	case *CedeStmt:
+		p.w("(cede)")
 	case *LoopStmt:
 		if s.Inline {
 			p.open("inline-loop")

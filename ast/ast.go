@@ -674,6 +674,11 @@ type ContinueStmt struct {
 	Pos   source.Span
 }
 
+// CedeStmt is `cede`: the task offers its executor a turn (D197).
+type CedeStmt struct {
+	Pos source.Span
+}
+
 // LoopStmt covers `loop { }`, `loop (cond) { }` and `loop (x in c) { }`.
 type LoopStmt struct {
 	// Inline: `inline loop (f in T.fields) { … }` (D174) is unrolled while
@@ -737,6 +742,7 @@ func (s *ReturnStmt) Span() source.Span   { return s.Pos }
 func (s *ThrowStmt) Span() source.Span    { return s.Pos }
 func (s *BreakStmt) Span() source.Span    { return s.Pos }
 func (s *ContinueStmt) Span() source.Span { return s.Pos }
+func (s *CedeStmt) Span() source.Span     { return s.Pos }
 func (s *LoopStmt) Span() source.Span     { return s.Pos }
 
 func (s *ScopeStmt) Span() source.Span { return s.Pos }
@@ -752,6 +758,7 @@ func (*ReturnStmt) stmtNode()   {}
 func (*ThrowStmt) stmtNode()    {}
 func (*BreakStmt) stmtNode()    {}
 func (*ContinueStmt) stmtNode() {}
+func (*CedeStmt) stmtNode()     {}
 func (*LoopStmt) stmtNode()     {}
 
 func (*ScopeStmt) stmtNode() {}

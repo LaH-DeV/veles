@@ -1927,11 +1927,14 @@ static void scope_child_finished(veles_task *t) {
 
 /* a task abandoning a scope body forgets whatever it was waiting on. It
    is unlinked from every list, so a later send or close cannot hand a
-   value to (or wake) a wait that is over */
+   value to (or wake) a wait that is over. A yield it was making is over
+   too: left set, TB_YIELDED would make the task's next `cede` or sleep(0)
+   return at once — no turn given, no cancellation looked at (D197) */
 static void veles_task_leave_waits_impl(veles_task *t) {
     leave_channel_waits(t);
     remove_timer(t);
     remove_io_waiter(t);
+    task_clear(t, TB_YIELDED);
 }
 
 /* the body left the scope early (return, throw, cancellation): the
@@ -2492,9 +2495,11 @@ static int64_t veles_task_sleep_impl(veles_task *self, int64_t ns) {
         return 0;
     }
     if (ns <= 0) {
-        /* a yield: to the back of the run queue once, so every other
-         * runnable task gets a turn before this one continues - the
-         * polling loop around a tryRecv depends on it */
+        /* a yield (`cede`, D197; a loop's back edge, D145): to the back of
+         * the executor's shared queue once, behind what is waiting there.
+         * That is this runtime's choice, not a promise of the language: a
+         * worker's own queue, stealing and other threads decide who runs
+         * next, so no program may count on another task running first */
         if (task_swap(self, TB_YIELDED, 0)) return 1;
         task_set(self, TB_YIELDED);
         enqueue(self);
@@ -5111,6 +5116,7 @@ int64_t veles_task_cancelled(veles_task *t, int64_t depth) {
          * is left here, before it unwinds (cancel_task leaves a parked
          * task's waits itself) */
         if (t->race || __atomic_load_n(&t->wait_kind, __ATOMIC_ACQUIRE) != W_NONE || wake_at_of(t)) veles_task_leave_waits(t);
+        else task_clear(t, TB_YIELDED); /* the yield it was making is over */
         return 1;
     }
     if (depth > __atomic_load_n(&t->abandon_depth, __ATOMIC_ACQUIRE)) {

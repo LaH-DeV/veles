@@ -14,7 +14,8 @@
 // (bench/idle: per parked task) — and its reference sets goMemory to the
 // same measure; those get a table of their own. So does `PAUSE <name> <ns>`,
 // the longest collection pause of the timed part (bench/gcpause), against
-// goPause.
+// goPause, and `LATENCY <name> <ns>`, the worst lateness a task saw
+// (bench/preempt), against goLatency.
 package main
 
 import (
@@ -43,15 +44,17 @@ import (
 )
 
 type result struct {
-	name     string
-	ops      int64
-	veles    time.Duration
-	goTime   time.Duration
-	checksum string
-	memory   int64 // bytes per operation the Veles side reported; 0 = none
-	goMemory int64
-	pause    int64 // the longest collection pause the Veles side reported, ns; 0 = none
-	goPause  int64
+	name      string
+	ops       int64
+	veles     time.Duration
+	goTime    time.Duration
+	checksum  string
+	memory    int64 // bytes per operation the Veles side reported; 0 = none
+	goMemory  int64
+	pause     int64 // the longest collection pause the Veles side reported, ns; 0 = none
+	goPause   int64
+	latency   int64 // the worst lateness the Veles side reported, ns; 0 = none
+	goLatency int64
 }
 
 func main() {
@@ -100,11 +103,13 @@ func main() {
 		goSetup = 0
 		goMemory = 0
 		goPause = 0
+		goLatency = 0
 		start := time.Now()
 		sum := ref()
 		r.goTime = time.Since(start) - goSetup
 		r.goMemory = goMemory
 		r.goPause = goPause
+		r.goLatency = goLatency
 		if sum != r.checksum {
 			fmt.Fprintf(os.Stderr, "bench: %s: Veles computed %s, Go %s — not the same work\n", name, r.checksum, sum)
 			failed = true
@@ -155,6 +160,17 @@ func render(rs []result) string {
 		}
 		fmt.Fprintf(&b, "| %s | %s | %s |\n", r.name, round(time.Duration(r.pause)), round(time.Duration(r.goPause)))
 	}
+	head = false
+	for _, r := range rs {
+		if r.latency == 0 || r.goLatency == 0 {
+			continue
+		}
+		if !head {
+			b.WriteString("\n| benchmark | Veles worst lateness | Go worst lateness |\n|---|---:|---:|\n")
+			head = true
+		}
+		fmt.Fprintf(&b, "| %s | %s | %s |\n", r.name, round(time.Duration(r.latency)), round(time.Duration(r.goLatency)))
+	}
 	return b.String()
 }
 
@@ -174,7 +190,7 @@ func parse(name string, out []byte) result {
 		if len(f) == 5 && f[0] == "BENCH" && f[1] == name {
 			ops, _ := strconv.ParseInt(f[2], 10, 64)
 			ns, _ := strconv.ParseInt(f[3], 10, 64)
-			r = result{name: name, ops: ops, veles: time.Duration(ns), checksum: f[4], memory: r.memory, pause: r.pause}
+			r = result{name: name, ops: ops, veles: time.Duration(ns), checksum: f[4], memory: r.memory, pause: r.pause, latency: r.latency}
 			found = true
 		}
 		if len(f) == 3 && f[0] == "MEMORY" && f[1] == name {
@@ -182,6 +198,9 @@ func parse(name string, out []byte) result {
 		}
 		if len(f) == 3 && f[0] == "PAUSE" && f[1] == name {
 			r.pause, _ = strconv.ParseInt(f[2], 10, 64)
+		}
+		if len(f) == 3 && f[0] == "LATENCY" && f[1] == name {
+			r.latency, _ = strconv.ParseInt(f[2], 10, 64)
 		}
 	}
 	if found {
@@ -207,6 +226,11 @@ var goMemory int64
 // collection pause of its timed part, as its Veles side prints it on its
 // PAUSE line.
 var goPause int64
+
+// goLatency is what a reference measured that reports lateness: the worst
+// a waiting goroutine woke after its time, as its Veles side prints it on
+// its LATENCY line.
+var goLatency int64
 
 // keeps bench/gcpause's slices on the heap, as the Veles lists are
 var gcpauseSink []int64
@@ -609,6 +633,66 @@ var references = map[string]func() string{
 			total += s
 		}
 		return strconv.FormatInt(total, 10)
+	},
+	"backedge": func() string {
+		// the same four loops; Go has no back-edge poll and no vectorizer
+		const n = 500000000
+		chain := func() int64 {
+			x := int64(1)
+			for i := int64(0); i < n; i++ {
+				x = x*6364136223846793005 + i
+			}
+			return x
+		}
+		sum := func() int64 {
+			var total int64
+			for i := int64(0); i < n; i++ {
+				total += i * i
+			}
+			return total
+		}
+		return strconv.FormatInt(chain()+sum()+chain()+sum(), 10)
+	},
+	"preempt": func() string {
+		// one busy goroutine per P beside a ticker; Go preempts a goroutine
+		// that has run 10 ms asynchronously, wherever it is
+		workers := runtime.GOMAXPROCS(0)
+		const rounds = 100000000
+		var stop atomic.Bool
+		started := make(chan bool, 1)
+		ticked := make(chan int64)
+		go func() {
+			started <- true
+			var worst int64
+			for !stop.Load() {
+				t := time.Now()
+				time.Sleep(time.Millisecond)
+				worst = max(worst, time.Since(t).Nanoseconds()-int64(time.Millisecond))
+			}
+			ticked <- worst
+		}()
+		<-started
+		results := make([]int64, workers)
+		var wg sync.WaitGroup
+		for w := range workers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				x := int64(1)
+				for i := int64(0); i < rounds; i++ {
+					x = (x*31 + i) % 1000003
+				}
+				results[w] = x
+			}()
+		}
+		wg.Wait()
+		stop.Store(true)
+		goLatency = <-ticked
+		var sum int64
+		for _, x := range results {
+			sum += x
+		}
+		return strconv.FormatInt(sum, 10)
 	},
 	"suscall": func() string {
 		var sum int64

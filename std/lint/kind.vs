@@ -115,6 +115,7 @@ public enum Kind {
   KwFor
   KwDo
   KwCatch
+  KwCede
   // reserved for future use: lexed as keywords so they cannot be names
   KwReserved
   KeywordEnd

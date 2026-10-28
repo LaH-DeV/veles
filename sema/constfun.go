@@ -198,7 +198,9 @@ func (c *Checker) validateConstFun(fn *Func) bool {
 				bad(source.Span{}, "it reads the module-level '%s', which is computed at run time; a 'const fun' reads its parameters and 'const's only (D113)", n.Var.Name)
 			}
 		case *Builtin:
-			if !constBuiltins[n.Op] {
+			if n.Op == "task.cede" {
+				bad(n.Span, "'cede' offers a task's executor a turn, and a 'const fun' runs in the compiler, where there is no task: it does not suspend (D113, D197)")
+			} else if !constBuiltins[n.Op] {
 				bad(n.Span, "'%s' is not available to the compiler: a 'const fun' does no I/O, no tasks, no raw memory and no atomics (D113)", n.Op)
 			}
 		}

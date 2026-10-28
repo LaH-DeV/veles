@@ -127,6 +127,7 @@ const (
 	KwFor
 	KwDo    // `do { ... } catch (e) { ... }` (D98)
 	KwCatch // the failure branch of a `do` block (D98)
+	KwCede  // the statement that offers the executor a turn (D197)
 	// Reserved for future use; lexed as keywords so they cannot be identifiers.
 	KwReserved
 	keywordEnd
@@ -195,6 +196,7 @@ var keywords = map[string]TokenKind{
 	"for":       KwFor,
 	"do":        KwDo,
 	"catch":     KwCatch,
+	"cede":      KwCede,
 
 	// reserved
 	"match": KwReserved, "defer": KwReserved, "go": KwReserved,

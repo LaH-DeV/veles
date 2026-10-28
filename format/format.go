@@ -1629,6 +1629,8 @@ func (p *printer) stmt(s ast.Stmt) {
 		if s.Label != nil {
 			p.w(" " + s.Label.Name)
 		}
+	case *ast.CedeStmt:
+		p.w("cede")
 	case *ast.LoopStmt:
 		if s.Inline {
 			p.w("inline ")

@@ -155,6 +155,7 @@ extend Parser {
       }
       Kind.KwTry => {
         this.next()
+        if (this.at(Kind.KwCede)) return this.cedePrefixed(start, Kind.KwTry)
         val savedTry = this.inTry
         this.inTry = true
         var operand = this.parseUnary()
@@ -167,6 +168,7 @@ extend Parser {
       }
       Kind.KwAwait => {
         this.next()
+        if (this.at(Kind.KwCede)) return this.cedePrefixed(start, Kind.KwAwait)
         val x = this.parseUnary()
         return ast.AwaitExpr(x: &x, pos: this.spanFrom(start))
       }
@@ -179,6 +181,7 @@ extend Parser {
           val callee: ast.Expr = ast.LambdaExpr(body: &ast.BlockExpr(block: body), pos: body.pos)
           return ast.CallExpr(callee: &callee, isAsync: true, block: true, pos: this.spanFrom(start))
         }
+        if (this.at(Kind.KwCede)) return this.cedePrefixed(start, Kind.KwAsync)
         val x = this.parseUnary()
         when (x) {
           is ast.CallExpr => {
@@ -455,6 +458,7 @@ extend Parser {
         return ast.BadExpr(pos: t.span)
       }
       Kind.KwReturn, Kind.KwThrow, Kind.KwBreak, Kind.KwContinue => return ast.ControlExpr(stmt: &this.parseStmt())
+      Kind.KwCede => return this.cedeExpr()
       Kind.Arrow => {
         this.thinArrow(t.span, "'->' is not an operator; use '=>' (D33)")
         this.next()
@@ -588,6 +592,7 @@ extend Parser {
   // `x => total += x` — which becomes a one-statement block
   fun parseArmBody(): ast.Expr {
     if (this.at(Kind.LBrace)) return ast.BlockExpr(block: this.parseBlock())
+    if (this.at(Kind.KwCede)) return this.cedeArmBody()
     val start = this.span()
     val body = this.parseExpr()
     if (!this.atAssignOp()) return body

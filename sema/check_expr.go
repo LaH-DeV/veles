@@ -644,6 +644,9 @@ func (f *fnCtx) nameExpr(e *ast.NameExpr, want types.Type) Expr {
 		return x
 	}
 	if sym == nil {
+		if e.Name == "yieldNow" {
+			return f.removedYieldNowRef(e, want)
+		}
 		hint, fix := f.unknownNameHint(e.Pos, e.Name, true)
 		f.c.errorFix(e.Pos, fix, "unknown name '%s'%s", e.Name, hint)
 		return bad()

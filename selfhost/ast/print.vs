@@ -623,6 +623,7 @@ struct Printer {
         if (val label = s.label) this.write(" ${label.name}")
         this.write(")")
       }
+      is CedeStmt         => this.write("(cede)")
       is LoopStmt         => {
         this.open(if (s.isInline) "inline-loop" else "loop")
         if (val label = s.label) this.write(" @${label.name}")

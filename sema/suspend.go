@@ -424,7 +424,7 @@ func (w susp) expr(e Expr) bool {
 		return w.expr(e.Obj) || w.any(e.Args)
 	case *Builtin:
 		switch e.Op {
-		case "chan.send", "chan.recv", "task.sleep", "task.ioWait", "task.runWithin":
+		case "chan.send", "chan.recv", "task.sleep", "task.cede", "task.ioWait", "task.runWithin":
 			return true
 		}
 		return w.any(e.Args)

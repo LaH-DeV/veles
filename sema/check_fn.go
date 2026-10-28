@@ -336,6 +336,11 @@ func (c *Checker) checkBody(fn *Func) {
 			f.allowHeld(es.X, heldReturn)
 		}
 	}
+	if call := f.yieldNowCall(t.Decl.ExprBody); call != nil && (f.retType == nil || types.IsUnit(f.retType)) {
+		fn.Sig.Ret, f.retType = types.TUnit, types.TUnit
+		fn.Body = f.removedYieldNowBody(call, arrowThrough(t.Decl.ExprBody))
+		return
+	}
 	if t.Decl.ExprBody != nil {
 		f.pushScope()
 		var body *Block
@@ -731,6 +736,9 @@ func (f *fnCtx) checkStmtAt(s ast.Stmt) (stmts []Stmt, term bool) {
 	case *ast.ValStmt:
 		return f.checkValStmt(s), false
 	case *ast.ExprStmt:
+		if call := f.yieldNowCall(s.X); call != nil {
+			return []Stmt{f.removedYieldNowStmt(call)}, false
+		}
 		x := f.checkExpr(s.X, types.TUnit)
 		if call, ok := x.(*Call); ok && call.Fn.tmpl != nil {
 			if _, must := call.Fn.tmpl.Attrs["mustUse"]; must && !types.IsUnit(call.Type()) {
@@ -773,6 +781,8 @@ func (f *fnCtx) checkStmtAt(s ast.Stmt) (stmts []Stmt, term bool) {
 		lp.hasContinue = true
 		f.leaveAwaited(s.Pos, f.loopIndex(lp))
 		return []Stmt{&Continue{Loop: lp}}, true
+	case *ast.CedeStmt:
+		return []Stmt{f.cede(s.Pos)}, false
 	case *ast.LoopStmt:
 		f.lintContinueSkipsStep(s)
 		stmts := f.checkLoop(s)

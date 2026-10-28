@@ -212,7 +212,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			} else if callee.Name == "check" {
 				// Kotlin's check(cond) — and this compiler's own, briefly
 				f.errorf(callee.Pos, "unknown function 'check'; an invariant is 'assert(cond, \"why it must hold\")' (D78)")
-			} else if !f.removedFactory(callee.Name, e) {
+			} else if !f.removedYieldNowCall(e) && !f.removedFactory(callee.Name, e) {
 				hint, fix := f.unknownNameHint(callee.Pos, callee.Name, false)
 				f.c.errorFix(callee.Pos, fix, "unknown function '%s'%s", callee.Name, hint)
 			}

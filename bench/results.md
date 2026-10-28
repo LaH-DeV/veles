@@ -37,6 +37,16 @@ Caveats worth keeping in mind when reading them:
   eight) and `List.addAll`/`slice` (one `memcpy`) work 2.3× / ~3×: text with long matches
   is the friendly case, short ones cost a push each. Ratios: Veles's output is 0.7–1.7%
   smaller than Go's at level 6 (it compares stored, fixed and dynamic per block).
+- `preempt`, `backedge` (2026-10-27, plan F21). `preempt` runs one busy
+  loop per worker beside a task that sleeps 1 ms at a time; its table of
+  worst lateness is the point (D145's ~10 ms slice against Go's
+  asynchronous preemption), its time only says the loops ran. Both sides
+  start one loop per worker, so `VELES_THREADS` and `GOMAXPROCS` must agree
+  (both unset, or set alike) or the checksums differ. `veles run
+  bench/preempt -- all` prints every case F21 measured. `backedge` is four
+  tight loops: Go has neither a back-edge poll nor a vectorizer, so the
+  ratio is not the poll's price; that one, against C, is in the 2026-10-27
+  section.
 - One machine, one run; differences under ~10% are noise.
 
 ## 2026-09-25 23:50 — go1.23.2, windows/amd64 (HEAD 77c6e95, plus the working tree)
@@ -695,3 +705,105 @@ pause 1.32–1.45 ms over four runs, as at 4 MiB in the same session.
 | benchmark | Veles longest pause | Go longest pause |
 |---|---:|---:|
 | gcpause | 1.81ms | 1.7ms |
+
+## 2026-10-27 — D197 `cede` (plan F20) and D145's loop yield (plan F21), windows/amd64 and linux/amd64 (WSL), 32 logical CPUs (HEAD bc96824, plus the working tree)
+
+**`cede` against `yieldNow()`.** One task per worker ceding 2M times
+(`yieldNow()` at HEAD, `cede` after), ns per yield per task, three runs:
+
+| workers | before (`yieldNow()`) | after (`cede`) |
+| ------: | --------------------: | -------------: |
+|       1 |            92, 92, 92 |     93, 89, 88 |
+|       8 |      5379, 5209, 5114 | 5227, 5489, 5187 |
+
+The same path in the runtime (a zero sleep); the call of the prelude
+function is gone. For scale, Go's `runtime.Gosched()` in the same shape:
+85 ns at `GOMAXPROCS=1`, 2195 ns at 8 — both go through a shared queue
+under a lock; ours is 2.4× Go's under that contention (checklist §11).
+
+**No regression** in `idle`, `spawn`, `channels`, `suscall`, `httphello`
+at 1 and 8 workers (two runs each through the runner, before and after;
+`channels` and `spawn` again six times each): the distributions overlap,
+e.g. `spawn` at 8 workers 33.4–39.8 ms before, 37.6–43.6 ms after with
+the same median band; `channels` at 8 5.3–7.2 ms before, 5.0–6.9 after.
+
+**F21: how late a ticking task wakes beside busy loops** (`veles run
+bench/preempt -- all`; one busy task per worker, a ticker sleeping 1 ms;
+"lateness" is how much later than 1 ms each sleep returned, a tick in
+flight at the end included).
+
+Windows, after the timer-resolution fix below:
+
+| workers | case       |  elapsed | ticks | worst lateness | mean lateness |
+| ------: | ---------- | -------: | ----: | -------------: | ------------: |
+|       1 | idle       |   301 ms |   197 |         0.8 ms |        0.5 ms |
+|       1 | suspending |   367 ms |    23 |        16.5 ms |       14.9 ms |
+|       1 | plain      |   370 ms |     1 |   **368.8 ms** |      368.8 ms |
+|       1 | cede       |   134 ms |   133 |         0.6 ms |        0.0 ms |
+|       1 | cede4096   |   396 ms |   391 |         0.7 ms |        0.0 ms |
+|       1 | thread     |   382 ms |    24 |        16.1 ms |       14.9 ms |
+|       8 | idle       |   301 ms |   193 |         0.9 ms |        0.6 ms |
+|       8 | suspending |   449 ms |    46 |        16.5 ms |        8.8 ms |
+|       8 | plain      |   432 ms |    36 |   **378.0 ms** |       11.0 ms |
+|       8 | cede       |  5720 ms |  5703 |         0.4 ms |        0.0 ms |
+|       8 | cede4096   |   551 ms |   548 |         0.3 ms |        0.0 ms |
+|       8 | thread     |   497 ms |    28 |        29.2 ms |       16.7 ms |
+
+Linux (WSL):
+
+| workers | case       |  elapsed | ticks | worst lateness | mean lateness |
+| ------: | ---------- | -------: | ----: | -------------: | ------------: |
+|       1 | idle       |   301 ms |   269 |         0.2 ms |        0.1 ms |
+|       1 | suspending |   346 ms |    23 |        14.5 ms |       14.0 ms |
+|       1 | plain      |   316 ms |     1 |   **314.5 ms** |      314.5 ms |
+|       1 | cede       |   105 ms |   105 |         0.1 ms |        0.0 ms |
+|       1 | cede4096   |   347 ms |   344 |         0.1 ms |        0.0 ms |
+|       1 | thread     |   345 ms |    23 |        14.5 ms |       14.0 ms |
+|       8 | idle       |   300 ms |   262 |         0.2 ms |        0.1 ms |
+|       8 | suspending |   414 ms |    36 |        14.5 ms |       10.5 ms |
+|       8 | plain      |   385 ms |    15 |   **368.9 ms** |       24.7 ms |
+|       8 | cede       |  4395 ms |  4382 |         1.8 ms |        0.0 ms |
+|       8 | cede4096   |   437 ms |   435 |         0.1 ms |        0.0 ms |
+|       8 | thread     |   321 ms |    22 |        14.3 ms |       13.5 ms |
+
+`cede` runs a hundredth of the others' work (each cede is a trip through
+the queue): ~110 ns a cede on one worker, ~5 µs at eight (contention, above).
+
+Against Go (the runner's `preempt`, Windows; Go preempts a goroutine
+asynchronously after 10 ms), worst lateness over three runs:
+
+| workers | Veles            | Go                  |
+| ------: | ---------------- | ------------------- |
+|       1 | 16.1, 16.4, 16.8 | 28.2, 28.6, 22.1    |
+|       8 | 16.6, 16.1, 16.5 | 20.6, 20.6, 20.5    |
+|      32 | 15.6, 23.6, 33.1 | 275.9, 448.0, 474.6 |
+
+Found on the way (Windows): seconds into a run Windows 11 stopped
+honouring the process's 1 ms timer period (a process without a visible
+window is throttled), the monitor's 5 ms looks became 15.6 ms ones, and a
+one-thread executor's worst lateness rose to 46 ms (mean 44). Measured by
+timing the monitor's waits; the runtime now opts the process out of that
+throttling (`veles_timer_period`), and the monitor's waits stay at ~5.5 ms.
+
+**F21 (4): the back-edge poll in tight loops** (ps per round, best of
+five, 500M rounds; C through the same clang at `-O2`):
+
+| loop                          | Veles plain | Veles suspending | C   | C + the same poll every round | C + the poll every 64 rounds |
+| ----------------------------- | ----------: | ---------------: | --: | ----------------------------: | ---------------------------: |
+| chain `x = x * a + i`         |         865 |             1723 | 100 |                           884 |                          260 |
+| sum `t += i * i`              |         358 |              698 |   0 |                           366 |                          129 |
+
+C with the poll matches Veles: the poll is the whole difference. Its
+volatile load in every round stops clang from unrolling and reassociating
+the chain and from turning the sum into a closed form or vectorizing it.
+The suspending twins pay twice again (values stored to the coroutine
+frame every round; checklist §11). Whether to poll every N rounds is Q65.
+
+**Verdict on the slice (F21): keep it.** ~10 ms with a 5 ms monitor gives
+a worst ~16 ms on Windows, ~14.5 ms on Linux, the same on a one-thread
+executor (D150), better than Go in the same program, and nothing in these
+numbers asks for a per-executor slice. What the measurements did find is
+not the slice: the Windows throttling (fixed), the poll's price in tight
+loops (Q65), the coroutine-frame traffic in suspending loops and a yield's
+cost under contention (checklist §11). A plain function's loop still cannot
+yield (D145 by design): a ticker beside it waits for the whole loop.

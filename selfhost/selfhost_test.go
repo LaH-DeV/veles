@@ -206,7 +206,11 @@ func corpus(t *testing.T) []corpusFile {
 			"fun l(x: i64 = 1, ...) {}\nfun m() => \nfun n()\nfun o() { } fun p() { }\nfun q() => { 1 }\n",
 		"p-removed": "use a.{ b }\nfun z(): i64 = 1\nimpl Foo for Bar {}\nfun <T> f<U>() {}\nstruct S { mut fun j() {} }\nfun g(h: T::Item) {}\n" +
 			"fun k() {\n  self.x\n}\nfun m() {\n  x ?? { e => 1 }\n}\nfun n() {\n  x catch { e => 1 }\n}\n",
-		"p-statements": "fun f() {\n  val = 3\n  var x: i64\n  val y\n  val [a, b] = xs\n  val (a, [b]) = p else { return }\n  val Some(v) = o else return\n" +
+		// D197: the statement, the forms it refuses, and the lines it ends
+		"p-cede": "fun a() {\n  cede\n  cede;\n  cede; cede\n  if (x) cede else y()\n  if (x)\n    cede\n  loop (n) cede\n  cede // a comment\n  cede /* block */\n" +
+			"  cede\n    .x()\n  cede\r\n  cede()\n  cede(1)\n  cede x\n  cede@l\n  cede.m\n  cede + 1\n  cede = 2\n  cede<T>()\n  await cede\n  try cede\n  async cede\n  async { cede }\n" +
+			"  val v = cede\n  return cede\n  f(cede)\n  g(() => cede, 2)\n  when (x) { 1 => cede\n else => { cede } }\n  ceded()\n}\nfun b() => cede\nfun c() => cede + 1\nfun cede() {}\nval d = (cede: i64) => 1\ncede",
+		"p-statements":"fun f() {\n  val = 3\n  var x: i64\n  val y\n  val [a, b] = xs\n  val (a, [b]) = p else { return }\n  val Some(v) = o else return\n" +
 			"  val (q, r) = t\n  val (s) = u\n  loop :outer (x in y) { break outer; continue outer }\n  for (x in y) { }\n  loop (x = 1) { }\n" +
 			"  with a = f(), b = g()\n  with (a = f(), _ = g(), h()) { }\n  if (x) with y = z\n  scope { }\n  struct S {}\n  error E {}\n  extend X {}\n" +
 			"  return )\n  throw\n  x += 1; x -= 2; x *= 3; x /= 4; x %= 5\n  ) stray\n  a -> b\n  fun inner() => 1\n}\n",

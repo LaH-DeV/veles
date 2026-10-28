@@ -5554,7 +5554,7 @@ task that never suspended never gave its thread up.
 - ~~**`yieldNow()`** gives the thread up once (what `await sleep(Duration.zero)`
   was used for, which keeps working); **`checkCancelled()`** is the
   cancellation check at any point, plain functions included. Both prelude.~~
-  **Amended by D197 (specified, not implemented):** `cede` replaces the
+  **Amended by D197 (built 2026-10-27):** `cede` replaces the
   prelude yield function; `checkCancelled()` and zero-duration sleep remain.
   Ceding offers scheduling, not an ordering guarantee over runnable tasks.
 - The check is a load and a branch folded into the safepoint poll's.
@@ -7906,15 +7906,13 @@ Built 2026-10-21 (`veles_list_view` in the runtime, chosen in codegen by the rec
 and deletion of `yieldNow()`, before returning to generator planning. User
 selected the recommended statement-only form, a reserved keyword, and a
 scheduler opportunity rather than "every runnable task gets a turn".
-**Decided, not implemented.** Implementation and migration are plan F20.
+Built 2026-10-27 (plan F20), with the whole-tree migration from `yieldNow()`.
 
 ```veles
 fun checkpoint() {
   cede
 }
 ```
-
-This is proposed syntax. The current compiler still requires `yieldNow()`.
 
 1. `cede` is a reserved, operand-free statement, permitted in ordinary
    executable blocks and unbraced bodies where suspension is allowed. It
@@ -7958,6 +7956,21 @@ keeping `yieldNow()` as the public spelling, a Unit-valued expression,
 a contextual keyword, `yield suspend`/`await cede` ceremony, and a global
 round-robin promise. Separating scheduler ceding from generator yielding
 does not decide generators; I1 remains open and is the next planning topic.
+
+Built 2026-10-27: `ast.CedeStmt` in both front ends (`parser/cede.go`,
+`selfhost/parser/cede.vs`, gated byte for byte by the `p-cede` corpus file);
+the checker lowers it to its own operation, `task.cede`, a direct
+suspension seed, and codegen to the runtime's zero sleep (one trip through
+the executor's queue, then the resume's cancellation and fail-fast checks).
+The statement may be followed on its line by `else` only. A body written
+`=> cede` (a function, a lambda, a `when` or `race` arm) is reported and read
+as `{ cede }`, so nothing cascades; the fix writes the block. The removed
+`yieldNow` is reported only where the name resolves to nothing
+(`sema/removed.go`). A yield abandoned by a cancellation no longer leaves
+the task's yield flag set (the next `cede` returned at once, unchecked).
+Tests: `parser/cede_test.go`, `sema/cede_test.go`, conformance `D197-*`,
+`driver/cede_test.go`, golden `cede`. Not run: macOS and the Linux
+sanitizer gates (checklist §11).
 
 ### D198 — Trees are boxed: recursive sealed types, `indirect`, `inline` (v0.106; amends D12)
 
@@ -8729,6 +8742,16 @@ back-edges and an explicit `cede` (D197) stay. User: "we'd need check if the
 current approach is good. but ok, leave it" — so D145's yield policy (the
 ~10 ms slice, a lone task, fixed-thread executors, the cost of `cede` per
 iteration) is to be measured; plan F21._
+
+_Measured 2026-10-27 (plan F21, `bench/preempt`, numbers in
+`bench/results.md`): the slice stays as it is. A ticker beside busy
+suspending loops wakes at most ~16 ms late on Windows and ~14.5 ms on Linux,
+at 1 and 8 workers, and on a one-thread executor (D150) too — Go's
+asynchronous preemption in the same program: 20–28 ms. Nothing to change in
+the language; the runtime had to opt out of Windows 11's throttling of the
+process's timer resolution, which had turned it into ~46 ms. The measurements
+raised Q65 (how often a back edge polls) and two runtime/codegen items in
+checklist §11._
 
 ### D214 — A local `var` is assigned before it is read (v0.116)
 

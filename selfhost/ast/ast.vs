@@ -469,6 +469,10 @@ sealed trait Stmt {
     var label: Ident? = null
     var pos:   Span = Span.none()
   }
+  /// `cede`: the task offers its executor a turn (D197).
+  struct CedeStmt {
+    var pos: Span = Span.none()
+  }
   /// `loop { }`, `loop (cond) { }`, `loop (x in c) { }`.
   struct LoopStmt {
     var isInline: bool = false  // `inline loop (f in T.fields)`: unrolled while compiling (D174)
@@ -915,6 +919,7 @@ fun stmtSpan(s: Stmt): Span => when (s) {
   is ThrowStmt        => s.pos
   is BreakStmt        => s.pos
   is ContinueStmt     => s.pos
+  is CedeStmt         => s.pos
   is LoopStmt         => s.pos
   is WithStmt         => s.pos
   is ScopeStmt        => s.pos

@@ -160,6 +160,9 @@ func (p *Parser) parseUnary() ast.Expr {
 		return &ast.LetCond{Name: name, Value: value, Pos: p.spanFrom(start)}
 	case lexer.KwTry:
 		p.next()
+		if p.at(lexer.KwCede) {
+			return p.cedePrefixed(start, lexer.KwTry)
+		}
 		savedTry := p.inTry
 		p.inTry = true
 		x := p.parseUnary()
@@ -180,6 +183,9 @@ func (p *Parser) parseUnary() ast.Expr {
 		return tried
 	case lexer.KwAwait:
 		p.next()
+		if p.at(lexer.KwCede) {
+			return p.cedePrefixed(start, lexer.KwAwait)
+		}
 		x := p.parseUnary()
 		return &ast.AwaitExpr{X: x, Pos: p.spanFrom(start)}
 	case lexer.KwAsync:
@@ -191,6 +197,9 @@ func (p *Parser) parseUnary() ast.Expr {
 			body := p.parseBlock()
 			fun := &ast.LambdaExpr{Body: &ast.BlockExpr{Block: body}, Pos: body.Pos}
 			return &ast.CallExpr{Fun: fun, Async: true, Block: true, Pos: p.spanFrom(start)}
+		}
+		if p.at(lexer.KwCede) {
+			return p.cedePrefixed(start, lexer.KwAsync)
 		}
 		x := p.parseUnary()
 		call, ok := x.(*ast.CallExpr)
@@ -517,6 +526,8 @@ func (p *Parser) parsePrimary() ast.Expr {
 		return &ast.BadExpr{Pos: t.Span}
 	case lexer.KwReturn, lexer.KwThrow, lexer.KwBreak, lexer.KwContinue:
 		return &ast.ControlExpr{Stmt: p.parseStmt()}
+	case lexer.KwCede:
+		return p.cedeExpr()
 	case lexer.Arrow:
 		p.thinArrow(t.Span, "'->' is not an operator; use '=>' (D33)")
 		p.next()
@@ -681,6 +692,9 @@ func (p *Parser) parseLambda() ast.Expr {
 func (p *Parser) parseArmBody() ast.Expr {
 	if p.at(lexer.LBrace) {
 		return &ast.BlockExpr{Block: p.parseBlock()}
+	}
+	if p.at(lexer.KwCede) {
+		return p.cedeArmBody()
 	}
 	start := p.span()
 	body := p.parseExpr()

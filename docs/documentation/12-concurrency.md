@@ -1092,6 +1092,64 @@ is not seen inside a lock region (`withLock`, `with m.lock()`) or a
 `close()`, which always run to their end. `checkCancelled()` adds a check
 anywhere else.
 
+### Giving the executor a turn: `cede`
+
+A task keeps its thread until it reaches a suspension point, and a loop in
+a suspending function gives it up by itself once it has run for about
+10 ms while others wait (D145). The statement `cede` is a suspension point
+you place: the task offers its executor a turn and goes on at the next
+statement when it is picked again — which may be at once (D197). It suits
+a long computation that shares an executor with tasks that should not wait
+for all of it, given a turn between its chunks:
+
+```veles
+use io
+
+/// FNV-1a over the data, offering the executor a turn after each 64 KiB
+fun fnv1a(data: List<u8>): u64 {
+  var hash: u64 = 0xcbf29ce484222325
+  loop (chunk in data.chunked(65536)) {
+    loop (b in chunk) hash = (hash ^ b.toU64()) *% 0x100000001b3
+    cede
+  }
+  hash
+}
+
+fun main() {
+  val data = MutableList<u8>.make(1 << 20, i => (i % 251).wrapU8())
+  val digest = async fnv1a(data)
+  io.println("hashing alongside")
+  io.println("${await digest:x}")
+}
+```
+
+Output:
+
+```text
+hashing alongside
+4c568eccaeaf6c44
+```
+
+- `cede` is a statement, alone on its line or before `;`, `}` or `else`:
+  it has no value and takes nothing. `cede()`, `await cede`,
+  `val x = cede` are errors that say so, and an expression body is
+  written as a block: `fun pause() { cede }`, `() => { cede }`,
+  `async { cede }`.
+- A function that cedes suspends, and so does every caller, as with any
+  suspension point; it is refused where suspending is — in a lock region,
+  a global initializer, a `const fun`, a callback whose type does not
+  suspend.
+- It is where a cancellation is seen and where a scope body notices a
+  failed child. In a `close()` that suspends it still gives the turn, but
+  the cancellation waits until the close is done (D47).
+- It promises nothing about who runs next — not the oldest waiting task,
+  not every other task first — and no delay. It is not synchronisation:
+  to wait for something, wait on it (a channel, an `await`, an `Event`);
+  a loop that cedes until a flag changes only burns the thread.
+- The task stays where it is: on an `Executor.thread` it goes on on that
+  thread. `await sleep(Duration.zero)` does the same as `cede`;
+  `checkCancelled()` checks for a cancellation without giving a turn.
+
 ### Time limits: `withTimeout`
 
 The prelude's `withTimeout(limit, f)` calls `f` and gives up once `limit`
@@ -1789,8 +1847,9 @@ use.
 A task gives up its thread at a suspension point, and a loop in a
 suspending function also gives it up by itself once it has run for about
 10 ms while other tasks wait (D145). A function that does not suspend
-keeps its thread until it returns (the other threads go on); `yieldNow()`
-in its loop gives the thread up, and makes the function suspend. A call that blocks the thread itself — a C
+keeps its thread until it returns (the other threads go on); `cede` in
+its loop gives the thread up, and makes the function suspend. A call that
+blocks the thread itself — a C
 function, a read from the terminal, waiting for a child process — is
 noticed by a monitor within about a millisecond, and the thread's queue
 of tasks goes to a spare thread until the call returns (D66).

@@ -91,8 +91,9 @@ decision-free unless it names a Q.
    after the stress runs pass with it (§5.3). _Done 2026-10-27._
 2. [x] **B30** D212 `const struct`, **B31** D213 allocation hints, **B29 part 2**
    D210 `lazy val`, B29 part 3 D211's docs chapter — _all done 2026-10-27_.
-3. [ ] **F20** D197 `cede` (`veles-cede-spec.md`; `yieldNow()` migrated in
-   the same change) and **F21** (measure D145's automatic yield).
+3. [x] **F20** D197 `cede` (`veles-cede-spec.md`; `yieldNow()` migrated in
+   the same change) and **F21** (measure D145's automatic yield). _Done
+   2026-10-27; F21 raised Q65 (back-edge poll granularity), open._
 4. [ ] **Self-hosting, front end → checker** (the way, in order):
    - the front end is done: lexer, parser, AST, spans and `Layout` agree
      with Go byte for byte (gates G1–G4, P6, `go test ./selfhost`);
@@ -500,7 +501,8 @@ on Linux).
     the calls in flight; formatter round trip; hover texts; `veles-bench`: `spawn`, `suscall`,
     `httphello` no slower, and a new bench of `awaitAll` over two tasks against the `scope`
     form; docs chapter 12, reference/concurrency, reference/errors, cheatsheet.
-20. **F20 D197 `cede` and removal of `yieldNow()` (specified, not built).**
+20. **F20 D197 `cede` and removal of `yieldNow()` — done 2026-10-27**
+    (progress log; macOS and the Linux sanitizer run are checklist §11).
     Implement the reserved, statement-only scheduler operation per
     `veles-cede-spec.md` sections 1-7. Both frontends, AST/printers, sema
     effect propagation and context checks, HIR/codegen/runtime lifecycle,
@@ -514,8 +516,8 @@ on Linux).
     allocations at 1/8 workers plus idle/spawn/channels/suscall/httphello
     regressions; full build/vet/tests and tested docs. No ordering-dependent
     expected output. Record unavailable gates in checklist section 11.
-    User requested specification first: do not start this implementation
-    instead of the next generator-research/planning discussion (I1).
+    (Originally: the user asked for the specification first, before the
+    generator research, I1.)
 
 21. **F21 Is D145's loop yield right? (measure; decided 2026-10-26 with
     `suspend loop` rejected).** The user: "we'd need check if the current
@@ -531,6 +533,9 @@ on Linux).
     Acceptance: numbers in `bench/results.md`; a verdict on the slice (keep,
     change, or make it per executor, which would be a `veles-decide`
     question); any gap goes into checklist §11.
+    _Done 2026-10-27: the slice stays (verdict in `bench/results.md`);
+    `bench/preempt` and `bench/backedge` track it; Q65 (poll granularity)
+    and checklist §11 hold what it found._
 
 ---
 
@@ -2927,3 +2932,5 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 - 2026-10-26 — B29 part 1 (F1): a module or `static val` must have a `Sendable` type (`sema/check_fn.go` `checkGlobal`; executor state exempt), with a fix hint per kind. The four-task `MutableMap` program that hung or segfaulted now fails to compile. Pinned by `TestConcurrencyRules`/`TestConcurrencyAccepted`; no std/example/selfhost/docs code hit it (one sema fixture did). Docs: chapters 12 and 14, error reference. Green on Windows except `examples/todo` and the `regex`/`todo` format corpus, which fail identically at HEAD; sema and docs green in WSL. Found: a module `var` of a synchronized type can be reassigned unsynchronized (checklist §11, needs a decision).
 - 2026-10-26 — D66 addendum (v0.114; user, recommended of 4): no module-level `var`. A `var` of a synchronized type, accepted before, is now an error with a `val` fix and a hint naming `set`/`store`/`reset` (`sema/check_fn.go` `checkGlobal`, `syncWriteHint`, `globalWriteHint`, `keywordBefore`). The errors for assigning a global `val`, its field, or calling a mutating method on it (`sema/receivers.go`) no longer advise `var`; executor state still does. Evidence: `var total = Mutex(…)` reassigned while two tasks locked it printed 200 002 of 200 000 increments. Pinned by `TestConcurrencyRules` and `TestModuleVarOfLockFix`; docs chapter 12 and the error reference. Nothing in the tree used it.
 - 2026-10-26 — The user's `to_figure_out.md` reasoned through: D212 `const struct` (plan B30), D213 opt-in allocation hints (plan B31), `suspend loop` not added with D145's yield to be measured (plan F21). Probed first: structs already print, compare, `copy` and are `const`, but are shallowly immutable (`t.names.push` through a `val`).
+- 2026-10-27 — F20 built: D197 `cede`. Both front ends (`ast.CedeStmt`; `parser/cede.go`, `selfhost/parser/cede.vs`; a newline after `cede` always ends the statement), `task.cede` in the checker (a direct suspension seed, refused where suspension is), lowered to the runtime's zero sleep; formatter, `veles parse`, hover with D197's text, completion, the VS Code grammar, a diagnostic family. Every wrong form is one error that names the fix, and `=> cede` bodies are read as `{ cede }` so nothing cascades. `yieldNow` left the prelude: its uses are errors with fixes where the rewrite keeps the meaning (statement, function or lambda body, `async`, a value where a suspending `fun()` is wanted), none for a call in a value or with arguments, and a program's own `yieldNow` is untouched; the tree (bench/idle, driver tests, docs) migrated. Found on the way: (1) a yield abandoned by a cancellation left `TB_YIELDED` set, so the next `cede` returned at once with no turn and no cancellation check (pinned by `driver/cede_test.go`, which fails without the fix); (2) a bad expression that had taken all its tokens made both parsers skip the next statement as well. Tests: parser, sema, conformance `D197-*`, `driver/cede_test.go` (debug/release, 1/2/4/8 threads, GC stress and poisoning), golden `cede`, the self-host edge `p-cede`. Windows and Linux; macOS and the Linux sanitizer not run (checklist §11).
+- 2026-10-27 — F21 measured (`bench/preempt` with its F21 matrix, `bench/backedge`; `bench/results.md`): D145's slice stays — a ticker beside busy suspending loops wakes within ~16 ms (Windows) / ~14.5 ms (Linux) at 1 and 8 workers and on a one-thread executor, Go's asynchronous preemption 20–28 ms in the same program. Found: Windows 11 stopped honouring the process's 1 ms timer period seconds into a run (power throttling of a windowless process), so the monitor looked every 15.6 ms and a one-thread executor's slice became ~46 ms; the runtime now opts out (`veles_timer_period`). The poll costs the loop optimizations (a chain 8.8× slower than the same C loop, a sum no longer a closed form; the same poll in C reproduces it exactly) → Q65; a suspending loop pays 2× more for frame stores → checklist §11.

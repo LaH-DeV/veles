@@ -666,7 +666,7 @@ fun consumer(s: Stack, sum: Atomic<i64>, count: Atomic<i64>, want: i64) {
       val _ = sum.add(v, order: MemoryOrder.Relaxed)
       val _ = count.add(1)
     } else {
-      yieldNow()
+      cede
     }
   }
 }
@@ -687,7 +687,7 @@ fun publish(data: Atomic<i64>, ready: Atomic<bool>) {
 fun observe(data: Atomic<i64>, ready: Atomic<bool>): i64 {
   loop {
     if (ready.load(order: MemoryOrder.Acquire)) return data.load(order: MemoryOrder.Relaxed)
-    yieldNow()
+    cede
   }
 }
 
@@ -2015,7 +2015,7 @@ fun main() {
   permits.send(true)
   scope {
     val t = async waitsOnChannel(permits, never)
-    yieldNow()                // it blocks in its send
+    cede                      // it blocks in its send
     val _ = permits.tryRecv() // its send completes: it is queued
     t.cancel()                // and cancelled before it runs
   }
@@ -2023,7 +2023,7 @@ fun main() {
   val sw = time.Stopwatch.start()
   scope {
     val t = async waitsOnTimer(permits)
-    yieldNow()
+    cede
     val _ = permits.tryRecv()
     t.cancel()
   }
