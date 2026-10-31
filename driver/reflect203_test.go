@@ -107,7 +107,7 @@ fun main() {
 	}
 	want := "4 7 [a] High tool\n" +
 		"[0:Low:Few messages., 1:High:] [0:Build:Builds the program., 1:Test:] High=hi Low null [Low, High=hi]\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "main.exe")
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("release=%v: build failed with exit %d", release, code)

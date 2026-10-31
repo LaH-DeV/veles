@@ -15,18 +15,18 @@ import (
 )
 
 type Checker struct {
-	paramState   map[paramKey]int8 // which parameters a function keeps (escape.go, D188)
+	paramState    map[paramKey]int8             // which parameters a function keeps (escape.go, D188)
 	receiverFacts map[*ast.FunDecl]*methodFacts // what a method does with `this` (move_method.go, D201)
 	testRunnable  map[*Func]bool                // which tests and helpers the compiler can run (compile_tests.go, D208)
-	ladderSeen   map[*ast.IfExpr]bool // the links of an else-if chain whose head was looked at (lint_style.go)
-	namedImports []namedImport // every bound name of a braced import (D85)
-	rounds       int           // inference rounds run so far (D45), for the effects dump
-	arrayUses    []arrayUse    // inline arrays to size-check (D121)
-	pkg          *Package
-	bareDone     map[*ast.FunDecl]bool // the methods whose bare member names are resolved (D158)
-	blockDone    map[*ast.LambdaExpr]bool // the receiver blocks whose bare member names are resolved (D207)
-	onCalls      []onCall                  // variables given to a function on a receiver: heap or stack, settled by the receiver pass (D207)
-	diags        *source.Diagnostics
+	ladderSeen    map[*ast.IfExpr]bool          // the links of an else-if chain whose head was looked at (lint_style.go)
+	namedImports  []namedImport                 // every bound name of a braced import (D85)
+	rounds        int                           // inference rounds run so far (D45), for the effects dump
+	arrayUses     []arrayUse                    // inline arrays to size-check (D121)
+	pkg           *Package
+	bareDone      map[*ast.FunDecl]bool    // the methods whose bare member names are resolved (D158)
+	blockDone     map[*ast.LambdaExpr]bool // the receiver blocks whose bare member names are resolved (D207)
+	onCalls       []onCall                 // variables given to a function on a receiver: heap or stack, settled by the receiver pass (D207)
+	diags         *source.Diagnostics
 	// roundDiags collects diagnostics of the current inference round; only
 	// the final round's are kept (D45 fixpoint).
 	roundDiags *source.Diagnostics
@@ -36,9 +36,9 @@ type Checker struct {
 	// plainFuncAt: each plain function value accepted where a parameter may
 	// suspend, and where it was written (D217)
 	plainFuncAt map[*Cast]source.Span
-	lazyOf   map[*Global]*Global
-	lazyInit map[source.Span]*Global
-	lazyDecl map[*Global]*ast.ValDecl // the declaration as written, for hover
+	lazyOf      map[*Global]*Global
+	lazyInit    map[source.Span]*Global
+	lazyDecl    map[*Global]*ast.ValDecl // the declaration as written, for hover
 	// typeSite: the generic call being checked, where a type its inference
 	// instantiates is reported (checkConstArgs)
 	typeSite source.Span
@@ -90,10 +90,10 @@ type Checker struct {
 	staticOwner map[*Global]*types.Struct                  // the struct a `static val` global belongs to
 	annotations map[any][]*AnnotationUse                   // user annotations (D174), by the declaration node they stand on
 	annReaders  map[*types.Struct][]*types.Trait           // the `for` traits of each annotation, once resolved
-	annWrappers map[*types.Struct]*annWrapper                 // the wrapper function of each decorator annotation, once resolved (D176)
+	annWrappers map[*types.Struct]*annWrapper              // the wrapper function of each decorator annotation, once resolved (D176)
 	reflOwners  []*types.Struct                            // the structs whose fields were reflected, numbered for FieldInfo.owner (D174)
 	reflIndex   map[*types.Struct]int
-	reflMembers []types.Type // the enums and sealed families whose members were reflected, for MemberInfo.owner (D203)
+	reflMembers []types.Type   // the enums and sealed families whose members were reflected, for MemberInfo.owner (D203)
 	readsAnn    map[*Func]bool // a `const fun` that reads annotations (memoized)
 	globals     map[*Global]*ast.ValDecl
 	// executors (D150): their declarations, the global holding each, and
@@ -162,14 +162,10 @@ type declCtx struct {
 // CheckTests is Check for `veles test`: no main is required and the tests
 // (`test "..." { }`, D78) become the entry point.
 func CheckTests(pkg *Package, diags *source.Diagnostics, release bool) *Program {
-	dropForeignTestFiles(pkg)
 	return check(pkg, diags, release, true)
 }
 
 func Check(pkg *Package, diags *source.Diagnostics, release bool) *Program {
-	if pkg.NeedMain {
-		dropTestFiles(pkg) // a build or a run never sees *.test.vs (D78)
-	}
 	return check(pkg, diags, release, false)
 }
 
@@ -192,6 +188,11 @@ func checkCollect(pkg *Package, diags *source.Diagnostics, release bool, testMod
 // checkCollectObserved is checkCollect, telling d (when not nil) as the checker
 // passes the points a phase dump is written at (dump_phases.go).
 func checkCollectObserved(pkg *Package, diags *source.Diagnostics, release bool, testMode bool, index *Index, d *PhaseDump) (*Program, *Checker) {
+	if pkg.NeedMain && !testMode {
+		dropTestFiles(pkg)
+	} else {
+		dropForeignTestFiles(pkg)
+	}
 	if d != nil {
 		d.afterLoad(pkg)
 	}
@@ -757,8 +758,18 @@ func (c *Checker) declare(m *Module, f *ast.File, d ast.Decl) {
 func (c *Checker) newTemplate(m *Module, f *ast.File, d *ast.FunDecl, owner *types.Struct, outer map[string]*types.TypeParam) *FuncTemplate {
 	t := &FuncTemplate{Name: d.Name.Name, Module: m, File: f, Decl: d, Pub: d.Pub, Internal: d.Internal, Owner: owner, Extern: d.Extern}
 	t.Attrs = c.attrsOf(d.Attrs, "function")
+	if attribute, legacy := t.Attrs["template"]; legacy {
+		fix := testFunFix(d.Name.Pos)
+		if fix != nil {
+			fix.Title = "Replace '@template' with 'template fun'"
+			fix.Edits[0].NewText = "template "
+			fix.Edits = append(fix.Edits, source.TextEdit{Span: attribute.Pos, NewText: ""})
+		}
+		c.errorFix(d.Name.Pos, fix, "'@template' was replaced by the contextual modifier 'template fun' (D227)")
+		d.Template = true
+	}
 	t.TestCode = d.Test || isTestFile(f)
-	if _, isTemplate := t.Attrs["template"]; isTemplate {
+	if d.Template {
 		c.checkTemplateSignature(d, owner != nil)
 	}
 	if a, isTest := t.Attrs["test"]; isTest {

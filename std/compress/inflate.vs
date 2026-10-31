@@ -2,6 +2,7 @@
 // decoder stops where it runs out, picking up at the last whole symbol (or
 // the start of the block header) when more arrives. A whole buffer is the
 // one-piece case; the streaming reader is the many-piece one.
+use bytes
 
 // length symbols 257..285: base length and extra bits
 const LENGTH_BASE: Array<i64, 29> = [
@@ -36,7 +37,7 @@ const IN_CODES: i64 = 2
 const ALL_DONE: i64 = 3
 
 // the window DEFLATE may reach back into
-const WINDOW: i64 = 32768
+const WINDOW: i64 = bytes.KiB * 32
 
 fun corrupt(why: string): CompressError =>
   CompressError(message: "compressed data is corrupt: $why", kind: CompressKind.Corrupt)

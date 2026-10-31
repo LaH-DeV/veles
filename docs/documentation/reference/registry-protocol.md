@@ -52,8 +52,9 @@ One statement per line:
 attest v1 <git|registry> <source> <version|commit:full> <h1 hash> <claim> <time> <ed25519:key> <sig>
 ```
 
-`sig` is base64 ed25519 over `veles-attest-v1 <kind> <source> <ref> <hash>
-<claim> <time>`. A statement is about exact bytes, so it counts only for the
+`sig` is base64 ed25519 over
+`veles-attest-v1 <kind> <source> <ref> <hash> <claim> <time>`. A statement
+is about exact bytes, so it counts only for the
 package whose hash it names. It verifies on its own, wherever it is kept.
 
 ## Write

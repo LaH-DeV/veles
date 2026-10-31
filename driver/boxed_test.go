@@ -104,7 +104,7 @@ fun main() {
 	want := "Add(left: &Num(value: 3), right: &Num(value: 2), label: a) | Add(left: &Num(value: 3), right: &Num(value: 2), label: changed) | Num(value: 2) Num(value: 42) | false true\n" +
 		"set 3\n" +
 		"upload 10 99\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "prog")
 		if release {
 			exe += "-release"
@@ -116,7 +116,7 @@ fun main() {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)
 		}
 		var trees string
-		for _, threads := range []string{"1", "4"} {
+		for _, threads := range threadCounts("1", "4") {
 			cmd := exec.Command(exe)
 			cmd.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=65536")
 			out, err := cmd.CombinedOutput()

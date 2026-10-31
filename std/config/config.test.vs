@@ -100,6 +100,16 @@ test "defaults fill what is not set" {
   expect(s.database.pool.timeout == Duration.seconds(30))
 }
 
+test "booleans accept both lowercase literals and reject other spellings" {
+  loop (text in ["true", "false"]) {
+    val server = try read<Server>(minimal(["DEBUG": text]))
+    expect(server.debug == (text == "true"))
+  }
+  loop (text in ["TRUE", "False", "1", "0", "yes"]) {
+    expect(read<Server>(minimal(["DEBUG": text])) is Err)
+  }
+}
+
 test "every type is read from its text" {
   val vars = minimal([
     "PORT": "9000", "HOST": "localhost", "DEBUG": "true", "RATIO": "0.25",
@@ -298,7 +308,8 @@ struct OnlyPath {
 }
 
 test fun scratch(name: string): string {
-  val dir = path.join(os.tempDir(), "veles-config-test-$name")
+  // the pid keeps two runs at once out of each other's files
+  val dir = path.join(os.tempDir(), "veles-config-test-${os.pid()}-$name")
   when (makeDir(dir)) {
     is Err(e) => panic("cannot make ${dir}: ${e.message()}")
     is Ok(_)  => dir

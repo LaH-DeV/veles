@@ -9,7 +9,7 @@ use path
 val uploads: string = makeUploads()
 
 test fun makeUploads(): string {
-  val dir = path.join(os.tempDir(), "veles-http-multipart-test")
+  val dir = path.join(os.tempDir(), "veles-http-multipart-test-${os.pid()}")
   when (fs.mkdir(dir)) {
     is Err(e) => panic("cannot make the upload directory: ${e.message()}")
     is Ok(_)  => dir

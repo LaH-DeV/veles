@@ -8,7 +8,9 @@ compile error instead.
 
 ## Producing and consuming `T?`
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 fun findUser(id: i64): string? => when (id) {
@@ -24,6 +26,109 @@ fun main() {
   io.println("${a?.len() ?: 0} ${z?.len() ?: 0}")
 }
 ```
+
+```go [Go]
+package main
+
+import "fmt"
+
+// Go has no nullable type: "maybe absent" is a second result (or a pointer).
+func findUser(id int64) (string, bool) {
+	switch id {
+	case 1:
+		return "ann", true
+	case 2:
+		return "bob", true
+	}
+	return "", false
+}
+
+func main() {
+	a, aok := findUser(1)
+	z, zok := findUser(9)
+	if !aok {
+		a = "nobody"
+	}
+	if !zok {
+		z = "nobody"
+	}
+	fmt.Println(a, z)
+	aLen, zLen := 0, 0
+	if aok {
+		aLen = len(a)
+	}
+	if zok {
+		zLen = len(z)
+	}
+	fmt.Println(aLen, zLen)
+}
+```
+
+```ts [TypeScript]
+function findUser(id: number): string | null {
+  switch (id) {
+    case 1: return "ann";
+    case 2: return "bob";
+    default: return null;
+  }
+}
+
+const a = findUser(1);
+const z = findUser(9);
+console.log(`${a ?? "nobody"} ${z ?? "nobody"}`);
+// length counts UTF-16 units; Veles' len() counts UTF-8 bytes (equal for ASCII)
+console.log(`${a?.length ?? 0} ${z?.length ?? 0}`);
+```
+
+```swift [Swift]
+func findUser(_ id: Int) -> String? {
+    switch id {
+    case 1: return "ann"
+    case 2: return "bob"
+    default: return nil
+    }
+}
+
+let a = findUser(1)
+let z = findUser(9)
+print("\(a ?? "nobody") \(z ?? "nobody")")
+print("\(a?.utf8.count ?? 0) \(z?.utf8.count ?? 0)")
+```
+
+```kotlin [Kotlin]
+fun findUser(id: Long): String? = when (id) {
+    1L -> "ann"
+    2L -> "bob"
+    else -> null
+}
+
+fun main() {
+    val a = findUser(1)
+    val z = findUser(9)
+    println("${a ?: "nobody"} ${z ?: "nobody"}")
+    // length counts UTF-16 units; Veles' len() counts UTF-8 bytes (equal for ASCII)
+    println("${a?.length ?: 0} ${z?.length ?: 0}")
+}
+```
+
+```rust [Rust]
+fn find_user(id: i64) -> Option<&'static str> {
+    match id {
+        1 => Some("ann"),
+        2 => Some("bob"),
+        _ => None,
+    }
+}
+
+fn main() {
+    let a = find_user(1);
+    let z = find_user(9);
+    println!("{} {}", a.unwrap_or("nobody"), z.unwrap_or("nobody"));
+    println!("{} {}", a.map_or(0, str::len), z.map_or(0, str::len));
+}
+```
+
+:::
 
 Output:
 ```text

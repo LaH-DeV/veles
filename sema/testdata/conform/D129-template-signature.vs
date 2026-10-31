@@ -1,25 +1,23 @@
-// D129: a @template function takes the literal's pieces and values.
+// D129, D227: a template function takes the literal's pieces and values.
 use io
 
 struct Query {
   text: string
 }
 
-@template
-fun sql(parts: List<string>, values: List<i64>): Query => Query(text: parts.join("?"))
+template fun sql(parts: List<string>, values: List<i64>): Query => Query(text: parts.join("?"))
+
+template fun oneParam(text: string): Query => Query(text: text) // error: is a template with 1 parameters
+
+template fun badFirst(parts: string, values: List<i64>): Query => Query(text: parts) // error: the first parameter of a template is the pieces
+
+template fun badSecond(parts: List<string>, values: i64): Query => Query(text: "") // error: the second parameter of a template is the values
 
 @template
-fun oneParam(text: string): Query => Query(text: text) // error: is a @template with 1 parameters
-
-@template
-fun badFirst(parts: string, values: List<i64>): Query => Query(text: parts) // error: the first parameter of a @template is the pieces
-
-@template
-fun badSecond(parts: List<string>, values: i64): Query => Query(text: "") // error: the second parameter of a @template is the values
+fun oldSpelling(parts: List<string>, values: List<i64>): Query => Query(text: "") // error: '@template' was replaced by the contextual modifier 'template fun'
 
 struct Holder {
-  @template
-  fun inside(parts: List<string>, values: List<i64>): Query => Query(text: "") // error: applies to a module-level function
+  template fun inside(parts: List<string>, values: List<i64>): Query => Query(text: "") // error: applies to a module-level function
 
   n: i64
 }

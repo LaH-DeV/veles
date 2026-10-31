@@ -288,12 +288,12 @@ fun main() {
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("cede%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"1", "2", "4", "8"} {
+		for _, threads := range threadCounts("1", "2", "4", "8") {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096", "VELES_GC_POISON=1")

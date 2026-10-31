@@ -173,7 +173,7 @@ awaited 42
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "with.exe")
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)

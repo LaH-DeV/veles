@@ -3,6 +3,7 @@
 // bad, the output ceiling, and the streaming writer and reader over a stream
 // that hands out a few bytes at a time.
 
+use bytes
 use io
 
 // text with structure, so every block type has something to do
@@ -40,6 +41,16 @@ test "a Huffman-only gzip file written by Go is read" {
 test "a raw deflate stream written by Go is read" {
   val packed: List<u8> = [74, 76, 74, 70, 67, 128, 0, 0, 0, 255, 255]
   expect(try inflate(packed) == "abcabcabcabcabcabc".bytes())
+}
+
+test "maximum output limits do not overflow" {
+  val data = "abc".bytes()
+  val maximum: i64 = 9223372036854775807
+  val nearby = maximum - 1
+  expect(try inflate(deflate(data), max: maximum) == data)
+  expect(try inflate(deflate(data), max: nearby) == data)
+  expect(try gunzip(gzip(data), max: maximum) == data)
+  expect(try gunzip(gzip(data), max: nearby) == data)
 }
 
 test "every level round-trips, as gzip and as raw deflate" {
@@ -147,7 +158,7 @@ struct Pipe {
   fun written(): List<u8> => this.outgoing.withLock(out => out.toList())
 
   implement io.Stream {
-    fun read(max: i64 = 65536): List<u8> {
+    fun read(max: i64 = bytes.KiB * 64): List<u8> {
       this.incoming.withLock(inbound => {
         val n = max.min(this.step).min(inbound.len())
         val chunk = inbound.take(n)
@@ -175,7 +186,7 @@ struct Pipe {
 
 test "the streaming reader decodes input that arrives a few bytes at a time" {
   val data = sample(2500).concat(noise(9000)).concat(sample(40))
-  loop (step in [1, 2, 7, 100, 65536]) {
+  loop (step in [1, 2, 7, 100, bytes.KiB * 64]) {
     loop (level in [0, 1, 6, 9]) {
       val pipe = Pipe.of(gzip(data, level), step)
       var reader = GzipReader(from: pipe)
@@ -198,7 +209,7 @@ test "the streaming reader reports a cut stream and a ceiling" {
     is Err(e) => expect(e is CompressError)
     is Ok(_)  => expect(false)
   }
-  var small = GzipReader(from: Pipe.of(packed, 4096), max: 1000)
+  var small = GzipReader(from: Pipe.of(packed, bytes.KiB * 4), max: 1000)
   when (small.readAll()) {
     is Err(e) => expect(e is CompressError)
     is Ok(_)  => expect(false)

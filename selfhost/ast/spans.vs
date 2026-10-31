@@ -467,19 +467,19 @@ fun spansOfFunDecl(node: FunDecl, out: MutableList<string>) {
     spansOfAttribute(x1, out)
   }
   spansOfIdent(node.name, out)
-  loop (x15 in node.typeParams) {
-    spansOfTypeParam(x15, out)
+  loop (x16 in node.typeParams) {
+    spansOfTypeParam(x16, out)
   }
-  loop (x17 in node.params) {
-    spansOfParam(x17, out)
+  loop (x18 in node.params) {
+    spansOfParam(x18, out)
   }
   out.push("FunDecl.variadicAt ${node.variadicAt.start} ${node.variadicAt.end}")
-  if (val x21 = node.ret) spansOfType(*x21, out)
+  if (val x22 = node.ret) spansOfType(*x22, out)
   spansOfEffects(node.effects, out)
-  if (val x23 = node.body) {
-    spansOfBlock(x23, out)
+  if (val x24 = node.body) {
+    spansOfBlock(x24, out)
   }
-  if (val x25 = node.exprBody) spansOfExpr(*x25, out)
+  if (val x26 = node.exprBody) spansOfExpr(*x26, out)
   out.push("FunDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 

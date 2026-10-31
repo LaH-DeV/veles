@@ -1,5 +1,5 @@
 // Template literals (D129): a name written straight before a string —
-// `html"…"`, `sql"…"` — hands the string to a function marked `@template`
+// `html"…"`, `sql"…"` — hands the string to a `template fun`
 // as pieces and values, instead of pasting the values into the text. The
 // function decides what a value means, so the result can be a type a plain
 // string can never be: markup whose values were escaped, a query whose values
@@ -36,8 +36,7 @@ struct Html {
   }
 }
 
-@template
-fun html(parts: List<string>, values: List<Markup>): Html {
+template fun html(parts: List<string>, values: List<Markup>): Html {
   val out = StringBuilder()
   loop ((i, part) in parts.enumerate()) {
     out.append(part)
@@ -69,8 +68,7 @@ struct Query {
   fun params(): List<string> => this.params
 }
 
-@template
-fun sql(parts: List<string>, values: List<Param>): Query {
+template fun sql(parts: List<string>, values: List<Param>): Query {
   val text = StringBuilder()
   val params: MutableList<string> = []
   loop ((i, part) in parts.enumerate()) {

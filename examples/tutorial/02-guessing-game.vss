@@ -9,7 +9,10 @@ fun main() {
   loop :game {
     println("Please input your guess.")
 
-    val guess = when (val input = readLine()) {
+    val input: string? = readLine() catch (_) {
+      null
+    }
+    val guess = when (input) {
       is string => i64.parse(input.trim())
       else      => continue
     }

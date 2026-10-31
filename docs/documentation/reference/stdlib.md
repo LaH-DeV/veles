@@ -251,7 +251,7 @@ Veles runs on the C stack and does not grow it — it is 256 MB per thread
 (`VELES_STACK`, chapter 7), and running out is a `stack overflow` panic that
 cannot be caught — so a recursive walk over input someone else wrote, a JSON
 document of 100 000 `[` or a source file of 50 000 `(`, has to be bounded to
-answer with an *error* instead. There is one default for that and one
+answer with an _error_ instead. There is one default for that and one
 sentence to report reaching it, and every decoder, encoder and parser in the
 library uses them.
 
@@ -458,31 +458,31 @@ unreachable.
 
 ### Concurrency primitives
 
-| | |
-|---|---|
-| `Channel<T>()` | a rendezvous: `send` completes when a receiver has the value |
-| `Channel<T>(capacity: n)` | bounded channel; `send(v)`, `await recv(): T?`, `close()`, `closeAfter(n)` (closes itself after `n` more sends), `len()`; `trySend(v): bool` and `tryRecv(): T?` never wait (`false` when full, `null` when nothing is buffered) |
-| `select { ch.send(v) => … }` | a send arm (D108): ready when `ch` can take `v`; when it wins `v` is in the channel, when another arm wins it was not sent; on a closed channel it panics |
-| `ch.toList(): List<T>`, `ch.forEach(f)` | receive until `ch` is closed and drained; an error from `f` stops `forEach` and is thrown (D110) |
-| `Semaphore(permits: n)` | at most `n` holders (D110): `acquire(): Permit` waits for one (cancellable), `tryAcquire(): Permit?` does not, `available(): i64`; a `Permit` is `Closeable` — `with sem.acquire()` — and a second close does nothing; `n < 1` panics |
-| `retry(times, f, delay: Duration.zero): R throws E` | call `f` until it returns, waiting `delay` after each thrown error, `times` calls in all, then throw the last error; a panic is not retried, cancellation stops it at the wait; `times < 1` panics (D110) |
-| `xs.mapConcurrent(f, workers: 4)`, `xs.forEachConcurrent(f, workers: 4)` | `List<T: Sendable>`: the worker pool — at most `workers` calls of `f` in flight, results in order; `f` is a `sendable fun` that may suspend and throw (then the call throws). On an iterator, `it.mapConcurrent(f, workers:)` is the lazy form (D156) |
-| `awaitAll(a, b, …)`, `awaitAll(tasks)` | built in (D156): waits for every task; a tuple of their values in argument order, or a `List` of a list's; inline `async f()` arguments fail fast together |
-| `race { async a(); async b() … }` | built in (D169): the tasks the body starts race; the value of the first to finish (a failure included: its error is thrown); the others are cancelled and joined first. `race { loop (x in xs) async f(x) }` races a list |
-| `select { val v = src => … }` | built in (D38, D169): waits on channels, timers, handles, events and `async` arms; the first ready arm runs; an `async` arm is the select's, cancelled if it loses |
-| `async { … }`: `Task<T>` | built in (D169): starts the block as a task where `async f()` may stand; `await` gives its value; `return v` ends it with `v`; captures follow D35 |
-| `await sleep(d: Duration)` | suspend for at least `d`, to the system's resolution (tens of µs on Linux, about 0.5 ms on Windows); `Duration.zero` yields |
-| `async f(...)`: `Task<T>` | (`T` is `f`'s value even when `f` throws — its error fails the scope; in `gather` the handle is `Task<Result<T, E>>`; a handle stays in its block, D141) start a task in the enclosing `scope` — or, as `with t = async f(...)`, in the background until the block ends, which cancels then joins it (D100); `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it) |
-| `withTimeout(limit: Duration, f): R throws E \| Timeout` | call `f` in this task and throw `Timeout` (which carries the `limit` it reached) if it passes first — `f` has unwound by then, its scopes joined and its `with`s closed; `f`'s own errors are rethrown, and `f` need not be sendable (D151) |
-| `cede` | a statement, not a function (D197): offer the executor a turn and go on at the next statement, perhaps at once; a suspension point. Replaces `yieldNow()` |
+|                                                                                                              |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Channel<T>()`                                                                                               | a rendezvous: `send` completes when a receiver has the value                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `Channel<T>(capacity: n)`                                                                                    | bounded channel; `send(v)`, `await recv(): T?`, `close()`, `closeAfter(n)` (closes itself after `n` more sends), `len()`; `trySend(v): bool` and `tryRecv(): T?` never wait (`false` when full, `null` when nothing is buffered)                                                                                                                                                                                                                                                                         |
+| `select { ch.send(v) => … }`                                                                                 | a send arm (D108): ready when `ch` can take `v`; when it wins `v` is in the channel, when another arm wins it was not sent; on a closed channel it panics                                                                                                                                                                                                                                                                                                                                                |
+| `ch.toList(): List<T>`, `ch.forEach(f)`                                                                      | receive until `ch` is closed and drained; an error from `f` stops `forEach` and is thrown (D110)                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `Semaphore(permits: n)`                                                                                      | at most `n` holders (D110): `acquire(): Permit` waits for one (cancellable), `tryAcquire(): Permit?` does not, `available(): i64`; a `Permit` is `Closeable` — `with sem.acquire()` — and a second close does nothing; `n < 1` panics                                                                                                                                                                                                                                                                    |
+| `retry(times, f, delay: Duration.zero): R throws E`                                                          | call `f` until it returns, waiting `delay` after each thrown error, `times` calls in all, then throw the last error; a panic is not retried, cancellation stops it at the wait; `times < 1` panics (D110)                                                                                                                                                                                                                                                                                                |
+| `xs.mapConcurrent(f, workers: 4)`, `xs.forEachConcurrent(f, workers: 4)`                                     | `List<T: Sendable>`: the worker pool — at most `workers` calls of `f` in flight, results in order; `f` is a `sendable fun` that may suspend and throw (then the call throws). On an iterator, `it.mapConcurrent(f, workers:)` is the lazy form (D156)                                                                                                                                                                                                                                                    |
+| `awaitAll(a, b, …)`, `awaitAll(tasks)`                                                                       | built in (D156): waits for every task; a tuple of their values in argument order, or a `List` of a list's; inline `async f()` arguments fail fast together                                                                                                                                                                                                                                                                                                                                               |
+| `race { async a(); async b() … }`                                                                            | built in (D169): the tasks the body starts race; the value of the first to finish (a failure included: its error is thrown); the others are cancelled and joined first. `race { loop (x in xs) async f(x) }` races a list                                                                                                                                                                                                                                                                                |
+| `select { val v = src => … }`                                                                                | built in (D38, D169): waits on channels, timers, handles, events and `async` arms; the first ready arm runs; an `async` arm is the select's, cancelled if it loses                                                                                                                                                                                                                                                                                                                                       |
+| `async { … }`: `Task<T>`                                                                                     | built in (D169): starts the block as a task where `async f()` may stand; `await` gives its value; `return v` ends it with `v`; captures follow D35                                                                                                                                                                                                                                                                                                                                                       |
+| `await sleep(d: Duration)`                                                                                   | suspend for at least `d`, to the system's resolution (tens of µs on Linux, about 0.5 ms on Windows); `Duration.zero` yields                                                                                                                                                                                                                                                                                                                                                                              |
+| `async f(...)`: `Task<T>`                                                                                    | (`T` is `f`'s value even when `f` throws — its error fails the scope; in `gather` the handle is `Task<Result<T, E>>`; a handle stays in its block, D141) start a task in the enclosing `scope` — or, as `with t = async f(...)`, in the background until the block ends, which cancels then joins it (D100); `await task`; `task.cancel()` asks it to stop at its next suspension point (its `with` cleanups run, the scope still waits for it)                                                          |
+| `withTimeout(limit: Duration, f): R throws E \| Timeout`                                                     | call `f` in this task and throw `Timeout` (which carries the `limit` it reached) if it passes first — `f` has unwound by then, its scopes joined and its `with`s closed; `f`'s own errors are rethrown, and `f` need not be sendable (D151)                                                                                                                                                                                                                                                              |
+| `cede`                                                                                                       | a statement, not a function (D197): offer the executor a turn and go on at the next statement, perhaps at once; a suspension point. Replaces `yieldNow()`                                                                                                                                                                                                                                                                                                                                                |
 | `try Executor.pool(threads: n, name: s, priority: Priority.Normal, cpus: [])`: `Executor throws ThreadError` | a pool of threads of its own (D143), `Closeable` and `Sendable`: `scope(on: e) { … }` / `gather(on: e) { … }` start the block's children on it; `e.run(f): R throws E` runs `f` there and waits; `e.runBlocking(f): R throws E` does so from plain code, blocking its OS thread (D152: a compile error in a function that suspends, a panic on an executor's thread); closing stops the threads; `Executor.default` is the default pool (it cannot be closed), `Executor.defaultThreads(): i64` its size |
-| `try Executor.thread(name: s, priority:, cpus:)` | one thread: every task placed on it runs on that same OS thread |
-| `blocking(f): R throws E` | run the plain `f` — a call known to block — on the blocking pool (threads as calls need them, at most 128) and wait |
-| `try Thread.start(name: s, priority:, cpus:, stackSize: 0, f: f)`: `Thread throws ThreadError` | the plain `f` on an OS thread of its own; `Closeable`: closing blocks until `f` returns and re-raises its panic |
-| `Priority` | `Low`, `Normal`, `High`, `Realtime`: what an executor's or a `Thread`'s threads start with |
-| `ThreadError` | the OS refused a thread, its priority or its CPUs: `reason: string` |
-| `checkCancelled()` | unwind the task here if it has been cancelled, else nothing — a cancellation point in code that does not wait; not inside a lock region or a `close()` (D145) |
-| `TaskLocal(fallback: T)`: `TaskLocal<T: Sendable>` | a value that follows a task (D72): `tl.withValue(v, f): R throws E` binds `v` while `f` runs — there and in every task started inside, which keep it — and ends the binding with `f`, however `f` ends; `tl.get(): T` is the innermost binding, or `fallback` |
+| `try Executor.thread(name: s, priority:, cpus:)`                                                             | one thread: every task placed on it runs on that same OS thread                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `blocking(f): R throws E`                                                                                    | run the plain `f` — a call known to block — on the blocking pool (threads as calls need them, at most 128) and wait                                                                                                                                                                                                                                                                                                                                                                                      |
+| `try Thread.start(name: s, priority:, cpus:, stackSize: 0, f: f)`: `Thread throws ThreadError`               | the plain `f` on an OS thread of its own; `Closeable`: closing blocks until `f` returns and re-raises its panic                                                                                                                                                                                                                                                                                                                                                                                          |
+| `Priority`                                                                                                   | `Low`, `Normal`, `High`, `Realtime`: what an executor's or a `Thread`'s threads start with                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `ThreadError`                                                                                                | the OS refused a thread, its priority or its CPUs: `reason: string`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `checkCancelled()`                                                                                           | unwind the task here if it has been cancelled, else nothing — a cancellation point in code that does not wait; not inside a lock region or a `close()` (D145)                                                                                                                                                                                                                                                                                                                                            |
+| `TaskLocal(fallback: T)`: `TaskLocal<T: Sendable>`                                                           | a value that follows a task (D72): `tl.withValue(v, f): R throws E` binds `v` while `f` runs — there and in every task started inside, which keep it — and ends the binding with `f`, however `f` ends; `tl.get(): T` is the innermost binding, or `fallback`                                                                                                                                                                                                                                            |
 
 ## Built-in methods
 
@@ -493,26 +493,26 @@ opens them. Both kinds are called the same way.
 
 ### `string`
 
-| Method | Result |
-|---|---|
-| `len()` | `i64`, in bytes (D18) |
-| `charCount()` | `i64`, Unicode scalar values |
-| `chars()` | `List<string>`, one string per code point |
-| `isEmpty()` | `bool` |
-| `startsWith(s)`, `endsWith(s)`, `contains(s)` | `bool` |
-| `startsWith(s, startIndex)` | `bool`: `s` at that byte index; `false` when the index is below 0 or past `len()` (D202) |
-| `indexOf(part, from: 0)`, `lastIndexOf(part)` | `i64?` byte index, null if absent (D165) |
-| `substring(from, to)` | `string?` — byte offsets; null if a boundary splits a character |
-| `byteAt(i)`, `bytes()` | `u8` (panics out of range), `List<u8>` |
-| `byteAtUnchecked(i)` | `u8`; only in `unsafe`, checked in a debug build only (D114) |
-| `trim()`, `trimStart()`, `trimEnd()` | ASCII whitespace removed |
-| `split(sep)`, `lines()` | `List<string>`; `lines` drops `\r` and a final empty line |
-| `splitOnce(sep)` | `(before: string, after: string)?`: the text before and after the first `sep`, or `null` when it does not occur — `val (k, v) = line.splitOnce("=") ?: return` |
-| `replace(old, new)`, `repeat(n)` | `string` |
-| `toUpper()`, `toLower()` | ASCII letters only |
-| `padStart(width, pad: " ")`, `padEnd(width, pad: " ")` | `string` |
-| `toInt()`, `toF64()` | `i64?`, `f64?` |
-| `+`, `==`, `<` … | concatenation and comparison |
+| Method                                                 | Result                                                                                                                                                         |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `len()`                                                | `i64`, in bytes (D18)                                                                                                                                          |
+| `charCount()`                                          | `i64`, Unicode scalar values                                                                                                                                   |
+| `chars()`                                              | `List<string>`, one string per code point                                                                                                                      |
+| `isEmpty()`                                            | `bool`                                                                                                                                                         |
+| `startsWith(s)`, `endsWith(s)`, `contains(s)`          | `bool`                                                                                                                                                         |
+| `startsWith(s, startIndex)`                            | `bool`: `s` at that byte index; `false` when the index is below 0 or past `len()` (D202)                                                                       |
+| `indexOf(part, from: 0)`, `lastIndexOf(part)`          | `i64?` byte index, null if absent (D165)                                                                                                                       |
+| `substring(from, to)`                                  | `string?` — byte offsets; null if a boundary splits a character                                                                                                |
+| `byteAt(i)`, `bytes()`                                 | `u8` (panics out of range), `List<u8>`                                                                                                                         |
+| `byteAtUnchecked(i)`                                   | `u8`; only in `unsafe`, checked in a debug build only (D114)                                                                                                   |
+| `trim()`, `trimStart()`, `trimEnd()`                   | ASCII whitespace removed                                                                                                                                       |
+| `split(sep)`, `lines()`                                | `List<string>`; `lines` drops `\r` and a final empty line                                                                                                      |
+| `splitOnce(sep)`                                       | `(before: string, after: string)?`: the text before and after the first `sep`, or `null` when it does not occur — `val (k, v) = line.splitOnce("=") ?: return` |
+| `replace(old, new)`, `repeat(n)`                       | `string`                                                                                                                                                       |
+| `toUpper()`, `toLower()`                               | ASCII letters only                                                                                                                                             |
+| `padStart(width, pad: " ")`, `padEnd(width, pad: " ")` | `string`                                                                                                                                                       |
+| `toInt()`, `toF64()`                                   | `i64?`, `f64?`                                                                                                                                                 |
+| `+`, `==`, `<` …                                       | concatenation and comparison                                                                                                                                   |
 
 The string functions that are written in Veles — `trim`, `trimStart`,
 `trimEnd`, `split`, `splitOnce`, `lines`, `replace`, `repeat`, `toUpper`,
@@ -552,40 +552,40 @@ out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the s
 
 ### `List<T>` and `MutableList<T>`
 
-| Method | Result |
-|---|---|
-| `at(i)` | `T?`; null when out of range, or `T` where the index is known to be in range (D62). A negative `i` counts from the end (`at(-1)` is the last). A copy, like every read. Where it cannot fail, say why: `xs.at(i) ?: panic("…")` |
-| `atUnchecked(i)`, `setUnchecked(i, v)` | `T`, `()`; only in `unsafe`, `0 <= i < len`, checked in a debug build only (D114); `set…` on `MutableList` |
-| `ref(i)` | `(*T)?`: a pointer to the element itself (`MutableList` only), or `*T` where the index is known. `xs.ref(i)?.bump()`, `xs.ref(i)?.n = 0` change the element; `loop (&x in xs)` visits every element this way |
-| `indices()` | `0..<len()`; in `loop (i in xs.indices())` each `xs.at(i)` is a `T` |
-| `atOrDefault(i, d)` | `T`; `at(i) ?: d` |
-| `len()`, `isEmpty()`, `lastIndex()` | `lastIndex` is `len() - 1`: −1 when empty |
-| `contains(x)`, `indexOf(x)`, `count(p)` | `bool`, `i64?` (null if absent, D165), `i64` |
-| `first()`, `last()`, `min()`, `max()` | `T?`; `min`/`max` need `Comparable` elements |
-| `take(n)`, `drop(n)`, `slice(from, to)` | new `List`, bounds clamped; on an immutable `List` a window onto the same storage, no copy (`toList()` detaches it), on a `MutableList` a copy (D196) |
-| `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)` | eager; return `List`. These and `any`, `all`, `find`, `count`, `indexOfFirst`, `mapNotNull`, `partition` are prelude Veles generic over what the function does: they throw what it throws (`xs.map(a => try parse(a))` is a `Result` until `try`) and suspend only when it suspends (D116) — `xs.map(x => fetch(x))` waits for each in turn |
-| `mapNotNull(f)`, `partition(p)` | `f` returns `U?`, nulls dropped; `(List<T>, List<T>)` of accepted and rest |
-| `filterIs<V>()`, `filterNotNull()` | on a list of a sealed type: the elements of variant `V` as `List<V>`; on `List<T?>`: the present ones as `List<T>` |
-| `any(p)`, `all(p)`, `find(p)` | |
-| `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()` | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>` |
-| `enumerate()` | `List<(index: i64, value: T)>`: each element with its index, eager; `xs.iter().enumerate()` is the lazy form |
-| `sorted()`, `sortedDescending()`, `sortedBy(key)`, `sortedByDescending(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48) |
-| `sortedWith(compare)`, `minWith(compare)`, `maxWith(compare)` | any order: `compare(a, b)` negative when `a` comes first; sorts are stable, O(n log n) |
-| `binarySearch(x)`, `binarySearchWith(compare)`, `binarySearchBy(key, target)` | `i64?` index of the **first** match, null if absent (D165), in O(log n). The list must already be in order; nothing checks, and a list that is not gives a wrong answer, never a panic. `compare(element)` says where the element sits relative to what is wanted |
-| `lowerBound(x)`, `upperBound(x)`, `partitionPoint(pred)` | `i64` insertion points: first index not less than `x`, first greater than `x`, and the general form — the first index where `pred` stops holding. `upperBound − lowerBound` is how many times `x` occurs |
-| `minBy(key)`, `maxBy(key)`, `distinctBy(key)` | `T?`, `T?`, `List<T>`; by a `Comparable` (or, for `distinctBy`, hashable) key |
-| `sum()` | `List<i64>` and `List<f64>` only |
-| `join(sep)` | `string` |
-| `iter()` | lazy iterator |
-| `toList()`, `toMutable()` | copies (D25) |
-| `toSet()`, `toMutableSet()` | the distinct elements as a set (iterators have `toSet()` too) |
-| `push(x)`, `pop(): T?`, `set(i, x)`, `clear()`, `reserve(n)` | `MutableList` only; `reserve` makes room for `n` in all, so pushing up to `n` never grows the list (D83) |
-| `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()` | `MutableList` only; `sort` is in place |
-| `swap(i, j)`, `sortWith(compare)` | `MutableList` only; in place |
-| `fill(x)` | `MutableList` only; overwrites every element, length unchanged |
-| `incrementAt(i)` | `MutableList<i64>` only; increments one element in place, panics out of range; negative indexes count from the end |
-| `updateAt(i, transform): T` | `MutableList<T>` only; transforms and replaces one element, returning the new value. The synchronous callback runs once and must not mutate the same list; panics out of range, negative indexes count from the end |
-| `MutableList<T>.repeat(x, count)`, `MutableList<T>.make(n, i => ...)` | statics (the `<T>` may be left out when the arguments or the expected type give it, D137): `count` copies of `x`, or `init(i)` called once per slot. `repeat` and `fill` need `T: Sendable` (D35): a mutable collection or pointer would be one value aliased by every slot, which is what `make` is for |
+| Method                                                                                     | Result                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `at(i)`                                                                                    | `T?`; null when out of range, or `T` where the index is known to be in range (D62). A negative `i` counts from the end (`at(-1)` is the last). A copy, like every read. Where it cannot fail, say why: `xs.at(i) ?: panic("…")`                                                                                                             |
+| `atUnchecked(i)`, `setUnchecked(i, v)`                                                     | `T`, `()`; only in `unsafe`, `0 <= i < len`, checked in a debug build only (D114); `set…` on `MutableList`                                                                                                                                                                                                                                  |
+| `ref(i)`                                                                                   | `(*T)?`: a pointer to the element itself (`MutableList` only), or `*T` where the index is known. `xs.ref(i)?.bump()`, `xs.ref(i)?.n = 0` change the element; `loop (&x in xs)` visits every element this way                                                                                                                                |
+| `indices()`                                                                                | `0..<len()`; in `loop (i in xs.indices())` each `xs.at(i)` is a `T`                                                                                                                                                                                                                                                                         |
+| `atOrDefault(i, d)`                                                                        | `T`; `at(i) ?: d`                                                                                                                                                                                                                                                                                                                           |
+| `len()`, `isEmpty()`, `lastIndex()`                                                        | `lastIndex` is `len() - 1`: −1 when empty                                                                                                                                                                                                                                                                                                   |
+| `contains(x)`, `indexOf(x)`, `count(p)`                                                    | `bool`, `i64?` (null if absent, D165), `i64`                                                                                                                                                                                                                                                                                                |
+| `first()`, `last()`, `min()`, `max()`                                                      | `T?`; `min`/`max` need `Comparable` elements                                                                                                                                                                                                                                                                                                |
+| `take(n)`, `drop(n)`, `slice(from, to)`                                                    | new `List`, bounds clamped; on an immutable `List` a window onto the same storage, no copy (`toList()` detaches it), on a `MutableList` a copy (D196)                                                                                                                                                                                       |
+| `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)`                            | eager; return `List`. These and `any`, `all`, `find`, `count`, `indexOfFirst`, `mapNotNull`, `partition` are prelude Veles generic over what the function does: they throw what it throws (`xs.map(a => try parse(a))` is a `Result` until `try`) and suspend only when it suspends (D116) — `xs.map(x => fetch(x))` waits for each in turn |
+| `mapNotNull(f)`, `partition(p)`                                                            | `f` returns `U?`, nulls dropped; `(List<T>, List<T>)` of accepted and rest                                                                                                                                                                                                                                                                  |
+| `filterIs<V>()`, `filterNotNull()`                                                         | on a list of a sealed type: the elements of variant `V` as `List<V>`; on `List<T?>`: the present ones as `List<T>`                                                                                                                                                                                                                          |
+| `any(p)`, `all(p)`, `find(p)`                                                              |                                                                                                                                                                                                                                                                                                                                             |
+| `zip(ys)`, `chunked(n)`, `windowed(n)`, `distinct()`                                       | `List<(T, U)>`, `List<List<T>>`, `List<List<T>>`, `List<T>`                                                                                                                                                                                                                                                                                 |
+| `enumerate()`                                                                              | `List<(index: i64, value: T)>`: each element with its index, eager; `xs.iter().enumerate()` is the lazy form                                                                                                                                                                                                                                |
+| `sorted()`, `sortedDescending()`, `sortedBy(key)`, `sortedByDescending(key)`, `reversed()` | new `List`; elements or `key` results must be `Comparable` (D48)                                                                                                                                                                                                                                                                            |
+| `sortedWith(compare)`, `minWith(compare)`, `maxWith(compare)`                              | any order: `compare(a, b)` negative when `a` comes first; sorts are stable, O(n log n)                                                                                                                                                                                                                                                      |
+| `binarySearch(x)`, `binarySearchWith(compare)`, `binarySearchBy(key, target)`              | `i64?` index of the **first** match, null if absent (D165), in O(log n). The list must already be in order; nothing checks, and a list that is not gives a wrong answer, never a panic. `compare(element)` says where the element sits relative to what is wanted                                                                           |
+| `lowerBound(x)`, `upperBound(x)`, `partitionPoint(pred)`                                   | `i64` insertion points: first index not less than `x`, first greater than `x`, and the general form — the first index where `pred` stops holding. `upperBound − lowerBound` is how many times `x` occurs                                                                                                                                    |
+| `minBy(key)`, `maxBy(key)`, `distinctBy(key)`                                              | `T?`, `T?`, `List<T>`; by a `Comparable` (or, for `distinctBy`, hashable) key                                                                                                                                                                                                                                                               |
+| `sum()`                                                                                    | `List<i64>` and `List<f64>` only                                                                                                                                                                                                                                                                                                            |
+| `join(sep)`                                                                                | `string`                                                                                                                                                                                                                                                                                                                                    |
+| `iter()`                                                                                   | lazy iterator                                                                                                                                                                                                                                                                                                                               |
+| `toList()`, `toMutable()`                                                                  | copies (D25)                                                                                                                                                                                                                                                                                                                                |
+| `toSet()`, `toMutableSet()`                                                                | the distinct elements as a set (iterators have `toSet()` too)                                                                                                                                                                                                                                                                               |
+| `push(x)`, `pop(): T?`, `set(i, x)`, `clear()`, `reserve(n)`                               | `MutableList` only; `reserve` makes room for `n` in all, so pushing up to `n` never grows the list (D83)                                                                                                                                                                                                                                    |
+| `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()`                                   | `MutableList` only; `sort` is in place                                                                                                                                                                                                                                                                                                      |
+| `swap(i, j)`, `sortWith(compare)`                                                          | `MutableList` only; in place                                                                                                                                                                                                                                                                                                                |
+| `fill(x)`                                                                                  | `MutableList` only; overwrites every element, length unchanged                                                                                                                                                                                                                                                                              |
+| `incrementAt(i)`                                                                           | `MutableList<i64>` only; increments one element in place, panics out of range; negative indexes count from the end                                                                                                                                                                                                                          |
+| `updateAt(i, transform): T`                                                                | `MutableList<T>` only; transforms and replaces one element, returning the new value. The synchronous callback runs once and must not mutate the same list; panics out of range, negative indexes count from the end                                                                                                                         |
+| `MutableList<T>.repeat(x, count)`, `MutableList<T>.make(n, i => ...)`                      | statics (the `<T>` may be left out when the arguments or the expected type give it, D137): `count` copies of `x`, or `init(i)` called once per slot. `repeat` and `fill` need `T: Sendable` (D35): a mutable collection or pointer would be one value aliased by every slot, which is what `make` is for                                    |
 
 A `MutableList<T>` has every `List<T>` method; a `val` binding is enough to
 call the mutating ones, since the list is a reference (D25).
@@ -605,17 +605,17 @@ one the compiler can run.
 
 ### `Map<K, V>` and `MutableMap<K, V>`
 
-| Method | Result |
-|---|---|
-| `get(k)` | `V?` |
-| `getOrDefault(k, d)` | `V`: `get(k) ?: d`. A copy of the value. Where a key must be there, say why: `m.get(k) ?: panic("…")` |
-| `ref(k)` | `(*V)?`: a pointer to the stored value (`MutableMap` only): `m.ref(k)?.bump()`, `m.ref(k)?.n += 1`; `loop ((k, &v) in m)` visits every value by reference |
-| `containsKey(k)`, `len()`, `isEmpty()` | |
-| `keys()`, `values()`, `entries()` | `List<K>`, `List<V>`, `List<(key: K, value: V)>` in insertion order |
-| `toMap()`, `toMutable()` | copies |
-| `set(k, v)`, `remove(k): bool`, `clear()`, `reserve(n)` | `MutableMap` only; after `reserve(n)` inserting up to `n` entries never grows or rehashes (D105) |
-| `forEach((k, v) => ...)`, `mapValues(v => ...)`, `filter((k, v) => ...)` | iterate over the entries as they were when the call starts; new `Map`. Prelude Veles: they throw and suspend as the function does (D116) |
-| `getOrPut(k, () => v)` | `V` — `MutableMap` only: stores `v` when `k` is absent |
+| Method                                                                   | Result                                                                                                                                                    |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get(k)`                                                                 | `V?`                                                                                                                                                      |
+| `getOrDefault(k, d)`                                                     | `V`: `get(k) ?: d`. A copy of the value. Where a key must be there, say why: `m.get(k) ?: panic("…")`                                                     |
+| `ref(k)`                                                                 | `(*V)?`: a pointer to the stored value (`MutableMap` only): `m.ref(k)?.bump()`, `m.ref(k)?.n += 1`; `loop ((k, &v) in m)` visits every value by reference |
+| `containsKey(k)`, `len()`, `isEmpty()`                                   |                                                                                                                                                           |
+| `keys()`, `values()`, `entries()`                                        | `List<K>`, `List<V>`, `List<(key: K, value: V)>` in insertion order                                                                                       |
+| `toMap()`, `toMutable()`                                                 | copies                                                                                                                                                    |
+| `set(k, v)`, `remove(k): bool`, `clear()`, `reserve(n)`                  | `MutableMap` only; after `reserve(n)` inserting up to `n` entries never grows or rehashes (D105)                                                          |
+| `forEach((k, v) => ...)`, `mapValues(v => ...)`, `filter((k, v) => ...)` | iterate over the entries as they were when the call starts; new `Map`. Prelude Veles: they throw and suspend as the function does (D116)                  |
+| `getOrPut(k, () => v)`                                                   | `V` — `MutableMap` only: stores `v` when `k` is absent                                                                                                    |
 
 Keys must be hashable: scalars, strings, tuples and structs of hashable
 fields.
@@ -653,25 +653,26 @@ them, and looping over a range or a step, work in a `const fun` (D113).
 
 Each is a single machine instruction (an LLVM intrinsic), not a runtime call.
 
-| Method | On | Result |
-|---|---|---|
-| `sqrt()`, `abs()`, `floor()`, `ceil()`, `round()`, `trunc()` | `f64`, `f32` | same type; `round` is half away from zero |
-| `pow(y)`, `min(y)`, `max(y)`, `mod(y)`, `clamp(lo, hi)`, `sign()` | `f64`, `f32` | same type; `mod` is Euclidean (never negative for `y > 0`) |
-| `log()`, `log2()`, `log10()`, `exp()`, `sin()`, `cos()`, `tan()`, `atan2(x)`, `hypot(y)` | `f64`, `f32` | same type; radians |
-| `isNaN()`, `isFinite()`, `isInfinite()` | `f64`, `f32` | `bool` |
-| `isSignNegative()`, `copySign(y)` | `f64`, `f32` | the sign bit — true for `-0.0` and a negative NaN; this magnitude with `y`'s sign (D104) |
-| `nextUp()`, `nextDown()` | `f64`, `f32` | the nearest representable number above / below (IEEE 754); NaN stays NaN, an infinity in its own direction stays (D104) |
-| `abs()`, `min(y)`, `max(y)`, `mod(y)`, `clamp(lo, hi)`, `sign()` | every integer type | same type; `abs` on an unsigned type is the identity; `mod` is Euclidean where `%` truncates (`(-7).mod(3)` is 2, `-7 % 3` is -1) |
-| `pow(n)` | every integer type | same type; panics on overflow or `n < 0` |
-| `wrappingAdd/Sub/Mul(y)`, `saturatingAdd/Sub/Mul(y)` | every integer type | same type — the overflow policies other than the default panic (D21) |
-| `checkedAdd/Sub/Mul(y)` | every integer type | `T?`: `null` on overflow |
-| `countOnes()`, `leadingZeros()`, `trailingZeros()` | every integer type | same type |
-| `rotateLeft(n)`, `rotateRight(n)` | every integer type | same type; bits rotated by `n` modulo the width, a negative `n` the other way (D104) |
-| `swapBytes()`, `reverseBits()` | every integer type | same type; byte order (big- ↔ little-endian; identity on 8-bit types) or bit order reversed (D104) |
-| `toString(radix: i64 = 10)` | `i64`, `u64` | `string`; digits `0-9a-z`, radix 2 to 36 |
-| `toFixed(digits)` | `f64`, `f32` | `string` with exactly that many decimals, rounded |
-| `toBits()` | `f64`, `f32` | the IEEE 754 bit pattern, `u64` / `u32`; nothing rounded, a NaN keeps its payload (D93) |
-| `f64.fromBits(bits)`, `f32.fromBits(bits)` | static | the number with that pattern; the inverse, and every pattern is a number |
+| Method                                                                                   | On                 | Result                                                                                                                                             |
+| ---------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sqrt()`, `abs()`, `floor()`, `ceil()`, `round()`, `trunc()`                             | `f64`, `f32`       | same type; `round` is half away from zero                                                                                                          |
+| `pow(y)`, `min(y)`, `max(y)`, `mod(y)`, `clamp(lo, hi)`, `sign()`                        | `f64`, `f32`       | same type; `mod` is Euclidean (never negative for `y > 0`)                                                                                         |
+| `log()`, `log2()`, `log10()`, `exp()`, `sin()`, `cos()`, `tan()`, `atan2(x)`, `hypot(y)` | `f64`, `f32`       | same type; radians                                                                                                                                 |
+| `isNaN()`, `isFinite()`, `isInfinite()`                                                  | `f64`, `f32`       | `bool`                                                                                                                                             |
+| `isSignNegative()`, `copySign(y)`                                                        | `f64`, `f32`       | the sign bit — true for `-0.0` and a negative NaN; this magnitude with `y`'s sign (D104)                                                           |
+| `nextUp()`, `nextDown()`                                                                 | `f64`, `f32`       | the nearest representable number above / below (IEEE 754); NaN stays NaN, an infinity in its own direction stays (D104)                            |
+| `isClose(y, relative: 1e-9, absolute: 0.0)`                                              | `f64`, `f32`       | true when equal, or when the distance is within `relative` of the larger magnitude or within `absolute` (`f32`: relative 1e-6); an infinity is close only to itself, NaN to nothing (D230) |
+| `abs()`, `min(y)`, `max(y)`, `mod(y)`, `clamp(lo, hi)`, `sign()`                         | every integer type | same type; `abs` on an unsigned type is the identity; `mod` is Euclidean where `%` truncates (`(-7).mod(3)` is 2, `-7 % 3` is -1)                  |
+| `pow(n)`                                                                                 | every integer type | same type; panics on overflow or `n < 0`                                                                                                           |
+| `wrappingAdd/Sub/Mul(y)`, `saturatingAdd/Sub/Mul(y)`                                     | every integer type | same type — the overflow policies other than the default panic (D21)                                                                               |
+| `checkedAdd/Sub/Mul(y)`                                                                  | every integer type | `T?`: `null` on overflow                                                                                                                           |
+| `countOnes()`, `leadingZeros()`, `trailingZeros()`                                       | every integer type | same type                                                                                                                                          |
+| `rotateLeft(n)`, `rotateRight(n)`                                                        | every integer type | same type; bits rotated by `n` modulo the width, a negative `n` the other way (D104)                                                               |
+| `swapBytes()`, `reverseBits()`                                                           | every integer type | same type; byte order (big- ↔ little-endian; identity on 8-bit types) or bit order reversed (D104)                                                 |
+| `toString(radix: i64 = 10)`                                                              | `i64`, `u64`       | `string`; digits `0-9a-z`, radix 2 to 36                                                                                                           |
+| `toFixed(digits)`                                                                        | `f64`, `f32`       | `string` with exactly that many decimals, rounded; any nonnegative precision, no fixed cap; negative precision or an unrepresentable result panics |
+| `toBits()`                                                                               | `f64`, `f32`       | the IEEE 754 bit pattern, `u64` / `u32`; nothing rounded, a NaN keeps its payload (D93)                                                            |
+| `f64.fromBits(bits)`, `f32.fromBits(bits)`                                               | static             | the number with that pattern; the inverse, and every pattern is a number                                                                           |
 
 The bitwise operators `&`, `|`, `^`, `<<`, `>>` and `~` work on every integer
 type; `&`, `<<`, `>>` bind like `*`, `|` and `^` like `+` (Go's grouping), and a
@@ -687,6 +688,24 @@ and description, and go-to-definition opens `builtins.vs`, a declarations-only
 file the language server writes next to the standard library sources (they
 are embedded in the compiler; the copies live under the user cache directory).
 
+## Module `bytes` (D221)
+
+IEC binary byte-size constants, all counts of bytes:
+
+| Constant    |                     Value |
+| ----------- | ------------------------: |
+| `bytes.B`   |                         1 |
+| `bytes.KiB` |                     1,024 |
+| `bytes.MiB` |                 1,048,576 |
+| `bytes.GiB` |             1,073,741,824 |
+| `bytes.TiB` |         1,099,511,627,776 |
+| `bytes.PiB` |     1,125,899,906,842,624 |
+| `bytes.EiB` | 1,152,921,504,606,846,976 |
+
+Use the binary name at the point where a byte ceiling or buffer size is chosen:
+`io.readAll(max: bytes.MiB)`, `http.Limits(bodyBytes: bytes.MiB * 8)`.
+These are not display functions; use `fmt.bytes` to write a size for people.
+
 ## Module `io`
 
 ```veles
@@ -695,8 +714,10 @@ use io
 io.println(s: string)
 io.print(s: string)
 io.eprintln(s: string)           // standard error
-io.readLine(): string?           // null at end of input
-io.readAll(): string             // the rest of standard input
+io.readLine(max: i64 = 65536): string? throws IoError | TooLong
+io.readAll(max: i64 = 1048576): string throws IoError | TooLong
+io.readLineBytes(max: i64 = 65536): List<u8>? throws IoError | TooLong
+io.readAllBytes(max: i64 = 1048576): List<u8> throws IoError | TooLong
 trait io.Stream : Closeable + Sendable   // net.Conn, fs.File; effects declared (D40, D128); objects cross tasks
   read(max: i64 = 65536): List<u8> suspends throws IoError         // [] at the end
   readExact(n: i64): List<u8> suspends throws IoError              // fewer only at the end
@@ -738,9 +759,14 @@ os.run(program: string, args: List<string> = [], input: string = "", stderr: os.
 os.ioError(code: i64, path: string): IoError     // an IoError for a platform error number
 ```
 
-`run` waits for the program, captures its standard output and lets its
-standard error through; a non-zero exit is reported in `Output.code` —
-only a program that cannot be started throws.
+`run` waits for the program and captures standard output and standard error
+separately by default. `Stderr.Merge` combines them in `stdout`;
+`Stderr.Inherit` passes standard error through without capturing it.
+Captured text must be valid UTF-8: malformed bytes throw `IoError` with
+`IoKind.InvalidData`, rather than returning an invalid string or replacing
+bytes. Merged output is validated as one stream; inherited standard error is
+not decoded. A non-zero exit is reported in `Output.code` when its captured
+text is valid. Failure to start the program also throws `IoError`.
 
 ## Module `cli` (D167)
 
@@ -1038,9 +1064,14 @@ path.clean(p: string): string                    // "a/./b/../c" -> "a/c"; "" ->
 path.within(root: string, p: string): bool       // p, cleaned, is root or inside it; both separators count
 ```
 
+`within` treats UNC share roots with and without a final separator as the
+same root: `//server/share/` contains `//server/share`, but not a sibling
+share such as `//server/share2`. This is a lexical check, not a symlink-aware
+filesystem containment check.
+
 ## Module `time`
 
-`Duration` is in the prelude, not here: it is a *length* of time, and
+`Duration` is in the prelude, not here: it is a _length_ of time, and
 `sleep` and `withTimeout` take one. `Timestamp` is the wall clock,
 `Deadline` and `Stopwatch` the monotonic one — no raw monotonic reading is
 handed out, so the two cannot be confused (D60).
@@ -1168,8 +1199,13 @@ random.shuffle<T>(xs: MutableList<T>) // in place
 random.Rng.seeded(n: i64): Rng        // an independent generator with the same methods
 ```
 
-xoshiro256** seeded through splitmix64: fast and well distributed, not
+xoshiro256\*\* seeded through splitmix64: fast and well distributed, not
 cryptographic.
+
+`range(lo, hi)` accepts any signed 64-bit endpoints with `lo < hi`, including
+intervals wider than `i64::MAX`; the upper endpoint is excluded. Empty or
+reversed intervals panic. Equal seeds reproduce a sequence; use an independent
+`Rng` when other tasks must not advance the shared generator's state.
 
 ## Module `crypto`
 
@@ -1209,13 +1245,14 @@ Numbers, sizes, durations and tables written for people; the level above the
 `"${x:spec}"` format spec. English and `.`/`,` only for now — **locales
 (decimal commas, dates) are a later addition**.
 
-| Function | Result |
-|---|---|
-| `thousands(n)` | `"1,234,567"` |
-| `bytes(n)` | the largest binary unit, one decimal: `"1.5 KiB"`, `"12 B"` |
-| `percent(fraction, digits = 1)` | `"25.6%"` |
-| `ordinal(n)` | `"1st"`, `"12th"`, `"23rd"` |
-| `duration(d)` | at most three units: `"1h 2m 5s"`, `"250ms"`, `"0s"` |
+| Function                                  | Result                                                                                                                                             |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `thousands(n)`                            | `"1,234,567"`                                                                                                                                      |
+| `bytes(n)`                                | the largest binary unit, one decimal: `"1.5 KiB"`, `"12 B"`                                                                                        |
+| `percent(fraction, digits = 1)`           | `"25.6%"`                                                                                                                                          |
+| `ordinal(n)`                              | `"1st"`, `"12th"`, `"23rd"`                                                                                                                        |
+| `quote(text)`                             | Go-style double-quoted diagnostic text; escapes controls and non-printable Unicode, not JSON encoding (D224)                                       |
+| `duration(d)`                             | at most three units: `"1h 2m 5s"`, `"250ms"`, `"0s"`                                                                                               |
 | `table(rows, right = [], header = false)` | rows as columns two spaces apart, as wide as the widest cell in characters; `right` lists right-aligned columns; `header` underlines the first row |
 
 ## Module `hex`
@@ -1279,6 +1316,21 @@ them in the sense Table 3-7 of the Unicode standard means: shortest form
 only, no surrogates, nothing above U+10FFFF. Encoding a value that is not a
 code point writes U+FFFD rather than failing. See `examples/features/utf8`. Every
 function here is a `const fun` (D113).
+
+## Module `unicode` (D223)
+
+```veles
+// fragment
+use unicode
+unicode.isLetter(code), unicode.isDecimalDigit(code), unicode.isWhiteSpace(code)
+unicode.isPrintable(code), unicode.isIdentifierStart(code), unicode.isIdentifierContinue(code)
+unicode.hasProperty("Greek", code): bool?  // null: unknown category or script
+```
+
+The predicates take a Unicode code point as `i64`; invalid scalar values do
+not match. `hasProperty` recognizes general-category and script names. The
+tables follow the Unicode version in the pinned Go toolchain. `utf8` remains
+the module for encoding and decoding strings.
 
 ## Module `jwt`
 
@@ -1353,7 +1405,7 @@ re.find(text, from: 0): Match?
 re.findAll(text): List<Match>                  // not overlapping; an empty match right after a match is skipped
 re.replaceAll(text, replacement): string       // $1, ${1}, ${name}, $0, $$ in replacement
 re.replaceFirst(text, replacement), re.replaceEach(text, f: fun(Match): string)
-re.split(text, limit: -1): List<string>
+re.split(text, limit: -1): List<string>       // zero -> []; positive bounds, remainder last; negative unlimited
 re.source(): string, re.groupCount(): i64
 m.value(), m.start(), m.end()                  // byte offsets
 m.groupAt(i): string?, m.group(name): string?, m.span(i): (i64, i64)?, m.groupCount()
@@ -1364,6 +1416,17 @@ RE2's syntax, matched in time at most proportional to the pattern times the
 text: there is no input that makes a search blow up. Flags `(?i)`, `(?m)`,
 `(?s)`, `(?x)`, `(?u)`, scoped as `(?i:…)`; the same letters follow a `/…/`
 literal. A raw backtick string keeps the backslashes out of the way.
+
+A group that did not participate returns `null`; a group that matched empty
+text returns `""`. For example, the first group of `(a*)*b` matching `"b"` is
+empty, not absent. Lazy repetition `(a*)*?b` can instead choose zero iterations,
+leaving that group absent.
+
+**POSIX classes.** `[[:alpha:]]` and `[[:digit:]]` name ASCII classes;
+`[[:^alpha:]]` and `[[:^digit:]]` complement those classes. An outer `^`
+negates the containing bracket independently, so `[^[:^alpha:]]` matches
+ASCII letters. Case-insensitive matching folds the named set before taking
+its complement.
 
 **Unicode.** `\p{L}`, `\pL`, `\P{Lu}`, `\p{^Nd}` and `\p{Greek}` name a
 general category or a script (Unicode 15, all of Go's tables), in or out of a
@@ -1407,6 +1470,29 @@ pre-release such as `2.0.0-rc.1` satisfies a set only when one of its comparator
 same `major.minor.patch`. Each number is a whole number below 2^32 without a leading zero; pre-release
 identifiers are not empty and a number among them has no leading zero.
 
+## Module `settings` (D226)
+
+TOML-backed schemas for configuration a tool reads itself. The API does not
+register keys in compiler-owned `veles.toml` tables.
+
+```veles
+// fragment
+use settings { Schema, Section, Setting, SettingsError }
+
+Schema<T>(table, settings, removed = [], fallback = null)
+Setting<T>.text(key, doc, set, expects = "")
+Setting<T>.choice(key, doc, words, expects, set)
+Setting<T>.names(key, doc, example, set)
+schema.keys(), schema.find(key), schema.apply(section, &options)
+Section(path, name, table): entries(), within(table), named(name, table), fail(line, reason), failAt(value, reason)
+SettingsError.message; Entry.key / value
+```
+
+Each setting declares how its parsed `toml.Value` is converted into the
+tool's typed options. Unknown keys are refused unless that tool supplies a
+fallback; removed keys can carry a migration diagnostic. Compiler-owned
+`[format]` and `[lint]` remain closed, and formatter output stays canonical.
+
 ## Module `toml` (D183)
 
 ```veles
@@ -1425,7 +1511,9 @@ Every value remembers the line it was written on, so a program reading a
 configuration can say where it is wrong. Dates and times are kept as the text
 written (`Value.str`), checked for form and range. A table is `defined()` when a
 `[header]` or an inline table named it. Typed decoding (`toml.decode<T>`) and
-writing TOML are not built yet.
+writing TOML are not built yet. Arrays and inline tables may nest up to
+`recursion.maxRecursionDepth`; deeper input returns `ParseError` rather than
+exhausting the stack.
 
 ## Not in the library yet
 

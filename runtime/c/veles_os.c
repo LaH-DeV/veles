@@ -4,7 +4,8 @@
  *
  * The same conventions as veles_rt.c: strings arrive as (data, len) pairs
  * and leave through a veles_string out-pointer; results that can fail
- * return 0 or an errno value, which the Veles side turns into an IoError.
+ * generally return 0 or errno. Standard-input readers also use the status
+ * values mirrored by std/io, which become IoError or TooLong there.
  * Nothing here is reachable except through `extern "C"` declarations in
  * the standard library.
  */
@@ -14,6 +15,7 @@
 #endif
 #include <ctype.h>
 #include <errno.h>
+#include <float.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -112,6 +114,9 @@ typedef struct {
     int64_t len, cap;
 } buf_t;
 
+enum { STDIN_OK, STDIN_EOF, STDIN_INVALID_UTF8, STDIN_TOO_LONG, STDIN_IO_ERROR };
+#define READ_LIMIT_EXCEEDED (-1)
+
 static void buf_push(buf_t *b, const char *p, int64_t n) {
     if (b->len + n > b->cap) {
         int64_t ncap = b->cap ? b->cap * 2 : 4096;
@@ -140,6 +145,47 @@ static int read_stream(FILE *f, buf_t *b) {
     int err = ferror(f) ? (errno ? errno : EIO) : 0;
     veles_blocking_leave();
     return err;
+}
+
+static void buf_push_limited(buf_t *b, const char *p, int64_t n, int64_t limit) {
+    int64_t need = b->len + n;
+    if (need > b->cap) {
+        int64_t ncap = b->cap ? b->cap : 4096;
+        if (ncap > limit) ncap = limit;
+        while (ncap < need) {
+            if (ncap > limit / 2) ncap = limit;
+            else ncap *= 2;
+        }
+        char *nd = realloc(b->data, (size_t)ncap);
+        if (!nd) veles_panic("out of memory", 13);
+        b->data = nd;
+        b->cap = ncap;
+    }
+    memcpy(b->data + b->len, p, (size_t)n);
+    b->len += n;
+}
+
+static int read_stream_limited(FILE *f, buf_t *b, int64_t max) {
+    char chunk[8192];
+    int result = 0;
+    veles_blocking_enter();
+    while (true) {
+        int64_t remaining = max - b->len;
+        size_t want = sizeof chunk;
+        if (remaining < (int64_t)sizeof chunk) want = (size_t)remaining + 1;
+        size_t n = fread(chunk, 1, want, f);
+        if ((int64_t)n > remaining) {
+            result = READ_LIMIT_EXCEEDED;
+            break;
+        }
+        if (n > 0) buf_push_limited(b, chunk, (int64_t)n, max);
+        if (n < want) {
+            if (ferror(f)) result = errno ? errno : EIO;
+            break;
+        }
+    }
+    veles_blocking_leave();
+    return result;
 }
 
 /* ---- errors ------------------------------------------------------------ */
@@ -372,6 +418,24 @@ void veles_os_temp_dir(veles_string *out) {
 #define RUN_INHERIT 1 /* to this process's standard error */
 #define RUN_MERGE 2   /* into the output, in order */
 
+bool veles_utf8_valid(const char *s, int64_t len);
+
+static bool finish_run_output(veles_string *out, veles_string *errout,
+                              buf_t *stdout_bytes, buf_t *stderr_bytes, int64_t *err) {
+    if (!veles_utf8_valid(stdout_bytes->data ? stdout_bytes->data : "", stdout_bytes->len) ||
+        !veles_utf8_valid(stderr_bytes->data ? stderr_bytes->data : "", stderr_bytes->len)) {
+        free(stdout_bytes->data);
+        free(stderr_bytes->data);
+        *stdout_bytes = (buf_t){0};
+        *stderr_bytes = (buf_t){0};
+        *err = EILSEQ;
+        return false;
+    }
+    buf_finish(out, stdout_bytes);
+    buf_finish(errout, stderr_bytes);
+    return true;
+}
+
 /* veles_os_run starts a program with arguments — `argz` is the program
  * and each argument, separated by NUL bytes — writes `input` to its
  * standard input and closes it (no input: it reads the end at once), and
@@ -379,7 +443,7 @@ void veles_os_temp_dir(veles_string *out) {
  * There is NO SHELL: an argument reaches the program as one argument,
  * whatever it holds, so `;`, `|`, `$(...)`, `%VAR%` and quotes are text.
  * Returns the exit status, or -1 with an errno value in *err when the
- * program could not be started. */
+ * program could not be started or captured output was not valid UTF-8. */
 #if defined(_WIN32)
 /* One argument on a Windows command line, quoted by the rules the C
  * runtime's parser (and CommandLineToArgvW) reads back: backslashes are
@@ -559,13 +623,21 @@ int64_t veles_os_run(const char *argz, int64_t alen, const char *input, int64_t 
     GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hProcess);
     veles_blocking_leave();
-    buf_finish(out, &b);
-    buf_finish(errout, &er.b);
+    if (!finish_run_output(out, errout, &b, &er.b, err)) return -1;
     *err = 0;
     return (int64_t)code;
 }
 #else
 extern char **environ;
+
+static void close_pipe(int fds[2]) {
+    for (int i = 0; i < 2; i++) {
+        if (fds[i] >= 0) {
+            close(fds[i]);
+            fds[i] = -1;
+        }
+    }
+}
 
 /* reads what is there on fd into b; closes it and returns -1 at its end */
 static int drain_fd(int fd, buf_t *b) {
@@ -597,18 +669,21 @@ int64_t veles_os_run(const char *argz, int64_t alen, const char *input, int64_t 
     }
     /* three pipes: the input the child reads, its output, and — when it is
      * captured apart — its errors */
-    int outp[2], inp[2], errp[2] = {-1, -1};
+    int outp[2] = {-1, -1}, inp[2] = {-1, -1}, errp[2] = {-1, -1};
     if (pipe(outp) != 0) {
-        *err = errno;
+        int saved = errno;
+        close_pipe(outp);
+        *err = saved;
         free(argv);
         free(copy);
         return -1;
     }
     if (pipe(inp) != 0 || (mode == RUN_CAPTURE && pipe(errp) != 0)) {
-        *err = errno;
-        close(outp[0]);
-        close(outp[1]);
-        if (inp[0] >= 0) { close(inp[0]); close(inp[1]); }
+        int saved = errno;
+        close_pipe(outp);
+        close_pipe(inp);
+        close_pipe(errp);
+        *err = saved;
         free(argv);
         free(copy);
         return -1;
@@ -689,20 +764,19 @@ int64_t veles_os_run(const char *argz, int64_t alen, const char *input, int64_t 
         }
     }
     veles_blocking_leave();
-    buf_finish(out, &b);
-    buf_finish(errout, &eb);
-    *err = rerr;
     if (status == -1) {
+        free(b.data);
+        free(eb.data);
         *err = ECHILD;
         return -1;
     }
+    if (!finish_run_output(out, errout, &b, &eb, err)) return -1;
+    *err = rerr;
     return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
 }
 #endif
 
 /* ---- files ------------------------------------------------------------- */
-
-bool veles_utf8_valid(const char *s, int64_t len);
 
 static int64_t read_raw(const char *path, int64_t plen, veles_string *out) {
     FILE *f = open_file(path, plen, "rb");
@@ -826,8 +900,8 @@ int64_t veles_fs_lstat(const char *path, int64_t plen) {
 #endif
 }
 
-/* veles_fs_list_dir writes the entry names, one per line, sorted by the
- * Veles side. */
+/* veles_fs_list_dir writes NUL-separated entry names. Neither POSIX nor
+ * Windows filenames can contain NUL; the Veles side sorts the decoded names. */
 int64_t veles_fs_list_dir(const char *path, int64_t plen, veles_string *out) {
     buf_t b = {0};
 #if defined(_WIN32)
@@ -838,7 +912,7 @@ int64_t veles_fs_list_dir(const char *path, int64_t plen, veles_string *out) {
         if (wcscmp(e->d_name, L".") == 0 || wcscmp(e->d_name, L"..") == 0) continue;
         veles_string name;
         set_wstring(&name, e->d_name);
-        if (b.len) buf_push(&b, "\n", 1);
+        if (b.len) buf_push(&b, "\0", 1);
         buf_push(&b, name.data, name.len);
     }
     _wclosedir(d);
@@ -848,7 +922,7 @@ int64_t veles_fs_list_dir(const char *path, int64_t plen, veles_string *out) {
     struct dirent *e;
     while ((e = readdir(d)) != NULL) {
         if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) continue;
-        if (b.len) buf_push(&b, "\n", 1);
+        if (b.len) buf_push(&b, "\0", 1);
         buf_push(&b, e->d_name, (int64_t)strlen(e->d_name));
     }
     closedir(d);
@@ -1238,16 +1312,28 @@ int64_t veles_fs_write_atomic(const char *path, int64_t plen, veles_bytes_view *
     return err;
 }
 
-/* veles_read_all reads standard input to its end. */
-int64_t veles_read_all(veles_string *out) {
+/* veles_read_all reads standard input to its end, within max bytes. */
+int64_t veles_read_all(int64_t max, int64_t text, veles_string *out, int64_t *error) {
+    *error = 0;
+    if (max < 0) {
+        *error = EINVAL;
+        return STDIN_IO_ERROR;
+    }
     buf_t b = {0};
-    int err = read_stream(stdin, &b);
+    int64_t effective_max = max < INT64_MAX ? max : INT64_MAX - 1;
+    int err = read_stream_limited(stdin, &b, effective_max);
     if (err) {
         free(b.data);
-        return err;
+        if (err == READ_LIMIT_EXCEEDED) return STDIN_TOO_LONG;
+        *error = err;
+        return STDIN_IO_ERROR;
+    }
+    if (text && !veles_utf8_valid(b.data ? b.data : "", b.len)) {
+        free(b.data);
+        return STDIN_INVALID_UTF8;
     }
     buf_finish(out, &b);
-    return 0;
+    return STDIN_OK;
 }
 
 /* ---- time -------------------------------------------------------------- */
@@ -1341,15 +1427,41 @@ int64_t veles_time_local_offset_minutes(int64_t secs) {
 
 /* ---- number formatting ------------------------------------------------- */
 
-/* veles_f64_to_fixed renders v with exactly `digits` decimals (0..30). */
+/* veles_f64_to_fixed renders v with exactly `digits` decimals. */
 void veles_f64_to_fixed(double v, int64_t digits, veles_string *out) {
-    if (digits < 0) digits = 0;
-    if (digits > 30) digits = 30;
-    char buf[400];
-    int n = snprintf(buf, sizeof buf, "%.*f", (int)digits, v);
-    if (n < 0) n = 0;
-    if (n > (int)sizeof buf - 1) n = (int)sizeof buf - 1;
-    set_string(out, buf, n);
+    enum { EXACT_DECIMAL_PLACES = 1074, FIXED_BUFFER_SIZE = 1400 };
+    if (digits < 0) {
+        veles_panic("toFixed: digits must be nonnegative",
+                    (int64_t)sizeof("toFixed: digits must be nonnegative") - 1);
+        return;
+    }
+    char exact[FIXED_BUFFER_SIZE];
+    int precision = digits < EXACT_DECIMAL_PLACES ? (int)digits : EXACT_DECIMAL_PLACES;
+    int n = snprintf(exact, sizeof exact, "%.*f", precision, v);
+    if (n < 0 || n >= (int)sizeof exact) {
+        veles_panic("toFixed: formatting failed",
+                    (int64_t)sizeof("toFixed: formatting failed") - 1);
+        return;
+    }
+    bool finite = v == v && v <= DBL_MAX && v >= -DBL_MAX;
+    int64_t zeros = finite && digits > precision ? digits - precision : 0;
+    if (zeros > INT64_MAX - (int64_t)n - 1) {
+        veles_panic("toFixed: result is too large",
+                    (int64_t)sizeof("toFixed: result is too large") - 1);
+        return;
+    }
+    int64_t len = (int64_t)n + zeros;
+    if ((uint64_t)len >= (uint64_t)SIZE_MAX) {
+        veles_panic("toFixed: result is too large",
+                    (int64_t)sizeof("toFixed: result is too large") - 1);
+        return;
+    }
+    char *buf = veles_alloc(len + 1);
+    memcpy(buf, exact, (size_t)n);
+    memset(buf + n, '0', (size_t)zeros);
+    buf[len] = 0;
+    out->data = buf;
+    out->len = len;
 }
 
 /* ---- randomness -------------------------------------------------------- */

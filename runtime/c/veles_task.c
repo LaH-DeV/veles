@@ -4513,6 +4513,12 @@ static void os_thread_main(void *arg) {
         veles_thread_detach();
         return;
     }
+    /* running, it may yet wake a task: no idle thread calls the program
+     * deadlocked meanwhile. Counted before the starter hears it runs —
+     * counted after, the starter could block on what this thread sends
+     * and an idle thread find nothing active in between (TestExecutors
+     * cases 12 and 13, about 1 run in 10 on Linux) */
+    __atomic_add_fetch(&active_workers, 1, __ATOMIC_SEQ_CST);
     __atomic_store_n(&r->status, 1, __ATOMIC_SEQ_CST);
     veles_cond_broadcast(os_thread_cv);
     rt_exit();
@@ -4522,9 +4528,6 @@ static void os_thread_main(void *arg) {
     void *env = pair[1];
     current = t;
     in_resume = 1;
-    /* running, it may yet wake a task: no idle thread calls the program
-     * deadlocked meanwhile */
-    __atomic_add_fetch(&active_workers, 1, __ATOMIC_SEQ_CST);
     if (setjmp(panic_return) == 0) {
         code(env);
     } else {

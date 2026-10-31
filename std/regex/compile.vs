@@ -243,6 +243,21 @@ struct Builder {
       copies += 1
     }
     if (max == -1) {
+      if (!this.exact && min == 0 && canBeEmpty(body)) {
+        val optional = this.emit(opSplit, 0)
+        val start = this.here()
+        this.node(body)
+        val again = this.emit(opSplit, 0)
+        val end = this.here()
+        if (lazy) {
+          this.patch(optional, end, start)
+          this.patch(again, end, start)
+        } else {
+          this.patch(optional, start, end)
+          this.patch(again, start, end)
+        }
+        return
+      }
       // body*: split to the body or past the loop
       val split = this.emit(opSplit, 0)
       if (this.exact) {
@@ -274,6 +289,20 @@ struct Builder {
       if (lazy) this.patch(split, end, split + 1) else this.patch(split, split + 1, end)
     }
   }
+}
+
+const fun canBeEmpty(node: Node): bool => when (node) {
+  is Nothing => true
+  is Lit     => false
+  is Dot     => false
+  is Ranges  => false
+  is Cat     => node.items.all(item => canBeEmpty(item))
+  is Choice  => node.items.any(item => canBeEmpty(item))
+  is Repeat  => node.min == 0 || canBeEmpty(*node.body)
+  is Group   => canBeEmpty(*node.body)
+  is Anchor  => true
+  is BackRef => true
+  is Look    => true
 }
 
 /// Where a path through the program can arrive from more than one place.

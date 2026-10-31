@@ -5,7 +5,11 @@ use io
 
 struct Resource {
   name: string
-  implement Closeable { fun close() { io.println("closed ${this.name}") } }
+  implement Closeable {
+    fun close() {
+      io.println("closed ${this.name}")
+    }
+  }
 }
 
 fun slow(n: i64): i64 {

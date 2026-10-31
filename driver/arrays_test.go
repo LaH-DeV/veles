@@ -15,7 +15,7 @@ func TestArrays(t *testing.T) {
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		out, code := runTests(t, arraysSrc, Options{Release: release})
 		if code != 0 || !strings.Contains(out, "12 passed, 0 failed") {
 			t.Fatalf("release=%v: exit %d, output:\n%s", release, code, out)

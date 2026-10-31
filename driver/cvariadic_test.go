@@ -85,7 +85,7 @@ test "a pointer and a string" {
 }
 
 ` + strings.ReplaceAll(files, "made.txt", filepath.ToSlash(filepath.Join(t.TempDir(), "made.txt")))
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		out, code := runTestFiles(t, map[string]string{"main.vs": src}, Options{Release: release})
 		if code != 0 || !strings.Contains(out, "3 passed") {
 			t.Fatalf("release=%v: exit %d, output:\n%s", release, code, out)

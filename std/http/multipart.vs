@@ -1,10 +1,11 @@
 // `multipart/form-data` (D97): the body of a form with files, read one part
 // at a time off the request's body, so a large upload goes to disk as it
 // arrives and nothing but the part being read is ever held.
+use bytes as byteUnits
 use fs
 
 // the longest header block a part may have
-const maxPartHeaderBytes: i64 = 8192
+const maxPartHeaderBytes: i64 = byteUnits.KiB * 8
 
 const crlf: List<u8> = [13, 10]
 const dashes: List<u8> = [45, 45]
@@ -23,14 +24,15 @@ struct MultipartState {
 /// The parts of a `multipart/form-data` request, one after the other:
 ///
 /// ```veles
-/// val form = try req.multipart(max: 50 * 1024 * 1024)
+/// use bytes
+/// val form = try req.multipart(max: byteUnits.MiB * 50)
 /// loop {
 ///   val part = try form.next() ?: break
 ///   if (val name = part.filename) {
-///     val saved = try part.saveTo(path.join(uploads, "upload-1"), max: 10 * 1024 * 1024)
+///     val saved = try part.saveTo(path.join(uploads, "upload-1"), max: byteUnits.MiB * 10)
 ///     io.println("${part.name}: ${name}, $saved bytes")
 ///   } else {
-///     io.println("${part.name} = ${try part.text(max: 4096)}")
+///     io.println("${part.name} = ${try part.text(max: byteUnits.KiB * 4)}")
 ///   }
 /// }
 /// ```
@@ -125,7 +127,7 @@ public struct Multipart {
   fun skipPart() suspends throws Fail | IoError {
     loop {
       if (this.state.get().phase != 2) return
-      val piece = try this.readPart(65536)
+      val piece = try this.readPart(byteUnits.KiB * 64)
       if (piece.isEmpty()) return
     }
   }
@@ -184,7 +186,7 @@ public struct Multipart {
   // one piece of the body into the buffer; false at its end
   fun fill(): bool suspends throws Fail | IoError {
     if (this.state.get().eof) return false
-    val chunk = try this.source.read(65536)
+    val chunk = try this.source.read(byteUnits.KiB * 64)
     if (chunk.isEmpty()) {
       this.state.withLock(s => {
         s.eof = true
@@ -212,13 +214,13 @@ public struct Part {
   form:           Multipart
 
   /// Up to `max` bytes of the part, as they arrive; empty at its end.
-  public fun read(max: i64 = 65536): List<u8> suspends throws Fail | IoError => try this.form.readPart(max)
+  public fun read(max: i64 = byteUnits.KiB * 64): List<u8> suspends throws Fail | IoError => try this.form.readPart(max)
 
   /// The rest of the part, at most `max` bytes: a longer one is a 413.
   public fun bytes(max: i64): List<u8> suspends throws Fail | IoError {
     val out: MutableList<u8> = []
     loop {
-      val piece = try this.read(65536)
+      val piece = try this.read(byteUnits.KiB * 64)
       if (piece.isEmpty()) break
       if (out.len() + piece.len() > max) throw Fail(status: Status.contentTooLarge, text: "the part '${this.name}' is larger than $max bytes")
       out.addAll(piece)
@@ -240,7 +242,7 @@ public struct Part {
     var tooLong = false
     with (f = try fs.open(path, fs.FileMode.Write)) {
       loop {
-        val piece = try this.read(65536)
+        val piece = try this.read(byteUnits.KiB * 64)
         if (piece.isEmpty()) break
         written += piece.len()
         if (written > max) {

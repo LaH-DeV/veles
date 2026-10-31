@@ -507,6 +507,12 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 			}
 			return d
 		}
+		if p.cur().Text == "template" && (p.peek(1).Kind == lexer.KwFun || p.peek(1).Kind == lexer.KwConst && p.peek(2).Kind == lexer.KwFun) {
+			fn := p.parseFun(attrs, funContextFree)
+			fn.Pub = pub
+			fn.Pos = start.To(fn.Pos)
+			return fn
+		}
 		if p.lazyAt(0) {
 			p.next() // `lazy val`: built on its first read (D210); the checker refuses `var` and `const`
 			d := p.parseValDecl(attrs, pub, start)
@@ -571,6 +577,12 @@ func (p *Parser) parseDeclKind(attrs []*ast.Attribute, pub, marked bool, which s
 		}
 		return p.parseImpl(attrs, false)
 	case lexer.KwConst:
+		if p.peek(1).Kind == lexer.Ident && p.peek(1).Text == "template" && p.peek(2).Kind == lexer.KwFun {
+			fn := p.parseFun(attrs, funContextFree)
+			fn.Pub = pub
+			fn.Pos = start.To(fn.Pos)
+			return fn
+		}
 		if n := p.structWordsAt(1); n > 0 {
 			// `const struct`: immutable all the way down (D212), checked by
 			// the checker; then `compact` (D215) and `extern` as without it
@@ -988,6 +1000,11 @@ func (p *Parser) parseFun(attrs []*ast.Attribute, ctx funContext) *ast.FunDecl {
 			fn.Unsafe = true
 		case lexer.KwConst:
 			fn.Const = true
+		case lexer.Ident:
+			if p.cur().Text != "template" || p.peek(1).Kind != lexer.KwFun && p.peek(1).Kind != lexer.KwConst {
+				goto done
+			}
+			fn.Template = true
 		default:
 			goto done
 		}
@@ -1132,6 +1149,10 @@ func (p *Parser) parseStruct(attrs []*ast.Attribute, pub, extern bool, start sou
 			}
 			switch p.peek(at).Kind {
 			case lexer.Ident, lexer.KwVar, lexer.KwVal, lexer.KwProtected:
+				if p.peek(at).Kind == lexer.Ident && p.peek(at).Text == "template" && (p.peek(at+1).Kind == lexer.KwFun || p.peek(at+1).Kind == lexer.KwConst) {
+					d.Methods = append(d.Methods, p.parseFun(mattrs, funContextMethod))
+					break
+				}
 				if p.peek(at).Kind == lexer.Ident && p.peek(at).Text == "init" && (p.peek(at+1).Kind == lexer.LBrace || p.peek(at+1).Kind == lexer.LParen) {
 					// `init { }` / `init(value: T) { }`: contextual — a field
 					// named init is `init: T`

@@ -177,8 +177,8 @@ entry:
 overflow.1:
   %t10 = extractvalue %str { ptr @.str.1, i64 16 }, 0
   %t11 = extractvalue %str { ptr @.str.1, i64 16 }, 1
-  %t12 = extractvalue %str { ptr @.str.9, i64 13 }, 0
-  %t13 = extractvalue %str { ptr @.str.9, i64 13 }, 1
+  %t12 = extractvalue %str { ptr @.str.9, i64 12 }, 0
+  %t13 = extractvalue %str { ptr @.str.9, i64 12 }, 1
   call void @veles_panic_at(ptr %t10, i64 %t11, ptr %t12, i64 %t13)
   unreachable
 arith.ok.2:
@@ -237,13 +237,13 @@ arith.ok.2:
 }
 
 @.str.1 = private unnamed_addr constant [17 x i8] c"integer overflow\00"
-@.str.2 = private unnamed_addr constant [13 x i8] c"main.vs:4:42\00"
-@.str.3 = private unnamed_addr constant [20 x i8] c"main.vs:13:14\00adder\00"
-@.str.4 = private unnamed_addr constant [18 x i8] c"main.vs:14:17\00map\00"
-@.str.5 = private unnamed_addr constant [19 x i8] c"main.vs:15:15\00fold\00"
-@.str.6 = private unnamed_addr constant [20 x i8] c"main.vs:16:24\00apply\00"
+@.str.2 = private unnamed_addr constant [13 x i8] c"main.vs:4:43\00"
+@.str.3 = private unnamed_addr constant [20 x i8] c"main.vs:15:14\00adder\00"
+@.str.4 = private unnamed_addr constant [18 x i8] c"main.vs:16:17\00map\00"
+@.str.5 = private unnamed_addr constant [19 x i8] c"main.vs:17:15\00fold\00"
+@.str.6 = private unnamed_addr constant [20 x i8] c"main.vs:18:24\00apply\00"
 @.str.7 = private unnamed_addr constant [2 x i8] c" \00"
-@.str.8 = private unnamed_addr constant [21 x i8] c"main.vs:16:3\00println\00"
-@.str.9 = private unnamed_addr constant [14 x i8] c"main.vs:10:22\00"
-@.str.10 = private unnamed_addr constant [14 x i8] c"main.vs:14:36\00"
-@.str.11 = private unnamed_addr constant [14 x i8] c"main.vs:15:41\00"
+@.str.8 = private unnamed_addr constant [21 x i8] c"main.vs:18:3\00println\00"
+@.str.9 = private unnamed_addr constant [13 x i8] c"main.vs:11:5\00"
+@.str.10 = private unnamed_addr constant [14 x i8] c"main.vs:16:36\00"
+@.str.11 = private unnamed_addr constant [14 x i8] c"main.vs:17:41\00"

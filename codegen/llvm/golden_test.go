@@ -40,9 +40,8 @@ func TestGolden(t *testing.T) {
 			t.Parallel()
 			golden(t, dir, false, "main.ll", "output.txt", clangErr)
 		})
-		// A fixture whose meaning depends on the build profile (D21: `+`
-		// checked in debug, wrapping in release) has a second pair of
-		// files, main.release.ll and output.release.txt, for `--release`.
+		// Fixtures may include main.release.ll and output.release.txt to pin
+		// `--release` separately; integer overflow remains checked (D209).
 		if _, err := os.Stat(filepath.Join(dir, "main.release.ll")); err == nil {
 			t.Run(filepath.Base(dir)+"/release", func(t *testing.T) {
 				t.Parallel()

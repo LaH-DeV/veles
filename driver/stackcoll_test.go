@@ -192,7 +192,7 @@ fun main() {
 		name string
 		off  bool
 	}{{"stack", false}, {"heap", true}} {
-		for _, release := range []bool{false, true} {
+		for _, release := range profiles() {
 			if variant.off {
 				t.Setenv("VELES_NO_STACK_COLLECTIONS", "1")
 			} else {

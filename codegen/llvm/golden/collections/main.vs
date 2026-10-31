@@ -1,7 +1,9 @@
 // Lists, maps and sets: reads are copies, writes go through references.
 use io
 
-struct Counter { var n: i64 }
+struct Counter {
+  var n: i64
+}
 
 fun main() {
   val xs = [3, 1, 2]

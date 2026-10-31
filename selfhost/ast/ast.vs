@@ -351,6 +351,7 @@ struct FunDecl {
   var isOverride: bool = false
   var isUnsafe:   bool = false
   var isConst:    bool = false  // `const fun` (D113)
+  var template:   bool = false
   var isExtern:   bool = false
   var exportC:    bool = false  // `extern "C" fun name(…) { }` (D69)
   var isTest:     bool = false  // `test fun` (D78)

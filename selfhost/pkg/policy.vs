@@ -1,4 +1,5 @@
-use settings { Schema, Section, Setting, SettingsError, stringList }
+use settings { Schema, Section, Setting, SettingsError }
+use toml { Value }
 use text { quote }
 
 /// What a package's source can do that a build should know about (D138),
@@ -59,7 +60,7 @@ fun policySchema(): Schema<Policy> => Schema(
     Setting<Policy>(key: "allow", doc: "the packages that may use a capability or claim despite deny", read: (section, value, policy) => {
       val table = value.asTable() ?: throw section.failAt(value, "[policy] allow is a table of capability = [packages], e.g. allow = { net = [\"acme/httputil\"] }")
       loop (claimant in section.within(table).entries()) {
-        policy.allow.set(claimant.key, try stringList(section, claimant.value, "[policy] allow.${claimant.key}", "${claimant.key} = [\"owner/name\"]"))
+        policy.allow.set(claimant.key, try policyStringList(section, claimant.value, "[policy] allow.${claimant.key}", "${claimant.key} = [\"owner/name\"]"))
       }
     }),
     Setting<Policy>(key: "trust", doc: "reviewers whose attestations count: name = \"ed25519:<base64 key>\"", read: (section, value, policy) => {
@@ -100,4 +101,13 @@ fun readPolicy(section: Section): Policy throws SettingsError {
     }
   }
   *policy
+}
+
+fun policyStringList(section: Section, value: Value, what: string, example: string): List<string> throws SettingsError {
+  val items = value.asList() ?: throw section.failAt(value, "$what is a list, e.g. $example")
+  val out: MutableList<string> = []
+  loop (item in items) {
+    out.push(item.asString() ?: throw section.failAt(item, "$what holds strings only"))
+  }
+  out
 }

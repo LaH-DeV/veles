@@ -150,6 +150,8 @@ prelude/list.vs: public static const fun make(n: i64, init: fun(i64): T): Mutabl
 prelude/list.vs: public static const fun repeat(x: T, count: i64): MutableList<T>
 prelude/number.vs: const fun checkRadix(radix: i64)
 prelude/number.vs: const fun unsignedToRadix(v: u64, radix: i64): string
+prelude/number.vs: public const fun isClose(other: f32, relative: f32 = 1.0e-6, absolute: f32 = 0.0): bool
+prelude/number.vs: public const fun isClose(other: f64, relative: f64 = 1.0e-9, absolute: f64 = 0.0): bool
 prelude/number.vs: public const fun toString(radix: i64 = 10): string
 prelude/number.vs: public const fun toString(radix: i64 = 10): string
 prelude/string.vs: public const fun capitalize(): string
@@ -169,6 +171,9 @@ prelude/string.vs: public const fun toUpper(): string
 prelude/string.vs: public const fun trim(): string
 prelude/string.vs: public const fun trimEnd(): string
 prelude/string.vs: public const fun trimStart(): string
+prelude/testing.vs: const fun lineDiff(left: List<string>, right: List<string>, leftName: string, rightName: string): string
+prelude/testing.vs: const fun testDiff(left: string, right: string, quoted: bool, column: i64, leftName: string, rightName: string): string
+prelude/testing.vs: const fun testIndent(text: string, column: i64): string
 prelude/traits.vs: const fun compareTo(other: f32): Ordering
 prelude/traits.vs: const fun compareTo(other: f64): Ordering
 prelude/traits.vs: const fun compareTo(other: i16): Ordering
@@ -184,6 +189,7 @@ prelude/traits.vs: const fun compareTo(other: u8): Ordering
 prelude/traits.vs: const fun compareTo(other: usize): Ordering
 regex/compile.vs: const fun asciiMasks(sets: List<List<i64>>): List<i64>
 regex/compile.vs: const fun build(parsed: Parsed): Program
+regex/compile.vs: const fun canBeEmpty(node: Node): bool
 regex/compile.vs: const fun choice(items: List<Node>)
 regex/compile.vs: const fun emit(op: i64, x: i64, y: i64 = 0): i64
 regex/compile.vs: const fun firstBytes(insts: List<Inst>, sets: List<List<i64>>): (List<bool>, bool)
@@ -244,9 +250,9 @@ regex/parse.vs: const fun wordRanges(): List<i64>
 regex/parse.vs: const fun words(): List<i64>
 regex/regex.vs: const fun flagsOf(flags: string): Flags
 regex/regex.vs: public const fun validate(pattern: string, flags: string): string
-regex/unicode.vs: const fun unicodeProperty(name: string): List<i64>?
 regex/vm.vs: const fun inSet(ranges: List<i64>, c: i64): bool
 regex/vm.vs: const fun isWordByte(b: u8): bool
+unicode/tables.vs: const fun unicodeProperty(name: string): List<i64>?
 utf8/utf8.vs: const fun step(b0: u8, b1: u8, b2: u8, b3: u8, rest: i64): Rune?
 utf8/utf8.vs: public const fun char(code: i64): string
 utf8/utf8.vs: public const fun combineSurrogates(high: i64, low: i64): i64?

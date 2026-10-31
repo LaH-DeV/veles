@@ -356,7 +356,7 @@ http.serve(listener, app.handler())
 
 ## Attributes (D51) and annotations (D174)
 
-`@deprecated("msg")`, `@mustUse`, `@inline`, `@noinline`, `@template` (the function behind `name"…${x}…"`, D129); for the wire: `@key`, `@skip`, `@required`, `@tag`. These lowercase names are the compiler's.
+`@deprecated("msg")`, `@mustUse`, `@inline`, `@noinline`; for the wire: `@key`, `@skip`, `@required`, `@tag`. These lowercase names are the compiler's. Template tags use contextual `template fun`, exactly `(parts: List<string>, values: List<V>)`; invocation is tag-only, `name"…${x}…"` (D227).
 
 ```veles
 // fragment
@@ -379,6 +379,9 @@ fun logged<A, R>(a: Logged, args: A, body: fun(A): R): R   // the other shape: a
 ```text
 test "parses a port" {                       // a sentence names it; no signature
   expect(parsePort("80") == 80)               // soft: records (with both sides) and goes on
+  expect(port > 0, "case ${input}")           // a message, built only when it fails (D229)
+  expectEqual(80, parsePort("80"))            // expected first: reported as expected/actual
+  expectNear(0.3, total, within: 1.0e-12)     // floats within a tolerance; NaN never passes (D230)
   val cfg = require(load("app.toml"))         // T? or Result: the value, or the test ends
   expectThrows<RangeError>(() => parsePort("70000"))
   expectPanics(() => { val _ = [1].at(5) ?: panic("no") })

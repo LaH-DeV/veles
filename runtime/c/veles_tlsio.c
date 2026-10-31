@@ -1050,7 +1050,7 @@ static bool backend_client(session *s, const char *host, const char *roots, size
 #define SSL_ERROR_ZERO_RETURN 6
 
 static struct {
-    bool tried, ok;
+    bool ok;
     void *(*TLS_client_method)(void);
     void *(*TLS_server_method)(void);
     void *(*SSL_CTX_new)(void *);
@@ -1106,9 +1106,9 @@ static void *sym(void *a, void *b, const char *name) {
     return p;
 }
 
-static bool ossl_load(void) {
-    if (ossl.tried) return ossl.ok;
-    ossl.tried = true;
+static pthread_once_t ossl_once = PTHREAD_ONCE_INIT;
+
+static void ossl_init(void) {
     static const char *ssl_names[] = {"libssl.so.3", "libssl.so.1.1", "libssl.so", "libssl.3.dylib",
                                       "/opt/homebrew/lib/libssl.3.dylib", "/usr/local/lib/libssl.3.dylib",
                                       "libssl.dylib", NULL};
@@ -1118,8 +1118,8 @@ static bool ossl_load(void) {
     void *ssl = NULL, *crypto = NULL;
     for (int i = 0; ssl_names[i] && !ssl; i++) ssl = dlopen(ssl_names[i], RTLD_NOW | RTLD_GLOBAL);
     for (int i = 0; crypto_names[i] && !crypto; i++) crypto = dlopen(crypto_names[i], RTLD_NOW | RTLD_GLOBAL);
-    if (!ssl) return false;
-#define L(name) *(void **)&ossl.name = sym(ssl, crypto, #name); if (!ossl.name) return false
+    if (!ssl) return;
+#define L(name) *(void **)&ossl.name = sym(ssl, crypto, #name); if (!ossl.name) return
     L(TLS_client_method); L(TLS_server_method); L(SSL_CTX_new); L(SSL_CTX_free); L(SSL_new); L(SSL_free);
     L(BIO_new); L(BIO_s_mem); L(BIO_read); L(BIO_write); L(BIO_ctrl); L(BIO_new_mem_buf); L(BIO_free_all);
     L(SSL_set_bio); L(SSL_set_connect_state); L(SSL_set_accept_state); L(SSL_do_handshake); L(SSL_read); L(SSL_write);
@@ -1132,7 +1132,11 @@ static bool ossl_load(void) {
     L(SSL_CTX_set_alpn_select_cb); L(SSL_select_next_proto);
 #undef L
     ossl.ok = true;
-    return true;
+}
+
+static bool ossl_load(void) {
+    pthread_once(&ossl_once, ossl_init);
+    return ossl.ok;
 }
 
 static void ossl_text(char *dst, size_t n, const char *what) {

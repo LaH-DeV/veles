@@ -252,8 +252,9 @@ type FunDecl struct {
 	Unsafe   bool
 	// Const: `const fun` — the compiler may run it while evaluating a
 	// constant (D113); an ordinary function at run time.
-	Const  bool
-	Extern bool
+	Const    bool
+	Template bool
+	Extern   bool
 	// ExportC: `extern "C" fun name(...) { body }` — a Veles function C
 	// can call, under its own name, with the C calling convention (D69).
 	ExportC bool

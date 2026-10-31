@@ -66,7 +66,7 @@ fun main() throws DecodeError {
 		"churn 14890 hunter2\n" +
 		"wiped when freed: 1\n" +
 		"closed\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "secret.exe")
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)

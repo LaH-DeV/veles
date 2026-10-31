@@ -856,9 +856,11 @@ struct Lexer {
     this.pos += size
     // not an identifier character and not an operator: name what it is,
     // since an invisible one cannot be seen in the source
-    val what = if (code >= 0x80) describeRune(code)
-    else if (showAsItself(code)) "'${utf8.char(code)}'"
-    else codePoint(code)
+    val what = when {
+      code >= 0x80       => describeRune(code)
+      showAsItself(code) => "'${utf8.char(code)}'"
+      else               => codePoint(code)
+    }
     this.errorAt(start, this.pos, "unexpected character $what")
     this.push(Kind.Illegal, start)
   }

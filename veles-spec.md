@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.118** — decisions D1–D218. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.130** — decisions D1–D230. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -335,7 +335,7 @@ _Addendum:_ `len()` is the byte length; the scalar view is available on demand a
 
 _Resolved (§4b):_ byte access is the explicit `s.byteAt(i)` / `s.bytes()` view; there is no subscript on text (and, since v0.24, no subscript anywhere — D25).
 
-_Addendum (2026-09-25) — identifiers are UAX #31, and source text is checked for Trojan source._ Until now every byte ≥ 0x80 was an identifier byte: no Unicode tables to scan a name, and `val café = 1` worked — but so did a no-break space, a zero-width space and U+202E RIGHT-TO-LEFT OVERRIDE inside a name, the "Trojan source" family (CVE-2021-42574) where a file reads one way and compiles another. Decided (user, over the smaller "refuse a fixed list" option): an identifier is `_` or an **ID_Start** character followed by **ID_Continue** characters, the Unicode Standard Annex #31 definitions (`L + Nl + Other_ID_Start`, then `+ Mn + Mc + Nd + Pc + Other_ID_Continue`, minus `Pattern_Syntax` and `Pattern_White_Space`). Anything else above ASCII outside a string or comment is an error that _names_ the character — "U+00A0, a no-break space; use an ordinary space", "U+202E, a bidirectional control character, which makes text display in a different order from how it compiles" — because the reader cannot see it. Beyond identifiers, as Rust does: a bidirectional control in a **comment** is an error (that is where the attack hides code); in a **string** it is a warning suggesting the `\u{...}` escape (it may be legitimate text, but should be visible). A byte-order mark is skipped at the very start of a file and is an error anywhere else. Identifiers are not NFC-normalized (two spellings of `é` are two names; Go's standard library has no normalizer). Cost: Unicode property tables in the lexer — Go's `unicode` package here, and a generated table in the self-hosted lexer (veles-selfhost-frontend-plan.md §4.2, amended).
+_Addendum (2026-09-25) — identifiers are UAX #31, and source text is checked for Trojan source._ Until now every byte ≥ 0x80 was an identifier byte: no Unicode tables to scan a name, and `val café = 1` worked — but so did a no-break space, a zero-width space and U+202E RIGHT-TO-LEFT OVERRIDE inside a name, the "Trojan source" family (CVE-2021-42574) where a file reads one way and compiles another. Decided (user, over the smaller "refuse a fixed list" option): an identifier is `_` or an **ID_Start** character followed by **ID_Continue** characters, the Unicode Standard Annex #31 definitions (`L + Nl + Other_ID_Start`, then `+ Mn + Mc + Nd + Pc + Other_ID_Continue`, minus `Pattern_Syntax` and `Pattern_White_Space`). Anything else above ASCII outside a string or comment is an error that _names_ the character — "U+00A0, a no-break space; use an ordinary space", "U+202E, a bidirectional control character, which makes text display in a different order from how it compiles" — because the reader cannot see it. Beyond identifiers, as Rust does: a bidirectional control in a **comment** is an error (that is where the attack hides code); in a **string** it is a warning suggesting the `\u{...}` escape (it may be legitimate text, but should be visible). A byte-order mark is skipped at the very start of a file and is an error anywhere else. Identifiers are not NFC-normalized (two spellings of `é` are two names; Go's standard library has no normalizer). ~~Cost: Unicode property tables in the lexer — Go's `unicode` package here, and a generated table in the self-hosted lexer (veles-selfhost-frontend-plan.md §4.2, amended).~~ D223 adds the shared `std/unicode` data source used by regex and the Veles self-hosted lexer; the bootstrap lexer remains the generator's oracle.
 
 ### D19 — A slice that splits a code point returns `string?`
 
@@ -349,7 +349,7 @@ Index-out-of-bounds, null dereference, and division by zero are not `Result` —
 
 Because the GC means there is no drop glue to run, a cheaper option is available: compile panics as a hidden error-return path — the same mechanism as D4 — which works identically in both frame kinds at the cost of a predictable branch on return and some code size. It cannot catch panics originating in FFI or from signals.
 
-### D21 — Integer overflow: checked in debug, wrapping in release, `+%` always wraps
+### D21 — Integer overflow and bitwise operators (amended by D209)
 
 _Amended (v0.23) — bitwise operators._ Integers have `&`, `|`, `^`, `<<`, `>>` and unary `~`, with Go's grouping (`&`, `<<`, `>>` at the level of `*`; `|`, `^` at the level of `+`). A shift count may be any integer type; a count at or beyond the width yields 0 (the sign fill for a signed `>>`), never undefined behaviour. Literals may be hexadecimal (`0xFF`) or binary (`0b1010`).
 
@@ -2101,6 +2101,8 @@ form; a `testing` module anyone can import (leaks into programs, needs
 `try`, loses the location); a built-in `assert` everywhere.
 
 _Amended 2026-10-04 — test files (user: "in `_.test.vs`files there should not be`fun`functions, only`test fun`functions... and I think the module should not know about any declarations there, BUT later we should be able to export test functions so people can create reusable test libraries").* A top-level`fun`in a`\*.test.vs`file is an error with a fix that writes`test fun`(methods in`struct`/`implement`bodies are not top-level and stay as they are), and a type, value or helper declared in a test file is an error when a non-test file names it (by name, by type name, or`module.name`): the module's own files cannot see their tests' declarations; tests still see the module's private names. Open, by the user's own "later": exporting test code from a package so that others can build reusable test libraries (checklist §11).
+
+_Amended 2026-10-30 — D229 adds `expectEqual(expected, actual)` and a message on `expect`; D230 adds `expectNear(expected, actual, within:)`._
 
 ### D79 — A diagnostic belongs to a named family; `veles explain <family>` (v0.45)
 
@@ -4213,7 +4215,7 @@ _Built 2026-10-03 (B16)._ Settled while building:
   and of a copy otherwise; a callee that writes its parameter or lends a
   pointer into it copies it on entry. Measured on `bench/bigargs`: 88 ms →
   46 ms (Go 90 ms). 2026-10-27: the parameter is `noalias nocapture
-  readonly` — the callee only reads it, and the rule above is what makes
+readonly` — the callee only reads it, and the rule above is what makes
   `noalias` true; the GC and thread stress runs pass with it. A sealed,
   `Result` or error union value with an over-aligned payload is in the
   memory class whatever its size (its tag is not an LLVM field)._
@@ -7521,7 +7523,7 @@ What this means for writing the compiler in Veles: the literal's compile-time ch
 
 _Built 2026-10-19 (v0.96), with these names settled._ `std/regex`: `Regex.compile(pattern, ignoreCase, multiLine, dotAll, extended)` throws `RegexError { message, position }`; `Regex.escape`; `test` (anywhere) and `matches` (the whole text); `find(text, from)`, `findAll`, `replaceAll(text, replacement)`, `replaceFirst`, `replaceEach(text, f)`, `split(text, limit)`; `Match.value/start/end/groupAt(i)/group(name)/span(i)/groupCount`; the string extensions `matches`, `find`, `findAll`, `replaceAll(re, replacement)`, `splitBy`. The replacement parameter is `replacement`, not `with` (`with` is a keyword, D100), and `group(name)` / `groupAt(index)` are two names because there is no overloading (D179). A replacement reads `$1`, `${1}`, `${name}`, `$0` and `$$`. The engine is a Pike VM plus a bounded backtracker (a visited set of (instruction, position), used when program × text ≤ 262 144 pairs), identical results, both linear. The parser and the instruction builder are `const fun`s that record the first problem instead of throwing (a `const fun` cannot throw), which is how the compiler runs `regex.validate(pattern, flags)` on every literal; a literal lowers to `regex.literal(pattern, flags)`, which compiles each distinct literal once. Not built: typed groups; see checklist §11.
 
-_Built the same day (second part)._ `\p{Name}`, `\pL`, `\P{…}`, `\p{^…}` (any general category or script of Unicode 15, `Any`), in or out of a class; the `u` flag (`/…/u`, `(?u)`, `unicode: true`): `\d` is `Nd`, `\w` letters + marks + `Nd` + connector punctuation, `\s` `White_Space`, `\b` and `i` follow Unicode (simple case folding). The tables are `std/regex/unicode.vs`, generated from Go's `unicode` package (`go test ./std -run RegexUnicodeTables -update-unicode`). `Regex.compile(pattern, …, unicode: false, backtracking: false)`: with `backtracking: true`, `\1`, `\k<name>`, `(?=…)`, `(?!…)`, `(?<=…)` and `(?<!…)` run on an exhaustive depth-first engine with no visited set (it can take exponential time; no step limit); a `/…/` literal never has it, and the refusal names this call.
+_Built the same day (second part)._ `\p{Name}`, `\pL`, `\P{…}`, `\p{^…}` (any general category or script of Unicode 15, `Any`), in or out of a class; the `u` flag (`/…/u`, `(?u)`, `unicode: true`): `\d` is `Nd`, `\w` letters + marks + `Nd` + connector punctuation, `\s` `White_Space`, `\b` and `i` follow Unicode (simple case folding). ~~The tables are `std/regex/unicode.vs`, generated from Go's `unicode` package (`go test ./std -run RegexUnicodeTables -update-unicode`).~~ D223 moved the shared generated data to `std/unicode/tables.vs` (`go test ./std -run UnicodeTables -update-unicode`). `Regex.compile(pattern, …, unicode: false, backtracking: false)`: with `backtracking: true`, `\1`, `\k<name>`, `(?=…)`, `(?!…)`, `(?<=…)` and `(?<!…)` run on an exhaustive depth-first engine with no visited set (it can take exponential time; no step limit); a `/…/` literal never has it, and the refusal names this call.
 
 ---
 
@@ -7948,7 +7950,7 @@ cede` and `fun checkpoint() => cede` are errors. Use a block body;
    remain. Historical records and archives are not rewritten.
 
 The detailed normative rules and acceptance matrix are in sections 1-7 of
-[Cede: explicit cooperative scheduling](veles-cede-spec.md), alongside
+[Cede: explicit cooperative scheduling](archive/veles-cede-spec.md), alongside
 research sources, migration inventory and implementation guidance. All
 compiler layers and both frontends must agree before this is built.
 
@@ -8988,6 +8990,32 @@ collection and cannot be cancelled, and no measured loop needs it);
 preemption by signal as Go does (a redesign of the collector and codegen
 for what chunking gives).
 
+### D219 — `toFixed` accepts dynamic precision (v0.119)
+
+```veles
+val exact = 1.5.toFixed(31) // 31 digits after the decimal point
+```
+
+- **Rule.** `f64.toFixed(digits)` and `f32.toFixed(digits)` produce exactly
+  `digits` decimal places for any nonnegative precision whose result fits in
+  a Veles string. There is no arbitrary small precision cap. Negative
+  precision, an unrepresentable result size, or allocation failure panics;
+  precision is never silently clamped. Rounding and the existing spellings
+  for non-finite values are unchanged. `f32` keeps formatting through its
+  existing conversion to `f64`.
+- **Why.** C/POSIX, Go, Rust, Java and Kotlin formatters accept dynamic
+  precision rather than imposing a small fixed ceiling; their integer and
+  output representations, and available memory, bound what can be produced.
+  JavaScript's dedicated `Number.toFixed` uses a specific 0–100 range, but
+  that is not the format-string convention Veles is following here.
+- **Self-hosting.** This does not change syntax or compiler semantics. The
+  public method remains convenient Veles code over a low-level formatter;
+  future Veles implementations must preserve the same precision contract.
+
+User, 2026-10-28: "the C or go / rust /java /kotlin way". Accepted: dynamic
+precision with no arbitrary small cap. Rejected: silently clamping at 30,
+and adopting JavaScript's dedicated-method limit of 100.
+
 Built 2026-10-28 (plan F22): the checker marks the loop (`sema/chunk.go`:
 an i64 index stepped only by the loop, no call, suspension, task, `with`
 or inner loop in the condition, body or step; 16–1024 rounds by the body's
@@ -8997,6 +9025,218 @@ to 107 ps a round (C: 100), the sum of squares from 358 to 4; the
 suspending twins, which also stored to their frame every round, from 1723
 and 698 to 114 and 5. A loop over a narrower integer range is not chunked
 yet (rarely the hot loop).
+
+### D220 — Standard input has bounded text and byte readers (v0.120)
+
+```veles
+use bytes
+use io
+
+val line = try io.readLine() ?: break       // at most 64 KiB by default
+val payload = try io.readAllBytes(max: bytes.MiB * 4)
+```
+
+- **Rule.** `io.readLine(max: i64 = bytes.KiB * 64): string?` and
+  `io.readAll(max: i64 = bytes.MiB): string` return text and throw
+  `IoError | TooLong`. Text is validated UTF-8; invalid input throws
+  `IoError` with `IoKind.InvalidData`. `io.readLineBytes(max: i64 = bytes.KiB * 64):
+List<u8>?` and `io.readAllBytes(max: i64 = bytes.MiB): List<u8>` preserve
+  every byte and throw `IoError | TooLong`. Each `max` is an overridable
+  byte ceiling; a negative value is a caller error and panics. A line omits
+  its newline and one preceding carriage return, as before; EOF with no
+  remaining bytes is `null`. `readAll` consumes the rest of stdin.
+- **Bounds.** A read whose result exceeds `max` throws `TooLong`; the
+  implementation must not buffer more than the configured limit plus the
+  small amount needed to detect overflow. The defaults are conveniences,
+  not hidden unlimited reads: 64 KiB for one line and 1 MiB for all of stdin.
+- **Why.** A Veles `string` is always valid UTF-8 (D18), and input size is
+  controlled by the environment. Text and bytes are distinct operations;
+  callers get a convenient bounded text default or opt into raw bytes and
+  decode them explicitly.
+- **Self-hosting.** No syntax or compiler semantics change. The Veles
+  wrappers remain small; the C runtime checks bounds before constructing a
+  list or a validated string.
+
+User, 2026-10-28: selected checked text readers plus byte variants, then
+bounded defaults: "64 KiB for line, 1 MiB for readAll; make max overridable."
+Rejected: returning bytes from the existing text methods; an unbounded
+default; requiring `max` with no default.
+
+### D221 — IEC byte units are constants in `std/bytes` (v0.121)
+
+```veles
+use bytes
+
+val headerLimit = bytes.KiB * 64
+val uploadLimit = bytes.MiB * 8
+```
+
+- **Rule.** `std/bytes` exports `i64` constants `B`, `KiB`, `MiB`, `GiB`,
+  `TiB`, `PiB` and `EiB`. `B` is 1 byte; each IEC unit is 1024 of the
+  previous unit. `KB`/`MB` aliases are not provided because those names
+  conventionally mean decimal SI units. Byte ceilings, buffer sizes and
+  other byte quantities throughout the standard library use these shared
+  constants. `fmt.bytes` remains the human-readable formatter.
+- **Scope.** This module is deliberately a small unit vocabulary, not an
+  enum and not a `ByteSize` wrapper. Arithmetic and current `i64` APIs stay
+  direct (`bytes.KiB * 64`); add other helpers only when a real use requires
+  them.
+- **Self-hosting.** No compiler changes. The constants are ordinary Veles
+  declarations and require no runtime support.
+
+User, 2026-10-29: "yeah, it should be IEC, not decimal. do it for all of the
+modules (one, not separates)". Chosen name: `bytes`, matching the existing
+`fmt.bytes` vocabulary while keeping formatting in `fmt`.
+
+### D222 — `Regex.split` with a zero limit returns no pieces (v0.122)
+
+```veles
+use regex { Regex }
+
+val comma = Regex.compile(",") catch (e) { panic(e.message) }
+comma.split("a,b", limit: 0)  // []
+comma.split("a,b", limit: 1)  // ["a,b"]
+comma.split("a,b")            // ["a", "b"]
+```
+
+- **Rule.** `Regex.split(text, limit:)` returns `[]` when `limit == 0`, for every input and pattern, including empty input and no matches. A positive limit returns at most that many pieces, with the final piece holding the unsplit remainder; `limit == 1` returns `[text]`. A negative limit returns all pieces, as before. This rule does not change the replacement methods.
+- **Why.** Zero follows the documented maximum; it means no pieces, not unlimited.
+- **Self-hosting.** No compiler semantics change. The implementation is a standard-library early return before searching.
+
+User, 2026-10-29: selected no pieces for a zero limit (recommended of 3).
+Rejected: treating zero as unlimited (duplicates the negative unlimited convention); keeping one unsplit piece (violates "at most limit pieces").
+
+### D223 — Shared Unicode tables and code-point predicates (v0.123)
+
+```veles
+use unicode
+use utf8
+
+val rune = utf8.decode(text, at) ?: return
+if (unicode.isLetter(rune.code)) { ... }
+if (unicode.hasProperty("Greek", rune.code) == true) { ... }
+```
+
+- **Rule.** `std/unicode` exports `isLetter(code)`, `isDecimalDigit(code)`, `isWhiteSpace(code)`, `isPrintable(code)`, `isIdentifierStart(code)`, `isIdentifierContinue(code)`, and `hasProperty(name, code): bool?`. `isLetter` means general category `L`; `isDecimalDigit` means `Nd`; `isWhiteSpace` uses `White_Space`; `isPrintable` matches Go's `strconv.IsPrint`; identifier predicates match D18, including `_`. Values that are not Unicode scalar values return `false`; an unknown category or script name returns `null` from `hasProperty`.
+- **Data.** One generated source provides general categories, scripts, regex whitespace/word properties, D18 identifier classes, printable and invisible classes. It follows the Unicode version of the repository's pinned Go toolchain. `std/regex` retains its existing `\p{…}` behavior and simple-fold table; simple folding is not a public `std/unicode` API. `std/utf8` remains responsible for encoding, decoding and scalar validity.
+- **Self-hosting.** The Veles self-hosted lexer uses the same identifier and diagnostic predicates as the bootstrap lexer. Its byte-identical lexer oracle remains the gate; no compiler language semantics change.
+
+User, 2026-10-29: selected one public `std/unicode` module with code-point predicates and category/script lookup (recommended of 3).
+Rejected: one internal shared table with no user API (hides useful general Unicode operations); keeping separate generated datasets (continues drift risk).
+
+### D224 — `fmt.quote` uses Go-style string escaping (v0.124)
+
+- **Rule.** `fmt.quote(text)` returns `text` in double quotes, escaping `"` and `\\`, the short control escapes `\\a`, `\\b`, `\\f`, `\\n`, `\\r`, `\\t`, `\\v`, other ASCII controls and DEL as `\\xNN`, and non-printable Unicode code points as `\\uNNNN` or `\\UNNNNNNNN`. Printable Unicode is kept as written; printability follows D223 and the pinned Go Unicode version.
+- **Use.** This is a diagnostic/programmer-facing representation, not JSON encoding. `std/toml`, `std/version` and `selfhost/text` use it; `std/log` continues to use `json.encode` for JSON strings.
+- **Self-hosting.** The Veles self-hosted printer delegates quoting to `std/fmt`; the existing byte-identical printer gate pins the output against Go's `strconv.Quote`.
+
+User, 2026-10-29: selected public `fmt.quote` with Go-style escaping (recommended of 4).
+Rejected: a one-function `std/strconv` module (adds a namespace for a general presentation helper); JSON-style quoting (wire format is not diagnostic quoting, and differs from the Go self-host oracle); keeping the private helpers (preserves duplicate behavior).
+
+### D225 — Keep the generated lint AST view until Veles 1.0 (v0.125)
+
+- **Rule.** Before Veles 1.0, custom lint rules continue to use the public `lint.*` node types. `selfhost/ast/ast.vs` is the maintained Veles syntax-tree source; `std/lint/ast.vs` and its related public tree files remain generated from it by `TestLintAPI`. Do not maintain a second hand-written lint tree or expose `selfhost/ast` as a public module now.
+- **1.0 direction.** The user wants the tree probably promoted to public `std/ast` for Veles 1.0. Record this as the likely direction, not a final API commitment; settle node, token-kind, file and span contracts before the 1.0 API freeze.
+- **Why.** The generator already keeps rule-visible nodes aligned with the Veles parser tree, while rules keep using names such as `lint.CallExpr`. A separate lint-owned schema and adapter adds a second contract without a current consumer that needs it.
+
+User, 2026-10-29: "keep it for know, but note that for the Veles 1.0.0 we'd want that probably promoted to public std/ast".
+Rejected for now: introducing a separate stable lint schema and adapter; promoting the compiler tree to `std/ast` before 1.0.
+
+### D226 — Public TOML settings schemas for independent tools (v0.126)
+
+- **Rule.** `std/settings` publicly exposes the existing TOML-backed schema API: `SettingsError`, `Entry`, `Section`, `Setting<T>` and `Schema<T>`. A tool declares settings with `Setting` values, groups them in `Schema<T>`, and applies a parsed TOML `Section` to its own typed options. The API includes the existing text, choice and string-list setting constructors, removed-key diagnostics and an optional fallback.
+- **Boundary.** This API is for configuration a tool reads itself. It does not let a dependency register keys in the compiler's `[format]` or `[lint]` tables, configure compiler-owned settings, or add formatter plugins; formatter output remains canonical under D177. Custom lint rules remain severity-configured by the package manifest.
+- **Self-hosting.** Compiler subsystems may use the same schema primitives internally, but continue to own their closed key sets. No tool code or dynamic registration runs inside the compiler.
+
+User, 2026-10-29: selected public `std/settings` for independent tools (2 of 3).
+Rejected: keeping the schema API private until a consumer exists; adding typed per-rule configuration to `std/lint` now.
+
+### D227 — Contextual `template fun` with two-list processing (v0.127)
+
+```veles
+template fun html(parts: List<string>, values: List<Markup>): Html { ... }
+val page = html"<p>${name}</p>"
+```
+
+- **Rule.** `template` is a contextual function modifier, not a reserved identifier. A module-level template function takes exactly two parameters: `List<string>` followed by `List<V>`. Visibility and `const` may accompany the modifier. Methods remain unsupported. No extra parameters, including defaulted ones, are admitted.
+- **Processing.** D129's tagged-call spelling and lowering remain unchanged: literal pieces and evaluated values are passed as two lists, with one more piece than values. Return types, generics, error handling and suspension follow ordinary calls. This introduces neither lazy holes nor compile-time domain validation.
+- **Migration.** `@template` still parses but errors with a fix to use `template fun`; migrate standard-library tags, examples, tests and docs together.
+- **Scope.** First-party template work is limited to HTML, SQL, JSON and URL for now. This decision does not finalize their names, safety contracts or APIs, and does not change logging or localization.
+
+User, 2026-10-29: selected two-list functions for now and `template fun` with exactly two parameters (both recommended). Rejected for now: a structured `Template<V>` argument, a builder protocol, defaulted trailing parameters and retaining `@template` as the declaration spelling.
+
+_Addendum (2026-10-29, Q76)._ Template functions are tag-only: direct calls with lists and ordinary function-value references are compile-time errors, even inside their defining module. The compiler-generated call for a tagged literal remains valid. This replaces D129's unrestricted ordinary-call behavior so callers cannot supply runtime text as trusted literal pieces. Runtime parsers remain ordinary functions. User selected tag-only invocation (recommended); rejected defining-module-only direct calls and unrestricted ordinary calls.
+
+### D228 — Standalone HTML and URL modules (v0.128)
+
+- **Ownership.** Provide `std/html` and `std/url`, not a `std/template` or umbrella `std/web` module. The proposed entry points are `html.render` and `url.build`, with typed `Html` and `Url` results. Document construction and URL operations do not depend on HTTP transport; `std/http` consumes these domain values.
+- **HTML scope.** Full contextual HTML processing, including JavaScript and CSS contexts, rather than a text-only or quoted-attribute-only first version. Literal structure and insertion context determine the encoder; unsupported or ambiguous contexts fail with a typed error instead of falling back to plain escaping. This is not a sanitizer for arbitrary untrusted HTML source.
+- **URL scope.** General absolute and relative references, preserving scheme, authority, path, query and fragment, with relative resolution. Template holes are complete path segments or complete query values, encoded without granting control over URL structure. HTTP and HTML consumers separately enforce their scheme policies; URL construction guarantees neither SSRF protection nor network reachability.
+- **Status.** Ownership and scope are decided, not implemented. Before publishing the API, settle how template entry points prevent runtime strings being passed as trusted literal pieces. Exact error and conversion APIs, HTML context rules and HTTP integration still need their concrete contracts and tests.
+
+User, 2026-10-29: "so no template module. do html, url modules like you've proposed"; then selected "Full contextual HTML engine now" and "General absolute and relative references". Rejected: template-module ownership; deferring JavaScript/CSS contexts; limiting URLs to absolute HTTP(S) addresses.
+
+### D229 — `expectEqual(expected, actual)`, and a message on `expect` (v0.129; amends D78)
+
+Q78 and Q79 (2026-10-30). `expect(a == b)` reports `left:` and `right:`: it
+cannot say which side was meant, so the diff under a long mismatch cannot say
+which way it goes; and a table-driven test cannot name the case that failed.
+The user, on which side is the expected one: "expect definition should say:
+(expected, actual). always expected first", as a word of its own (over the
+recommended rule that a literal side of `==` is the expected one).
+
+```veles
+test "ports" {
+  expectEqual(80, parsePort("80"))                      // expected first
+  loop ((input, want) in cases) {
+    expect(parsePort(input) == want, "case ${input}")   // the message: only on failure
+  }
+}
+```
+
+- **`expectEqual(expected, actual)`** — test code only, like the rest of
+  D78's vocabulary; soft (recorded, the test goes on). Both arguments are
+  evaluated once, expected first; a literal takes the other's type, as in
+  `==`; the type must support `==`. The report labels them `expected:` and
+  `actual:`, adds the arguments of a call on either side, and for long texts,
+  lists and structs a diff `- expected, + actual` or a caret under the first
+  difference.
+- **`expect(cond, message)`** — an optional second argument, a `string`,
+  evaluated only when the condition fails. The report is laid out like
+  `assert`'s (D78): the message on the first line, then the expression and
+  its parts. `expect(cond)` is unchanged.
+- `expect(a == b)` keeps `left:` / `right:`: no order is implied there.
+  `expectEqual` takes no message yet (`expect(a == b, "…")` gives one).
+
+Rejected: inferring the roles inside `==` from a literal side (recommended;
+the user wants the order written down); `expect(expected, actual)` under the
+same name (it would tell the two forms apart by argument types, which D179
+rules out); a named message (`because:`); no message (`if (!c) fail(…)`
+loses the parts).
+
+### D230 — Floats within a tolerance: `isClose` and `expectNear` (v0.130)
+
+Q80 (2026-10-30); the user chose both recommended parts ("A + B").
+
+```veles
+val mean = sum / count.toF64()
+if (mean.isClose(0.2)) { ... }                    // relative 1e-9, as Python's math.isclose
+expectNear(0.2, mean, within: 1.0e-12)            // test code: expected first (D229)
+```
+
+- **`f64.isClose(other, relative: f64 = 1.0e-9, absolute: f64 = 0.0): bool`**
+  and the same on `f32` (relative `1.0e-6`), `const fun`, everywhere: equal
+  values are close (an infinity only to itself); a NaN is close to nothing;
+  otherwise `|a - b| <= max(relative * max(|a|, |b|), absolute)`. A negative
+  tolerance is a caller bug and panics, naming it.
+- **`expectNear(expected, actual, within: tolerance)`** — test code only, soft;
+  `f64` or `f32`, a literal taking the other's type; `within` is required
+  and named, an absolute tolerance: it holds when the two are equal or
+  `|actual - expected| <= within`. A NaN on either side fails it. The report
+  shows `expected:`, `actual:` and `off by:`.
+
+Rejected: leaving it to `(a - b).abs() <= tolerance` (a relative tolerance is
+easy to get wrong by hand, and NaN slips through `!(… > tol)` forms).
 
 ### I1 — generators: investigated, not decided
 

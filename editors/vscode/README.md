@@ -10,10 +10,17 @@ document outline, workspace symbols (Ctrl+T) and completion.
 
 ## Setup
 
-1. Build the compiler: `go build -o veles.exe .` in the repository root.
-2. Either put the binary on `PATH`, or set `veles.serverPath` to its full
-   path. When the workspace root contains `veles.exe` (as the compiler
-   repository does) it is used automatically.
+1. Build a local compiler in the repository root: `go build -o veles .` on
+   macOS/Linux, or `go build -o veles.exe .` on Windows. The binary is ignored
+   by git; nothing is installed globally.
+2. With this repository open as the workspace, the extension automatically
+   finds a root-level `veles` or `veles.exe` when `veles.serverPath` has its
+   default value. In a different workspace, set `veles.serverPath` to the
+   local binary's absolute path. An explicit setting takes precedence over
+   automatic discovery. A compiler on `PATH` is only a fallback, not required.
+   If the extension already failed before the binary was built, run
+   **Veles: Restart Language Server**. Rebuild the binary after compiler or
+   standard-library changes, then restart the language server.
 3. Install the extension:
 
    ```bash
@@ -25,6 +32,13 @@ document outline, workspace symbols (Ctrl+T) and completion.
    ```
 
    or press F5 in this folder to launch an Extension Development Host.
+
+## Development Checks
+
+Run `npm test` for grammar-rule regressions and `npm run compile` for the
+TypeScript build. Template tags such as `html"..."` and `db.sql"..."` use the
+same function-call scope as ordinary calls. After installing a rebuilt VSIX,
+use **Developer: Reload Window** to refresh the loaded grammar.
 
 ## Commands
 
@@ -42,6 +56,7 @@ light bulb, and **Quick Fix** (Ctrl+.) applies the edit. Today: a redundant
 unreachable `else` on a sealed subject (removed), and a top-level implement that
 belongs in the struct body (moved, across files when the struct lives in
 another file of the module). `veles check
+
 <dir> --fix` applies every such correction from the command line.
 
 Some errors come with a suggestion rather than a correction — the nearest

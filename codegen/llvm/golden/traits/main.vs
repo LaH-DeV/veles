@@ -9,7 +9,9 @@ trait Shape {
 
 struct Square {
   side: f64
-  implement Shape { fun area(): f64 => this.side * this.side }
+  implement Shape {
+    fun area(): f64 => this.side * this.side
+  }
 }
 
 struct Circle {
@@ -23,7 +25,9 @@ struct Circle {
 struct Point {
   x: i64
   y: i64
-  implement Display { fun toString(): string => "(${this.x}, ${this.y})" }
+  implement Display {
+    fun toString(): string => "(${this.x}, ${this.y})"
+  }
 }
 
 fun largest<T: Comparable>(xs: List<T>): T? => xs.max()

@@ -1,8 +1,11 @@
 /// Reads a document: a sequence of `[headers]`, `[[array headers]]` and
 /// `key = value` lines, each key a path.
+use recursion
+
 struct Reader {
-  cursor: *Cursor
-  tree:   Tree
+  cursor:    *Cursor
+  tree:      Tree
+  var depth: recursion.Depth = recursion.Depth()
 
   static fun of(text: string, rules: Rules): Reader =>
     Reader(cursor: &Cursor(text, rules), tree: Tree.of(rules))
@@ -80,13 +83,20 @@ struct Reader {
     val line = cursor.line
     val first = cursor.peek()
     if (first in ['"', '\'']) return Value(data: Text(value: try cursor.string()), line)
-    if (first == '[') return try this.list(line)
-    if (first == '{') return try this.inlineTable(line)
+    if (first == '[') {
+      if (!this.depth.enter()) throw cursor.fail(recursion.tooDeepMessage(this.depth.limit))
+      val nested = try this.list(line)
+      this.depth.leave()
+      return nested
+    }
+    if (first == '{') {
+      if (!this.depth.enter()) throw cursor.fail(recursion.tooDeepMessage(this.depth.limit))
+      val nested = try this.inlineTable(line)
+      this.depth.leave()
+      return nested
+    }
     Value(data: try this.word(), line)
   }
-
-  /// A value that is not quoted, nested or bracketed: a boolean, a number, a
-  /// date or a time.
   fun word(): Data throws ParseError {
     val cursor = this.cursor
     val start = cursor.pos

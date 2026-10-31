@@ -128,7 +128,8 @@ public error Timeout {
 /// call throws `E | Timeout`; a cancellation of the task stays one.
 ///
 /// ```veles
-/// val line = try withTimeout(Duration.seconds(5), () => try conn.readLine(max: 8192))
+/// use bytes
+/// val line = try withTimeout(Duration.seconds(5), () => try conn.readLine(max: bytes.KiB * 8))
 /// ```
 public fun withTimeout<R, E>(limit: Duration, f: fun(): R suspends throws E): R throws E | Timeout {
   // f's Result, or null when the limit came first

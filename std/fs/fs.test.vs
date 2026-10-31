@@ -1,13 +1,18 @@
 // Tests of std/fs's open files (D97): reading a piece at a time, writing as
 // data arrives, and what a closed or wrongly opened file says.
 
+use build
 use io
 use os
 use path
 use time
 
+// a directory of this run's own: two runs at once (two `go test ./driver`,
+// say) would otherwise write and remove each other's files
+test fun scratchDir(): string => path.join(os.tempDir(), "veles-fs-test-${os.pid()}")
+
 test fun scratch(name: string): string {
-  val dir = path.join(os.tempDir(), "veles-fs-test")
+  val dir = scratchDir()
   when (mkdir(dir)) {
     is Err(e) => panic("cannot make the scratch directory: ${e.message()}")
     is Ok(_)  => path.join(dir, name)
@@ -67,7 +72,7 @@ test "opening what is not there, or a directory to read, fails" {
     is Err(e) => e.kind == IoKind.NotFound
     is Ok(_)  => false
   })
-  expect(when (open(path.join(os.tempDir(), "veles-fs-test"))) {
+  expect(when (open(scratchDir())) {
     is Err(_) => true
     is Ok(f)  => {
       f.close()
@@ -114,7 +119,7 @@ test "stat reports size, kind and a recent write time" {
   expect(st.size == 5 && st.isFile() && !st.isDir)
   val now = time.now().toSeconds()
   expect(st.modified.toSeconds() > now - 3600 && st.modified.toSeconds() < now + 3600)
-  expect((try stat(path.join(os.tempDir(), "veles-fs-test"))).isDir)
+  expect((try stat(scratchDir())).isDir)
   try remove(p)
 }
 
@@ -274,6 +279,20 @@ test "writeAtomic replaces the file whole and leaves no temporary file behind" {
   expect(try readBytes(p).isEmpty())
   expect((try listDir(dir)) == ["state.bin"])
   try remove(p)
+  try remove(dir)
+}
+
+@SkipIf(build.target.os.isWindows(), "Windows filenames cannot contain line breaks")
+test "listDir preserves line breaks in POSIX filenames" {
+  val dir = scratch("list-dir-lines")
+  try mkdir(dir)
+  val newline = path.join(dir, "a\nb")
+  val carriageReturn = path.join(dir, "c\rd")
+  try writeFile(newline, "")
+  try writeFile(carriageReturn, "")
+  expect((try listDir(dir)) == ["a\nb", "c\rd"])
+  try remove(newline)
+  try remove(carriageReturn)
   try remove(dir)
 }
 

@@ -46,7 +46,7 @@ fun main() {
 	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Sanitize: true}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
-	for _, threads := range []string{"1", "8"} {
+	for _, threads := range threadCounts("1", "8") {
 		cmd := exec.Command(exe)
 		cmd.Env = append(os.Environ(), "VELES_THREADS="+threads)
 		out, err := cmd.CombinedOutput()

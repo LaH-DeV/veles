@@ -80,3 +80,65 @@ test "updateAt transforms once, stores and returns the new value" {
   expect(words.toList() == ["VELES"])
   expectPanics(() => MutableList<i64>.repeat(0, 0).updateAt(0, value => value + 1))
 }
+
+test "eager list adapters preserve order and stop after a callback error" {
+  val source = [1, 2, 3]
+  expect(source.map(value => value * 10) == [10, 20, 30])
+  expect(source.filter(value => value % 2 == 1) == [1, 3])
+  expect(source.fold("", (text, value) => "$text$value") == "123")
+  val visited: MutableList<i64> = []
+  val failed = source.map(value => {
+    visited.push(value)
+    if (value == 2) throw AdapterStop()
+    value * 10
+  })
+  expect(failed is Err)
+  expect(visited.toList() == [1, 2])
+  expect(source == [1, 2, 3])
+}
+
+test "list predicates short-circuit and have explicit empty behavior" {
+  val source = [1, 2, 3]
+  var calls = 0
+  expect(source.any(value => {
+    calls += 1
+    value == 2
+  }))
+  expect(calls == 2)
+  calls = 0
+  expect(!source.all(value => {
+    calls += 1
+    value < 2
+  }))
+  expect(calls == 2)
+  expect(source.find(value => value > 1) == 2)
+  val empty: List<i64> = []
+  calls = 0
+  expect(!empty.any(value => {
+    calls += 1
+    true
+  }))
+  expect(empty.all(value => {
+    calls += 1
+    false
+  }))
+  expect(empty.find(value => {
+    calls += 1
+    true
+  }) == null)
+  expect(empty.fold(17, (total, value) => total + value) == 17)
+  expect(calls == 0)
+}
+
+test "list composition handles uneven and empty inputs" {
+  val source = [1, 2, 2, 3]
+  expect(source.distinct() == [1, 2, 3])
+  expect(source.zip(["a", "b"]) == [(1, "a"), (2, "b")])
+  expect(source.chunked(3) == [[1, 2, 2], [3]])
+  expect(source.windowed(3) == [[1, 2, 2], [2, 2, 3]])
+  expect(source.windowed(5).isEmpty())
+  expect([1, 2].flatMap(value => [value, -value]) == [1, -1, 2, -2])
+  val empty: List<i64> = []
+  expect(empty.distinct().isEmpty())
+  expect(empty.chunked(2).isEmpty())
+}

@@ -24,7 +24,8 @@
 /// range.
 
 /// Reads `text` into its root table. `strict` reads the subset a package
-/// manifest uses (see the module's description).
+/// manifest uses (see the module's description). Arrays and inline tables may
+/// nest up to `recursion.maxRecursionDepth`; deeper input returns `ParseError`.
 public fun parse(text: string, strict: bool = false): *Table throws ParseError {
   val withoutMark = if (text.startsWith("\u{FEFF}")) text.slice(3, text.len()) else text
   val rules = if (strict) Rules.manifest() else Rules.full()

@@ -53,8 +53,8 @@ public struct Rng {
   @caller_location
   public fun range(lo: i64, hi: i64): i64 {
     if (hi <= lo) panic("random.range: empty range $lo..<$hi")
-    val span = (hi - lo).wrapU64()
-    lo + (this.nextU64() % span).wrapI64()
+    val span = hi.wrapU64() -% lo.wrapU64()
+    (lo.wrapU64() +% (this.nextU64() % span)).wrapI64()
   }
 
   /// A number in `0.0..<1.0`.

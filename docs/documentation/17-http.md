@@ -40,6 +40,7 @@ fun main() throws IoError | io.TooLong {
 ```
 
 Output:
+
 ```text
 HTTP/1.1 200 OK | hello veles
 HTTP/1.1 200 OK | {"id": "42"}
@@ -60,7 +61,7 @@ HTTP/1.1 404 Not Found | Not Found
 - `app.handler()` freezes the routes into one `Handler`; `http.serve`
   accepts connections forever, one task per connection, until its task is
   cancelled — which is how the program above ends: `with server = async
-  http.serve(…)` runs the server in the background until `main`'s block
+http.serve(…)` runs the server in the background until `main`'s block
   ends, then cancels it, then closes the listener (D100). A real server calls
   `serve` from `main` and runs until killed.
 - `Request` has `method`, `path`, `query`, `headers` (lower-case names),
@@ -109,6 +110,7 @@ fun show(what: string, resp: http.Response) {
 ```
 
 Output (the panic's line goes to standard error):
+
 ```text
 GET /notes/7 → 200 OK note 7
 HEAD /notes/7 → 200 OK
@@ -130,7 +132,7 @@ tests use it (`std/http/*.test.vs`).
 
 A handler's type as the router stores it cannot throw — it is
 `sendable fun(Request): Response suspends`, the same for every route — but
-the function you *register* may throw anything. The router adapts it with
+the function you _register_ may throw anything. The router adapts it with
 one rule:
 
 - `http.Fail(status, text)` — "answer with this status". `http.notFound()`,
@@ -216,6 +218,7 @@ fun main() throws IoError {
 ```
 
 Output:
+
 ```text
 200 no-cache
 304 with 0 bytes
@@ -294,6 +297,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 hello
 10 bytes in 3 pieces
@@ -337,22 +341,23 @@ hello
 it, for what is too large to hold, is not ready yet, or never ends:
 
 ```veles
-use http
-use io
+use http { Router, Response, Method, call, MediaType }
+use io { println }
 
 fun main() {
-  val app = http.Router()
-  app.get("/count", req => http.Response.stream(http.MediaType.text, out => {
+  val app = Router()
+  app.get("/count", req => Response.stream(MediaType.text, out => {
     loop (i in 1..3) {
       try out.writeText("$i\n")
     }
   }))
-  val r = http.call(app.handler(), http.Method.get, "/count")
-  io.println("${r.status} ${(r.body.decodeUtf8() ?: "").replace("\n", ",")}")
+  val r = call(app.handler(), Method.get, "/count")
+  println("${r.status} ${(r.body.decodeUtf8() ?: "").replace("\n", ",")}")
 }
 ```
 
 Output:
+
 ```text
 200 OK 1,2,3,
 ```
@@ -397,6 +402,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 gzip: 49 bytes on the wire, 1050 once opened
 none: 1050 bytes
@@ -419,7 +425,7 @@ it lies, with the type of `app.js`, validators of its own, and
 `Vary: Accept-Encoding`; a range request, which speaks of the uncompressed
 bytes, gets the plain file.
 
-A server does not open compressed *request* bodies on its own; a
+A server does not open compressed _request_ bodies on its own; a
 handler would see gzip bytes. `app.wrap(http.decompressRequests(max: 8 * 1024 * 1024))`
 opens them, within `max` — a few kilobytes of gzip can claim gigabytes, so a
 larger body is a 413 — and answers 400 for a body that is not gzip and 415
@@ -470,6 +476,7 @@ fun main() throws IoError {
 ```
 
 Output:
+
 ```text
 title = holiday
 photo: beach.txt, 12 bytes
@@ -521,6 +528,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 visit 1 - cookie visits=1, kept 30 days
 visit 2 - cookie visits=2, kept 30 days
@@ -591,6 +599,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 200 OK Ada L is 36, newsletter true, tags [a, b]
 400 Bad Request invalid form:
@@ -670,6 +679,7 @@ fun main() throws IoError | io.TooLong {
 ```
 
 Output:
+
 ```text
 HTTP/1.1 200 OK id=abc123 by=veles
 HTTP/1.1 503 Service Unavailable id=def456 by=-
@@ -683,13 +693,13 @@ you want its effect to survive.
 
 What the module gives you:
 
-| call | what it does |
-|---|---|
-| `http.logging()` | one `log` line per request ([chapter 21](21-logging.md)): peer, method, path, status, duration, and the request id when `requestId()` wraps it |
-| `http.requestId()` | the client's `X-Request-Id`, or a fresh 16 hex digits, on the request for the handlers and on the response for the client; also the log field `id` for every line logged while the request is handled |
-| `http.timeout(d)` | 503 when the handler takes longer; it runs in its own task and is cancelled, so its `with`s close |
-| `http.cors(origins: [...])` | lets browser pages from other origins in ([below](#other-origins-and-who-may-call)) |
-| `http.guard(check)`, `http.basicAuth(realm, verify)`, `http.bearer(verify)` | answer a request before the handlers do ([below](#other-origins-and-who-may-call)) |
+| call                                                                        | what it does                                                                                                                                                                                          |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http.logging()`                                                            | one `log` line per request ([chapter 21](21-logging.md)): peer, method, path, status, duration, and the request id when `requestId()` wraps it                                                        |
+| `http.requestId()`                                                          | the client's `X-Request-Id`, or a fresh 16 hex digits, on the request for the handlers and on the response for the client; also the log field `id` for every line logged while the request is handled |
+| `http.timeout(d)`                                                           | 503 when the handler takes longer; it runs in its own task and is cancelled, so its `with`s close                                                                                                     |
+| `http.cors(origins: [...])`                                                 | lets browser pages from other origins in ([below](#other-origins-and-who-may-call))                                                                                                                   |
+| `http.guard(check)`, `http.basicAuth(realm, verify)`, `http.bearer(verify)` | answer a request before the handlers do ([below](#other-origins-and-who-may-call))                                                                                                                    |
 
 `serve` logs the same request line itself (through `log`, so it follows
 `VELES_LOG`), so pass `log: false` when you wrap `logging()`. A **recovery** middleware is not among
@@ -850,6 +860,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 /healthz 200 ok
 /readyz 503 {"status": "unavailable", "checks": {"db": "ok", "cache": "failed"}}
@@ -863,7 +874,7 @@ stopping: 503
   error.
 - `/readyz` runs every check **at once**, so it costs the slowest check, not
   the sum. It answers `200` when all pass and `503` otherwise, with the name
-  of each check and `"ok"` or `"failed"`. *Why* a check failed goes to the log
+  of each check and `"ok"` or `"failed"`. _Why_ a check failed goes to the log
   (`health check failed`, with the check's name and error), not into the
   answer: it can describe infrastructure to whoever is asking.
 - `/healthz` runs no check and answers `200 ok` while the process can answer —
@@ -891,17 +902,17 @@ generous — and `serve` takes it:
 http.serve(listener, app, limits: http.Limits(bodyBytes: 8 * 1024 * 1024))
 ```
 
-| field | default | what it bounds |
-|---|---|---|
-| `requestLineBytes` | 8192 | `GET /some/path HTTP/1.1` — mostly the target |
-| `headerLineBytes` | 8192 | one header line |
-| `headerCount` | 100 | how many header lines |
-| `headerBytes` | 65536 | every header line added up |
-| `bodyBytes` | 1048576 | what `bytes()`, `text()` and `form()` collect, whatever `Content-Length` claims |
-| `headerTimeout` | `Duration.seconds(10)` | request line to the blank line, on one clock |
-| `bodyTimeout` | `Duration.seconds(30)` | the longest silence while the body is read |
-| `idleTimeout` | `Duration.seconds(15)` | silence between requests on a kept-alive connection |
-| `connections` | 10000 | connections served at once (`0`: no limit); a full server stops accepting |
+| field              | default                | what it bounds                                                                  |
+| ------------------ | ---------------------- | ------------------------------------------------------------------------------- |
+| `requestLineBytes` | 8192                   | `GET /some/path HTTP/1.1` — mostly the target                                   |
+| `headerLineBytes`  | 8192                   | one header line                                                                 |
+| `headerCount`      | 100                    | how many header lines                                                           |
+| `headerBytes`      | 65536                  | every header line added up                                                      |
+| `bodyBytes`        | 1048576                | what `bytes()`, `text()` and `form()` collect, whatever `Content-Length` claims |
+| `headerTimeout`    | `Duration.seconds(10)` | request line to the blank line, on one clock                                    |
+| `bodyTimeout`      | `Duration.seconds(30)` | the longest silence while the body is read                                      |
+| `idleTimeout`      | `Duration.seconds(15)` | silence between requests on a kept-alive connection                             |
+| `connections`      | 10000                  | connections served at once (`0`: no limit); a full server stops accepting       |
 
 A request that reaches a byte ceiling is answered and the connection
 closed: `414` for the request line, `431` for the headers, `413` for the
@@ -909,7 +920,7 @@ body. A time ceiling answers `408` — except `idleTimeout`, which is the
 ordinary end of a kept-alive connection and closes without a word. None
 of this reaches a handler: the refusal happens while the request is being
 read, which is the point — a body is never assembled in order to discover
-it was too big, and `headerCount` counts *lines*, so repeating one header
+it was too big, and `headerCount` counts _lines_, so repeating one header
 name a thousand times costs what it should.
 
 The head is read strictly, the way RFC 9112 asks of a server, and a
@@ -1000,6 +1011,7 @@ fun main() throws IoError {
 ```
 
 Output:
+
 ```text
 1: water the plants
 404 Not Found ok=false
@@ -1010,9 +1022,9 @@ refused: 404
 The pieces:
 
 - **Calls.** `http.fetch(url, method:, headers:, body:, timeout:, redirect:,
-  retry:)`, and `get`, `head`, `post`, `put`, `patch`, `delete` with the method
+retry:)`, and `get`, `head`, `post`, `put`, `patch`, `delete` with the method
   fixed; `http.Client(timeout: 30s, headers: [:], maxRedirects: 10,
-  maxIdlePerHost: 8, idleTimeout: 30s)` has the same methods and is
+maxIdlePerHost: 8, idleTimeout: 30s)` has the same methods and is
   `Closeable` (it closes its idle connections). The URL is absolute, `http://…`;
   `https://` URLs are verified against the system's trusted roots (chapter 16,
   "Encrypted connections"); `Client(tlsOptions: tls.Options(roots: pem))` trusts

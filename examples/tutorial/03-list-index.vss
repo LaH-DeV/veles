@@ -6,7 +6,10 @@ fun main() {
 
   println("Please enter an array index.")
 
-  val index = when (val input = readLine()) {
+  val input: string? = readLine() catch (_) {
+    null
+  }
+  val index = when (input) {
     is string => i64.parse(input.trim())
     else      => {
       eprintln("Failed to read line")

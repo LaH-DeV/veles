@@ -2,6 +2,7 @@
 // well-behaved server does, and against canned bytes on a raw socket for what
 // a server must not do.
 
+use bytes
 use io
 use net
 
@@ -51,7 +52,7 @@ test fun cannedLoop(listener: net.Listener, reply: string) {
 test fun cannedAnswer(conn: net.Conn, reply: string) {
   with c = conn
   loop {
-    val line = when (c.readLine(max: 8192)) {
+    val line = when (c.readLine(max: bytes.KiB * 8)) {
       is Ok(l)  => l ?: break
       is Err(_) => break
     }
@@ -231,6 +232,23 @@ test fun redirector(): Handler => handler(req => when (req.path) {
   else      => Response.text("path ${req.path} query ${req.rawQuery}")
 })
 
+test "redirect path branches preserve queries and trailing slashes" {
+  val base = try parseUrl("http://a/b/c/d;p?q")
+  val locations = [
+    "g", "./g", "g/", "/g", "?y", "g?y", "", "#s", ".", "..",
+    "../..", "../../g", "/./g", "/../g", "g/./h", "g/../h",
+    "g?y/./x", "g//h", "%2e/g",
+  ]
+  val targets = [
+    "/b/c/g", "/b/c/g", "/b/c/g/", "/g", "/b/c/d;p?y", "/b/c/g?y",
+    "/b/c/d;p?q", "/b/c/d;p?q", "/b/c/", "/b/", "/", "/g", "/g", "/g",
+    "/b/c/g/h", "/b/c/h", "/b/c/g?y/./x", "/b/c/g//h", "/b/c/%2e/g",
+  ]
+  loop ((location, target) in locations.zip(targets)) {
+    expect(try resolve(base, location).text() == "http://a$target")
+  }
+}
+
 test "redirects are followed, relative locations resolved" {
   with srv = try testServer(redirector())
   with client = Client()
@@ -377,6 +395,14 @@ test "a header that could split the request is refused" {
   expect(failKind(get("http://127.0.0.1:1/", headers: ["X A": "b"])) == FetchKind.InvalidRequest)
   expect(failKind(get("http://127.0.0.1:1/", headers: ["Content-Length": "0"])) == FetchKind.InvalidRequest)
   expect(failKind(get("http://127.0.0.1:1/", headers: ["Host": "evil.example"])) == FetchKind.InvalidRequest)
+}
+
+test "identical repeated response lengths are accepted without joining" {
+  with srv = try canned("HTTP/1.1 200 OK\r\nContent-Length: 3\r\ncontent-length: 3\r\nCONTENT-LENGTH: 3\r\nX-Trace: first\r\nx-trace: second\r\nConnection: close\r\n\r\nabc")
+  with res = try get(srv.url)
+  expect(res.header("content-length") == "3")
+  expect(res.header("x-trace") == "first, second")
+  expect(try res.text() == "abc")
 }
 
 test "an answer that is not HTTP is a Protocol error" {

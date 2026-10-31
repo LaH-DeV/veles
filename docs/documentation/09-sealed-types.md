@@ -8,7 +8,9 @@ same idea for plain values (D57): a fixed set of names, each a number.
 
 ## Modelling a choice
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 sealed trait Shape
@@ -27,6 +29,147 @@ fun main() {
   loop (s in shapes) { io.println("$s -> ${area(s)}") }
 }
 ```
+
+```go [Go]
+package main
+
+import "fmt"
+
+// Go has no closed set of types: any type with isShape() is a Shape, and
+// nothing checks that the switch below handles every one.
+type Shape interface{ isShape() }
+
+type Circle struct{ R float64 }
+type Rect struct{ W, H float64 }
+type Point struct{}
+
+func (Circle) isShape() {}
+func (Rect) isShape()   {}
+func (Point) isShape()  {}
+
+func area(s Shape) float64 {
+	switch s := s.(type) {
+	case Circle:
+		return 3.0 * s.R * s.R
+	case Rect:
+		return s.W * s.H
+	case Point:
+		return 0.0
+	}
+	panic("unknown shape")
+}
+
+func main() {
+	shapes := []Shape{Circle{R: 1.0}, Rect{W: 2.0, H: 3.0}, Point{}}
+	for _, s := range shapes {
+		fmt.Printf("%+v -> %.1f\n", s, area(s))
+	}
+}
+
+// {R:1} -> 3.0
+// {W:2 H:3} -> 6.0
+// {} -> 0.0
+```
+
+```ts [TypeScript]
+// a discriminated union: the `kind` tag tells the variants apart
+type Shape =
+  | { kind: "circle"; r: number }
+  | { kind: "rect"; w: number; h: number }
+  | { kind: "point" };
+
+function area(s: Shape): number {
+  switch (s.kind) {
+    case "circle": return 3.0 * s.r * s.r;
+    case "rect": return s.w * s.h;
+    case "point": return 0.0;
+  }
+}
+
+const shapes: Shape[] = [{ kind: "circle", r: 1.0 }, { kind: "rect", w: 2.0, h: 3.0 }, { kind: "point" }];
+for (const s of shapes) console.log(`${JSON.stringify(s)} -> ${area(s).toFixed(1)}`);
+
+// {"kind":"circle","r":1} -> 3.0
+// {"kind":"rect","w":2,"h":3} -> 6.0
+// {"kind":"point"} -> 0.0
+```
+
+```swift [Swift]
+enum Shape {
+    case circle(r: Double)
+    case rect(w: Double, h: Double)
+    case point
+}
+
+func area(_ s: Shape) -> Double {
+    switch s {
+    case .circle(let r): return 3.0 * r * r
+    case .rect(let w, let h): return w * h
+    case .point: return 0.0
+    }
+}
+
+let shapes: [Shape] = [.circle(r: 1.0), .rect(w: 2.0, h: 3.0), .point]
+for s in shapes { print("\(s) -> \(area(s))") }
+
+// circle(r: 1.0) -> 3.0
+// rect(w: 2.0, h: 3.0) -> 6.0
+// point -> 0.0
+```
+
+```kotlin [Kotlin]
+sealed interface Shape
+data class Circle(val r: Double) : Shape
+data class Rect(val w: Double, val h: Double) : Shape
+data object Point : Shape
+
+fun area(s: Shape): Double = when (s) {
+    is Circle -> 3.0 * s.r * s.r
+    is Rect -> s.w * s.h
+    Point -> 0.0
+}
+
+fun main() {
+    val shapes: List<Shape> = listOf(Circle(r = 1.0), Rect(w = 2.0, h = 3.0), Point)
+    for (s in shapes) println("$s -> ${area(s)}")
+}
+
+// Circle(r=1.0) -> 3.0
+// Rect(w=2.0, h=3.0) -> 6.0
+// Point -> 0.0
+```
+
+```rust [Rust]
+// an enum's variants are not types of their own, as Circle is in Veles:
+// a function cannot take just a Circle
+#[derive(Debug)]
+enum Shape {
+    Circle { r: f64 },
+    Rect { w: f64, h: f64 },
+    Point,
+}
+
+fn area(s: &Shape) -> f64 {
+    match s {
+        Shape::Circle { r } => 3.0 * r * r,
+        Shape::Rect { w, h } => w * h,
+        Shape::Point => 0.0,
+    }
+}
+
+fn main() {
+    let shapes = [Shape::Circle { r: 1.0 }, Shape::Rect { w: 2.0, h: 3.0 }, Shape::Point];
+    for s in &shapes {
+        println!("{s:?} -> {:?}", area(s));
+    }
+}
+
+// Circle { r: 1.0 } -> 3.0
+// Rect { w: 2.0, h: 3.0 } -> 6.0
+// Point -> 0.0
+```
+
+:::
 
 Output:
 ```text

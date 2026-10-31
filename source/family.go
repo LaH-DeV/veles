@@ -46,11 +46,11 @@ var families = []family{
 	// the statement `cede` (D197), whatever form it was mistaken for
 	fam("tasks", `^'cede'`),
 	fam("tests", `\(D78\)`, `says what it checks`, `^a (test|suite)\b`, `^another test`, `\bsuites?\b`,
-		`'test`, `test code`, `the test's body`, `expectThrows`, `'require'`, `'assert'`),
+		`'test`, `test code`, `the test's body`, `expectThrows`, `'require'`, `'assert'`, `^'expect(Equal|Near)?'`),
 	fam("constants", `\(D113\)`, `it is a test helper the compiler cannot run`, `^initialization cycle`, `^constant overflow`, `in a constant`, `^the constant`,
 		`matches the constant`, `^static assert`, `'static assert'`, `^in 'const fun`, `^panic in a constant`,
 		`\(D210\)`, `\(D210, D113\)`),
-	fam("template-literals", `@template`, `template literal`, `is not a template`, `\(D129\)`),
+	fam("template-literals", `@template`, `template literal`, `is not a template`, `\(D129\)`, `\(D227\)`, `'template fun'`, `parameter of a template`, `is a template with`),
 	fam("attributes", `^@`, `@caller_location`, `annotation`, `(D174)`, `(D176)`, `(D203)`, `^'lazy' is reserved`, `a 'lazy' parameter must be`, `@(key|tag|skip|required)`, `attribute`, `is deprecated`, `cannot derive`,
 		`\(D58\)`, `\(D51\)`),
 	fam("unsafe-and-ffi", `unsafe`, `SAFETY`, `extern`, `C ABI`, `into C`, `handed to C`, `C function pointer`,

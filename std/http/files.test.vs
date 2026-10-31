@@ -15,7 +15,7 @@ val fixture: string = build()
 test fun tree(): string => fixture
 
 test fun build(): string {
-  val root = path.join(os.tempDir(), "veles-http-files-test")
+  val root = path.join(os.tempDir(), "veles-http-files-test-${os.pid()}")
   when (prepare(root)) {
     is Err(e) => panic("cannot write the test tree: ${e.message()}")
     is Ok(_)  => root

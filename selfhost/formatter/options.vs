@@ -6,8 +6,8 @@
 // in `formatSchema()` (its key, a line of documentation, how the value is read),
 // and the formatter reads the field. The key is accepted, documented, listed in
 // the unknown-key refusal and offered by tools from that one entry.
-use toml { Value }
 use settings { Schema, Section, Setting, SettingsError }
+use toml { Value }
 
 /// How a line is indented.
 sealed trait Indentation {
@@ -64,28 +64,27 @@ fun formatSchema(): Schema<FormatOptions> => Schema(
       options.maxBlankLines = limit
     }),
     Setting<FormatOptions>.choice(
-      "imports", "\"lines\": one `use` per module; \"merged\": one `use a, b` per origin", ["lines", "merged"],
+      "imports", "\"lines\": one `use` per module; \"merged\": one `use a, b` per origin", ImportStyle.values().map(member => member.toString().toLower()),
       "[format] imports is \"lines\" (one 'use' per module, the default) or \"merged\" (one 'use a, b' per origin)",
       (word, options) => {
-        options.imports = if (word == "merged") ImportStyle.Merged else ImportStyle.Lines
+        options.imports = ImportStyle.values().find(member => member.toString().toLower() == word) ?:
+          panic("formatter: imports choice was validated against ImportStyle")
       },
     ),
     Setting<FormatOptions>.choice(
-      "trailing_commas", "\"multiline\": a comma after the last element of a broken list; \"never\"", ["multiline", "never"],
+      "trailing_commas", "\"multiline\": a comma after the last element of a broken list; \"never\"", CommaStyle.values().map(member => member.toString().toLower()),
       "[format] trailing_commas is \"multiline\" (a comma after the last element of a list broken over several lines, the default) or \"never\"",
       (word, options) => {
-        options.commas = if (word == "never") CommaStyle.Never else CommaStyle.Multiline
+        options.commas = CommaStyle.values().find(member => member.toString().toLower() == word) ?:
+          panic("formatter: trailing_commas choice was validated against CommaStyle")
       },
     ),
     Setting<FormatOptions>.choice(
-      "line_endings", "\"lf\" (the default), \"crlf\", or \"auto\" to keep the file's own", ["lf", "crlf", "auto"],
+      "line_endings", "\"lf\" (the default), \"crlf\", or \"auto\" to keep the file's own", LineEndings.values().filter(member => member != LineEndings.Unset).map(member => member.toString().toLower()),
       "[format] line_endings is \"lf\" (the default), \"crlf\" or \"auto\" (keep the file's own)",
       (word, options) => {
-        options.lineEndings = when (word) {
-          "lf"   => LineEndings.Lf
-          "crlf" => LineEndings.Crlf
-          else   => LineEndings.Auto
-        }
+        options.lineEndings = LineEndings.values().find(member => member.toString().toLower() == word) ?:
+          panic("formatter: line_endings choice was validated against LineEndings")
       },
     ),
   ],

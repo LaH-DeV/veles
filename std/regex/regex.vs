@@ -143,9 +143,11 @@ public struct Regex {
     out.toString()
   }
 
-  /// The pieces of `text` between matches. At most `limit` pieces when it is
-  /// not negative, the last holding the rest.
+  /// The pieces of `text` between matches. A positive `limit` bounds the
+  /// result, with the last piece holding the remainder. Zero returns no
+  /// pieces; a negative limit returns all pieces.
   public fun split(text: string, limit: i64 = -1): List<string> {
+    if (limit == 0) return []
     val out: MutableList<string> = []
     var copied = 0
     loop (m in this.findAll(text)) {

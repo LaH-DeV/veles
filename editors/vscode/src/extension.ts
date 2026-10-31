@@ -10,7 +10,9 @@ import {
 let client: LanguageClient | undefined;
 
 function serverCommand(): string {
-  const configured = vscode.workspace.getConfiguration("veles").get<string>("serverPath") || "veles";
+  const configured =
+    vscode.workspace.getConfiguration("veles").get<string>("serverPath") ||
+    "veles";
   if (configured !== "veles") {
     return configured;
   }
@@ -37,19 +39,30 @@ async function startClient(context: vscode.ExtensionContext): Promise<void> {
     // the server reads `allocationHints` at start; later changes to the
     // `veles` settings reach it as workspace/didChangeConfiguration
     initializationOptions: {
-      allocationHints: vscode.workspace.getConfiguration("veles").get<boolean>("inlayHints.allocations") ?? false,
+      allocationHints:
+        vscode.workspace
+          .getConfiguration("veles")
+          .get<boolean>("inlayHints.allocations") ?? false,
     },
     synchronize: {
       configurationSection: "veles",
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/{*.vs,*.vss,veles.toml}"),
+      fileEvents: vscode.workspace.createFileSystemWatcher(
+        "**/{*.vs,*.vss,veles.toml}",
+      ),
     },
   };
-  client = new LanguageClient("veles", "Veles Language Server", serverOptions, clientOptions);
+  client = new LanguageClient(
+    "veles",
+    "Veles Language Server",
+    serverOptions,
+    clientOptions,
+  );
   try {
     await client.start();
   } catch (err) {
+    const localName = process.platform === "win32" ? "veles.exe" : "veles";
     void vscode.window.showErrorMessage(
-      `Veles: could not start "${command} lsp". Build the compiler (go build -o veles .) and put it on PATH, or set "veles.serverPath". (${err})`
+      `Veles: could not start "${command} lsp". In the compiler repository, run "go build -o ${localName} ." at the workspace root, then run "Veles: Restart Language Server". Other workspaces can set "veles.serverPath" to that binary's absolute path; no global installation is required. (${err})`,
     );
     client = undefined;
   }
@@ -62,12 +75,16 @@ function runInTerminal(subcommand: string): void {
     return;
   }
   const dir = path.dirname(editor.document.uri.fsPath);
-  const term = vscode.window.terminals.find((t) => t.name === "veles") ?? vscode.window.createTerminal("veles");
+  const term =
+    vscode.window.terminals.find((t) => t.name === "veles") ??
+    vscode.window.createTerminal("veles");
   term.show(true);
   term.sendText(`${serverCommand()} ${subcommand} "${dir}"`);
 }
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export async function activate(
+  context: vscode.ExtensionContext,
+): Promise<void> {
   context.subscriptions.push(
     vscode.commands.registerCommand("veles.restartServer", async () => {
       if (client) {
@@ -77,7 +94,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await startClient(context);
     }),
     vscode.commands.registerCommand("veles.run", () => runInTerminal("run")),
-    vscode.commands.registerCommand("veles.test", () => runInTerminal("test"))
+    vscode.commands.registerCommand("veles.test", () => runInTerminal("test")),
   );
   await startClient(context);
 }

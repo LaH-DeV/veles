@@ -1005,6 +1005,9 @@ func funDecl(t *FuncTemplate) string {
 		if d.Const {
 			sb.WriteString("const ") // the compiler may run it (D113)
 		}
+		if d.Template {
+			sb.WriteString("template ")
+		}
 	}
 	sig := funDetail(t)
 	for _, prefix := range ownerPrefixes(t) {

@@ -967,8 +967,8 @@ func (g *gen) binary(e *sema.Binary) string {
 	panic("codegen: unsupported binary operator on " + t.String())
 }
 
-// checkedArith performs an overflow-checked operation (D21: checked in
-// debug builds).
+// checkedArith performs an overflow-checked operation (D209: checked in
+// every build).
 func (g *gen) checkedArith(intr, llt, l, r, where string) string {
 	pair := g.newTmp()
 	g.emit("%s = call { %s, i1 } @llvm.%s.with.overflow.%s(%s %s, %s %s)", pair, llt, intr, llt, llt, l, llt, r)

@@ -17,11 +17,13 @@
 /// The largest `i64`. Used to recognise the most negative one without
 /// writing a literal that would have to be negated to be written.
 const nanosMax: i64 = 9223372036854775807
+const nanosMin: i64 = 0 - nanosMax - 1
 
 /// A length of time, to the nanosecond.
 ///
 /// ```veles
-/// try withTimeout(Duration.seconds(5), () => try conn.readLine(max: 8192))
+/// use bytes
+/// try withTimeout(Duration.seconds(5), () => try conn.readLine(max: bytes.KiB * 8))
 /// val limits = http.Limits(headerTimeout: Duration.seconds(10))
 /// if (sw.elapsed() > Duration.millis(250)) log.warn("slow")
 /// ```
@@ -106,7 +108,7 @@ public const struct Duration {
   /// overflowing — the same answer Go gives.
   public const fun abs(): Duration =>
     if (this.ns >= 0) this
-    else if (this.ns + 1 == 0 - nanosMax) Duration(ns: nanosMax)
+    else if (this.ns == nanosMin) Duration(ns: nanosMax)
     else Duration(ns: 0 - this.ns)
 
   public const fun isZero(): bool => this.ns == 0
@@ -152,6 +154,7 @@ public const struct Duration {
         out += "${days}d"
         rest -= days * 86400000000000
       }
+      if (this.ns == nanosMin) rest += 1
       val hours = rest / 3600000000000
       if (hours > 0) {
         out += "${hours}h"
@@ -386,6 +389,7 @@ const fun parseDuration(s: string): Duration? {
   }
   if (i >= s.len()) return null
   if (s.substring(i, s.len()) == "0") return Duration(ns: 0)
+  val limit = if (neg) nanosMin else 0 - nanosMax
   var total: i64 = 0
   var parts: i64 = 0
   loop (i < s.len()) {
@@ -394,8 +398,11 @@ const fun parseDuration(s: string): Duration? {
     val startDigits = i
     var whole: i64 = 0
     loop (i < s.len() && s.byteAt(i).isAsciiDigit()) {
-      if (whole > nanosMax / 10) return null
-      whole = whole * 10 + ((s.byteAt(i) - '0').toI64())
+      val digit = (s.byteAt(i) - '0').toI64()
+      if (whole < limit / 10) return null
+      whole *= 10
+      if (whole < limit + digit) return null
+      whole -= digit
       i += 1
     }
     // the fraction, in whole decimal places, so no float is involved and
@@ -427,18 +434,22 @@ const fun parseDuration(s: string): Duration? {
     if (i == startUnit) return null  // a number with no unit
     val scale = unitNanos(s.substring(startUnit, i) ?: return null)
     if (scale < 0) return null
-    if (whole > nanosMax / scale) return null
+    if (whole < limit / scale) return null
     var add = whole * scale
     if (fracDigits > 0) {
-      // `frac < den`, so both products below stay inside an i64
-      val exact = if (scale % den == 0) frac * (scale / den) else frac * scale / den
-      if (scale % den != 0 && frac * scale % den != 0) return null
-      add += exact
+      // Split the scale before multiplying: `frac * scale` can overflow even
+      // when the resulting fraction of a unit fits in nanoseconds.
+      val wholeFraction = frac * (scale / den)
+      val fractionalProduct = frac * (scale % den)
+      if (fractionalProduct % den != 0) return null
+      val exact = wholeFraction + fractionalProduct / den
+      if (add < limit + exact) return null
+      add -= exact
     }
-    if (total > nanosMax - add) return null
+    if (total < limit - add) return null
     total += add
     parts += 1
   }
   if (parts == 0) return null
-  if (neg) Duration(ns: 0 - total) else Duration(ns: total)
+  if (neg) Duration(ns: total) else Duration(ns: 0 - total)
 }

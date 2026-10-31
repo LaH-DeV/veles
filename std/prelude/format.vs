@@ -43,7 +43,6 @@ fun fmtNum(text: string, fill: string, align: i64, sign: i64, prefix: string, ze
   val neg = text.startsWith("-")
   var body = if (neg) text.substring(1, text.len()) ?: text else text
   if (upper) body = body.toUpper()
-  if (group) body = fmtGroup(body)
   val signText = when {
     neg       => "-"
     sign == 1 => "+"
@@ -52,9 +51,27 @@ fun fmtNum(text: string, fill: string, align: i64, sign: i64, prefix: string, ze
   }
   val head = signText + prefix
   if (zero) {
+    if (group) {
+      // Group separators contribute to width, so solve for the digit count first.
+      val dot = body.indexOf(".")
+      val whole = if (dot == null) body else body.substring(0, dot) ?: body
+      val wholeLen = whole.chars().len()
+      val fractionLen = body.chars().len() - wholeLen
+      val target = width - head.chars().len() - suffix.chars().len() - fractionLen
+      if (target > 0) {
+        val groups = target / 4
+        val remainder = target % 4
+        val extra = if (remainder == 0) 1 else remainder
+        val neededWhole = groups * 3 + extra
+        if (neededWhole > wholeLen) body = "0".repeat(neededWhole - wholeLen) + body
+      }
+      body = fmtGroup(body)
+      return head + body + suffix
+    }
     val used = (head + body + suffix).chars().len()
     if (used < width) body = "0".repeat(width - used) + body
     return head + body + suffix
   }
+  if (group) body = fmtGroup(body)
   fmtPad(head + body + suffix, fill, if (align == 0) ALIGN_RIGHT else align, width)
 }

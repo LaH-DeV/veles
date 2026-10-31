@@ -157,8 +157,16 @@ fun lazyOrder(): string {
   out
 }
 
+// the first call waits until all three are under way (or 2 s passed), so
+// "3" says the calls ran ahead of the loop, not that the other two were
+// scheduled within a few milliseconds
 fun counted(started: Atomic<i64>, x: i64): i64 {
   val _ = started.add(1)
+  var waited = 0
+  loop (x == 1 && started.load() < 3 && waited < 2000) {
+    await sleep(Duration.millis(1))
+    waited += 1
+  }
   await sleep(Duration.millis(5))
   x
 }
@@ -243,12 +251,12 @@ fun main() throws ThreadError {
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("ceremony-%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)
 		}
-		for _, threads := range []string{"1", "2", "4", "8"} {
+		for _, threads := range threadCounts("1", "2", "4", "8") {
 			cmd := exec.Command(exe)
 			cmd.Env = append(os.Environ(), "VELES_THREADS="+threads)
 			out, err := cmd.CombinedOutput()

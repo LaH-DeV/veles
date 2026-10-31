@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,25 +69,22 @@ type Options struct {
 // enough for any honest test, short enough that a hung one ends a CI run.
 const DefaultTestTimeout = 10 * time.Minute
 
-// filterTests applies `--filter` to a test program. No match is an error:
-// a mistyped filter that runs nothing must not pass.
-func filterTests(prog *sema.Program, filter string) bool {
-	if filter == "" {
-		return true
+// testEnv passes `veles test`'s options to the test program in its
+// environment (read once at start by veles_sync.c), so the program built
+// does not depend on them. The test program itself refuses a filter that
+// matches no test.
+func testEnv(opts Options) []string {
+	env := []string{
+		"VELES_TEST_JOBS=" + strconv.Itoa(opts.Jobs),
+		"VELES_TEST_TIMEOUT_MS=" + strconv.FormatInt(opts.TestTimeout.Milliseconds(), 10),
 	}
-	var kept []*sema.Func
-	for _, t := range prog.Tests {
-		if strings.Contains(t.Display, filter) {
-			kept = append(kept, t)
-		}
+	if opts.Filter != "" {
+		env = append(env, "VELES_TEST_FILTER="+opts.Filter)
 	}
-	if len(kept) == 0 {
-		fmt.Fprintf(os.Stderr, "veles test: no test name contains %q (%d tests in the package)\n", filter, len(prog.Tests))
-		return false
+	if opts.FailOnSkip {
+		env = append(env, "VELES_TEST_FAIL_ON_SKIP=1")
 	}
-	prog.TestsFiltered = len(prog.Tests) - len(kept)
-	prog.Tests = kept
-	return true
+	return env
 }
 
 // Run executes the pipeline and returns a process exit code.
@@ -154,15 +152,6 @@ func Run(opts Options) int {
 		}
 		return 0
 	}
-	if opts.Mode == "test" {
-		if !filterTests(prog, opts.Filter) {
-			return 1
-		}
-		prog.TestTimeoutMs = opts.TestTimeout.Milliseconds()
-		prog.TestJobs = int64(opts.Jobs)
-		prog.FailOnSkip = opts.FailOnSkip
-	}
-
 	prog.DebugInfo = !opts.Release // a debugger stops at Veles lines (plan S8)
 	ir := llvm.Generate(prog)
 	clk.lap("codegen", size(len(ir))+" of LLVM IR")
@@ -206,11 +195,6 @@ func Run(opts Options) int {
 	if runtime.GOOS == "windows" && !strings.HasSuffix(exe, ".exe") {
 		exe += ".exe"
 	}
-	llPath := filepath.Join(tmpDir, "program.ll")
-	if err := os.WriteFile(llPath, []byte(ir), 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "veles:", err)
-		return 1
-	}
 	clang, err := findClang()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "veles:", err)
@@ -222,7 +206,8 @@ func Run(opts Options) int {
 		return 1
 	}
 	clk.lap("runtime", "the C runtime's objects (built once, then cached)")
-	args := append([]string{"-o", exe, llPath}, objs...)
+	// what the link reads besides the IR; `-o` and the IR's file come first
+	args := append([]string{}, objs...)
 	args = append(args, "-Wno-override-module")
 	args = append(args, codegenFlags(opts.Release)...)
 	if opts.Sanitize {
@@ -243,16 +228,38 @@ func Run(opts Options) int {
 		return 1
 	}
 	args = append(args, native...)
-	cmd := exec.Command(clang, args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, "veles: clang failed:", err)
-		if opts.Sanitize {
-			fmt.Fprintln(os.Stderr, "veles: --sanitize links clang's sanitizer runtimes (compiler-rt): with MSYS2, `pacman -S mingw-w64-ucrt-x86_64-compiler-rt`; on Linux they come with clang")
+	// a program `run` or `test` linked before is run from the cache
+	// (execache.go)
+	cacheRoot, cacheKey, cached := "", "", ""
+	if opts.Mode != "build" && opts.Output == "" && len(native) == 0 {
+		if cacheRoot = exeCacheRoot(); cacheRoot != "" {
+			cacheKey = exeCacheKey(ir, clang, args, filepath.Base(exe))
+			cached = exeCacheLookup(cacheRoot, cacheKey, filepath.Base(exe))
 		}
-		return 1
 	}
-	clk.lap("clang", strings.Join(codegenFlags(opts.Release), " ")+": compile the IR and link")
+	if cached != "" {
+		exe = cached
+		clk.lap("clang", "skipped: this program was linked before (cached)")
+	} else {
+		llPath := filepath.Join(tmpDir, "program.ll")
+		if err := os.WriteFile(llPath, []byte(ir), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "veles:", err)
+			return 1
+		}
+		cmd := exec.Command(clang, append([]string{"-o", exe, llPath}, args...)...)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "veles: clang failed:", err)
+			if opts.Sanitize {
+				fmt.Fprintln(os.Stderr, "veles: --sanitize links clang's sanitizer runtimes (compiler-rt): with MSYS2, `pacman -S mingw-w64-ucrt-x86_64-compiler-rt`; on Linux they come with clang")
+			}
+			return 1
+		}
+		if cacheKey != "" {
+			exeCacheStore(cacheRoot, cacheKey, filepath.Base(exe), exe)
+		}
+		clk.lap("clang", strings.Join(codegenFlags(opts.Release), " ")+": compile the IR and link")
+	}
 	clk.report(os.Stderr)
 	if opts.Mode == "build" {
 		return 0
@@ -260,6 +267,9 @@ func Run(opts Options) int {
 	abs, _ := filepath.Abs(exe)
 	run := exec.Command(abs, opts.ProgramArgs...)
 	run.Stdin, run.Stdout, run.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if opts.Mode == "test" {
+		run.Env = append(os.Environ(), testEnv(opts)...)
+	}
 	if err := run.Run(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
 			return ee.ExitCode()

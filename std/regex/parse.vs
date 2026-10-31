@@ -9,6 +9,7 @@
 // problem is recorded — the first one wins, in `error` and `errorAt` — and the
 // parser reads on as if the pattern ended there (`peek` answers -1 once it has
 // failed); `Regex.compile` turns the record into a `RegexError`.
+use unicode { catNd, foldNext, unicodeProperty, unicodeSpace, unicodeWord }
 use utf8
 
 /// A pattern that cannot be compiled. `position` is the code point index in
@@ -140,23 +141,11 @@ const fun parse(pattern: string, flags: Flags): Parsed {
 /// the end of the pattern): what lets `when` and comparisons use byte literals.
 const fun sym(c: i64): u8 => if (c in 0..<128) c.wrapU8() else 255
 
-const fun isDigit(c: i64): bool {
-  val b = sym(c)
-  b in '0'..'9'
-}
+const fun isDigit(c: i64): bool => sym(c).isAsciiDigit()
 
-const fun isLetter(c: i64): bool {
-  val b = sym(c)
-  b in 'a'..'z' || b in 'A'..'Z'
-}
+const fun isLetter(c: i64): bool => sym(c).isAsciiLetter()
 
-const fun hexValue(c: i64): i64 {
-  val b = sym(c)
-  if (b in '0'..'9') return c - 48
-  if (b in 'a'..'f') return c - 97 + 10
-  if (b in 'A'..'F') return c - 65 + 10
-  -1
-}
+const fun hexValue(c: i64): i64 => sym(c).digitValue(16) ?: -1
 
 struct Parser {
   codes:       List<i64>
@@ -735,23 +724,28 @@ struct Parser {
     this.escapedCode()
   }
 
-  /// `[:alpha:]` and friends inside a class; false when it is not one.
+  /// `[:alpha:]`, `[:^alpha:]` and friends inside a class; false when it is not one.
   const fun posixClass(pairs: MutableList<i64>): bool {
-    var end = this.pos + 2
+    var start = this.pos + 2
+    val negated = sym(this.codes.at(start) ?: -1) == '^'
+    if (negated) start += 1
+    var end = start
     loop (isLetter(this.codes.at(end) ?: -1)) end += 1
     if (sym(this.codes.at(end) ?: -1) != ':' || sym(this.codes.at(end + 1) ?: -1) != ']') return false
     val name = StringBuilder()
-    var i = this.pos + 2
+    var i = start
     loop (i < end) {
       name.appendByte(sym(this.codes.at(i) ?: -1))
       i += 1
     }
     val set = posix(name.toString())
     if (set == null) {
-      this.fail("unknown class [:${name.toString()}:]")
+      val written = if (negated) "^${name.toString()}" else name.toString()
+      this.fail("unknown class [:$written:]")
       return true
     }
-    loop (x in set) pairs.push(x)
+    val ranges = if (negated) negate(if (this.flags.ignoreCase) this.fold(set) else set) else set
+    loop (x in ranges) pairs.push(x)
     this.pos = end + 2
     true
   }

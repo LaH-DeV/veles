@@ -2,6 +2,7 @@
 // higher levels, and per block the cheapest of stored, fixed and dynamic
 // Huffman coding. The encoder is incremental — bytes are fed in pieces and
 // the window slides — so a stream compresses in constant memory.
+use bytes
 
 // how hard each level looks for a match: chain length, a length that is good
 // enough to stop at, the length above which no lazy second look is taken
@@ -32,7 +33,7 @@ const HASH_MASK: i64 = 32767
 const MAX_MATCH: i64 = 258
 const MIN_MATCH: i64 = 3
 // a match this far back that is only 3 long costs more than its literals
-const TOO_FAR: i64 = 4096
+const TOO_FAR: i64 = bytes.KiB * 4
 // bytes that must be visible beyond a position before it is encoded, unless
 // the stream is ending
 const LOOKAHEAD: i64 = 262
@@ -61,7 +62,7 @@ fun buildDistSymbols(): List<i64> {
     loop (d in base..<(base + span)) {
       if (d <= 256) {
         table.set(d - 1, slot)
-      } else if (d <= 32768 && (d - 1) % 128 == 0) {
+      } else if (d <= bytes.KiB * 32 && (d - 1) % 128 == 0) {
         table.set(256 + ((d - 1) >> 7), slot)
       }
     }
@@ -85,7 +86,7 @@ val lengthSymbols: List<i64> = buildLengthSymbols()
 val distSymbols: List<i64> = buildDistSymbols()
 
 fun distSymbol(d: i64): i64 {
-  // SAFETY: d is 1..32768, so both indexes are inside the 512 entries
+  // SAFETY: d is 1..(32 KiB), so both indexes are inside the 512 entries
   unsafe {
     if (d <= 256) distSymbols.atUnchecked(d - 1) else distSymbols.atUnchecked(256 + ((d - 1) >> 7))
   }
@@ -263,8 +264,8 @@ struct Deflater {
   /// More input.
   fun feed(data: List<u8>) {
     // forget what is further back than a match can reach
-    val keepFrom = this.pos - 32768 - 1
-    if (keepFrom - this.base > 65536) {
+    val keepFrom = this.pos - bytes.KiB * 32 - 1
+    if (keepFrom - this.base > bytes.KiB * 64) {
       val drop = keepFrom - this.base
       this.buf = this.buf.drop(drop).toMutable()
       this.base += drop
@@ -366,7 +367,7 @@ struct Deflater {
     if (atLeast >= this.effort.good) chain = chain >> 2
     var candidate = first
     val at = p - this.base
-    loop (chain > 0 && candidate >= this.base && p - candidate <= 32768 && candidate < p) {
+    loop (chain > 0 && candidate >= this.base && p - candidate <= bytes.KiB * 32 && candidate < p) {
       val c = candidate - this.base
       // SAFETY: c + best < at + best < len (best < limit <= avail), and every
       // compared index is below `limit` bytes from c and from at

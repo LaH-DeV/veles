@@ -1,4 +1,4 @@
-// D129: `tag"…"` is a call of a @template function; the tag must be one.
+// D129, D227: `tag"…"` is a call of a template function; the tag must be one.
 use io
 
 trait Param {
@@ -13,8 +13,7 @@ struct Query {
   text: string
 }
 
-@template
-fun sql(parts: List<string>, values: List<Param>): Query => Query(text: parts.join("?"))
+template fun sql(parts: List<string>, values: List<Param>): Query => Query(text: parts.join("?"))
 
 fun plain(parts: List<string>, values: List<Param>): Query => Query(text: "")
 

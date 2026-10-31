@@ -5,7 +5,7 @@
 Every `.vs` file in a directory belongs to one module and shares one
 namespace (M2). Files in the same directory never import each other;
 split a module across files however you like. There is no `package` or
-`module` line at the top of a file — the directory *is* the declaration
+`module` line at the top of a file — the directory _is_ the declaration
 (M3).
 
 ```text
@@ -119,7 +119,7 @@ make that inference circular.
 
 A declaration is visible to the other modules of its **package** unless you
 say otherwise (D142): functions, structs, fields, methods, module-level
-values. `public` lets *other packages* use it; `internal` keeps it to its own
+values. `public` lets _other packages_ use it; `internal` keeps it to its own
 module.
 
 ```veles
@@ -143,9 +143,9 @@ the rest of the module must not touch, a member can be `private` to its type
 ([chapter 5](05-structs-and-methods.md#visibility)).
 
 The four levels, then: `private` — the type's own methods, implement and
-extend blocks; `internal` — the module (the directory); *nothing written* —
-the whole package; `public` — other packages too. These say who can *see* a
-name. Who can *assign* a field is a separate question with its own words —
+extend blocks; `internal` — the module (the directory); _nothing written_ —
+the whole package; `public` — other packages too. These say who can _see_ a
+name. Who can _assign_ a field is a separate question with its own words —
 bare, `protected var`, `var`
 ([chapter 5](05-structs-and-methods.md#protected-var-everyone-reads-the-type-writes)) —
 so `public protected var count` reads "everyone sees it, only the type
@@ -293,7 +293,7 @@ deny = ["unsafe"]
   a `veles.toml` of its own; patterns such as `libs/*` are not supported
   yet. A root that only lists members needs no `[package]`.
 - Every error names the file and the line: `veles.toml:7: dependency 'pg':
-  a git dependency is pinned by exactly one of version (a tag) or commit`.
+a git dependency is pinned by exactly one of version (a tag) or commit`.
 
 ### Dependencies from git and the registry
 
@@ -346,6 +346,7 @@ explains what a build checks and how to read a refusal.
   error, and so is a cache entry edited after it was fetched. Nothing is
   built from either. If a tag was moved on purpose and you trust the new
   contents, delete its line.
+
 - **Registry packages** (`{ registry = "owner/name", version = "1.4.2" }`)
   come from the proxy named by `VELES_PROXY`: `GET <proxy>/<owner>/<name>/@v/<version>.zip`,
   an archive with the package's files at its root. The registry service
@@ -402,19 +403,19 @@ veles vendor                                 # copy the build into vendor/
 ### What a dependency can do: capabilities and policy
 
 Nothing runs when a package is fetched or built — there are no build
-scripts — but a dependency's *code* runs inside your program, so you should
+scripts — but a dependency's _code_ runs inside your program, so you should
 know what it can reach. The compiler works that out from the source; the
 author declares nothing, so nothing can be understated:
 
-| capability | the package's source… |
-|---|---|
-| `unsafe` | has an `unsafe` block or an `unsafe fun` |
-| `extern` | has an `extern` block, or an `extern "C" fun` C can call |
-| `native` | has a `[native]` table: it links C libraries |
-| `net` | imports `net`, `tls`, `http`, `db` or `otel` |
-| `fs` | imports `fs` or `config` |
-| `os` | imports `os` (processes, the environment) or `config` |
-| `ffi` | imports `ffi` |
+| capability | the package's source…                                                               |
+| ---------- | ----------------------------------------------------------------------------------- |
+| `unsafe`   | has an `unsafe` block or an `unsafe fun`                                            |
+| `extern`   | has an `extern` block, or an `extern "C" fun` C can call                            |
+| `native`   | has a `[native]` table: it links C libraries                                        |
+| `net`      | imports `net`, `tls`, `http`, `db` or `otel`                                        |
+| `fs`       | imports `fs` or `config`                                                            |
+| `os`       | imports `os` (processes, the environment) or `config`                               |
+| `ffi`      | imports `ffi`                                                                       |
 | `unlisted` | is not in the registry's listed tier (any git package; not source-based, see below) |
 
 Only modules whose purpose is the capability count: `http` reads the clock
@@ -481,14 +482,14 @@ key = "ed25519:…"          # the registry signs its metadata; pin its key
   and yank state). With the key in `veles.toml` a hijacked host cannot make up
   hashes; without it the first fetch is trusted and `veles.sum` guards the
   rest. The key changes by editing the manifest.
-- **Tiers.** A version is *listed* (the registry's automated gates passed:
+- **Tiers.** A version is _listed_ (the registry's automated gates passed:
   1.0.0 or later, builds on Windows and Linux, its tests pass, no unexplained
-  API break) or *unreviewed*. A git package is always unreviewed. `veles
-  audit` shows the tier, and `deny = ["unlisted"]` in `[policy]` refuses
+  API break) or _unreviewed_. A git package is always unreviewed. `veles
+audit` shows the tier, and `deny = ["unlisted"]` in `[policy]` refuses
   anything that is not listed (`allow = { unlisted = ["acme/x"] }` exempts
   one).
 - **Yank.** The author can yank a version (`veles yank acme/lib@1.0.0 --reason
-  "…"`, `--undo`). It stays downloadable, but a resolution that has no
+"…"`, `--undo`). It stays downloadable, but a resolution that has no
   `veles.sum` line for it — `add`, `update`, a fresh clone without a sum — is
   refused with the reason, and `update` never picks it. A project whose
   `veles.sum` already holds it keeps building and is warned.
@@ -567,7 +568,7 @@ work when `geometry` declares `distance` `public`. The directory layout of
 `public` modules is therefore part of the API — moving one is a breaking
 change, unless a **facade** hides it. A package's **root module** (`lib.vs`,
 or any file of the root directory) writes the facade with `public use`
-(D89), and a facade may export *unmarked* items too, under its own name
+(D89), and a facade may export _unmarked_ items too, under its own name
 (D142):
 
 ```veles
@@ -724,12 +725,17 @@ fun main() {
 ```
 
 Output:
+
 ```text
 ordinary run; tests are skipped
 ```
 
 A module with many tests keeps them in `*.test.vs` files beside its
 source — part of the module, never part of a build.
+Library checks, editor indexing and phase dumps check the package's own test
+files, but do not semantically check tests belonging to dependencies or the
+embedded standard library as part of the consumer. Those modules' authors run
+their tests separately.
 [Chapter 14](14-attributes-and-testing.md#writing-tests) has the whole
 vocabulary, the report, helpers and the runner's flags.
 

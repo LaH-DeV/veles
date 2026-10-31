@@ -19,7 +19,18 @@ import (
 	"github.com/LaH-DeV/veles/internal/buildtest"
 )
 
-var fence = regexp.MustCompile("(?s)```veles\\n(.*?)```(?:\\s*\\n\\s*Output:\\s*\\n```text\\n(.*?)```)?")
+// fence is a Veles block — on its own, or the `[Veles]` tab of a
+// `::: code-group` that shows the same program in other languages — and the
+// Output block after it, or after the group's closing `:::`. The other tabs
+// are not compiled; each must carry a `[Label]` and its lines cannot start a
+// fence, so a match never runs past its own group.
+var fence = regexp.MustCompile("(?s)```veles(?: \\[[^\\]\\n]*\\])?\\n(.*?)```" +
+	"(?:(?:\\s*\\n" + otherTab + ")*\\s*\\n:::)?" +
+	"(?:\\s*\\n\\s*Output:\\s*\\n```text\\n(.*?)```)?")
+
+// otherTab is a code-group tab in another language: "```go [Go]", lines
+// that do not open or close a fence, "```".
+const otherTab = "```[^\\s`]+ \\[[^\\]\\n]+\\]\\n(?:(?:[^`\\n]|`[^`\\n]|``[^`\\n])[^\\n]*\\n|\\n)*```"
 
 func TestMain(m *testing.M) { buildtest.Main(m) }
 
@@ -98,4 +109,20 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return s
+}
+
+// A code group's Veles tab is the block that runs and its Output follows the
+// group; a plain block followed by an unlabelled one never reaches a later
+// group's `:::`.
+func TestFenceReadsCodeGroups(t *testing.T) {
+	group := "::: code-group\n\n```veles [Veles]\nfun main() { }\n```\n\n```go [Go]\nfunc main() {\n\t`raw`\n}\n```\n\n:::\n\nOutput:\n\n```text\nhi\n```\n"
+	m := fence.FindAllStringSubmatch(group, -1)
+	if len(m) != 1 || m[0][1] != "fun main() { }\n" || m[0][2] != "hi\n" {
+		t.Fatalf("code group read as %q", m)
+	}
+	plain := "```veles\nfun a() { }\n```\n```text\nerror: …\n```\n\nprose\n\n" + group
+	m = fence.FindAllStringSubmatch(plain, -1)
+	if len(m) != 2 || m[0][1] != "fun a() { }\n" || m[0][2] != "" || m[1][2] != "hi\n" {
+		t.Fatalf("a plain block ran into the group: %q", m)
+	}
 }

@@ -88,7 +88,7 @@ test "globals are computed in the order they read each other" {
   expect(late == 9)
 }
 `
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		out, code := runTests(t, src, Options{Release: release})
 		if code != 0 || !strings.Contains(out, "4 passed") {
 			t.Fatalf("release=%v: exit %d, output:\n%s", release, code, out)

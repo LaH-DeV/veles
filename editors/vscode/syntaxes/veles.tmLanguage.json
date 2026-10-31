@@ -277,6 +277,10 @@
         },
         {
           "name": "storage.modifier.veles",
+          "match": "\\btemplate\\b(?=\\s+(?:const\\s+)?fun\\b)"
+        },
+        {
+          "name": "storage.modifier.veles",
           "comment": "a lazy parameter (D90), or a lazy val built on its first read (D210)",
           "match": "\\b(lazy)\\b(?=\\s+([A-Za-z_][A-Za-z0-9_]*\\s*:|(val|var|const)\\b))"
         },
@@ -335,8 +339,8 @@
     },
     "templateTag": {
       "comment": "`sql\"…\"`, `db.sql\"…\"` (D129): the name written right before a string is the template function; the string that follows is a string",
-      "match": "\b[A-Za-z_][A-Za-z0-9_]*(?=\")",
-      "name": "entity.name.function.template.veles"
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\")",
+      "name": "entity.name.function.call.veles"
     },
     "textblocks": {
       "comment": "D172: a text block, `\"\"\"` on its own line to `\"\"\"`; escapes and interpolation work as in a string",

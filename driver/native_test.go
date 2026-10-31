@@ -174,7 +174,7 @@ fun main() {
   }
 }
 `)
-	for _, threads := range []string{"1", "2"} {
+	for _, threads := range threadCounts("1", "2") {
 		run := exec.Command(exe)
 		run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=200000")
 		out, err := run.CombinedOutput()
@@ -263,7 +263,7 @@ fun main() throws ThreadError {
 }
 `)
 	want := "two threads: true\npool: churn 300001, ticks 5 while both threads blocked: true; 2 calls\nthread: ticks 5 after the call: true"
-	for _, threads := range []string{"1", "4"} {
+	for _, threads := range threadCounts("1", "4") {
 		run := exec.Command(exe)
 		run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=200000")
 		out, err := run.CombinedOutput()

@@ -34,6 +34,7 @@ test refusals "what is not a version says why" {
   expect(whyVersion("1.2.3-a.01").contains("without a leading zero"))
   expect(whyVersion("1.2.3-a.0") == "ok")
   expect(whyVersion("").startsWith("\"\" is not a version"))
+  expect(whyVersion("\u{200B}").startsWith("\"\\u200b\" is not a version"))
 }
 
 test precedence "the order semver.org gives" {

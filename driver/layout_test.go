@@ -102,7 +102,7 @@ fun main() {
 		"callsMutating 103 after 102\ncallsReading 3\ncaptured 102 now 150\ndepth 150\n" +
 		"later arg 804 after 305\nlater assign 305 after 377\nreceiver arg 517\nindirect 507\n" +
 		"address taken 809 after 1809\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "args.exe")
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)
@@ -255,7 +255,7 @@ fun main() {
 		"fun 42 true false\ntrait 9 true\ntuple (1, [2]) null\narray [2] true\nbig [5, 5] true 5\n" +
 		"big list 2 3 null 1\npop null x null\nmap Ident(name: k, at: [1]) null null\nset 2 true true\n" +
 		"generic g d 4\nsealed word w word - end\ndeque zero one null\nelvis [0] -1\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "niche.exe")
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)
@@ -371,7 +371,7 @@ fun setOf(a: Sample, b: Sample): i64 {
 		if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(text), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		for _, release := range []bool{false, true} {
+		for _, release := range profiles() {
 			exe := filepath.Join(dir, "compact.exe")
 			if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 				t.Fatalf("program %d: build (release=%v) failed with exit %d", i, release, code)
@@ -437,7 +437,7 @@ fun main() {
 		t.Fatal(err)
 	}
 	want := "3\n4\n1 5\n1 7\n2 9\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "consts.exe")
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)
@@ -599,7 +599,7 @@ fun main() {
 		"aligned stride 32\n" +
 		"fd 42\n" +
 		"counters 3 0 0\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "layout.exe")
 		if code := Run(Options{Path: dir, Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)

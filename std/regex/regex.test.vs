@@ -38,6 +38,19 @@ test classes "sets, ranges and escapes" {
   expect(first("[a-]+", "x-a-") == "-a-")
 }
 
+test negatedPosix "negated POSIX classes compose with case folding and outer negation" {
+  expect(first("[[:^alpha:]]+", "abc123") == "123")
+  expect(first("[[:^digit:]]+", "123abc") == "abc")
+  expect(first("[^[:^alpha:]]+", "123abc") == "abc")
+  expect(first("(?i)[[:^lower:]]+", "aA123") == "123")
+  expect(first("(?i)[[:^upper:]]+", "aA123") == "123")
+  expect(first("(?i)[^[:^lower:]]+", "123aA") == "aA")
+  expect(re("[[:^ascii:]]+").matches("\u{E9}"))
+  expect(!re("(?iu)[[:^lower:]]").test("\u{212A}"))
+  expect(literal("[[:^digit:]]+", "").matches("abc"))
+  expect(why("[[:^unknown:]]").contains("unknown class"))
+}
+
 test dot "dot stops at a newline unless dotAll" {
   expect(first("a.c", "a\nc") == "-")
   expect(Regex.compile("a.c", dotAll: true) catch (e) {
@@ -158,6 +171,11 @@ test replace "references in the replacement" {
 test split "pieces between matches" {
   expect(re(",\\s*").split("a, b,c") == ["a", "b", "c"])
   expect(re(",").split("a,b,c", limit: 2) == ["a", "b,c"])
+  expect(re(",").split("a,b,c", limit: 0).isEmpty())
+  expect(re("x").split("abc", limit: 0).isEmpty())
+  expect(re(",").split("", limit: 0).isEmpty())
+  expect(re(",").split("a,b,c", limit: 1) == ["a,b,c"])
+  expect(re(",").split("a,b,c", limit: -1) == ["a", "b", "c"])
   expect(re(",").split("") == [""])
   expect(re("").split("abc") == ["a", "b", "c"])
 }
@@ -185,6 +203,74 @@ test errors "bad patterns say what is wrong" {
   expect(why("[z-a]").contains("backwards"))
   expect(why("a\\").contains("backslash"))
   expect(why("^*").contains("assertion"))
+}
+
+test nullableCapture "greedy nullable repetition retains its empty capture" {
+  loop (pattern in ["(a*)*b", "(a?)*b", "(a{0,2})*b"]) {
+    loop (text in ["b", "a\nb"]) {
+      val matched = re(pattern).find(text) ?: panic("the trailing b must match")
+      expect(matched.value() == "b")
+      expect(matched.groupAt(1) == "")
+      var threads = Machine.of(re(pattern).program)
+      threads.threadsOnly = true
+      val slots = threads.search(text, 0, false, false) ?: panic("the trailing b must match")
+      expect(slots.at(2) == matched.start())
+      expect(slots.at(3) == matched.start())
+    }
+  }
+  val lazy = re("(a*)*?b").find("b") ?: panic("the trailing b must match")
+  expect(lazy.groupAt(1) == null)
+}
+
+test scratchGrowth "search stacks grow past their initial reservation" {
+  val compiled = re("(a?)".repeat(40) + "b")
+  val matches = compiled.findAll("b ab b")
+  expect(matches.len() == 3)
+  loop (matched in matches) {
+    expect(matched.groupAt(40) == "")
+    expect(matched.groupCount() == 40)
+  }
+  expect(matches.at(0)?.value() == "b")
+  expect(matches.at(1)?.value() == "ab")
+  expect(matches.at(2)?.value() == "b")
+  expect(re("needle").find("x".repeat(100)) == null)
+}
+
+test malformedClasses "invalid classes and properties stop with a typed error" {
+  loop (pattern in [
+    "[[:notaclass:]]", "[[:alpha:]", "[a-\\d]", "[\\p{NotAProperty}]",
+    "\\p{NotAProperty}", "\\p{", "\\x{", "[\\x{", "[\\", "(?i", "(?z)a",
+  ]) {
+    expect(Regex.compile(pattern) is Err)
+  }
+}
+
+test longCounts "long repetition counts stay bounded and leading zeroes remain valid" {
+  val digits = "9".repeat(2048)
+  loop (pattern in ["a{$digits}", "a{1,$digits}", "a{$digits,}"]) {
+    expect(why(pattern).contains("over 1000"))
+  }
+  val paddedOne = "0".repeat(2048) + "1"
+  expect(re("a{$paddedOne}").matches("a"))
+  expect(re("a{$paddedOne}").matches("aa") == false)
+}
+
+test hexBoundaries "hex escapes cover Unicode bounds and reject excessive values" {
+  expect(re("\\x00").matches("\u{0}"))
+  expect(re("\\x{10FFFF}").matches(utf8.char(utf8.maxCode)))
+  expect(re("\\x{" + "0".repeat(2048) + "41}").matches("A"))
+  loop (pattern in ["\\x{110000}", "\\x{" + "F".repeat(2048) + "}", "[\\x{110000}]", "\\x{}", "\\x0", "\\xGG"]) {
+    expect(Regex.compile(pattern) is Err)
+  }
+}
+
+test errorPositions "malformed escapes report code point offsets after Unicode" {
+  loop ((pattern, position) in ["\\q", "\u{E9}\\q", "\u{1F600}\\q", "\u{E9}\u{1F600}\\q"].zip([1, 2, 2, 3])) {
+    expect(when (Regex.compile(pattern)) {
+      is Err(error) => error.position == position && error.message.contains("unknown escape")
+      is Ok(_)      => false
+    })
+  }
 }
 
 test linear "a pattern that blows up a backtracker finishes at once" {
@@ -248,10 +334,14 @@ const okLiteral = validate(`(?<y>\d{4})-(?<m>\d\d)|[a-z]+?x*`, "i")
 const badLiteral = validate("a(", "")
 const lookaround = validate("a(?=b)", "")
 const tooBig = validate("(a{1000}){1000}", "")
+const nullableLiteral = validate("(a*)*b", "")
+const negatedPosixLiteral = validate("[[:^digit:]]+", "")
 static assert(okLiteral == "", "a good pattern validates")
 static assert(badLiteral == "missing ')'", "a bad pattern says why")
 static assert(lookaround.contains("lookahead"), "lookaround is refused")
 static assert(tooBig.contains("instructions"), "a huge pattern is refused")
+static assert(nullableLiteral == "", "nullable repetition compiles in the evaluator")
+static assert(negatedPosixLiteral == "", "negated POSIX classes compile in the evaluator")
 
 test validated "validate agrees at run time" {
   expect(validate("a+", "") == "")

@@ -49,7 +49,7 @@ fun main() {
 	if runtime.GOARCH == "arm64" {
 		arch = "Arm64"
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "tool.exe")
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("release=%v: build failed with exit %d", release, code)

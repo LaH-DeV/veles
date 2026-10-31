@@ -36,6 +36,7 @@ fun main() throws IoError {
 ```
 
 Output:
+
 ```text
 2 items: milk, bread
 true true true
@@ -86,6 +87,7 @@ fun main() throws IoError {
 ```
 
 Output:
+
 ```text
 16 bytes
 89ab
@@ -142,6 +144,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 No such file or directory: no/such/file.txt (NotFound)
 config: 0 bytes
@@ -151,8 +154,10 @@ config: 0 bytes
 (D18); anything else is an `IoError` ("Illegal byte sequence"). For raw
 data use the byte forms: `fs.readBytes(path)` gives a `List<u8>`,
 `fs.writeBytes(path, bytes)` and `fs.appendBytes` take one, and
-`text.bytes()` / `bytes.decodeUtf8()` convert. `io.readAll()` reads the
-rest of standard input as text.
+`text.bytes()` / `bytes.decodeUtf8()` convert. `io.readAll()` reads up to
+1 MiB of standard input as validated UTF-8; pass `max:` to change the byte
+ceiling. Invalid text throws `IoError(InvalidData)`, and input over the
+ceiling throws `io.TooLong`. Use `io.readAllBytes()` for raw input bytes.
 
 ## Writing without losing data
 
@@ -186,6 +191,7 @@ fun main() throws IoError {
 ```
 
 Output:
+
 ```text
 version 2, longer
 [state.txt, state.txt.bak]
@@ -195,7 +201,7 @@ An open `File` has more: `file.seek(offset)` moves where the next `read` or
 `write` goes (a file opened to `Append` always writes at its end),
 `file.sync()` waits until what was written is on the disk, and
 `file.lock()` takes an exclusive lock that other programs asking for it wait
-for — *advisory*, like `flock`: it keeps out the polite, not a program that
+for — _advisory_, like `flock`: it keeps out the polite, not a program that
 just opens the file. `tryLock()` answers `null` instead of waiting. A lock is
 a `Closeable`, held with `with` and let go at the end of the block (and when
 the file closes).
@@ -236,6 +242,7 @@ fun main() throws IoError {
 ```
 
 Output:
+
 ```text
 longest line: 21 bytes
 ```
@@ -243,8 +250,8 @@ longest line: 21 bytes
 ## Binary data
 
 A file format or a network header is numbers laid out in bytes, and the
-order matters: *big endian* (`Be`, network order) puts the most significant byte
-first, *little endian* (`Le`) the least. Every integer type converts to its
+order matters: _big endian_ (`Be`, network order) puts the most significant byte
+first, _little endian_ (`Le`) the least. Every integer type converts to its
 bytes and back, in both orders, as an `Array<u8, N>` of its width:
 
 ```veles
@@ -267,6 +274,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [31, 144] [144, 31] 8080
 [202, 254, 186, 190, 2, 0, 255, 255, 255, 255, 255, 255, 255, 255]
@@ -299,6 +307,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 src/compiler/lexer.vs
 src/compiler | lexer.vs | lexer | .vs
@@ -325,6 +334,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 site/img/logo.png
 img/logo.png -> serve site/img/logo.png
@@ -355,6 +365,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 name,square
 1,1
@@ -439,6 +450,7 @@ fun main() throws cli.Error {
 ```
 
 Output:
+
 ```text
 [a.txt, b.txt] true 2 5s
 error: unknown flag '--limt'; did you mean '--limit'?
@@ -531,7 +543,7 @@ var rng = random.Rng.seeded(7)           // a generator of your own: the same me
 
 The module's generator is shared by every task and takes a lock on each
 call, so a task drawing numbers in a hot loop is faster with an `Rng` of
-its own. The generator is xoshiro256** — fast and good for games, tests
+its own. The generator is xoshiro256\*\* — fast and good for games, tests
 and sampling, not for secrets (`crypto.randomBytes` is for those).
 
 Next: [Networking](16-networking.md) for TCP, or [Attributes and the

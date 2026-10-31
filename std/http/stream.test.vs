@@ -68,6 +68,18 @@ test "a declared length is sent as content-length and the bytes are not framed" 
   expect(r.endsWith("\r\n\r\nbody"))
 }
 
+test "connection close wins in a comma-separated field" {
+  with srv = try testServer(handler(req => Response.text("ok")))
+  val combined = try ask(srv.port(), "GET / HTTP/1.1\r\nHost: t\r\nConnection: keep-alive, close\r\n\r\n")
+  expect(combined.contains("connection: close"))
+}
+
+test "connection close wins across repeated fields" {
+  with srv = try testServer(handler(req => Response.text("ok")))
+  val repeated = try ask(srv.port(), "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\nConnection: keep-alive\r\n\r\n")
+  expect(repeated.contains("connection: close"))
+}
+
 test "an HTTP/1.0 client gets the bytes and the end of the connection" {
   with srv = try testServer(pieces())
   val port = srv.port()

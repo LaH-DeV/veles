@@ -11,10 +11,58 @@
 /// fmt.percent(0.256)            // "25.6%"
 /// fmt.ordinal(22)               // "22nd"
 /// fmt.duration(Duration.seconds(3725))  // "1h 2m 5s"
+/// fmt.quote("café\n")          // "\"café\\n\""
 /// ```
 ///
 /// Everything here is English and uses `.` for decimals and `,` for groups;
 /// locales are a later addition.
+use bytes
+use unicode
+use utf8
+
+/// A Go-style double-quoted representation. Quotes, backslashes, controls
+/// and non-printable Unicode are escaped; printable Unicode stays as written.
+public fun quote(text: string): string {
+  val out = StringBuilder()
+  out.append("\"")
+  var at: i64 = 0
+  loop (at < text.len()) {
+    val rune = utf8.decode(text, at) ?: panic("fmt.quote: a string is valid UTF-8 at every character start")
+    val code = rune.code
+    at += rune.size
+    if (code == '"'.toI64() || code == '\\'.toI64()) {
+      out.append("\\")
+      out.append(utf8.char(code))
+      continue
+    }
+    if (unicode.isPrintable(code)) {
+      out.append(utf8.char(code))
+      continue
+    }
+    when (code) {
+      0x07 => out.append("\\a")
+      0x08 => out.append("\\b")
+      0x0C => out.append("\\f")
+      0x0A => out.append("\\n")
+      0x0D => out.append("\\r")
+      0x09 => out.append("\\t")
+      0x0B => out.append("\\v")
+      else => {
+        if (code < 0x20 || code == 0x7F) {
+          out.append("\\x${hex(code, 2)}")
+        } else if (code < 0x10000) {
+          out.append("\\u${hex(code, 4)}")
+        } else {
+          out.append("\\U${hex(code, 8)}")
+        }
+      }
+    }
+  }
+  out.append("\"")
+  out.toString()
+}
+
+fun hex(code: i64, width: i64): string => code.toString(radix: 16).padStart(width, "0")
 
 /// The integer with a comma between each group of three digits:
 /// `thousands(-1234567)` is `"-1,234,567"`.
@@ -28,8 +76,9 @@ public fun bytes(n: i64): string {
   var value = if (negative) -(n.toF64()) else n.toF64()
   val units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"]
   var unit = 0
-  loop (value >= 1024.0 && unit < units.len() - 1) {
-    value /= 1024.0
+  val kibibyte = bytes.KiB.toF64()
+  loop (value >= kibibyte && unit < units.len() - 1) {
+    value /= kibibyte
     unit += 1
   }
   val name = units.at(unit) ?: panic("fmt.bytes: the unit index stays inside the list")
@@ -44,7 +93,8 @@ public fun percent(fraction: f64, digits: i64 = 1): string => (fraction * 100.0)
 /// The number with its English ordinal suffix: `ordinal(1)` is `"1st"`,
 /// `ordinal(12)` is `"12th"`, `ordinal(23)` is `"23rd"`.
 public fun ordinal(n: i64): string {
-  val last = n.abs() % 100
+  val remainder = n % 100
+  val last = if (remainder < 0) -remainder else remainder
   val suffix = if (last in 11..13) "th" else when (last % 10) {
     1    => "st"
     2    => "nd"

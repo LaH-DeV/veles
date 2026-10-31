@@ -20,7 +20,10 @@ When you are ready for tasks: [Concurrency, explained from scratch](concurrency-
 
 ## Track 2 — Coming from Go, Kotlin, Swift, TypeScript or Java
 
-Skim Track 1 (the syntax is close to Kotlin's), then:
+Start with the page for the language you know —
+[Go](from/go.md), [TypeScript](from/typescript.md), [Swift](from/swift.md),
+[Kotlin](from/kotlin.md) or [Rust](from/rust.md) — skim Track 1 (the syntax
+is close to Kotlin's), then:
 
 7. [Errors: `throws`, `throw`, `try`](07-errors.md) — errors are values, without the ceremony.
 8. [Traits and generics](08-traits-and-generics.md) — interfaces without inheritance, stenciled generics, trait objects, the operator traits.
@@ -63,3 +66,20 @@ Code blocks are complete programs unless they begin with `// fragment`.
 Where a program prints something, the output follows the block. Run any
 program by saving it as `main.vs` in an empty directory and typing
 `veles run <that directory>`.
+
+Chapters 2 to 10 and 12 each have one program with tabs that show it in
+Go, TypeScript, Swift, Kotlin and Rust, for readers who know one of them.
+Each tab is the closest program written the way that language is usually
+written: the same steps and the same output, not a word-for-word
+translation. Where the language cannot say what Veles says (no default
+arguments in Go, no closed set of types, a string length that counts
+UTF-16 units), the tab does what that language's programmers do instead,
+and a comment says what differs. Where only the printing differs, a comment
+at the end shows what that tab prints.
+
+Only the Veles tab is compiled and run by the documentation's tests. The
+Go, TypeScript and Rust tabs were run by hand on 2026-10-31 (Go 1.27,
+Node 22 with type stripping, Rust 1.87 with `tokio` for chapter 12). The
+Swift tabs of chapters 6, 7, 9 and 12 were run with Swift 6.3; the other
+Swift tabs and the Kotlin tabs (chapter 12's uses `kotlinx.coroutines`)
+have not been run.

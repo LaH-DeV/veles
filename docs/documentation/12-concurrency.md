@@ -146,7 +146,9 @@ async f()` followed straight by `await t` is `f()` with extra steps:
 argument order (D156). An argument is a handle or an `async` call written
 in place:
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 error NotFound { id: i64 }
@@ -172,6 +174,223 @@ fun main() {
   io.println(summary(-1) catch (e) { "no such user ${e.id}" })
 }
 ```
+
+```go [Go]
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+)
+
+type NotFound struct{ ID int64 }
+
+func (e *NotFound) Error() string { return fmt.Sprint("no user ", e.ID) }
+
+func user(ctx context.Context, id int64) (string, error) {
+	select {
+	case <-time.After(10 * time.Millisecond):
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	if id < 0 {
+		return "", &NotFound{ID: id}
+	}
+	return fmt.Sprint("user", id), nil
+}
+
+func orders(ctx context.Context, id int64) int64 {
+	select {
+	case <-time.After(5 * time.Millisecond):
+	case <-ctx.Done():
+	}
+	return id * 3
+}
+
+// both at once; the first failure cancels the other through the context
+func summary(id int64) (string, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type named struct {
+		name string
+		err  error
+	}
+	nameCh, countCh := make(chan named, 1), make(chan int64, 1)
+	go func() {
+		name, err := user(ctx, id)
+		if err != nil {
+			cancel()
+		}
+		nameCh <- named{name, err}
+	}()
+	go func() { countCh <- orders(ctx, id) }()
+	n, count := <-nameCh, <-countCh
+	if n.err != nil {
+		return "", n.err
+	}
+	return fmt.Sprintf("%s has %d orders", n.name, count), nil
+}
+
+func main() {
+	for _, id := range []int64{7, -1} {
+		s, err := summary(id)
+		var nf *NotFound
+		if errors.As(err, &nf) {
+			s = fmt.Sprint("no such user ", nf.ID)
+		}
+		fmt.Println(s)
+	}
+}
+```
+
+```ts [TypeScript]
+class NotFound extends Error {
+  id: number;
+  constructor(id: number) {
+    super(`no user ${id}`);
+    this.id = id;
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function user(id: number): Promise<string> {
+  await sleep(10);
+  if (id < 0) throw new NotFound(id);
+  return `user${id}`;
+}
+
+async function orders(id: number): Promise<number> {
+  await sleep(5);
+  return id * 3;
+}
+
+// Promise.all rejects on the first failure, but the other promise keeps running
+async function summary(id: number): Promise<string> {
+  const [name, count] = await Promise.all([user(id), orders(id)]);
+  return `${name} has ${count} orders`;
+}
+
+for (const id of [7, -1]) {
+  try {
+    console.log(await summary(id));
+  } catch (e) {
+    if (e instanceof NotFound) console.log(`no such user ${e.id}`);
+    else throw e;
+  }
+}
+```
+
+```swift [Swift]
+struct NotFound: Error { let id: Int }
+
+func user(_ id: Int) async throws(NotFound) -> String {
+    try? await Task.sleep(for: .milliseconds(10))
+    if id < 0 { throw NotFound(id: id) }
+    return "user\(id)"
+}
+
+func orders(_ id: Int) async -> Int {
+    try? await Task.sleep(for: .milliseconds(5))
+    return id * 3
+}
+
+// `async let` starts both; leaving the scope by a throw cancels the other
+func summary(_ id: Int) async throws -> String {
+    async let name = user(id)
+    async let count = orders(id)
+    return "\(try await name) has \(await count) orders"
+}
+
+for id in [7, -1] {
+    do {
+        print(try await summary(id))
+    } catch let e as NotFound {
+        print("no such user \(e.id)")
+    }
+}
+```
+
+```kotlin [Kotlin]
+// kotlinx.coroutines
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+
+class NotFound(val id: Long) : Exception("no user $id")
+
+suspend fun user(id: Long): String {
+    delay(10)
+    if (id < 0) throw NotFound(id)
+    return "user$id"
+}
+
+suspend fun orders(id: Long): Long {
+    delay(5)
+    return id * 3
+}
+
+// coroutineScope: the first failure cancels the other child and is rethrown
+suspend fun summary(id: Long): String = coroutineScope {
+    val name = async { user(id) }
+    val count = async { orders(id) }
+    "${name.await()} has ${count.await()} orders"
+}
+
+fun main() = runBlocking {
+    for (id in listOf(7L, -1L)) {
+        try {
+            println(summary(id))
+        } catch (e: NotFound) {
+            println("no such user ${e.id}")
+        }
+    }
+}
+```
+
+```rust [Rust]
+// tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+use std::time::Duration;
+use tokio::time::sleep;
+
+struct NotFound {
+    id: i64,
+}
+
+async fn user(id: i64) -> Result<String, NotFound> {
+    sleep(Duration::from_millis(10)).await;
+    if id < 0 {
+        return Err(NotFound { id });
+    }
+    Ok(format!("user{id}"))
+}
+
+async fn orders(id: i64) -> i64 {
+    sleep(Duration::from_millis(5)).await;
+    id * 3
+}
+
+// try_join! runs both at once; the first error drops (cancels) the other
+async fn summary(id: i64) -> Result<String, NotFound> {
+    let (name, count) = tokio::try_join!(user(id), async { Ok(orders(id).await) })?;
+    Ok(format!("{name} has {count} orders"))
+}
+
+#[tokio::main]
+async fn main() {
+    for id in [7, -1] {
+        match summary(id).await {
+            Ok(s) => println!("{s}"),
+            Err(e) => println!("no such user {}", e.id),
+        }
+    }
+}
+```
+
+:::
 
 Output:
 

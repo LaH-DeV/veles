@@ -1338,16 +1338,21 @@ attribute. The `skipIf` condition is a bool, and the annotation's a constant.
 
 ### template-literals
 
-**Template literals and `@template` functions.** `'plain' is not a template`,
+**Template literals and `template fun`.** `'plain' is not a template`,
 `a template literal has nothing between the name and the string`, `the second
-parameter of a @template is the values`.
+parameter of a template is the values`.
 
-`sql"select … ${id}"` calls a function marked `@template` with the text pieces
+`sql"select … ${id}"` invokes a `template fun` with the text pieces
 and the values (D129, [chapter 2](../02-values-and-strings.md)). The function must
-be `@template` and take `(parts: List<string>, values: List<V>)`; the name must
+use `template fun` and take exactly `(parts: List<string>, values: List<V>)`; the name must
 be written right against the string (a space is an error), and it is a
 function — or `module.function` — not a value. A value whose type does not fit
 `V` is the usual type error at its `${…}`.
+
+Ordinary calls and function-value references are refused (D227): use a tagged
+literal so runtime text cannot be supplied as trusted literal pieces.
+`@template` is the removed spelling; its diagnostic offers a fix that moves
+`template` onto the function declaration.
 
 ### regular-expressions
 

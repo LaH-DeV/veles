@@ -43,11 +43,20 @@ Caveats worth keeping in mind when reading them:
   asynchronous preemption), its time only says the loops ran. Both sides
   start one loop per worker, so `VELES_THREADS` and `GOMAXPROCS` must agree
   (both unset, or set alike) or the checksums differ. `veles run
-  bench/preempt -- all` prints every case F21 measured. `backedge` is four
+bench/preempt -- all` prints every case F21 measured. `backedge` is four
   tight loops: Go has neither a back-edge poll nor a vectorizer, so the
   ratio is not the poll's price; that one, against C, is in the 2026-10-27
   section.
 - One machine, one run; differences under ~10% are noise.
+- `random`: five million local `Rng.range` draws with changing small signed
+  bounds. Go uses the same splitmix64 seeding and xoshiro256\*\* transition,
+  not `math/rand`; matching checksums pin the sequence and range mapping.
+  This measures the local arithmetic path, not shared-generator locking.
+- `regex`: 50,000 capture-producing searches for `(a*)*b`, alternating
+  `aaaab` and `b`, against Go's `regexp`. Compilation is outside both timers.
+  The checksum sums whole-match lengths; capture correctness is covered by
+  the independent driver oracle, not the benchmark checksum. This compares
+  library implementations, not identical VM algorithms.
 
 ## 2026-09-25 23:50 — go1.23.2, windows/amd64 (HEAD 77c6e95, plus the working tree)
 
@@ -469,38 +478,38 @@ the runner's 10% noise threshold, not evidence of a speedup.
 
 ## 2026-10-23 00:13 — go1.23.2, windows/amd64 (HEAD c6080ab, plus the working tree)
 
-| benchmark | ops | Veles | Go | Veles / Go |
-|---|---:|---:|---:|---:|
-| adapters | 24000000 | 57.29ms | 30.68ms | 1.9× |
-| ast | 861841 | 39.77ms | 40.3ms | 1.0× |
-| channels | 200000 | 5.1ms | 10.77ms | 0.5× |
-| emit | 1000000 | 82.07ms | 57.55ms | 1.4× |
-| emptycoll | 2000000 | 19.69ms | 18.76ms | 1.0× |
-| gcpause | 20000000 | 448.31ms | 388.57ms | 1.2× |
-| gunzip | 16777232 | 90.92ms | 56.33ms | 1.6× |
-| gzip | 2097154 | 144.22ms | 131.16ms | 1.1× |
-| httphello | 16000 | 196.85ms | 690.2ms | 0.3× |
-| idle | 100000 | 89.71ms | 331.46ms | 0.3× |
-| intern | 1000000 | 43.34ms | 31.14ms | 1.4× |
-| json | 40000 | 42.76ms | 46.81ms | 0.9× |
-| lexer | 2100000 | 84.68ms | 95.74ms | 0.9× |
-| maps | 2000000 | 69.02ms | 76.92ms | 0.9× |
-| parallel | 64 | 11.1ms | 17.07ms | 0.7× |
-| pipes | 1600000 | 38.75ms | 78.61ms | 0.5× |
-| sha256 | 16 | 145.64ms | 9.9ms | 14.7× |
-| sort | 900000 | 60.35ms | 131.8ms | 0.5× |
-| spawn | 100000 | 50.06ms | 35.88ms | 1.4× |
-| strings | 1000000 | 74.09ms | 58.24ms | 1.3× |
-| suscall | 10000000 | 125.55ms | 6.95ms | 18.1× |
-| trees | 14592688 | 164.82ms | 335.1ms | 0.5× |
+| benchmark |      ops |    Veles |       Go | Veles / Go |
+| --------- | -------: | -------: | -------: | ---------: |
+| adapters  | 24000000 |  57.29ms |  30.68ms |       1.9× |
+| ast       |   861841 |  39.77ms |   40.3ms |       1.0× |
+| channels  |   200000 |    5.1ms |  10.77ms |       0.5× |
+| emit      |  1000000 |  82.07ms |  57.55ms |       1.4× |
+| emptycoll |  2000000 |  19.69ms |  18.76ms |       1.0× |
+| gcpause   | 20000000 | 448.31ms | 388.57ms |       1.2× |
+| gunzip    | 16777232 |  90.92ms |  56.33ms |       1.6× |
+| gzip      |  2097154 | 144.22ms | 131.16ms |       1.1× |
+| httphello |    16000 | 196.85ms |  690.2ms |       0.3× |
+| idle      |   100000 |  89.71ms | 331.46ms |       0.3× |
+| intern    |  1000000 |  43.34ms |  31.14ms |       1.4× |
+| json      |    40000 |  42.76ms |  46.81ms |       0.9× |
+| lexer     |  2100000 |  84.68ms |  95.74ms |       0.9× |
+| maps      |  2000000 |  69.02ms |  76.92ms |       0.9× |
+| parallel  |       64 |   11.1ms |  17.07ms |       0.7× |
+| pipes     |  1600000 |  38.75ms |  78.61ms |       0.5× |
+| sha256    |       16 | 145.64ms |    9.9ms |      14.7× |
+| sort      |   900000 |  60.35ms |  131.8ms |       0.5× |
+| spawn     |   100000 |  50.06ms |  35.88ms |       1.4× |
+| strings   |  1000000 |  74.09ms |  58.24ms |       1.3× |
+| suscall   | 10000000 | 125.55ms |   6.95ms |      18.1× |
+| trees     | 14592688 | 164.82ms |  335.1ms |       0.5× |
 
 | benchmark | Veles bytes/op | Go bytes/op | Veles / Go |
-|---|---:|---:|---:|
-| idle | 249 | 8710 | 0.03× |
+| --------- | -------------: | ----------: | ---------: |
+| idle      |            249 |        8710 |      0.03× |
 
 | benchmark | Veles longest pause | Go longest pause |
-|---|---:|---:|
-| gcpause | 1.36ms | 1.72ms |
+| --------- | ------------------: | ---------------: |
+| gcpause   |              1.36ms |           1.72ms |
 
 Run after codegen started emitting only reachable functions (`codegen/llvm/prune.go`).
 Function bodies are unchanged, so run time should be too: the Veles column is within noise
@@ -510,10 +519,10 @@ that row was a noisy run, not a regression.
 
 Build time, `veles build --timings` (`-O0 -g`, runtime objects cached), three runs each:
 
-| program | IR before | IR after | `define`s | clang before | clang after | build before | build after |
-| ------- | --------: | -------: | --------: | -----------: | ----------: | -----------: | ----------: |
-| hello world (`use io`, one `println`) | 1.3 MB | 28 KB | 540 → 4 | 443–453 ms | 226–258 ms | 513–530 ms | 295–325 ms |
-| `examples/httpd` | 9.3 MB | 4.0 MB | 2156 → 822 | 2.86–2.91 s | 1.40–1.42 s | 3.21–3.25 s | 1.75–1.78 s |
+| program                               | IR before | IR after |  `define`s | clang before | clang after | build before | build after |
+| ------------------------------------- | --------: | -------: | ---------: | -----------: | ----------: | -----------: | ----------: |
+| hello world (`use io`, one `println`) |    1.3 MB |    28 KB |    540 → 4 |   443–453 ms |  226–258 ms |   513–530 ms |  295–325 ms |
+| `examples/httpd`                      |    9.3 MB |   4.0 MB | 2156 → 822 |  2.86–2.91 s | 1.40–1.42 s |  3.21–3.25 s | 1.75–1.78 s |
 
 Wall time of `go test -count=1 ./docs ./examples`: 59 s before, 32 s after (docs 57 → 29 s,
 examples 45 → 25 s). In the full `go test ./...` on Windows, `driver` went from 586 s
@@ -521,10 +530,10 @@ examples 45 → 25 s). In the full `go test ./...` on Windows, `driver` went fro
 
 ## 2026-10-23 02:31 — go1.23.2, windows/amd64 (HEAD f1461d8, plus the working tree)
 
-| benchmark | ops | Veles | Go | Veles / Go |
-|---|---:|---:|---:|---:|
-| awaitall | 50000 | 44.77ms | 62.89ms | 0.7× |
-| awaitscope | 50000 | 41.66ms | 62.78ms | 0.7× |
+| benchmark  |   ops |   Veles |      Go | Veles / Go |
+| ---------- | ----: | ------: | ------: | ---------: |
+| awaitall   | 50000 | 44.77ms | 62.89ms |       0.7× |
+| awaitscope | 50000 | 41.66ms | 62.78ms |       0.7× |
 
 New (F19): `awaitall` joins two inline launches with `awaitAll`, `awaitscope` the
 same pairs in a `scope` with two handles. Four runs: 40.6–44.8 ms against
@@ -532,9 +541,9 @@ same pairs in a `scope` with two handles. Four runs: 40.6–44.8 ms against
 
 ## 2026-10-23 03:04 — go1.23.2, windows/amd64 (HEAD f1461d8, plus the working tree)
 
-| benchmark | ops | Veles | Go | Veles / Go |
-|---|---:|---:|---:|---:|
-| parse | 155 | 90.94ms | 54.91ms | 1.7× |
+| benchmark | ops |   Veles |      Go | Veles / Go |
+| --------- | --: | ------: | ------: | ---------: |
+| parse     | 155 | 90.94ms | 54.91ms |       1.7× |
 
 New (plan S7): `parse` is the self-hosted lexer and parser (`selfhost --bench-parse std`)
 against the Go front end over std's 155 files. It started at 164 ms (3.0×); three changes
@@ -552,33 +561,33 @@ The whole suite after `byteAt` inline and the allocator change (before the `Span
 82 → 67, strings 74 → 54, sort 60 → 39, gunzip 91 → 73, spawn 50 → 37; the rest within noise
 (`gcpause`'s longest pause read 2.17 ms once, 1.22–1.29 ms on three reruns).
 
-| benchmark | ops | Veles | Go | Veles / Go |
-|---|---:|---:|---:|---:|
-| adapters | 24000000 | 47.66ms | 31.34ms | 1.5× |
-| ast | 861841 | 36.25ms | 38.44ms | 0.9× |
-| awaitall | 50000 | 40.3ms | 61.09ms | 0.7× |
-| awaitscope | 50000 | 40.78ms | 61.22ms | 0.7× |
-| channels | 200000 | 5.13ms | 11.8ms | 0.4× |
-| emit | 1000000 | 66.87ms | 54.35ms | 1.2× |
-| emptycoll | 2000000 | 20.56ms | 16.68ms | 1.2× |
-| gcpause | 20000000 | 412.45ms | 378.69ms | 1.1× |
-| gunzip | 16777232 | 73.04ms | 57.84ms | 1.3× |
-| gzip | 2097154 | 129.29ms | 116.52ms | 1.1× |
-| httphello | 16000 | 191.65ms | 427.8ms | 0.4× |
-| idle | 100000 | 86.45ms | 339.93ms | 0.3× |
-| intern | 1000000 | 48.77ms | 36ms | 1.4× |
-| json | 40000 | 46.5ms | 53.76ms | 0.9× |
-| lexer | 2100000 | 52.72ms | 80.92ms | 0.7× |
-| maps | 2000000 | 64.18ms | 76.31ms | 0.8× |
-| parallel | 64 | 4.46ms | 12.83ms | 0.3× |
-| parse | 155 | 134.93ms | 73.8ms | 1.8× |
-| pipes | 1600000 | 23.88ms | 71.3ms | 0.3× |
-| sha256 | 16 | 57.77ms | 7.4ms | 7.8× |
-| sort | 900000 | 38.82ms | 50.45ms | 0.8× |
-| spawn | 100000 | 37.04ms | 33.41ms | 1.1× |
-| strings | 1000000 | 53.57ms | 49.44ms | 1.1× |
-| suscall | 10000000 | 118.57ms | 5.87ms | 20.2× |
-| trees | 14592688 | 171.71ms | 305.08ms | 0.6× |
+| benchmark  |      ops |    Veles |       Go | Veles / Go |
+| ---------- | -------: | -------: | -------: | ---------: |
+| adapters   | 24000000 |  47.66ms |  31.34ms |       1.5× |
+| ast        |   861841 |  36.25ms |  38.44ms |       0.9× |
+| awaitall   |    50000 |   40.3ms |  61.09ms |       0.7× |
+| awaitscope |    50000 |  40.78ms |  61.22ms |       0.7× |
+| channels   |   200000 |   5.13ms |   11.8ms |       0.4× |
+| emit       |  1000000 |  66.87ms |  54.35ms |       1.2× |
+| emptycoll  |  2000000 |  20.56ms |  16.68ms |       1.2× |
+| gcpause    | 20000000 | 412.45ms | 378.69ms |       1.1× |
+| gunzip     | 16777232 |  73.04ms |  57.84ms |       1.3× |
+| gzip       |  2097154 | 129.29ms | 116.52ms |       1.1× |
+| httphello  |    16000 | 191.65ms |  427.8ms |       0.4× |
+| idle       |   100000 |  86.45ms | 339.93ms |       0.3× |
+| intern     |  1000000 |  48.77ms |     36ms |       1.4× |
+| json       |    40000 |   46.5ms |  53.76ms |       0.9× |
+| lexer      |  2100000 |  52.72ms |  80.92ms |       0.7× |
+| maps       |  2000000 |  64.18ms |  76.31ms |       0.8× |
+| parallel   |       64 |   4.46ms |  12.83ms |       0.3× |
+| parse      |      155 | 134.93ms |   73.8ms |       1.8× |
+| pipes      |  1600000 |  23.88ms |   71.3ms |       0.3× |
+| sha256     |       16 |  57.77ms |    7.4ms |       7.8× |
+| sort       |   900000 |  38.82ms |  50.45ms |       0.8× |
+| spawn      |   100000 |  37.04ms |  33.41ms |       1.1× |
+| strings    |  1000000 |  53.57ms |  49.44ms |       1.1× |
+| suscall    | 10000000 | 118.57ms |   5.87ms |      20.2× |
+| trees      | 14592688 | 171.71ms | 305.08ms |       0.6× |
 
 ## 2026-10-23 — go1.23.2, windows/amd64 (HEAD de836bb, plus the working tree): S16 / D198
 
@@ -588,132 +597,132 @@ noisy (`parse` 112 ms, `trees` 472 ms); `ast` and `json`, A/B against HEAD three
 alternately, within noise (ast 36–42 vs 37–41 ms, json 38–58 vs 40–56 ms). `gcpause`'s longest
 pause 1.32–1.45 ms over four runs, as at 4 MiB in the same session.
 
-| benchmark | ops | Veles | Go | Veles / Go |
-|---|---:|---:|---:|---:|
-| adapters | 24000000 | 52.15ms | 35.36ms | 1.5× |
-| ast | 861841 | 44.43ms | 42.51ms | 1.0× |
-| awaitall | 50000 | 38.82ms | 60.56ms | 0.6× |
-| awaitscope | 50000 | 42.65ms | 62.32ms | 0.7× |
-| channels | 200000 | 6.29ms | 10.69ms | 0.6× |
-| emit | 1000000 | 70.16ms | 52.9ms | 1.3× |
-| emptycoll | 2000000 | 26.68ms | 19.39ms | 1.4× |
-| gcpause | 20000000 | 457.86ms | 613.05ms | 0.7× |
-| gunzip | 16777232 | 76.08ms | 59.1ms | 1.3× |
-| gzip | 2097154 | 143.62ms | 138.6ms | 1.0× |
-| httphello | 16000 | 184.16ms | 494.28ms | 0.4× |
-| idle | 100000 | 94.73ms | 399.27ms | 0.2× |
-| intern | 1000000 | 37.74ms | 39.9ms | 0.9× |
-| json | 40000 | 59.61ms | 59.72ms | 1.0× |
-| lexer | 2100000 | 58.23ms | 128.01ms | 0.5× |
-| maps | 2000000 | 61.58ms | 78.44ms | 0.8× |
-| parallel | 64 | 5.07ms | 12.17ms | 0.4× |
-| parse | 155 | 70.88ms | 111.7ms | 0.6× |
-| pipes | 1600000 | 26.71ms | 69.01ms | 0.4× |
-| sha256 | 16 | 63.32ms | 9.28ms | 6.8× |
-| sort | 900000 | 38.8ms | 54.56ms | 0.7× |
-| spawn | 100000 | 36.56ms | 30.99ms | 1.2× |
-| strings | 1000000 | 55.68ms | 51.96ms | 1.1× |
-| suscall | 10000000 | 126.02ms | 5.97ms | 21.1× |
-| trees | 14592688 | 166.03ms | 472.46ms | 0.4× |
-| benchmark | Veles bytes/op | Go bytes/op | Veles / Go |
-|---|---:|---:|---:|
-| idle | 249 | 8709 | 0.03× |
-| benchmark | Veles longest pause | Go longest pause |
-|---|---:|---:|
-| gcpause | 1.37ms | 1.53ms |
+| benchmark  |                 ops |            Veles |         Go | Veles / Go |
+| ---------- | ------------------: | ---------------: | ---------: | ---------: |
+| adapters   |            24000000 |          52.15ms |    35.36ms |       1.5× |
+| ast        |              861841 |          44.43ms |    42.51ms |       1.0× |
+| awaitall   |               50000 |          38.82ms |    60.56ms |       0.6× |
+| awaitscope |               50000 |          42.65ms |    62.32ms |       0.7× |
+| channels   |              200000 |           6.29ms |    10.69ms |       0.6× |
+| emit       |             1000000 |          70.16ms |     52.9ms |       1.3× |
+| emptycoll  |             2000000 |          26.68ms |    19.39ms |       1.4× |
+| gcpause    |            20000000 |         457.86ms |   613.05ms |       0.7× |
+| gunzip     |            16777232 |          76.08ms |     59.1ms |       1.3× |
+| gzip       |             2097154 |         143.62ms |    138.6ms |       1.0× |
+| httphello  |               16000 |         184.16ms |   494.28ms |       0.4× |
+| idle       |              100000 |          94.73ms |   399.27ms |       0.2× |
+| intern     |             1000000 |          37.74ms |     39.9ms |       0.9× |
+| json       |               40000 |          59.61ms |    59.72ms |       1.0× |
+| lexer      |             2100000 |          58.23ms |   128.01ms |       0.5× |
+| maps       |             2000000 |          61.58ms |    78.44ms |       0.8× |
+| parallel   |                  64 |           5.07ms |    12.17ms |       0.4× |
+| parse      |                 155 |          70.88ms |    111.7ms |       0.6× |
+| pipes      |             1600000 |          26.71ms |    69.01ms |       0.4× |
+| sha256     |                  16 |          63.32ms |     9.28ms |       6.8× |
+| sort       |              900000 |           38.8ms |    54.56ms |       0.7× |
+| spawn      |              100000 |          36.56ms |    30.99ms |       1.2× |
+| strings    |             1000000 |          55.68ms |    51.96ms |       1.1× |
+| suscall    |            10000000 |         126.02ms |     5.97ms |      21.1× |
+| trees      |            14592688 |         166.03ms |   472.46ms |       0.4× |
+| benchmark  |      Veles bytes/op |      Go bytes/op | Veles / Go |
+| ---        |                ---: |             ---: |       ---: |
+| idle       |                 249 |             8709 |      0.03× |
+| benchmark  | Veles longest pause | Go longest pause |
+| ---        |                ---: |             ---: |
+| gcpause    |              1.37ms |           1.53ms |
 
 ## 2026-10-24 02:26 — go1.23.2, windows/amd64 (HEAD de836bb, plus the working tree)
 
-| benchmark | ops | Veles | Go | Veles / Go |
-|---|---:|---:|---:|---:|
-| parse | 155 | 52.01ms | 62.46ms | 0.8× |
+| benchmark | ops |   Veles |      Go | Veles / Go |
+| --------- | --: | ------: | ------: | ---------: |
+| parse     | 155 | 52.01ms | 62.46ms |       0.8× |
 
 ## 2026-10-26 20:30 — go1.27.1, darwin/arm64 (HEAD d7eecc7, plus the working tree)
 
-| benchmark | ops | Veles | Go | Veles / Go |
-|---|---:|---:|---:|---:|
-| adapters | 24000000 | 53.94ms | 25.5ms | 2.1× |
-| ast | 861841 | 52.08ms | 24.62ms | 2.1× |
-| awaitall | 50000 | 94.23ms | 27.91ms | 3.4× |
-| awaitscope | 50000 | 93.13ms | 26.59ms | 3.5× |
-| bigargs | 40000000 | 46.55ms | 96.96ms | 0.5× |
-| channels | 200000 | 13.93ms | 7.77ms | 1.8× |
-| emit | 1000000 | 63.84ms | 37.01ms | 1.7× |
-| emptycoll | 2000000 | 22.23ms | 19.32ms | 1.2× |
-| gcpause | 20000000 | 364.24ms | 129.24ms | 2.8× |
-| gunzip | 16777232 | 44.41ms | 51.13ms | 0.9× |
-| gzip | 2097154 | 113.52ms | 15.98ms | 7.1× |
-| httphello | 16000 | 389.44ms | 362.57ms | 1.1× |
-| idle | 100000 | 97.15ms | 113.11ms | 0.9× |
-| intern | 1000000 | 30.46ms | 14.99ms | 2.0× |
-| json | 40000 | 52.46ms | 25.99ms | 2.0× |
-| lexer | 2100000 | 37.44ms | 74.14ms | 0.5× |
-| maps | 2000000 | 53.96ms | 51.18ms | 1.1× |
-| parallel | 64 | 6.67ms | 32.21ms | 0.2× |
-| parse | 163 | 37.44ms | 62.92ms | 0.6× |
-| pipes | 1600000 | 51.37ms | 65.56ms | 0.8× |
-| sha256 | 16 | 60.82ms | 6.27ms | 9.7× |
-| sort | 900000 | 47.01ms | 49.82ms | 0.9× |
-| spawn | 100000 | 64.49ms | 20.04ms | 3.2× |
-| strings | 1000000 | 59.71ms | 47.69ms | 1.3× |
-| suscall | 10000000 | 136.41ms | 4.71ms | 29.0× |
-| trees | 14592688 | 151.61ms | 150.5ms | 1.0× |
+| benchmark  |      ops |    Veles |       Go | Veles / Go |
+| ---------- | -------: | -------: | -------: | ---------: |
+| adapters   | 24000000 |  53.94ms |   25.5ms |       2.1× |
+| ast        |   861841 |  52.08ms |  24.62ms |       2.1× |
+| awaitall   |    50000 |  94.23ms |  27.91ms |       3.4× |
+| awaitscope |    50000 |  93.13ms |  26.59ms |       3.5× |
+| bigargs    | 40000000 |  46.55ms |  96.96ms |       0.5× |
+| channels   |   200000 |  13.93ms |   7.77ms |       1.8× |
+| emit       |  1000000 |  63.84ms |  37.01ms |       1.7× |
+| emptycoll  |  2000000 |  22.23ms |  19.32ms |       1.2× |
+| gcpause    | 20000000 | 364.24ms | 129.24ms |       2.8× |
+| gunzip     | 16777232 |  44.41ms |  51.13ms |       0.9× |
+| gzip       |  2097154 | 113.52ms |  15.98ms |       7.1× |
+| httphello  |    16000 | 389.44ms | 362.57ms |       1.1× |
+| idle       |   100000 |  97.15ms | 113.11ms |       0.9× |
+| intern     |  1000000 |  30.46ms |  14.99ms |       2.0× |
+| json       |    40000 |  52.46ms |  25.99ms |       2.0× |
+| lexer      |  2100000 |  37.44ms |  74.14ms |       0.5× |
+| maps       |  2000000 |  53.96ms |  51.18ms |       1.1× |
+| parallel   |       64 |   6.67ms |  32.21ms |       0.2× |
+| parse      |      163 |  37.44ms |  62.92ms |       0.6× |
+| pipes      |  1600000 |  51.37ms |  65.56ms |       0.8× |
+| sha256     |       16 |  60.82ms |   6.27ms |       9.7× |
+| sort       |   900000 |  47.01ms |  49.82ms |       0.9× |
+| spawn      |   100000 |  64.49ms |  20.04ms |       3.2× |
+| strings    |  1000000 |  59.71ms |  47.69ms |       1.3× |
+| suscall    | 10000000 | 136.41ms |   4.71ms |      29.0× |
+| trees      | 14592688 | 151.61ms |  150.5ms |       1.0× |
 
 | benchmark | Veles bytes/op | Go bytes/op | Veles / Go |
-|---|---:|---:|---:|
-| idle | 248 | 2673 | 0.09× |
+| --------- | -------------: | ----------: | ---------: |
+| idle      |            248 |        2673 |      0.09× |
 
 | benchmark | Veles longest pause | Go longest pause |
-|---|---:|---:|
-| gcpause | 14.79ms | 1.42ms |
+| --------- | ------------------: | ---------------: |
+| gcpause   |             14.79ms |           1.42ms |
 
 ## 2026-10-27 01:22 — go1.27.1, windows/amd64 (HEAD d06a846, plus the working tree)
 
-| benchmark | ops | Veles | Go | Veles / Go |
-|---|---:|---:|---:|---:|
-| adapters | 24000000 | 48.63ms | 30.85ms | 1.6× |
-| ast | 861841 | 40.11ms | 32.69ms | 1.2× |
-| awaitall | 50000 | 40.37ms | 64.34ms | 0.6× |
-| awaitscope | 50000 | 41.34ms | 64.52ms | 0.6× |
-| bigargs | 40000000 | 35.69ms | 104.07ms | 0.3× |
-| channels | 200000 | 10.11ms | 17.07ms | 0.6× |
-| emit | 1000000 | 74.08ms | 69.24ms | 1.1× |
-| emptycoll | 2000000 | 22.32ms | 19.49ms | 1.1× |
-| gcpause | 20000000 | 505.88ms | 226.01ms | 2.2× |
-| gunzip | 16777232 | 84.97ms | 62.57ms | 1.4× |
-| gzip | 2097154 | 138.92ms | 20.17ms | 6.9× |
-| httphello | 16000 | 227.72ms | 441.99ms | 0.5× |
-| idle | 100000 | 106.95ms | 413.36ms | 0.3× |
-| intern | 1000000 | 32.05ms | 16.83ms | 1.9× |
-| json | 40000 | 58.22ms | 42.78ms | 1.4× |
-| lexer | 2100000 | 55.69ms | 69.89ms | 0.8× |
-| maps | 2000000 | 72.33ms | 58.24ms | 1.2× |
-| parallel | 64 | 7.25ms | 26.17ms | 0.3× |
-| parse | 163 | 58.34ms | 66.07ms | 0.9× |
-| pipes | 1600000 | 24.43ms | 84.77ms | 0.3× |
-| sha256 | 16 | 70.34ms | 8.18ms | 8.6× |
-| sort | 900000 | 35.34ms | 53.31ms | 0.7× |
-| spawn | 100000 | 38.36ms | 25.11ms | 1.5× |
-| strings | 1000000 | 60.6ms | 48.19ms | 1.3× |
-| suscall | 10000000 | 129.52ms | 6.92ms | 18.7× |
-| trees | 14592688 | 165.9ms | 211.64ms | 0.8× |
+| benchmark  |      ops |    Veles |       Go | Veles / Go |
+| ---------- | -------: | -------: | -------: | ---------: |
+| adapters   | 24000000 |  48.63ms |  30.85ms |       1.6× |
+| ast        |   861841 |  40.11ms |  32.69ms |       1.2× |
+| awaitall   |    50000 |  40.37ms |  64.34ms |       0.6× |
+| awaitscope |    50000 |  41.34ms |  64.52ms |       0.6× |
+| bigargs    | 40000000 |  35.69ms | 104.07ms |       0.3× |
+| channels   |   200000 |  10.11ms |  17.07ms |       0.6× |
+| emit       |  1000000 |  74.08ms |  69.24ms |       1.1× |
+| emptycoll  |  2000000 |  22.32ms |  19.49ms |       1.1× |
+| gcpause    | 20000000 | 505.88ms | 226.01ms |       2.2× |
+| gunzip     | 16777232 |  84.97ms |  62.57ms |       1.4× |
+| gzip       |  2097154 | 138.92ms |  20.17ms |       6.9× |
+| httphello  |    16000 | 227.72ms | 441.99ms |       0.5× |
+| idle       |   100000 | 106.95ms | 413.36ms |       0.3× |
+| intern     |  1000000 |  32.05ms |  16.83ms |       1.9× |
+| json       |    40000 |  58.22ms |  42.78ms |       1.4× |
+| lexer      |  2100000 |  55.69ms |  69.89ms |       0.8× |
+| maps       |  2000000 |  72.33ms |  58.24ms |       1.2× |
+| parallel   |       64 |   7.25ms |  26.17ms |       0.3× |
+| parse      |      163 |  58.34ms |  66.07ms |       0.9× |
+| pipes      |  1600000 |  24.43ms |  84.77ms |       0.3× |
+| sha256     |       16 |  70.34ms |   8.18ms |       8.6× |
+| sort       |   900000 |  35.34ms |  53.31ms |       0.7× |
+| spawn      |   100000 |  38.36ms |  25.11ms |       1.5× |
+| strings    |  1000000 |   60.6ms |  48.19ms |       1.3× |
+| suscall    | 10000000 | 129.52ms |   6.92ms |      18.7× |
+| trees      | 14592688 |  165.9ms | 211.64ms |       0.8× |
 
 | benchmark | Veles bytes/op | Go bytes/op | Veles / Go |
-|---|---:|---:|---:|
-| idle | 249 | 8783 | 0.03× |
+| --------- | -------------: | ----------: | ---------: |
+| idle      |            249 |        8783 |      0.03× |
 
 | benchmark | Veles longest pause | Go longest pause |
-|---|---:|---:|
-| gcpause | 1.81ms | 1.7ms |
+| --------- | ------------------: | ---------------: |
+| gcpause   |              1.81ms |            1.7ms |
 
 ## 2026-10-27 — D197 `cede` (plan F20) and D145's loop yield (plan F21), windows/amd64 and linux/amd64 (WSL), 32 logical CPUs (HEAD bc96824, plus the working tree)
 
 **`cede` against `yieldNow()`.** One task per worker ceding 2M times
 (`yieldNow()` at HEAD, `cede` after), ns per yield per task, three runs:
 
-| workers | before (`yieldNow()`) | after (`cede`) |
-| ------: | --------------------: | -------------: |
-|       1 |            92, 92, 92 |     93, 89, 88 |
+| workers | before (`yieldNow()`) |   after (`cede`) |
+| ------: | --------------------: | ---------------: |
+|       1 |            92, 92, 92 |       93, 89, 88 |
 |       8 |      5379, 5209, 5114 | 5227, 5489, 5187 |
 
 The same path in the runtime (a zero sleep); the call of the prelude
@@ -734,37 +743,37 @@ flight at the end included).
 
 Windows, after the timer-resolution fix below:
 
-| workers | case       |  elapsed | ticks | worst lateness | mean lateness |
-| ------: | ---------- | -------: | ----: | -------------: | ------------: |
-|       1 | idle       |   301 ms |   197 |         0.8 ms |        0.5 ms |
-|       1 | suspending |   367 ms |    23 |        16.5 ms |       14.9 ms |
-|       1 | plain      |   370 ms |     1 |   **368.8 ms** |      368.8 ms |
-|       1 | cede       |   134 ms |   133 |         0.6 ms |        0.0 ms |
-|       1 | cede4096   |   396 ms |   391 |         0.7 ms |        0.0 ms |
-|       1 | thread     |   382 ms |    24 |        16.1 ms |       14.9 ms |
-|       8 | idle       |   301 ms |   193 |         0.9 ms |        0.6 ms |
-|       8 | suspending |   449 ms |    46 |        16.5 ms |        8.8 ms |
-|       8 | plain      |   432 ms |    36 |   **378.0 ms** |       11.0 ms |
-|       8 | cede       |  5720 ms |  5703 |         0.4 ms |        0.0 ms |
-|       8 | cede4096   |   551 ms |   548 |         0.3 ms |        0.0 ms |
-|       8 | thread     |   497 ms |    28 |        29.2 ms |       16.7 ms |
+| workers | case       | elapsed | ticks | worst lateness | mean lateness |
+| ------: | ---------- | ------: | ----: | -------------: | ------------: |
+|       1 | idle       |  301 ms |   197 |         0.8 ms |        0.5 ms |
+|       1 | suspending |  367 ms |    23 |        16.5 ms |       14.9 ms |
+|       1 | plain      |  370 ms |     1 |   **368.8 ms** |      368.8 ms |
+|       1 | cede       |  134 ms |   133 |         0.6 ms |        0.0 ms |
+|       1 | cede4096   |  396 ms |   391 |         0.7 ms |        0.0 ms |
+|       1 | thread     |  382 ms |    24 |        16.1 ms |       14.9 ms |
+|       8 | idle       |  301 ms |   193 |         0.9 ms |        0.6 ms |
+|       8 | suspending |  449 ms |    46 |        16.5 ms |        8.8 ms |
+|       8 | plain      |  432 ms |    36 |   **378.0 ms** |       11.0 ms |
+|       8 | cede       | 5720 ms |  5703 |         0.4 ms |        0.0 ms |
+|       8 | cede4096   |  551 ms |   548 |         0.3 ms |        0.0 ms |
+|       8 | thread     |  497 ms |    28 |        29.2 ms |       16.7 ms |
 
 Linux (WSL):
 
-| workers | case       |  elapsed | ticks | worst lateness | mean lateness |
-| ------: | ---------- | -------: | ----: | -------------: | ------------: |
-|       1 | idle       |   301 ms |   269 |         0.2 ms |        0.1 ms |
-|       1 | suspending |   346 ms |    23 |        14.5 ms |       14.0 ms |
-|       1 | plain      |   316 ms |     1 |   **314.5 ms** |      314.5 ms |
-|       1 | cede       |   105 ms |   105 |         0.1 ms |        0.0 ms |
-|       1 | cede4096   |   347 ms |   344 |         0.1 ms |        0.0 ms |
-|       1 | thread     |   345 ms |    23 |        14.5 ms |       14.0 ms |
-|       8 | idle       |   300 ms |   262 |         0.2 ms |        0.1 ms |
-|       8 | suspending |   414 ms |    36 |        14.5 ms |       10.5 ms |
-|       8 | plain      |   385 ms |    15 |   **368.9 ms** |       24.7 ms |
-|       8 | cede       |  4395 ms |  4382 |         1.8 ms |        0.0 ms |
-|       8 | cede4096   |   437 ms |   435 |         0.1 ms |        0.0 ms |
-|       8 | thread     |   321 ms |    22 |        14.3 ms |       13.5 ms |
+| workers | case       | elapsed | ticks | worst lateness | mean lateness |
+| ------: | ---------- | ------: | ----: | -------------: | ------------: |
+|       1 | idle       |  301 ms |   269 |         0.2 ms |        0.1 ms |
+|       1 | suspending |  346 ms |    23 |        14.5 ms |       14.0 ms |
+|       1 | plain      |  316 ms |     1 |   **314.5 ms** |      314.5 ms |
+|       1 | cede       |  105 ms |   105 |         0.1 ms |        0.0 ms |
+|       1 | cede4096   |  347 ms |   344 |         0.1 ms |        0.0 ms |
+|       1 | thread     |  345 ms |    23 |        14.5 ms |       14.0 ms |
+|       8 | idle       |  300 ms |   262 |         0.2 ms |        0.1 ms |
+|       8 | suspending |  414 ms |    36 |        14.5 ms |       10.5 ms |
+|       8 | plain      |  385 ms |    15 |   **368.9 ms** |       24.7 ms |
+|       8 | cede       | 4395 ms |  4382 |         1.8 ms |        0.0 ms |
+|       8 | cede4096   |  437 ms |   435 |         0.1 ms |        0.0 ms |
+|       8 | thread     |  321 ms |    22 |        14.3 ms |       13.5 ms |
 
 `cede` runs a hundredth of the others' work (each cede is a trip through
 the queue): ~110 ns a cede on one worker, ~5 µs at eight (contention, above).
@@ -788,10 +797,10 @@ throttling (`veles_timer_period`), and the monitor's waits stay at ~5.5 ms.
 **F21 (4): the back-edge poll in tight loops** (ps per round, best of
 five, 500M rounds; C through the same clang at `-O2`):
 
-| loop                          | Veles plain | Veles suspending | C   | C + the same poll every round | C + the poll every 64 rounds |
-| ----------------------------- | ----------: | ---------------: | --: | ----------------------------: | ---------------------------: |
-| chain `x = x * a + i`         |         865 |             1723 | 100 |                           884 |                          260 |
-| sum `t += i * i`              |         358 |              698 |   0 |                           366 |                          129 |
+| loop                  | Veles plain | Veles suspending |   C | C + the same poll every round | C + the poll every 64 rounds |
+| --------------------- | ----------: | ---------------: | --: | ----------------------------: | ---------------------------: |
+| chain `x = x * a + i` |         865 |             1723 | 100 |                           884 |                          260 |
+| sum `t += i * i`      |         358 |              698 |   0 |                           366 |                          129 |
 
 C with the poll matches Veles: the poll is the whole difference. Its
 volatile load in every round stops clang from unrolling and reassociating
@@ -824,7 +833,7 @@ holds no suspension point.
 The whole suite, run once each at HEAD and with D218 (`go run ./bench`),
 Veles column:
 
-| benchmark | before   | after    |
+| benchmark |   before |    after |
 | --------- | -------: | -------: |
 | backedge  |   1.176s | 124.98ms |
 | lexer     |  59.76ms |  49.41ms |
@@ -840,3 +849,204 @@ six times each, alternating the two builds, and overlap: `emptycoll`
 36.8–40.0, `trees` 144.7–170.2 / 146.7–163.4, `gcpause` 423.8–450.3 /
 435.8–458.9. `preempt`'s loops call a function and are not chunked; its
 worst lateness is unchanged (15.8 ms before, 16.0 after; Go 489 / 415 ms).
+
+## 2026-10-28 22:46 — go1.27.2, darwin/arm64 (HEAD 83e8d0a, plus the working tree)
+
+| benchmark |    ops |   Veles |      Go | Veles / Go |
+| --------- | -----: | ------: | ------: | ---------: |
+| tofixed   | 200000 | 30.66ms | 13.62ms |       2.3× |
+
+## 2026-10-28 23:01 — go1.27.2, darwin/arm64 (HEAD 83e8d0a, plus the working tree)
+
+| benchmark |   ops |   Veles |      Go | Veles / Go |
+| --------- | ----: | ------: | ------: | ---------: |
+| json      | 40000 | 43.88ms | 26.03ms |       1.7× |
+
+## 2026-10-28 23:08 — go1.27.2, darwin/arm64 (HEAD 83e8d0a, plus the working tree)
+
+| benchmark |   ops |   Veles |      Go | Veles / Go |
+| --------- | ----: | ------: | ------: | ---------: |
+| json      | 40000 | 44.66ms | 25.53ms |       1.7× |
+
+## 2026-10-29 02:20 — go1.27.2, darwin/arm64 (HEAD de64fe5, plus the working tree)
+
+| benchmark |   ops |   Veles |      Go | Veles / Go |
+| --------- | ----: | ------: | ------: | ---------: |
+| fslist    | 50000 | 36.21ms | 45.41ms |       0.8× |
+
+## 2026-10-29 07:26 — go1.27.2, darwin/arm64 (HEAD de64fe5, plus the working tree)
+
+| benchmark |   ops |    Veles |       Go | Veles / Go |
+| --------- | ----: | -------: | -------: | ---------: |
+| httphello | 16000 | 394.13ms | 362.19ms |       1.1× |
+
+## 2026-10-29 07:33 — go1.27.2, darwin/arm64 (HEAD de64fe5, plus the working tree)
+
+| benchmark |      ops |  Veles |      Go | Veles / Go |
+| --------- | -------: | -----: | ------: | ---------: |
+| gunzip    | 16777232 | 43.8ms | 49.38ms |       0.9× |
+
+## 2026-10-29 22:19 — go1.27.2, darwin/arm64 (HEAD bf5c969, plus the working tree)
+
+| benchmark |     ops |   Veles |      Go | Veles / Go |
+| --------- | ------: | ------: | ------: | ---------: |
+| random    | 5000000 | 20.72ms | 16.45ms |       1.3× |
+
+F38 range-overflow fix, three runs on the same machine with default thread
+settings (the workload is single-task):
+
+| Version |   Veles Spread |      Go Spread |
+| ------- | -------------: | -------------: |
+| Before  | 18.33-22.47 ms | 16.10-17.38 ms |
+| After   | 19.17-20.72 ms | 16.07-16.45 ms |
+
+Checksums matched in all six runs. The spans overlap; no performance change
+is claimed. Unsigned wrapping span/offset arithmetic fixes valid signed
+intervals wider than `i64::MAX` without changing ordinary-range output.
+
+## 2026-10-29 22:49 — go1.27.2, darwin/arm64 (HEAD 9b54908, plus the working tree)
+
+| benchmark |   ops |    Veles |       Go | Veles / Go |
+| --------- | ----: | -------: | -------: | ---------: |
+| httphello | 16000 | 412.05ms | 393.99ms |       1.0× |
+
+F39 OpenSSL initialization publication fix: HTTP sanity baseline was
+413.71 ms Veles / 389.05 ms Go, versus 412.05 / 393.99 ms afterward.
+This cleartext workload does not measure TLS initialization cost; the small
+difference is noise, not a claimed speedup. TLS correctness is checked by
+native certificate integration and cold parallel client tests under GC/thread
+stress; the POSIX loader now publishes through `pthread_once`.
+
+## 2026-10-29 23:19 — go1.27.2, darwin/arm64 (HEAD ebe6f7a, plus the working tree)
+
+| benchmark |   ops |    Veles |      Go | Veles / Go |
+| --------- | ----: | -------: | ------: | ---------: |
+| httphello | 16000 | 411.42ms | 392.7ms |       1.0× |
+
+F10 HTTP client branch-only cleanup: baseline was 417.16 ms Veles / 389.43 ms
+Go, versus 411.42 / 392.70 ms afterward, with matching checksums. This is an
+end-to-end HTTP measurement, not a redirect microbenchmark; the difference is
+within noise and no speedup is claimed. All 186 HTTP cases pass in both build
+profiles, including redirect vectors and duplicate-header regressions.
+
+## 2026-10-30 00:01 — go1.27.2, darwin/arm64 (HEAD 5f38897, plus the working tree)
+
+| benchmark |   ops |   Veles |     Go | Veles / Go |
+| --------- | ----: | ------: | -----: | ---------: |
+| regex     | 50000 | 19.72ms | 5.21ms |       3.8× |
+
+F40 nullable-repeat capture fix, three runs per version, default thread
+settings (single-task matching):
+
+| Version |   Veles Spread |    Go Spread |
+| ------- | -------------: | -----------: |
+| Before  | 16.03-19.88 ms | 4.58-5.12 ms |
+| After   | 15.91-20.56 ms | 5.21-6.29 ms |
+
+All six checksums match. The spreads overlap, so no performance change is
+claimed. Veles remains slower than Go on this allocation-heavy workload;
+checklist section 11 tracks that gap separately from the correctness fix.
+
+## 2026-10-30 00:16 — go1.27.2, darwin/arm64 (HEAD 30af06f, plus the working tree)
+
+| benchmark |   ops |  Veles |     Go | Veles / Go |
+| --------- | ----: | -----: | -----: | ---------: |
+| regex     | 50000 | 14.1ms | 4.61ms |       3.1× |
+
+F41 per-search stack reservation, macOS arm64, default thread settings:
+native sampling of a 20-million-search run showed list growth, allocation
+and zeroing as substantial costs. The bounded backtracker now reserves at
+most 32 initial entries per stack, only after finding a viable start; stacks
+remain local to a search machine and grow beyond that size normally.
+
+The benchmark executable's optional first argument sets the operation count
+for sustained runs; the paired runner still defaults to 50,000 searches.
+Unchanged and candidate binaries used identical inputs and checksums:
+
+| Workload                        |         Before |         After |
+| ------------------------------- | -------------: | ------------: |
+| 50,000 searches, three runs     | 14.18-20.22 ms | 8.62-14.50 ms |
+| 10,000,000 searches, three runs |  2.020-2.044 s | 1.742-1.767 s |
+
+The short-run spreads overlap; the sustained workload takes about 13-15%
+less time. Initial unchanged/candidate comparisons were interleaved; the
+final candidate defers reservation past prefix-skip failures. Every sustained
+run printed checksum `30000000`. The short Go reference measured 4.11-5.04 ms
+before and 3.34-4.73 ms after; the remaining library gap is still tracked.
+
+## 2026-10-30 00:37 — go1.27.2, darwin/arm64 (HEAD 7015be5, plus the working tree)
+
+| benchmark | ops |    Veles |       Go | Veles / Go |
+| --------- | --: | -------: | -------: | ---------: |
+| osrun     |  20 | 206.99ms | 130.11ms |       1.6× |
+
+F42 subprocess text validation, three runs on macOS arm64 with default thread
+settings. `osrun` starts itself 20 times and captures 3,112,980 bytes of valid
+Unicode stdout and ASCII stderr. Both languages include process startup and
+capture; they use their own runtimes/I/O implementations, so this is not a
+UTF-8-validator microbenchmark. Checksums match.
+
+| Version |     Veles Spread |        Go Spread |
+| ------- | ---------------: | ---------------: |
+| Before  | 208.65-217.74 ms | 128.98-133.02 ms |
+| After   | 206.46-222.06 ms | 129.40-130.11 ms |
+
+The spreads overlap; no performance change is claimed. Captured bytes are now
+validated before Veles strings are constructed, with shared finalization for
+Windows and POSIX. Invalid-output behavior is pinned by separate subprocess
+tests, not the benchmark checksum.
+
+## 2026-10-30 01:00 — go1.27.2, darwin/arm64 (HEAD bcaa5c7, plus the working tree)
+
+| benchmark    |  ops |   Veles |     Go | Veles / Go |
+| ------------ | ---: | ------: | -----: | ---------: |
+| regexcompile | 3000 | 10.65ms | 2.94ms |       3.6× |
+
+F44 POSIX-class compilation check: 3,000 compilations alternate a positive
+class, a negated digit class and a case-insensitive negated lower class.
+Veles measured 10.81 ms before and 10.65 ms after; Go measured 3.70 and
+2.94 ms. These are single runs, not evidence of a speed change. The checksum
+covers source length/group count, not matching semantics: before the fix,
+negated classes were parsed incorrectly. Matching correctness is checked by
+the independent Go oracle and module regressions. Compilation is timed here,
+unlike `bench/regex`, which measures searches on an already compiled pattern.
+
+## 2026-10-30 09:19 — go1.27.2, darwin/arm64 (HEAD 4cb4b0c, plus the working tree)
+
+| benchmark  |    ops |   Veles |     Go | Veles / Go |
+| ---------- | -----: | ------: | -----: | ---------: |
+| pathwithin | 200000 | 78.22ms | 7.88ms |       9.9× |
+
+F45 UNC-root containment correction: the ordinary POSIX-path sanity workload
+measured 80.23 ms Veles / 7.95 ms Go before, versus 78.22 / 7.88 ms afterward.
+These are single runs; no speed change is claimed. Both sides clean a fixed
+root and alternating child/sibling paths for 200,000 checks; checksum 100000.
+Go uses POSIX `path.Clean` plus equality/component-prefix comparison, whereas
+Veles also supports drive/UNC roots and both separators. This benchmark does
+not exercise UNC semantics, which the module regressions cover. The roughly
+10x gap is retained as a profiling follow-up, not attributed to this fix.
+
+## 2026-10-30 10:51 — go1.27.2, darwin/arm64 (HEAD bf29fdf, plus the working tree)
+
+| benchmark  |    ops |   Veles |     Go | Veles / Go |
+| ---------- | -----: | ------: | -----: | ---------: |
+| pathwithin | 200000 | 27.16ms | 7.39ms |       3.7× |
+
+F46 profiled normalization fast path, macOS arm64, default thread settings.
+Native sampling showed separator replacement, splitting and rejoining inside
+`path.clean` dominating the normalized POSIX workload. The new guard returns
+unchanged text only when no normalization is needed; all noncanonical forms
+retain the original normalizer. The benchmark binary accepts an optional
+operation count for sustained runs; the paired runner still uses 200,000.
+
+| Workload         |                      Before |                      After |
+| ---------------- | --------------------------: | -------------------------: |
+| 200,000 checks   | 75.90-76.81 ms (three runs) | 27.16-42.53 ms (four runs) |
+| 5,000,000 checks |  1.346-1.379 s (three runs) | 0.607-0.643 s (three runs) |
+
+Sustained unchanged/candidate runs were interleaved, with checksum `2500000`
+in every run: about 52-56% less elapsed time on these already-normalized paths.
+The short Go reference was 7.56-7.82 ms before and 7.39-9.26 ms after. This
+does not claim the same gain for paths needing normalization; drive/UNC and
+dot/separator fallback behavior is checked separately, including 2,664 POSIX
+inputs against Go and explicit cross-platform root cases.

@@ -156,7 +156,7 @@ test "over a socket the compressed stream is chunked and decodes" {
 }
 
 test fun precompressed(): string {
-  val root = path.join(os.tempDir(), "veles-http-gzip-test")
+  val root = path.join(os.tempDir(), "veles-http-gzip-test-${os.pid()}")
   when (writeTree(root)) {
     is Err(e) => panic("cannot write the test tree: ${e.message()}")
     is Ok(_)  => root

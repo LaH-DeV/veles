@@ -1,6 +1,6 @@
 # 25. How packages and the registry work
 
-[Chapter 11](11-modules-and-packages.md) shows how to *use* dependencies.
+[Chapter 11](11-modules-and-packages.md) shows how to _use_ dependencies.
 This chapter explains how the machinery works and why you can trust it: what
 happens when you build, where every file lives, what is checked at each step,
 what an attacker can and cannot do, and what to do when something is refused.
@@ -16,7 +16,7 @@ Read it once before you depend on code you did not write.
 - Every package version you use is pinned by an **exact version** in
   `veles.toml` and by a **hash** in `veles.sum`. A package whose bytes do not
   match its hash is refused before anything is compiled.
-- The compiler works out what a dependency can *do* — use `unsafe`, call C,
+- The compiler works out what a dependency can _do_ — use `unsafe`, call C,
   reach the network, the file system or the process — from its source, and a
   `[policy]` can refuse what you do not want.
 - A **registry** adds names (`owner/name`), immutable copies of every version,
@@ -58,7 +58,7 @@ For every `veles build`, `run`, `check` and `test`, in this order:
 1. **Read the manifests.** Yours, then each dependency's, recursively. A
    path dependency is read where it is; a git or registry dependency is
    needed from the cache or the network.
-2. **Select versions.** For each *(source, major)* the highest version any
+2. **Select versions.** For each _(source, major)_ the highest version any
    manifest asks for is chosen (see below). Nothing newer is ever picked.
 3. **Fetch what the cache lacks.** A git tag or commit is checked out into a
    temporary directory with every line-ending and filter conversion turned
@@ -66,7 +66,7 @@ For every `veles build`, `run`, `check` and `test`, in this order:
    is downloaded as a zip and unpacked with path, size and duplicate checks.
 4. **Hash and compare.** The files are hashed (`h1:`, SHA-256 over each file's
    path and bytes) and compared with `veles.sum`. The first time a version is
-   seen its hash is *recorded*; after that a different hash is a hard error.
+   seen its hash is _recorded_; after that a different hash is a hard error.
    For a registry package the hash must also equal what the registry's signed
    metadata says.
 5. **Apply the policy.** Capabilities are computed from the source of each
@@ -117,11 +117,11 @@ A package is identified by its **source** (the repository address, or
 - Two majors of one source are **two packages**; they may be used together
   under two names (`pg1`, `pg2`).
 - The name in `[dependencies]` is only your local name for it. Only a
-  package's *own* dependencies can be imported by it: if `a` uses `util`,
+  package's _own_ dependencies can be imported by it: if `a` uses `util`,
   your code cannot `use util` unless your manifest lists it too.
 
 **Selection** is minimal version selection: what a manifest writes is a
-*minimum*, and the highest minimum anyone asks for in a major is built.
+_minimum_, and the highest minimum anyone asks for in a major is built.
 
 ```text
 app    asks  util 1.0.0
@@ -129,7 +129,7 @@ mid    asks  util 1.3.0           →  util 1.3.0 is built, for app and mid alik
 app    asks  util2 = util 2.0.0   →  util 2.0.0 is built as well (another major)
 ```
 
-Nothing is upgraded unless somebody *wrote* the higher version. A build does
+Nothing is upgraded unless somebody _wrote_ the higher version. A build does
 not change because a library published something; moving up is an edit
 (`veles update`).
 
@@ -137,22 +137,22 @@ not change because a library published something; moving up is an edit
 
 In your project:
 
-| file or directory | what it is | commit? |
-|---|---|---|
-| `veles.toml` | what you ask for | yes |
-| `veles.sum` | one line per package version: its hash | **yes** — it is what makes a build repeatable |
-| `attestations/*.attest` | signed reviews you hold | yes |
-| `vendor/` | a copy of every package in the build (`veles vendor`) | yes, if you use it |
-| `bin/` | programs built from a workspace root | no |
+| file or directory       | what it is                                            | commit?                                       |
+| ----------------------- | ----------------------------------------------------- | --------------------------------------------- |
+| `veles.toml`            | what you ask for                                      | yes                                           |
+| `veles.sum`             | one line per package version: its hash                | **yes** — it is what makes a build repeatable |
+| `attestations/*.attest` | signed reviews you hold                               | yes                                           |
+| `vendor/`               | a copy of every package in the build (`veles vendor`) | yes, if you use it                            |
+| `bin/`                  | programs built from a workspace root                  | no                                            |
 
 On your machine, outside any project:
 
-| path | what it is |
-|---|---|
+| path                                 | what it is                                                                                                                                                                                      |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `~/.veles/pkg/` (`$VELES_HOME/pkg/`) | the **module cache**: one directory per package version, whose files never change after they are written, each with a small `.veles-fetched` marker holding its hash and what the registry said |
-| `~/.veles/tmp/` | checkouts in progress; emptied when a fetch ends or fails |
-| `~/.veles/keys/<name>.key` | your reviewer signing keys (private; mode 0600) |
-| `~/.veles/token` | your registry token (or set `VELES_TOKEN`) |
+| `~/.veles/tmp/`                      | checkouts in progress; emptied when a fetch ends or fails                                                                                                                                       |
+| `~/.veles/keys/<name>.key`           | your reviewer signing keys (private; mode 0600)                                                                                                                                                 |
+| `~/.veles/token`                     | your registry token (or set `VELES_TOKEN`)                                                                                                                                                      |
 
 The module cache is shared by all your projects. A registry package is cached
 **per registry address**, so `acme/lib` from your company's registry and
@@ -185,35 +185,35 @@ reformat vendored files (`veles fmt` skips `vendor/`): their bytes are hashed.
 
 What each defence is for, and what it does not cover:
 
-| threat | what stops it | where |
-|---|---|---|
-| a download is altered in transit or on the host | the hash in `veles.sum`; for a registry also the signed metadata | every fetch |
-| a maintainer moves a tag to new code | `veles.sum` still has the old hash: *checksum mismatch*, nothing built | every fetch |
-| the registry serves different bytes than it promised | the archive must hash to the signed `info.hash` | registry fetch |
-| the registry's host is hijacked | metadata signed with a key you **pinned** in `[registry] key` | registry fetch |
-| a package is deleted upstream | the registry keeps every version; `vendor/` keeps your own copy | — |
-| a malicious version is published | exact versions, no automatic upgrades; yank; reviews | resolution |
-| a dependency runs code while it is installed | there are no install or build scripts | — |
-| a dependency uses `unsafe`, C, the network, files or processes | capabilities computed from its source; `[policy] deny` | resolution |
-| a dependency pulls in something worse | policy covers every package in the build, not just the ones you named | resolution |
-| a name is taken over by a look-alike (dependency confusion) | names are `owner/name`; the cache is per registry address; a fetched package's git address must be a network address | resolution |
-| a package's manifest makes git run a command or read your disk | git addresses are validated: no options, no `ext::` helpers, no local paths from fetched packages; git only speaks file/http/https/ssh/git | fetch |
-| an archive writes outside its directory | absolute paths, `..`, `:`, `\`, `.git` parts, links and case-twins are refused | unpack |
-| a registry token is stolen on the wire | tokens are sent only over `https://` (or to localhost) | publish, yank |
-| a review is forged or reused for other code | statements are signed and name the exact hash | review check |
-| the editor downloads something by surprise | the language server is offline | — |
+| threat                                                         | what stops it                                                                                                                              | where          |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| a download is altered in transit or on the host                | the hash in `veles.sum`; for a registry also the signed metadata                                                                           | every fetch    |
+| a maintainer moves a tag to new code                           | `veles.sum` still has the old hash: _checksum mismatch_, nothing built                                                                     | every fetch    |
+| the registry serves different bytes than it promised           | the archive must hash to the signed `info.hash`                                                                                            | registry fetch |
+| the registry's host is hijacked                                | metadata signed with a key you **pinned** in `[registry] key`                                                                              | registry fetch |
+| a package is deleted upstream                                  | the registry keeps every version; `vendor/` keeps your own copy                                                                            | —              |
+| a malicious version is published                               | exact versions, no automatic upgrades; yank; reviews                                                                                       | resolution     |
+| a dependency runs code while it is installed                   | there are no install or build scripts                                                                                                      | —              |
+| a dependency uses `unsafe`, C, the network, files or processes | capabilities computed from its source; `[policy] deny`                                                                                     | resolution     |
+| a dependency pulls in something worse                          | policy covers every package in the build, not just the ones you named                                                                      | resolution     |
+| a name is taken over by a look-alike (dependency confusion)    | names are `owner/name`; the cache is per registry address; a fetched package's git address must be a network address                       | resolution     |
+| a package's manifest makes git run a command or read your disk | git addresses are validated: no options, no `ext::` helpers, no local paths from fetched packages; git only speaks file/http/https/ssh/git | fetch          |
+| an archive writes outside its directory                        | absolute paths, `..`, `:`, `\`, `.git` parts, links and case-twins are refused                                                             | unpack         |
+| a registry token is stolen on the wire                         | tokens are sent only over `https://` (or to localhost)                                                                                     | publish, yank  |
+| a review is forged or reused for other code                    | statements are signed and name the exact hash                                                                                              | review check   |
+| the editor downloads something by surprise                     | the language server is offline                                                                                                             | —              |
 
 What is **not** protected, so you know:
 
 - The **first** fetch of a version from a registry whose key you have not
   pinned is trusted. Pin the key (`[registry] key`) to close this.
 - A registry that is **compromised and signs lies** is not detected (there is
-  no transparency log yet), and an *old* signed `.info` can be replayed.
+  no transparency log yet), and an _old_ signed `.info` can be replayed.
 - A brand-new malicious package that does **only** what its capabilities
-  allow is not caught by tools: capabilities say what code *can* reach, not
-  what it *does*. Reviews are how people vouch for the latter.
+  allow is not caught by tools: capabilities say what code _can_ reach, not
+  what it _does_. Reviews are how people vouch for the latter.
 - Capabilities are read from `use` lines and `unsafe`/`extern` syntax. They
-  are conservative about imports, but they cannot see a dependency's *own*
+  are conservative about imports, but they cannot see a dependency's _own_
   dependencies' behaviour — which is why the policy applies to every package
   in the build, and why `veles audit` lists them all.
 - Code you pull in at a **path** is yours and is trusted completely.
@@ -248,10 +248,10 @@ PUT/DELETE …/@v/1.4.2.yank   yank / undo (token of that owner)
 that owner (`acme/…`). Who may register an owner name is the service's rule;
 the protocol only guarantees that a version, once published, never changes.
 
-**Tiers.** *Listed* is the registry's promise that a version passed automated
+**Tiers.** _Listed_ is the registry's promise that a version passed automated
 gates: version 1.0.0 or later; it builds on Windows and Linux; its tests pass;
 no unexplained API break since the previous version. Everything else —
-0.x versions, pre-releases, anything that failed a gate — is *unreviewed* and
+0.x versions, pre-releases, anything that failed a gate — is _unreviewed_ and
 fully usable; the tier is information, and `deny = ["unlisted"]` in
 `[policy]` is how a project says "listed only". (Git packages are always
 unlisted.) The gates run in the registry service, not in your compiler; the
@@ -265,12 +265,12 @@ key. The signature is over one line of text, so there is nothing ambiguous to
 canonicalise.
 
 **Yanks.** A yanked version stays downloadable — so builds do not break — but
-no *new* resolution picks it: `add`, `update`, or a fresh clone without a
+no _new_ resolution picks it: `add`, `update`, or a fresh clone without a
 `veles.sum` line for it are refused with the reason, and `update` skips it.
 A project whose `veles.sum` already holds it keeps building and is warned.
 
-**Reviews.** A review is a signed sentence about exact bytes: *"key K says
-`reviewed` about `acme/httputil` 1.4.2 with hash H"*. Anyone can sign one; the
+**Reviews.** A review is a signed sentence about exact bytes: _"key K says
+`reviewed` about `acme/httputil` 1.4.2 with hash H"_. Anyone can sign one; the
 consumer decides whose count. See the walk-through below.
 
 **Two ways in.** The author can `veles publish` (an upload with a token), and
@@ -278,7 +278,7 @@ a registry service may also pull a tag from a git repository on its own. The
 protocol covers only the upload.
 
 > **Status.** The `registry` package in the compiler's repository is a
-> *reference implementation* that keeps everything in memory; it exists for the
+> _reference implementation_ that keeps everything in memory; it exists for the
 > tests and to pin the protocol down. The hosted service — persistence,
 > registering owners, the real listing gates, a transparency log — is not built
 > yet, and there is no `veles registry serve` command. Until a registry is
@@ -387,33 +387,72 @@ no cache at all.
 
 ### `veles.toml`
 
-| table | key | meaning |
-|---|---|---|
-| `[package]` | `name`, `version`, `description`, `license`, `veles` | identity; `veles` is the oldest compiler that builds it |
-| `[package]` | `registry = "owner/name"` | where `veles publish` publishes |
-| `[dependencies]` | `name = "path"` or `{ path \| git \| registry, version \| commit }` | what the package uses |
-| `[dev-dependencies]` | same | only for tests (declared; not yet resolved) |
-| `[workspace]` | `members = ["dir", …]` | a repository of several packages |
-| `[registry]` | `url`, `key` | the registry's address and its pinned public key |
-| `[policy]` | `deny`, `allow`, `trust`, `require` | what dependencies may do and need |
-| `[native]` | `libs`, `static-libs`, `lib-paths`, `pkg-config` | C libraries to link |
-| `[format]` | `indent`, `max_blank_lines`, `imports`, `trailing_commas`, `line_endings` | `veles fmt` settings |
-| `[lint]` | `implicit_return`, `max_width`, one `allow`/`warn`/`deny` level per lint (`veles lint --list`) | lints of the package's own code |
+| table                | key                                                                                            | meaning                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `[package]`          | `name`, `version`, `description`, `license`, `veles`                                           | identity; `veles` is the oldest compiler that builds it |
+| `[package]`          | `registry = "owner/name"`                                                                      | where `veles publish` publishes                         |
+| `[dependencies]`     | `name = "path"` or `{ path \| git \| registry, version \| commit }`                            | what the package uses                                   |
+| `[dev-dependencies]` | same                                                                                           | only for tests (declared; not yet resolved)             |
+| `[workspace]`        | `members = ["dir", …]`                                                                         | a repository of several packages                        |
+| `[registry]`         | `url`, `key`                                                                                   | the registry's address and its pinned public key        |
+| `[policy]`           | `deny`, `allow`, `trust`, `require`                                                            | what dependencies may do and need                       |
+| `[native]`           | `libs`, `static-libs`, `lib-paths`, `pkg-config`                                               | C libraries to link                                     |
+| `[format]`           | `indent`, `max_blank_lines`, `imports`, `trailing_commas`, `line_endings`                      | `veles fmt` settings                                    |
+| `[lint]`             | `implicit_return`, `max_width`, one `allow`/`warn`/`deny` level per lint (`veles lint --list`) | lints of the package's own code                         |
 
 Unknown tables and keys are errors, with the list of valid ones.
 
+An independent Veles tool can read its own TOML configuration into typed
+options with `std/settings`. This does not extend the compiler's manifest or
+add keys to its `[format]` and `[lint]` tables:
+
+```veles
+use io
+use settings { Schema, Section, Setting }
+use toml
+
+struct ToolOptions {
+  var style: string = "compact"
+}
+
+fun toolSchema(): Schema<ToolOptions> => Schema(
+  table: "tool",
+  settings: [
+    Setting<ToolOptions>.choice(
+      "style", "output style", ["compact", "readable"],
+      "[tool] style is \"compact\" or \"readable\"",
+      (style, options) => options.style = style,
+    ),
+  ],
+)
+
+fun main() {
+  val document = toml.parse("[tool]\nstyle = \"readable\"\n") catch (e) { panic(e.message) }
+  val table = document.get("tool")?.asTable() ?: return
+  var options = ToolOptions()
+  toolSchema().apply(Section(path: "tool.toml", name: "tool", table), &options) catch (e) { panic(e.message) }
+  io.println(options.style)
+}
+```
+
+Output:
+
+```text
+readable
+```
+
 ### Capabilities
 
-| name | the source… |
-|---|---|
-| `unsafe` | has an `unsafe` block or function |
-| `extern` | has an `extern` block, or a function C can call |
-| `native` | has a `[native]` table |
-| `net` | imports `net`, `tls`, `http`, `db` or `otel` |
-| `fs` | imports `fs` or `config` |
-| `os` | imports `os` or `config` |
-| `ffi` | imports `ffi` |
-| `unlisted` | is not in the registry's listed tier |
+| name       | the source…                                     |
+| ---------- | ----------------------------------------------- |
+| `unsafe`   | has an `unsafe` block or function               |
+| `extern`   | has an `extern` block, or a function C can call |
+| `native`   | has a `[native]` table                          |
+| `net`      | imports `net`, `tls`, `http`, `db` or `otel`    |
+| `fs`       | imports `fs` or `config`                        |
+| `os`       | imports `os` or `config`                        |
+| `ffi`      | imports `ffi`                                   |
+| `unlisted` | is not in the registry's listed tier            |
 
 Every directory below a package's root counts, including ones named `vendor`
 or holding a `veles.toml` of their own (the compiler reads them as modules);
@@ -421,46 +460,46 @@ test files and hidden directories do not.
 
 ### Environment
 
-| variable | meaning |
-|---|---|
-| `VELES_HOME` | where the module cache, keys and token live (default `~/.veles`) |
-| `VELES_PROXY` | the registry's address; overrides `[registry] url` |
-| `VELES_TOKEN` | your registry token; overrides `~/.veles/token` |
-| `VELES_ALLOW_LOCAL_GIT` | let a *fetched* package's manifest name local paths and `file://` repositories (a private mirror on disk, an air-gapped build, tests); leave unset otherwise |
+| variable                | meaning                                                                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `VELES_HOME`            | where the module cache, keys and token live (default `~/.veles`)                                                                                             |
+| `VELES_PROXY`           | the registry's address; overrides `[registry] url`                                                                                                           |
+| `VELES_TOKEN`           | your registry token; overrides `~/.veles/token`                                                                                                              |
+| `VELES_ALLOW_LOCAL_GIT` | let a _fetched_ package's manifest name local paths and `file://` repositories (a private mirror on disk, an air-gapped build, tests); leave unset otherwise |
 
 ### Commands
 
-| command | what it does |
-|---|---|
-| `veles fetch [dir]` | resolve, download and record; asks the registry again about cached packages |
-| `veles add <spec>[@version] [--as name] [--dev]` | add a dependency (path, git URL or `owner/name`) |
-| `veles update <name>[@version]… \| --all` | newest release of the same major; a newer major is only mentioned |
-| `veles remove <name>…` | remove, and prune unused `veles.sum` lines |
-| `veles deps [--why name]` | the build as a tree |
-| `veles audit [--detail]` | tier, capabilities and reviews of every package; exit 1 if the policy is broken |
-| `veles vendor` | copy the build into `vendor/` |
-| `veles publish` | upload the package to its registry |
-| `veles yank <owner/name>@<version> [--reason t] [--undo]` | withdraw a version from new use |
-| `veles attest keygen\|sign\|verify\|import` | create keys, sign, check and import reviews |
+| command                                                   | what it does                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `veles fetch [dir]`                                       | resolve, download and record; asks the registry again about cached packages     |
+| `veles add <spec>[@version] [--as name] [--dev]`          | add a dependency (path, git URL or `owner/name`)                                |
+| `veles update <name>[@version]… \| --all`                 | newest release of the same major; a newer major is only mentioned               |
+| `veles remove <name>…`                                    | remove, and prune unused `veles.sum` lines                                      |
+| `veles deps [--why name]`                                 | the build as a tree                                                             |
+| `veles audit [--detail]`                                  | tier, capabilities and reviews of every package; exit 1 if the policy is broken |
+| `veles vendor`                                            | copy the build into `vendor/`                                                   |
+| `veles publish`                                           | upload the package to its registry                                              |
+| `veles yank <owner/name>@<version> [--reason t] [--undo]` | withdraw a version from new use                                                 |
+| `veles attest keygen\|sign\|verify\|import`               | create keys, sign, check and import reviews                                     |
 
 ## When something is refused
 
-| message (shortened) | what it means | what to do |
-|---|---|---|
-| `checksum mismatch for git … 1.4.2` | the files for that version are not the ones `veles.sum` recorded: the tag was moved, the archive changed, or the cache was edited | find out why (`git log`, the upstream issue tracker); if you trust the new contents, delete that line from `veles.sum` (and the version's directory in `~/.veles/pkg` if it is there) |
-| `the module cache entry … was modified after it was fetched` | something edited a file in `~/.veles/pkg` | delete that directory; it is fetched again |
-| `… is not in the module cache; run veles fetch` | offline (the language server, `vendor/`) and the package was never downloaded | `veles fetch` |
-| `[policy] refuses N use(s)` | a package breaks your `[policy]` | read the line it prints; remove the dependency, or add it to `allow` after reviewing it |
-| `has 0 of the 2 trusted "reviewed" review(s)` | `require` wants reviews you do not hold | have a trusted reviewer `veles attest sign` it, or `veles attest import` their file |
-| `was yanked from the registry: <reason>` | the author withdrew that version | choose another (`veles update <name>`); an existing build only warns |
-| `signed with … not the key this project pins` | the registry's metadata is not signed by the key in `[registry] key` | do not proceed until you know why: a hijacked host, or the registry rotated its key |
-| `the archive hashes to … but the registry's metadata says …` | the registry served bytes that contradict its own metadata | do not use that registry until it explains |
-| `needs a proxy … set VELES_PROXY` | a registry dependency but no registry address | set `[registry] url` or `VELES_PROXY`, or depend on the git repository |
-| `refusing to send a token … over http` | publish/yank to a non-local `http://` address | use `https://` |
-| `is pinned by tag … and by commit …` | one repository, one major, two pins | keep one |
-| `a fetched package cannot depend on a directory` | a dependency's manifest uses a `path` | it must publish that dependency and require it by version |
-| `the address … is a local path, and a fetched package's manifest may not name one` | a dependency names a repository on your disk | see `VELES_ALLOW_LOCAL_GIT` if that is deliberate |
-| `dependency 'io' … has the name of a standard module` | a local name that would make `use io` ambiguous | choose another name (`--as`) |
+| message (shortened)                                                                | what it means                                                                                                                     | what to do                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checksum mismatch for git … 1.4.2`                                                | the files for that version are not the ones `veles.sum` recorded: the tag was moved, the archive changed, or the cache was edited | find out why (`git log`, the upstream issue tracker); if you trust the new contents, delete that line from `veles.sum` (and the version's directory in `~/.veles/pkg` if it is there) |
+| `the module cache entry … was modified after it was fetched`                       | something edited a file in `~/.veles/pkg`                                                                                         | delete that directory; it is fetched again                                                                                                                                            |
+| `… is not in the module cache; run veles fetch`                                    | offline (the language server, `vendor/`) and the package was never downloaded                                                     | `veles fetch`                                                                                                                                                                         |
+| `[policy] refuses N use(s)`                                                        | a package breaks your `[policy]`                                                                                                  | read the line it prints; remove the dependency, or add it to `allow` after reviewing it                                                                                               |
+| `has 0 of the 2 trusted "reviewed" review(s)`                                      | `require` wants reviews you do not hold                                                                                           | have a trusted reviewer `veles attest sign` it, or `veles attest import` their file                                                                                                   |
+| `was yanked from the registry: <reason>`                                           | the author withdrew that version                                                                                                  | choose another (`veles update <name>`); an existing build only warns                                                                                                                  |
+| `signed with … not the key this project pins`                                      | the registry's metadata is not signed by the key in `[registry] key`                                                              | do not proceed until you know why: a hijacked host, or the registry rotated its key                                                                                                   |
+| `the archive hashes to … but the registry's metadata says …`                       | the registry served bytes that contradict its own metadata                                                                        | do not use that registry until it explains                                                                                                                                            |
+| `needs a proxy … set VELES_PROXY`                                                  | a registry dependency but no registry address                                                                                     | set `[registry] url` or `VELES_PROXY`, or depend on the git repository                                                                                                                |
+| `refusing to send a token … over http`                                             | publish/yank to a non-local `http://` address                                                                                     | use `https://`                                                                                                                                                                        |
+| `is pinned by tag … and by commit …`                                               | one repository, one major, two pins                                                                                               | keep one                                                                                                                                                                              |
+| `a fetched package cannot depend on a directory`                                   | a dependency's manifest uses a `path`                                                                                             | it must publish that dependency and require it by version                                                                                                                             |
+| `the address … is a local path, and a fetched package's manifest may not name one` | a dependency names a repository on your disk                                                                                      | see `VELES_ALLOW_LOCAL_GIT` if that is deliberate                                                                                                                                     |
+| `dependency 'io' … has the name of a standard module`                              | a local name that would make `use io` ambiguous                                                                                   | choose another name (`--as`)                                                                                                                                                          |
 
 ## Not built yet
 

@@ -7,16 +7,15 @@ declaration (D51). The compiler knows each lowercase one; an unknown
 lowercase name is an error, not a silent no-op. (A capitalised `@Name` is an
 annotation a library defined — [below](#annotations-of-your-own).)
 
-| Attribute | On | Effect |
-|---|---|---|
-| `@deprecated("why")` | any declaration | a warning at every use, with the message |
-| `@mustUse` | a function returning a value | an error if a call's result is discarded |
-| `@inline` / `@noinline` | a function | a hint to the optimiser (`--release`) |
-| `@template` | a function `(parts: List<string>, values: List<V>)` | the function a template literal `name"…"` calls ([chapter 2](02-values-and-strings.md)) |
-| `@key("k")` / `@key(json: "k", db: "c")` | a field, an enum member, a sealed variant | its name on the wire, for every format or by format ([chapter 18](18-codable-and-json.md)) |
-| `@skip` / `@skip(json)` | a field with a default | left out of the wire form, everywhere or in one format |
-| `@required` | a nullable field | the key must be present even though the value may be null |
-| `@tag("kind")` / `@tag("type", content: "value")` | a sealed trait | the key that names the variant; with `content`, the key the fields go under |
+| Attribute                                         | On                                        | Effect                                                                                     |
+| ------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `@deprecated("why")`                              | any declaration                           | a warning at every use, with the message                                                   |
+| `@mustUse`                                        | a function returning a value              | an error if a call's result is discarded                                                   |
+| `@inline` / `@noinline`                           | a function                                | a hint to the optimiser (`--release`)                                                      |
+| `@key("k")` / `@key(json: "k", db: "c")`          | a field, an enum member, a sealed variant | its name on the wire, for every format or by format ([chapter 18](18-codable-and-json.md)) |
+| `@skip` / `@skip(json)`                           | a field with a default                    | left out of the wire form, everywhere or in one format                                     |
+| `@required`                                       | a nullable field                          | the key must be present even though the value may be null                                  |
+| `@tag("kind")` / `@tag("type", content: "value")` | a sealed trait                            | the key that names the variant; with `content`, the key the fields go under                |
 
 ```veles
 use io
@@ -38,6 +37,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 hi ann 7 2
 ```
@@ -148,6 +148,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 [age >= 18, name <= 5 bytes]
 [age must be at least 18, name is longer than 5]
@@ -224,6 +225,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 succeeded on attempt 3
 [add] called with (2, 3)
@@ -256,15 +258,18 @@ suspend without saying so.
 
 Inside a test, a small vocabulary is in scope:
 
-| | |
-|---|---|
-| `expect(cond)` | records a failure when `cond` is false, **and the test goes on** — one run reports every broken expectation. For a comparison it shows both sides. |
-| `require(x)` | the value of a `T?` or a `Result`; when there is none it records why and **ends the test**. |
-| `expectThrows<E>(() => ...)` | a failure unless the function throws (an `E`, when one is named) |
-| `expectPanics(() => ...)` | a failure unless the function panics (it runs in a task of its own) |
-| `fail("why")` | records `why` and ends the test |
-| `skip("why")` | ends the test as **skipped**, with the reason the report shows (see [Skipping tests](#skipping-tests)) |
-| `skipIf(cond, why)` | `if (cond) skip(why)` |
+|                              |                                                                                                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `expect(cond)`               | records a failure when `cond` is false, **and the test goes on** — one run reports every broken expectation. For a comparison it shows both sides. |
+| `expect(cond, "why")`        | the same, with a message evaluated only when it fails, shown first (D229)                                                                          |
+| `expectEqual(want, got)`     | a failure unless `got == want` — **the expected value first** — reported as `expected:` and `actual:` (D229)                                       |
+| `expectNear(want, got, within: d)` | two floats equal or within `d` of each other; a NaN never passes (D230)                                                                            |
+| `require(x)`                 | the value of a `T?` or a `Result`; when there is none it records why and **ends the test**.                                                        |
+| `expectThrows<E>(() => ...)` | a failure unless the function throws (an `E`, when one is named)                                                                                   |
+| `expectPanics(() => ...)`    | a failure unless the function panics (it runs in a task of its own)                                                                                |
+| `fail("why")`                | records `why` and ends the test                                                                                                                    |
+| `skip("why")`                | ends the test as **skipped**, with the reason the report shows (see [Skipping tests](#skipping-tests))                                             |
+| `skipIf(cond, why)`          | `if (cond) skip(why)`                                                                                                                              |
 
 ```veles
 use io
@@ -305,6 +310,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 4
 ```
@@ -342,6 +348,69 @@ Strings are shown quoted, so `""` and `" "` are visible; a `require` that
 finds nothing says `was null`, or `threw: RangeError(value: 99999)`. The
 summary line names every test that failed, and the exit code is non-zero.
 A panic in one test does not stop the others.
+
+A call on either side of a comparison adds its arguments
+(`expect(parsePort(input) > 0)` shows `input: "x"` too), and a condition
+that is not a comparison is taken apart the same way. A call shows its
+receiver and arguments; `&&` shows the operand that was false,
+`||` both; `!` its operand; `x in c` the value and where it was looked for:
+
+```text
+  main.vs:12:51: expect(path.within(base, candidate))
+      base:      "//server/share"
+      candidate: "/a"
+  main.vs:19:3: expect(xs.len() == 3 && twice(n) == 11)
+      twice(n): 10
+      n:        5
+  main.vs:20:3: expect(n > 10 || xs.isEmpty())
+      n:  5
+      xs: [1, 2, 3]
+```
+
+Each part is evaluated once, where the condition evaluates it — an
+argument with a side effect still runs once, in order — and the right
+operand of `&&` still sees what the left one proved
+(`expect(x != null && x.len() == 3)`). `assert` shows the same lines under
+its reason.
+
+When the two sides of `==` are long texts, lists or structs, the report
+also points at the difference: a line diff for text of several lines, a
+caret under the first character that differs otherwise:
+
+```text
+  main.vs:41:3: expect(sentence == "the quick brown fox jumps over the lazy cat")
+      left:  "the quick brown fox jumps over the lazy dog"
+      right: "the quick brown fox jumps over the lazy cat"
+                                                      ^ differs from here
+```
+
+`expect(a == b)` does not say which side was meant; `expectEqual` does —
+the expected value first, as it is read: "expect 80, got this". Its report
+says `expected:` and `actual:`, and a diff runs `- expected, + actual`:
+
+```text
+  main.vs:6:3: expectEqual(80, parsePort("8080"))
+      expected: 80
+      actual:   8080
+```
+
+When the values alone do not say which case of a loop failed, a message
+does. It is built only when the expectation fails, and leads its report as
+`assert`'s reason does:
+
+```text
+  main.vs:22:5: case x
+      expect(parsePort(input) > 0)
+      left:  0
+      right: 0
+      input: "x"
+```
+
+Floats rarely compare equal after arithmetic: `0.1 + 0.2 == 0.3` is false.
+`expectNear(0.3, total, within: 1.0e-12)` holds when the two are equal or
+that close, and shows how far apart they were (`off by:`); outside tests,
+`a.isClose(b)` is the relative comparison (the float methods in the
+[standard library reference](reference/stdlib.md)).
 
 What a test prints — `io.println` for a quick look at a value, from the
 test or from the code it calls — is kept while it runs. A test that passes
@@ -385,6 +454,14 @@ Three flags shape a run:
   `FAILED: timed out after 30s` — and ends the run (whatever the test was
   doing is not trusted to unwind cleanly); the report says how many other
   tests had not finished.
+
+None of the flags changes the program `veles test` builds: they reach it
+in its environment when it starts (`VELES_TEST_FILTER`, `VELES_TEST_JOBS`,
+`VELES_TEST_TIMEOUT_MS`, `VELES_TEST_FAIL_ON_SKIP`). `veles run` and
+`veles test` keep the programs they link in the user cache directory
+(the 32 used last), so running the tests again — with another `--filter`,
+or after an edit that did not change the program — skips linking it;
+`--timings` says `skipped: this program was linked before (cached)`.
 
 ### Tests that run in the compiler too
 
@@ -505,11 +582,12 @@ parser
       main.vs:5:5: expect(parseInt(text) == want)
           left:  null
           right: 0
+          text:  ""
 
 3 passed, 1 failed: parser / rejects / empty input
 ```
 
-A test's full name is its suites' names and its own, joined with ` / `:
+A test's full name is its suites' names and its own, joined with `/`:
 that is what the summary lists and what `--filter` matches, so
 `veles test --filter "parser / rejects"` runs one suite. Names need to
 differ only within a suite — `parser / rejects / empty input` and
@@ -591,6 +669,7 @@ fun main() {
 ```
 
 Output:
+
 ```text
 4
 ```

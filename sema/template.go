@@ -6,7 +6,7 @@ import (
 )
 
 // Template literals (D129): `sql"select * from t where id = ${id}"` hands a
-// function — one marked `@template` — the literal's text pieces and its
+// template function the literal's text pieces and its
 // values, instead of a string with the values already pasted in. What the
 // function returns is the literal's type; a `Sql` made this way cannot be
 // confused with text a program built, because the only way to make one is
@@ -21,23 +21,23 @@ import (
 // pieces are the text written in the source, escapes processed, and always
 // one more than the values.
 
-// checkTemplateSignature reports a `@template` whose parameters are not
+// checkTemplateSignature reports a template whose parameters are not
 // `(parts: List<string>, values: List<V>)`.
 func (c *Checker) checkTemplateSignature(d *ast.FunDecl, method bool) {
-	const shape = "a @template function takes the literal's pieces and values: 'fun name(parts: List<string>, values: List<V>)' (D129)"
+	const shape = "a template function takes exactly two parameters: 'template fun name(parts: List<string>, values: List<V>)' (D227)"
 	if method || d.Static {
-		c.errorf(d.Name.Pos, "@template applies to a module-level function, not a method: %s", shape)
+		c.errorf(d.Name.Pos, "'template fun' applies to a module-level function, not a method: %s", shape)
 		return
 	}
 	if len(d.Params) != 2 {
-		c.errorf(d.Name.Pos, "'%s' is a @template with %d parameters; %s", d.Name.Name, len(d.Params), shape)
+		c.errorf(d.Name.Pos, "'%s' is a template with %d parameters; %s", d.Name.Name, len(d.Params), shape)
 		return
 	}
 	if !isListOf(d.Params[0].Type, "string") {
-		c.errorf(d.Params[0].Pos, "the first parameter of a @template is the pieces, 'List<string>'; %s", shape)
+		c.errorf(d.Params[0].Pos, "the first parameter of a template is the pieces, 'List<string>'; %s", shape)
 	}
 	if !isListOf(d.Params[1].Type, "") {
-		c.errorf(d.Params[1].Pos, "the second parameter of a @template is the values, a 'List<V>'; %s", shape)
+		c.errorf(d.Params[1].Pos, "the second parameter of a template is the values, a 'List<V>'; %s", shape)
 	}
 }
 
@@ -94,12 +94,12 @@ func (f *fnCtx) templateLit(e *ast.TemplateExpr, want types.Type) Expr {
 		before := len(f.c.roundDiags.Items)
 		f.checkExpr(e.Tag, nil)
 		if len(f.c.roundDiags.Items) == before {
-			f.errorf(e.Tag.Span(), "a template tag is the name of a function marked '@template' (D129); this is not a function")
+			f.errorf(e.Tag.Span(), "a template tag names a 'template fun' (D227); this is not a function")
 		}
 		return refuse()
 	}
-	if _, ok := target.Attrs["template"]; !ok {
-		f.errorf(e.Tag.Span(), "'%s' is not a template: a string written right after a name is handed to a function marked '@template' (D129); mark '%s' @template, or call it with parentheses", target.Name, target.Name)
+	if !target.Decl.Template {
+		f.errorf(e.Tag.Span(), "'%s' is not a template: declare '%s' with 'template fun', or call it with parentheses (D227)", target.Name, target.Name)
 		return refuse()
 	}
 	var pieces, values []ast.Expr

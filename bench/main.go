@@ -28,11 +28,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/bits"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
@@ -58,6 +61,11 @@ type result struct {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--osrun-child" {
+		fmt.Print(strings.Repeat("héllo\n", 16384))
+		fmt.Fprintln(os.Stderr, strings.Repeat("error", 8192))
+		return
+	}
 	filter := flag.String("run", "", "only benchmarks whose name contains this")
 	record := flag.Bool("record", false, "append the results to bench/results.md")
 	flag.Parse()
@@ -263,6 +271,96 @@ var lazyTable = sync.OnceValue(func() []int64 {
 func lazyLookup(i int64) int64 { return lazyTable()[i%256] }
 
 var references = map[string]func() string{
+	"pathwithin": func() string {
+		var sum int64
+		for round := 0; round < 200000; round++ {
+			candidate := "/srv/www/assets/site.css"
+			if round%2 != 0 {
+				candidate = "/srv/www2/private"
+			}
+			root := path.Clean("/srv/www")
+			cleaned := path.Clean(candidate)
+			if cleaned == root || strings.HasPrefix(cleaned, root+"/") {
+				sum++
+			}
+		}
+		return strconv.FormatInt(sum, 10)
+	},
+	"regexcompile": func() string {
+		patterns := []string{`[[:alpha:]]+`, `[[:^digit:]]+`, `(?i)[[:^lower:]]+`}
+		var sum int64
+		for round := 0; round < 3000; round++ {
+			compiled, err := regexp.Compile(patterns[round%len(patterns)])
+			must(err)
+			sum += int64(len(compiled.String()) + compiled.NumSubexp())
+		}
+		return strconv.FormatInt(sum, 10)
+	},
+	"osrun": func() string {
+		program, err := os.Executable()
+		must(err)
+		var sum int64
+		for round := 0; round < 20; round++ {
+			cmd := exec.Command(program, "--osrun-child")
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			must(cmd.Run())
+			sum += int64(stdout.Len() + stderr.Len())
+		}
+		return strconv.FormatInt(sum, 10)
+	},
+	"regex": func() string {
+		started := time.Now()
+		compiled := regexp.MustCompile(`(a*)*b`)
+		goSetup += time.Since(started)
+		var sum int64
+		for index := 0; index < 50000; index++ {
+			text := "aaaab"
+			if index%2 != 0 {
+				text = "b"
+			}
+			found := compiled.FindStringSubmatchIndex(text)
+			sum += int64(found[1] - found[0])
+		}
+		return strconv.FormatInt(sum, 10)
+	},
+	"random": func() string {
+		var state [4]uint64
+		word := uint64(7)
+		for index := range state {
+			word += 11400714819323198485
+			mixed := word
+			mixed = (mixed ^ (mixed >> 30)) * 13787848793156543929
+			mixed = (mixed ^ (mixed >> 27)) * 10723151780598845931
+			state[index] = mixed ^ (mixed >> 31)
+		}
+		var sum int64
+		for index := int64(0); index < 5000000; index++ {
+			value := bits.RotateLeft64(state[1]*5, 7) * 9
+			shifted := state[1] << 17
+			state[2] ^= state[0]
+			state[3] ^= state[1]
+			state[1] ^= state[2]
+			state[0] ^= state[3]
+			state[2] ^= shifted
+			state[3] = bits.RotateLeft64(state[3], 45)
+			sum += -1000000 + int64(value%uint64(2000000+index%31))
+		}
+		return strconv.FormatInt(sum, 10)
+	},
+	"tofixed": func() string {
+		const n = 200000
+		var check int64
+		for i := 0; i < n; i++ {
+			value := float64(i%10000) / 4.0
+			digits := 2
+			if i%2 != 0 {
+				digits = 30
+			}
+			check += int64(len(strconv.FormatFloat(value, 'f', digits, 64)))
+		}
+		return strconv.FormatInt(check, 10)
+	},
 	"lazyval": func() string {
 		const n = 50000000
 		var check int64
@@ -342,6 +440,29 @@ var references = map[string]func() string{
 			}
 		}
 		return strconv.FormatInt(sum, 10)
+	},
+	"fslist": func() string {
+		const entries = 100
+		const rounds = 500
+		begin := time.Now()
+		dir, err := os.MkdirTemp("", "veles-bench-fslist-")
+		must(err)
+		defer os.RemoveAll(dir)
+		for i := 0; i < entries; i++ {
+			must(os.WriteFile(filepath.Join(dir, fmt.Sprintf("entry-%d", i)), nil, 0o600))
+		}
+		start := time.Now()
+		var check int64
+		for round := 0; round < rounds; round++ {
+			names, err := os.ReadDir(dir)
+			must(err)
+			check += int64(len(names))
+			for _, name := range names {
+				check += int64(len(name.Name()))
+			}
+		}
+		goSetup = time.Since(begin) - time.Since(start)
+		return strconv.FormatInt(check, 10)
 	},
 	"emptycoll": func() string {
 		// Go's empty slice and nil slice cost nothing and a map literal is one

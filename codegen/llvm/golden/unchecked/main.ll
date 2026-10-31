@@ -14,8 +14,8 @@ entry:
   %t9 = icmp ult i64 %t6, %t8
   br i1 %t9, label %uidx.ok.1, label %uidx.bad.2, !prof !{!"branch_weights", i32 2000, i32 1}
 uidx.bad.2:
-  %t10 = extractvalue %str { ptr @.str.1, i64 12 }, 0
-  %t11 = extractvalue %str { ptr @.str.1, i64 12 }, 1
+  %t10 = extractvalue %str { ptr @.str.1, i64 11 }, 0
+  %t11 = extractvalue %str { ptr @.str.1, i64 11 }, 1
   call void @veles_unchecked_index_panic(i64 %t6, i64 %t8, i64 0, ptr %t10, i64 %t11)
   unreachable
 uidx.ok.1:
@@ -52,8 +52,8 @@ flags.done.2:
   %t14 = icmp ult i64 %t8, %t13
   br i1 %t14, label %uidx.ok.3, label %uidx.bad.4, !prof !{!"branch_weights", i32 2000, i32 1}
 uidx.bad.4:
-  %t15 = extractvalue %str { ptr @.str.2, i64 13 }, 0
-  %t16 = extractvalue %str { ptr @.str.2, i64 13 }, 1
+  %t15 = extractvalue %str { ptr @.str.2, i64 12 }, 0
+  %t16 = extractvalue %str { ptr @.str.2, i64 12 }, 1
   call void @veles_unchecked_index_panic(i64 %t8, i64 %t13, i64 0, ptr %t15, i64 %t16)
   unreachable
 uidx.ok.3:
@@ -76,8 +76,8 @@ entry:
   %t7 = icmp ult i64 %t4, %t6
   br i1 %t7, label %uidx.ok.1, label %uidx.bad.2, !prof !{!"branch_weights", i32 2000, i32 1}
 uidx.bad.2:
-  %t8 = extractvalue %str { ptr @.str.3, i64 13 }, 0
-  %t9 = extractvalue %str { ptr @.str.3, i64 13 }, 1
+  %t8 = extractvalue %str { ptr @.str.3, i64 12 }, 0
+  %t9 = extractvalue %str { ptr @.str.3, i64 12 }, 1
   call void @veles_unchecked_index_panic(i64 %t4, i64 %t6, i64 1, ptr %t8, i64 %t9)
   unreachable
 uidx.ok.1:
@@ -158,15 +158,15 @@ arith.ok.2:
   ret void
 }
 
-@.str.1 = private unnamed_addr constant [13 x i8] c"main.vs:8:12\00"
-@.str.2 = private unnamed_addr constant [14 x i8] c"main.vs:13:12\00"
-@.str.3 = private unnamed_addr constant [14 x i8] c"main.vs:18:12\00"
-@.str.4 = private unnamed_addr constant [18 x i8] c"main.vs:23:14\00get\00"
-@.str.5 = private unnamed_addr constant [18 x i8] c"main.vs:23:27\00get\00"
+@.str.1 = private unnamed_addr constant [12 x i8] c"main.vs:9:5\00"
+@.str.2 = private unnamed_addr constant [13 x i8] c"main.vs:16:5\00"
+@.str.3 = private unnamed_addr constant [13 x i8] c"main.vs:23:5\00"
+@.str.4 = private unnamed_addr constant [18 x i8] c"main.vs:29:14\00get\00"
+@.str.5 = private unnamed_addr constant [18 x i8] c"main.vs:29:27\00get\00"
 @.str.6 = private unnamed_addr constant [17 x i8] c"integer overflow\00"
-@.str.7 = private unnamed_addr constant [14 x i8] c"main.vs:23:14\00"
-@.str.8 = private unnamed_addr constant [17 x i8] c"main.vs:23:3\00put\00"
-@.str.9 = private unnamed_addr constant [19 x i8] c"main.vs:24:23\00byte\00"
+@.str.7 = private unnamed_addr constant [14 x i8] c"main.vs:29:14\00"
+@.str.8 = private unnamed_addr constant [17 x i8] c"main.vs:29:3\00put\00"
+@.str.9 = private unnamed_addr constant [19 x i8] c"main.vs:30:23\00byte\00"
 @.str.10 = private unnamed_addr constant [6 x i8] c"veles\00"
 @.str.11 = private unnamed_addr constant [2 x i8] c" \00"
-@.str.12 = private unnamed_addr constant [21 x i8] c"main.vs:24:3\00println\00"
+@.str.12 = private unnamed_addr constant [21 x i8] c"main.vs:30:3\00println\00"

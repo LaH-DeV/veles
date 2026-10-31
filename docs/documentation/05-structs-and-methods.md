@@ -2,15 +2,17 @@
 
 ## Defining a type
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 struct Point {
   x: i64
   y: i64
 
-  fun manhattan(): i64 => if (this.x < 0) -this.x else this.x + (if (this.y < 0) -this.y else this.y)
-  fun moved(dx: i64, dy: i64): Point => Point(x: this.x + dx, y: this.y + dy)
+  fun manhattan(): i64 => x.abs() + y.abs()
+  fun moved(dx: i64, dy: i64): Point => Point(x: x + dx, y: y + dy)
 }
 
 fun main() {
@@ -19,6 +21,125 @@ fun main() {
   io.println("$p ${p.manhattan()} $q ${p == Point(x: 3, y: -4)}")
 }
 ```
+
+```go [Go]
+package main
+
+import "fmt"
+
+type Point struct{ X, Y int64 }
+
+func abs(n int64) int64 {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+func (p Point) Manhattan() int64 { return abs(p.X) + abs(p.Y) }
+
+func (p Point) Moved(dx, dy int64) Point { return Point{X: p.X + dx, Y: p.Y + dy} }
+
+func main() {
+	p := Point{X: 3, Y: -4}
+	q := p.Moved(1, 1)
+	fmt.Printf("%+v %d %+v %t\n", p, p.Manhattan(), q, p == Point{X: 3, Y: -4})
+}
+
+// {X:3 Y:-4} 7 {X:4 Y:-3} true
+```
+
+```ts [TypeScript]
+// a class compares by reference: === between two equal points is false
+class Point {
+  readonly x: number;
+  readonly y: number;
+
+  constructor(x: number, y: number) {
+    this.x = x;
+    this.y = y;
+  }
+
+  manhattan(): number {
+    return Math.abs(this.x) + Math.abs(this.y);
+  }
+
+  moved(dx: number, dy: number): Point {
+    return new Point(this.x + dx, this.y + dy);
+  }
+
+  equals(other: Point): boolean {
+    return this.x === other.x && this.y === other.y;
+  }
+
+  toString(): string {
+    return `Point(x: ${this.x}, y: ${this.y})`;
+  }
+}
+
+const p = new Point(3, -4);
+const q = p.moved(1, 1);
+console.log(`${p} ${p.manhattan()} ${q} ${p.equals(new Point(3, -4))}`);
+```
+
+```swift [Swift]
+struct Point: Equatable {
+    let x: Int
+    let y: Int
+
+    func manhattan() -> Int { abs(x) + abs(y) }
+    func moved(_ dx: Int, _ dy: Int) -> Point { Point(x: x + dx, y: y + dy) }
+}
+
+let p = Point(x: 3, y: -4)
+let q = p.moved(1, 1)
+print("\(p) \(p.manhattan()) \(q) \(p == Point(x: 3, y: -4))")
+```
+
+```kotlin [Kotlin]
+import kotlin.math.abs
+
+data class Point(val x: Long, val y: Long) {
+    fun manhattan(): Long = abs(x) + abs(y)
+    fun moved(dx: Long, dy: Long): Point = Point(x = x + dx, y = y + dy)
+}
+
+fun main() {
+    val p = Point(x = 3, y = -4)
+    val q = p.moved(1, 1)
+    println("$p ${p.manhattan()} $q ${p == Point(x = 3, y = -4)}")
+}
+
+// Point(x=3, y=-4) 7 Point(x=4, y=-3) true
+```
+
+```rust [Rust]
+#[derive(Debug, PartialEq)]
+struct Point {
+    x: i64,
+    y: i64,
+}
+
+impl Point {
+    fn manhattan(&self) -> i64 {
+        self.x.abs() + self.y.abs()
+    }
+
+    fn moved(&self, dx: i64, dy: i64) -> Point {
+        Point { x: self.x + dx, y: self.y + dy }
+    }
+}
+
+fn main() {
+    let p = Point { x: 3, y: -4 };
+    let q = p.moved(1, 1);
+    println!("{p:?} {} {q:?} {}", p.manhattan(), p == Point { x: 3, y: -4 });
+}
+
+// Point { x: 3, y: -4 } 7 Point { x: 4, y: -3 } true
+```
+
+:::
 
 Output:
 ```text

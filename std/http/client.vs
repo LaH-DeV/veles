@@ -3,6 +3,7 @@
 // sides agree (header tokens, chunk sizes, percent-encoding); everything a
 // client has to distrust — a status line, a framing it did not ask for, a
 // body of any size — is read here under limits of its own.
+use bytes as byteUnits
 use io
 use json as js
 use net
@@ -145,7 +146,11 @@ fun parseUrl(text: string): Url throws FetchError {
       throw invalid(text, "a host name is letters, digits, dots and hyphens; write an international name in its punycode form")
     }
   }
-  val target = if (tail.isEmpty()) "/" else if (tail.startsWith("?")) "/$tail" else tail
+  val target = when {
+    tail.isEmpty()       => "/"
+    tail.startsWith("?") => "/$tail"
+    else                 => tail
+  }
   Url(secure, host: host.toLower(), port, target: encodeTarget(target))
 }
 
@@ -181,12 +186,10 @@ fun resolve(base: Url, location: string): Url throws FetchError {
   if (hasScheme(loc)) return try parseUrl(loc)
   if (loc.startsWith("//")) return try parseUrl("${base.scheme()}:$loc")
   if (loc.isEmpty()) return base
-  val target = if (loc.startsWith("/")) {
-    loc
-  } else if (loc.startsWith("?")) {
-    pathOf(base.target) + loc
-  } else {
-    directoryOf(base.target) + loc
+  val target = when {
+    loc.startsWith("/") => loc
+    loc.startsWith("?") => pathOf(base.target) + loc
+    else                => directoryOf(base.target) + loc
   }
   try parseUrl(base.origin() + removeDots(target))
 }
@@ -218,13 +221,13 @@ fun removeDots(target: string): string {
   loop ((i, part) in parts.enumerate()) {
     if (i == 0) continue
     val last = i == parts.len() - 1
-    if (part == ".") {
-      if (last) out.push("")
-    } else if (part == "..") {
-      out.pop()
-      if (last) out.push("")
-    } else {
-      out.push(part)
+    when (part) {
+      "."  => if (last) out.push("")
+      ".." => {
+        out.pop()
+        if (last) out.push("")
+      }
+      else => out.push(part)
     }
   }
   "/" + out.join("/") + query
@@ -329,7 +332,7 @@ public struct ClientBody {
   /// Up to `max` bytes, as soon as any have arrived; empty at the end of the
   /// body. A body cut short or framed wrongly is a `Protocol` error, and the
   /// request's total time still applies.
-  public fun read(max: i64 = 65536): List<u8> suspends throws FetchError {
+  public fun read(max: i64 = byteUnits.KiB * 64): List<u8> suspends throws FetchError {
     val st = this.state.get()
     if (st.done || max <= 0) return []
     val c = this.conn ?: return []
@@ -355,7 +358,7 @@ public struct ClientBody {
     }
     val out: MutableList<u8> = []
     loop {
-      val chunk = try this.read(65536)
+      val chunk = try this.read(byteUnits.KiB * 64)
       if (chunk.isEmpty()) break
       if (out.len() + chunk.len() > max) {
         this.abandon()
@@ -413,7 +416,7 @@ public struct ClientBody {
   fun trailers(c: io.Stream) suspends throws FetchError | IoError {
     var lines: i64 = 0
     loop {
-      val line = try this.line(c, 8192)
+      val line = try this.line(c, byteUnits.KiB * 8)
       if (line.isEmpty()) return
       lines += 1
       if (lines > 32) throw protocolError(this.url, "too many trailer fields")
@@ -513,7 +516,7 @@ public struct ClientResponse {
   // a body that is read and dropped so that the connection can be reused;
   // too long to be worth it and it is closed
   fun discard() suspends {
-    when (this.body.collect(65536)) {
+    when (this.body.collect(byteUnits.KiB * 64)) {
       is Ok(_)  => { }
       is Err(_) => this.body.abandon()
     }
@@ -527,7 +530,7 @@ public struct ClientResponse {
 }
 
 /// The default ceiling on a body read whole: 64 MiB.
-const defaultBodyMax: i64 = 64 * 1024 * 1024
+const defaultBodyMax: i64 = byteUnits.MiB * 64
 
 // ---------------------------------------------------------------------------
 // the connection pool
@@ -963,7 +966,7 @@ fun readHead(c: io.Stream, url: string, deadline: time.Deadline): Head suspends 
 }
 
 fun readOneHead(c: io.Stream, url: string, deadline: time.Deadline): Head suspends throws FetchError {
-  val first = try responseLine(c, url, deadline, 8192) ?: throw closedWithoutAnswer(url)
+  val first = try responseLine(c, url, deadline, byteUnits.KiB * 8) ?: throw closedWithoutAnswer(url)
   val (version, afterVersion) = first.splitOnce(" ") else throw protocolError(url, "malformed status line")
   if (!version.startsWith("HTTP/1.")) throw protocolError(url, "the answer is not HTTP/1.x")
   val (codeText, _) = afterVersion.splitOnce(" ") ?: (afterVersion, "")
@@ -975,11 +978,11 @@ fun readOneHead(c: io.Stream, url: string, deadline: time.Deadline): Head suspen
   var lines: i64 = 0
   var bytes: i64 = 0
   loop {
-    val line = try responseLine(c, url, deadline, 8192) ?: throw protocolError(url, "the connection closed inside the response headers")
+    val line = try responseLine(c, url, deadline, byteUnits.KiB * 8) ?: throw protocolError(url, "the connection closed inside the response headers")
     if (line.isEmpty()) break
     lines += 1
     bytes += line.len()
-    if (lines > 100 || bytes > 65536) throw protocolError(url, "the response headers are too large")
+    if (lines > 100 || bytes > byteUnits.KiB * 64) throw protocolError(url, "the response headers are too large")
     if (line.startsWith(" ") || line.startsWith("\t")) throw protocolError(url, "folded header line")
     val (rawName, rawValue) = line.splitOnce(":") else throw protocolError(url, "malformed header line")
     if (!isToken(rawName)) throw protocolError(url, "malformed header name")
@@ -991,12 +994,12 @@ fun readOneHead(c: io.Stream, url: string, deadline: time.Deadline): Head suspen
       continue
     }
     val earlier = headers.get(name)
-    if (earlier == null) {
-      headers.set(name, value)
-    } else if (name == "content-length") {
-      if (earlier != value) throw protocolError(url, "conflicting content-length")
-    } else {
-      headers.set(name, "$earlier, $value")
+    when {
+      earlier == null          => headers.set(name, value)
+      name == "content-length" => {
+        if (earlier != value) throw protocolError(url, "conflicting content-length")
+      }
+      else                     => headers.set(name, "$earlier, $value")
     }
   }
   Head(status: Status(code), headers, cookies, http10: version == "HTTP/1.0")

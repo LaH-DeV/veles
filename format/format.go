@@ -686,7 +686,7 @@ func (p *printer) modifiers(fn *ast.FunDecl) {
 	head := p.src[fn.Pos.Start:fn.Name.Pos.Start]
 	for _, kw := range strings.Fields(head) {
 		switch kw {
-		case "public", "private", "internal", "override", "unsafe", "static", "const":
+		case "public", "private", "internal", "override", "unsafe", "static", "const", "template":
 			p.w(kw + " ")
 		}
 	}
