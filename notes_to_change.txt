@@ -32,6 +32,34 @@ R5. Examples (small and mid-size) must DO something useful — real use cases, n
 
 === Open ===
 
+   → 2026-10-30: User parked Q77/F43 (malformed OS text in args, program and
+      env). Keep the reproduced D18 violations tracked, but do not change the
+      public failure contract or ask this decision again until the user returns
+      to it. Continue other decision-free work.
+
+   → 2026-10-29: First-party template design scope (user): "maybe FOR now
+      only html, sql, json and url. rest we'll focus later". Other template
+      domains, including Markdown and commands, are deferred. Logging message
+      construction stays as it is; localization is managed separately, not
+      necessarily through templates. D227 settles contextual `template fun`
+      with exactly two list parameters and tag-only invocation; built on macOS.
+      D228 settles
+      standalone html/url modules (no template module), full contextual HTML
+      including JavaScript/CSS, and general absolute/relative URLs. Concrete
+      safety/API contracts and module implementations remain open;
+      JSON needs further refinement. No plain escaping helper substitutes for
+      the approved contextual HTML engine.
+   → 2026-10-29: Decision preparation is in veles-template-design.md (T1-T15):
+      options, recommendations, concrete proposed examples and coexistence of
+      multiple named template strategies. User direction: exceptionally pleasant
+      developer experience, with safety as the default. Recommendations in that
+      packet are not approvals; do not start implementation from them alone.
+   → 2026-10-29: User parked the remaining template-module/API choices because
+      they are not ready to choose a path. Keep D227's implemented behavior and
+      D228's recorded direction; do not resume module work or ask the packet's
+      decisions until the user returns to this topic. Continue decision-free
+      Veles improvement work instead.
+
     → 2026-10-22: The user regards most of the language/devex research as integral
        to Veles and asked to preserve it for expansion, then investigate optional
        first-party libraries that make Veles desirable. veles-ecosystem-research.md
