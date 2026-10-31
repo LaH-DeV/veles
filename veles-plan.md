@@ -80,22 +80,151 @@ Trait`, `Default`, the downcast [independent; shrinks the IR before the big
 Then the rest of track E in its own order (reactor, self-hosted front end, GC,
 release engineering, compiler speed). A7 (macOS arm64) is done 2026-10-21.
 
-## Where to continue (2026-10-27)
+## Where to continue (2026-10-31)
 
-Kept current: the first unchecked line is the next piece of work. Each is
-decision-free unless it names a Q.
+Kept current: the first unchecked step is the next piece of work, unless the
+user asks for something else. Written 2026-10-31 from the state of the tree,
+`bench/results.md`, checklist §9/§11 and the code-review findings; it folds
+in the open lines of the 2026-10-27 list below. Order rule as ever: correct
+everywhere (A) before daily developer experience (B) before breadth (C);
+performance and self-hosting run beside them where they share the work.
+Steps marked **(ask)** wait for a decision through `veles-decide`; everything
+else is decision-free.
+
+1. [ ] **N1 — Every platform green, and kept so.** Everything built on macOS
+   since 2026-10-21 is unverified on Windows and Linux (checklist §11: F8,
+   F9/F39, F10/F11/F13, F31, F35, F40–F44, D229/D230, the test tooling).
+   - (a) The user pushes; `.github/workflows/ci.yml` runs on all three; fix
+     the workflow until it is green (MSYS2 clang install, the 30-minute bound)
+     and record its first wall times.
+   - (b) Each §11 "platform verification" item: closed with the CI run that
+     shows it, or turned into a bug with a test.
+   - (c) The four known flakes fixed at their assertion, not retried:
+     `TestLessCeremony` (`started >= 2` assumes scheduling),
+     `TestLoopsAreCancellationPoints` (release/8), `TestExecutors` (Linux),
+     `TestStdFsUnitTests` (overlapping runs). Each run 50× under load on
+     one platform (`go test -count=50 -run …`) without a failure.
+   - (d) The fresh-Windows-checkout CRLF failures (§11): `*.vs text eol=lf`
+     in `.gitattributes`, or the formatter and multi-line string literals
+     made independent of the checkout's line endings — the second is the
+     better fix, the first the quicker; take one, with a test that writes a
+     CRLF source.
+   - (e) `nightly.yml` green once; a crasher it finds becomes a regression.
+   Acceptance: three consecutive green CI runs; §11 holds no platform item
+   older than a week.
+
+2. [ ] **N2 — The edit → check → test loop in well under a second.** The
+   daily cost of every Veles user (and of the language server): checking
+   re-checks the whole embedded std on every load (~590 ms of an
+   `examples/httpd` keystroke on Windows), and `go test ./driver` takes
+   ~290 s on macOS, almost all of it serial.
+   - (a) Measure first: `--timings` per module for an LSP edit of
+     `examples/httpd`, `veles test std/path`, `veles check selfhost`;
+     record in `bench/results.md` (build-time table).
+   - (b) **S12 module interfaces, std first** (checklist §11 "Checking the
+     embedded std once"): freeze per-module summaries (scopes, signatures,
+     inferred effects, impl/trait tables, non-generic HIR) after checking std
+     alone; instantiate generic std bodies per program; per-program overlays
+     for every table std entries live in. Same diagnostics byte for byte
+     (`go test ./sema ./lsp ./docs ./examples`). Target: an LSP re-check of
+     `examples/httpd` under 150 ms, `veles check` of a small package under
+     100 ms. This is also the self-hosting step S12 (one design, two wins).
+   - (c) Per-module object caching on top of (b), so `veles run`/`test`
+     after an edit links only what changed; the program cache
+     (`driver/execache.go`) already covers the unchanged case.
+   - (d) `go test ./driver`'s serial phase: run each program that captures
+     stdio or sets the environment in a subprocess of its own (no
+     `serialOnly`), leaving serial only what is timing-sensitive. Target:
+     under 120 s on macOS, and the `-short` tier under 60 s.
+   Acceptance: the numbers above, measured before and after on two
+   platforms, in the progress log.
+
+3. [ ] **N3 — Testing that tools can drive.** `veles test` reads well in a
+   terminal and is invisible to editors and CI.
+   - (a) **(ask)** A machine-readable report: `veles test --format json`
+     (one event per line: start, pass/fail/skip, failure parts with file,
+     line and column, output, duration — the shape of `go test -json`), and
+     the per-test time in the text report. The spelling and the event shape
+     are the decision.
+   - (b) The editor: a VS Code Test Explorer fed by (a) and an LSP code lens
+     "run test / run suite" over `test`/`suite` declarations (the outline
+     already has them), failures shown at their `expect` line.
+   - (c) `--shuffle` with a printed seed and `--count n`, so an order
+     dependency between tests shows (tests run at once by default, D80).
+   - (d) **(ask)** `veles test --coverage` (plan G1): line coverage from
+     counters codegen emits per basic block, reported per file; the flag and
+     the report format are the decision; measured overhead.
+   - (e) **(ask)** Q60 (replaceable globals — clock, randomness, network —
+     for test fakes) and the G1 test items (snapshot tests with `--update`,
+     property-based tests, runnable `///` examples), asked together as one
+     testing batch.
+   - (f) **(ask)** `veles bench` (checklist §6): `bench "name" { }` in test
+     code or a std API; `bench/`'s Go comparison stays separate.
+   Acceptance: a failing `expect` is clickable in VS Code; CI uploads a JSON
+   report; each decided item built with its docs.
+
+4. [ ] **N4 — Close the largest measured performance gaps** (`veles-bench`
+   first, each with before/after on two platforms). From the latest
+   `bench/results.md` rows, Veles / Go:
+   - (a) `suscall` 19–29×: a suspending call that does not wait costs
+     ~4.4 ns per level against an inlined Go call. Inline or merge the
+     frames of a suspending callee whose callers are known (LLVM's coroutine
+     elision when the frame does not escape the call), keep the conditional
+     (D116) path plain. Target ≤ 5×. Every async program pays this.
+   - (b) `gzip` 6.9× (Windows; re-measure macOS), `regex` 3.1–3.8×,
+     `regexcompile` 3.6×, `pathwithin` 3.7×, `tofixed` 2.3×, `gcpause`
+     2.2× (Windows), `intern` 1.9×, `json` 1.4–1.7× — profile each, fix the
+     cause, never the benchmark.
+   - (c) Build time: clang is most of a small build (hello world: clang
+     226–258 ms of 295–325 ms, `examples/httpd` 1.4 of 1.75 s, Windows,
+     `bench/results.md` 2026-10-23); with N2(c), measure what the `-O0` IR
+     we emit costs clang (allocas, debug info) before reaching for anything
+     larger.
+   - (d) A nightly `go run ./bench` on one fixed runner, recorded as an
+     artifact, so a regression shows within a day (a report, not a gate:
+     shared runners are too noisy to fail on).
+   Acceptance: each item's ratio and its spread in `bench/results.md`; no
+   other row worse by more than noise.
+
+5. [ ] **N5 — Self-hosting, front end → checker** (the 2026-10-27 line 4,
+   unchanged in order): S9 the formatter in Veles (oracle: `veles fmt` over
+   the corpus), S13 one syntax tree, R1 steps 3–4 (the module loader and the
+   `--modules` gate), S12 (shared with N2(b)), then R2–R9 each gated on its
+   `--dump`.
+
+6. [ ] **N6 — Review findings and std completeness**: the open findings of
+   `veles-code-review-plan.md`, then Wave 1 of the std ownership review
+   (project-completeness queue item 2), then Track P from P2 (per-target
+   files, the LSP per OS).
+
+7. [ ] **N7 — Documentation by level** (notes #7, review queue item 4): an
+   inventory of active Markdown; the three reader tracks of `index.md`
+   filled where they are thin (a first-steps track that assumes no other
+   language; a "from Go/Kotlin/Swift" page per language); research and
+   decided notes moved to `archive/`.
+
+Decisions waiting for the user (checklist §9), to be asked in one batch when
+the user wants: Q45 (cancellation outcome), Q57 (a panics marker), Q59
+(serial executors), Q60 (replaceable globals; also N3(e)), and the new
+testing questions of N3. Q77 and the template/HTML/URL work (D228) are
+parked by the user: not asked, not built, until the user returns to them.
+
+## Where to continue (2026-10-27, history)
+
+Superseded by the 2026-10-31 list above, which carries its open lines 4–7.
+
 
 1. [x] **B32 step 6** — exact pointer maps for sealed payloads and
-   over-aligned values inside tuples, nullables and sealed payloads
-   (`veles-layout-spec.md` §5.4); then `noalias` on borrowed parameters
-   after the stress runs pass with it (§5.3). _Done 2026-10-27._
+       over-aligned values inside tuples, nullables and sealed payloads
+       (`veles-layout-spec.md` §5.4); then `noalias` on borrowed parameters
+       after the stress runs pass with it (§5.3). _Done 2026-10-27._
 2. [x] **B30** D212 `const struct`, **B31** D213 allocation hints, **B29 part 2**
-   D210 `lazy val`, B29 part 3 D211's docs chapter — _all done 2026-10-27_.
+       D210 `lazy val`, B29 part 3 D211's docs chapter — _all done 2026-10-27_.
 3. [x] **F20** D197 `cede` (`veles-cede-spec.md`; `yieldNow()` migrated in
-   the same change) and **F21** (measure D145's automatic yield). _Done
-   2026-10-27; F21 raised Q65, decided 2026-10-28 as D218 (F22)._
-3a. [x] **F22** D218: a tight counted loop polls once per chunk. _Done
-    2026-10-28._
+       the same change) and **F21** (measure D145's automatic yield). _Done
+       2026-10-27; F21 raised Q65, decided 2026-10-28 as D218 (F22)._
+       3a. [x] **F22** D218: a tight counted loop polls once per chunk. _Done
+       2026-10-28._
 4. [ ] **Self-hosting, front end → checker** (the way, in order):
    - the front end is done: lexer, parser, AST, spans and `Layout` agree
      with Go byte for byte (gates G1–G4, P6, `go test ./selfhost`);
@@ -105,16 +234,142 @@ decision-free unless it names a Q.
      copies: `ast/`, `selfhost/ast`, generated `std/lint/ast.vs`);
    - **R1 steps 3–4** (`veles-selfhost-sema-plan.md` §3.1): the module
      loader in Veles and the `--modules` gate against `veles check
-     --dump=modules` (TOML and the manifest, steps 1–2, are `std/toml` and
+--dump=modules` (TOML and the manifest, steps 1–2, are `std/toml` and
      `selfhost/pkg`);
    - **S12** module interface files, so building the compiler is not a
      full recheck; then **R2–R9**, each gated on its `--dump`.
 5. [ ] The open findings of `veles-code-review-plan.md` (F2–F7: shared
-   Unicode tables, `fmt.quote`, the lint AST, splitting `std/http`).
+       Unicode tables, `fmt.quote`, the lint AST, splitting `std/http`).
 6. [ ] **Track P** from P2 (P1's `build.target` landed with C9; per-target
-   files and the LSP per OS are what is left of P1).
+       files and the LSP per OS are what is left of P1).
 7. Decisions waiting for the user (checklist §9): Q45, Q57, Q59, Q60.
    (Q63 → D216 and Q64 → D217, decided and built 2026-10-27.)
+
+## Project-completeness review queue (user request, 2026-10-28)
+
+This is the recommended order for the cross-cutting review requested on
+2026-10-28. It does not replace the build order above or approve new language
+semantics/public APIs. The review plan, spec, checklist and this plan remain
+the sources of truth for their respective jobs.
+
+1. **Correctness and safety findings.** Triage reproduced issues in
+   `veles-code-review-plan.md`, highest severity first. Fix decision-free
+   defects with a failing regression test; take public behavior/API changes
+   through `veles-decide`. First fix: F15, `Duration.parse` overflow, built
+   2026-10-28; the focused and full Go gates pass. Continue with the remaining
+   high-severity findings before widening APIs.
+   F18 (D219, decided 2026-10-28) is complete when `f64`/`f32.toFixed`
+   dynamically produce every requested nonnegative precision above 30,
+   reject negative and unrepresentable output sizes before allocation, and
+   have regression tests and std-reference docs for those boundaries.
+   F26/F27 (D220, decided 2026-10-28) are complete when stdin has checked
+   text readers and raw-byte variants with the D220 bounded defaults; text
+   rejects invalid UTF-8 as `InvalidData`, every reader returns `TooLong`
+   past its byte ceiling, and tests/docs cover valid text, raw bytes, EOF,
+   line endings, overrides and boundary input on Windows and POSIX.
+   Q68 (D221, decided 2026-10-29) is complete when one `std/bytes` module
+   exports the IEC byte scales as `i64` constants, tests pin their exact
+   values, the stdlib reference documents them, and byte-valued limits and
+   buffer sizes across the std modules use those constants. Algorithmic
+   numbers and protocol values that are not byte quantities stay unchanged.
+   F30 (D222, decided 2026-10-29) is complete when `Regex.split` returns no
+   pieces for `limit: 0`, returns at most a positive limit with the remainder
+   in the last piece, and retains negative-as-unlimited behavior; regression
+   tests and the stdlib reference cover zero, one, negative and empty input.
+   F3 (D223, decided 2026-10-29) is complete when one generated `std/unicode`
+   module exposes the D223 code-point predicates and category/script lookup;
+   regex retains its current property and folding behavior using the shared
+   data, and the self-hosted lexer uses the shared identifier/diagnostic
+   predicates while remaining byte-identical to the Go lexer. Tests and the
+   stdlib reference pin the public behavior and Unicode version.
+   F4 (D224, decided 2026-10-29) is complete when `fmt.quote` matches the
+   Go-style quoting contract, TOML, version and selfhost use the shared helper,
+   JSON logging remains JSON-encoded, and regression tests plus the stdlib
+   reference pin control, Unicode-printability and ordinary-text cases.
+   F5 (D225, decided 2026-10-29) is complete when `selfhost/ast/ast.vs` remains
+   the maintained Veles tree source, `std/lint`'s public tree stays generated
+   and guarded by `TestLintAPI`, and the likely `std/ast` direction for 1.0 is
+   recorded for final API review before the release.
+   F6 (D226, decided 2026-10-29) is complete when `std/settings` exposes the
+   TOML-backed `Schema<T>`, `Setting<T>` and section/error types for independent
+   tools, compiler-owned `[format]` and `[lint]` keys remain closed, and tests
+   plus the stdlib reference cover external schema construction and validation.
+   F7 is complete when HTTP/1.1 request parsing and response framing are in
+   `std/http/wire.vs`, server orchestration stays in `http.vs`, the existing
+   client/body/cookie modules remain separate, and the HTTP plus full project
+   tests pass without changing public signatures or behavior.
+   F8 is complete when prelude codec concerns have focused source files with
+   unchanged public APIs, list/map/string adapters have behavior-scoped tests,
+   and foreign std test bodies cannot perturb consumer diagnostics or dumps.
+   F9's encoding batch is complete when `base64`/`hex` have RFC 4648 vectors,
+   strict malformed-input and error-position tests, `utf8` has RFC 3629 and
+   Unicode Table 3-7 boundary tests, and all three suites run automatically
+   through `TestStdModuleTests`. All eleven original F9 modules now have local
+   suites; existing native integration is retained, and platform/analysis
+   follow-up remains in checklist section 11.
+   F9's I/O batch pins status-to-error translation and negative-limit guards
+   locally, plus stdin EOF, line endings, byte ceilings, UTF-8 validation,
+   raw-byte preservation, defaults and overrides in debug/release subprocesses.
+   F9's random batch pins seeded generation, reference state transitions,
+   adapters and shuffles, and accepts every nonempty signed range without
+   intermediate overflow, preserving ordinary-range output and performance.
+   F9's final OS/TLS/FFI batch pins validation, secure defaults, stream
+   ownership on handshake failure and C-memory/handle lifetimes. Concurrent
+   first use of OpenSSL must publish a complete initialized backend (F39).
+   D227 is built on macOS; D228 module work is **parked by the user 2026-10-29**.
+   Do not treat template decisions as the next active implementation task.
+   When the user returns to it, prepare the remaining
+   choices together using [veles-template-design.md](veles-template-design.md)
+   (T1-T15), rather than deciding APIs piecemeal during coding. Acceptance gates:
+   (1) contextual `template fun`, migration fix, whole-tree migration and
+   Go/selfhost/tooling parity (done on macOS);
+   (2) standalone URL parsing, chosen-standard conformance vectors and safe
+   whole-segment/query-value interpolation without structure injection;
+   (3) standalone HTML contextual processing with JavaScript/CSS coverage,
+   typed failures for unsupported/ambiguous contexts, fragment-composition and
+   adversarial injection tests; (4) documented public APIs, agreed HTTP
+   integration, benchmark measurements and full platform verification. Q76's
+   tag-only literal-piece trust contract is decided and enforced.
+2. **Standard-library ownership and completeness.** Finish Wave 1 of the
+   review plan. For each module, classify primitives, general-purpose std,
+   optional first-party policy, and compiler/runtime internals; identify
+   missing tests, limits and docs. Do not move a public API before its
+   ownership and compatibility are decided.
+3. **Self-hosted architecture.** Before expanding `selfhost/`, compare a
+   possible public `std/veles` tooling surface with keeping compiler
+   implementation details private under `selfhost/`. Define stable contracts
+   for source, tokens/syntax, parsing, formatting, projects, analysis and
+   migrations only where real consumers need them. Preserve the Go/Veles
+   parity gates and the existing S9/S13/R1/S12/R2–R9 sequence.
+4. **Documentation and example cleanup.** Inventory active Markdown by
+   purpose, remove duplicated current explanations, and move completed
+   research/decision history to `archive/` with links. Keep `veles-spec.md`,
+   `veles-checklist.md`, `veles-plan.md` and the user's notes distinct. Separate
+   showcase applications from feature fixtures; remove a fixture only after
+   equivalent tested coverage exists.
+5. **Test-workflow latency and reliability.** Measure package/test durations,
+   identify serial-only causes and flakes, and offer a documented fast local
+   tier plus the full cross-platform release gate. Add coverage and scheduled
+   fuzz/sanitizer/soak jobs without weakening assertions or treating a partial
+   run as full verification.
+6. **Performance and optimized builds.** Refresh repeated Windows/Linux/macOS
+   baselines, then profile the largest workload-specific gaps. Prioritize
+   release optimization, IR/build cost, GC/escape/frame costs and native
+   kernels according to measured impact. Report throughput, tail latency,
+   memory, build time and binary size; do not promise a blanket win over Go.
+7. **Source-comment policy.** Audit comments for D-number traceability and
+   Go-language comparisons. Move historical/design rationale into the spec or
+   focused research documents; keep local invariants, safety explanations and
+   protocol/RFC references beside the code that needs them.
+8. **First-party library pilot.** Evaluate P13, an optional runtime validation
+   package, against a real HTTP/configuration application. Keep it separate
+   from the stable std until its audience, API, compatibility and support
+   costs are demonstrated.
+9. **Sustained quality loop.** Make fuzzing, cross-platform tests, threat
+   review, performance budgets, public API diffs, migration tests and real
+   application acceptance part of release readiness. “Bug-free” is not a
+   provable endpoint; the goal is measurable defect discovery, containment and
+   regression prevention.
 
 **Where to continue (2026-10-14 audit, history):** every step above is done, and so are tracks C
 and F. B17 (D142 visibility) and B20 (D158 bare members) were built 2026-10-17. Next, in
@@ -151,7 +406,7 @@ _(2026-10-23: B26, B19, B21, B22, the F19 migration and S6–S8 are done but for
 | B6  | **Done 2026-09-28.** LSP leftovers                                                                                                                                                                                                                                                                                                                                                                                                                                | code action "implement missing trait members"; whatever the B1 audit shows missing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | B7  | **Done 2026-09-28.** `veles new --template server` (checklist §6)                                                                                                                                                                                                                                                                                                                                                                                                 | logging, `/healthz`, graceful shutdown wired; runs and tests first try                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | B8  | **Done 2026-10-02 (with B15).** _(2026-10-01: unblocked by D116 — built as part of B15.)_ **Blocked 2026-09-28: not by speed (with `reserve` the prelude form is as fast at -O2) but by effects — the lowered adapters let a lambda throw or suspend (`xs.map(a => try eval(a))` is a `Result`); a prelude function would need to be generic over its argument's effects. See the progress log.** Move the Go-lowered eager adapters into the prelude (notes #14) | benchmark first (`veles-bench`); move only what is not slower at -O2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| B17 | **Done 2026-10-17** (progress log: what differs from the acceptance text). **D142: visibility — unmarked is the package, `internal` the module, `public` other packages** (decided 2026-10-08; whole tree migrated in the same change)                                                                                                                                                                                                                            | sema: the four levels on top-level declarations, fields and methods; an import from another package resolves any module's `public` items by path (`use dep.mod`), `public use` facades work and may export unmarked items (only under the facade's name; `internal`/`private` refused); a `public` signature naming a type not visible outside the package is an error with both fixes; a field or method not visible from another package cannot be read, assigned or bound there, and the implicit constructor supplies/defaults it as M5 v0.30 does for `private`; errors: top-level `private` (fix `internal`), `public internal`, an item not `public` imported from another package (fix names `public`); warning + `--fix`: `public` in a program (root declares `main`); the loader stops treating the root as the only surface; LSP hover/completion follow the levels. Migration program (scratchpad, from the checker's view): unmarked → `internal`, `public` → unmarked unless reachable from another package; run over std, examples, bench, selfhost, docs programs, templates; `veles fmt` clean. Tests: `sema/testdata/conform/D142-visibility.vs`, a driver test with a two-package build (path export, facade, construction with an unseen field with and without default, the program warning), `examples/features/packages` updated. Docs: chapter on modules/packages, cheat sheet, errors reference. Green on Windows and WSL            |
+| B17 | **Done 2026-10-17** (progress log: what differs from the acceptance text). **D142: visibility — unmarked is the package, `internal` the module, `public` other packages** (decided 2026-10-08; whole tree migrated in the same change)                                                                                                                                                                                                                            | sema: the four levels on top-level declarations, fields and methods; an import from another package resolves any module's `public` items by path (`use dep.mod`), `public use` facades work and may export unmarked items (only under the facade's name; `internal`/`private` refused); a `public` signature naming a type not visible outside the package is an error with both fixes; a field or method not visible from another package cannot be read, assigned or bound there, and the implicit constructor supplies/defaults it as M5 v0.30 does for `private`; errors: top-level `private` (fix `internal`), `public internal`, an item not `public` imported from another package (fix names `public`); warning + `--fix`: `public` in a program (root declares `main`); the loader stops treating the root as the only surface; LSP hover/completion follow the levels. Migration program (scratchpad, from the checker's view): unmarked → `internal`, `public` → unmarked unless reachable from another package; run over std, examples, bench, selfhost, docs programs, templates; `veles fmt` clean. Tests: `sema/testdata/conform/D142-visibility.vs`, a driver test with a two-package build (path export, facade, construction with an unseen field with and without default, the program warning), `examples/features/packages` updated. Docs: chapter on modules/packages, cheat sheet, errors reference. Green on Windows and WSL   |
 | B18 | **Small devex fixes found by the 2026-10-14 review** (decision-free)                                                                                                                                                                                                                                                                                                                                                                                              | `veles fmt` keeps a one-expression `unsafe { f() }` on one line when it fits (format case; std reformatted, 73 sites); the 84 `at(...) ?: panic(...)` sites in the tree classified, and D62's bounds facts extended where one pattern repeats (a field kept in range by every assignment is out of scope unless measured to matter); conformance cases for each new fact                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | B19 | **D157: a `Result` or task handle cannot be interpolated** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                                                   | sema: the error (family `results-and-errors`) in `"$x"`, `"${e}"` and template-literal values when the type is a `Result` (a throwing call without `try` included) or `Task`, with the `try` fix (applied by `--fix` where the function may throw) and the `??` fix; conformance `D157-interpolation.vs` (a call, a `Result` local, a `Task`, inside a template literal, `r.toString()` and `"${r.ok}"` accepted); the tree fixed where it trips (any hit is a bug found); docs chapter 7, the errors reference, cheat sheet. Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | B20 | **Done 2026-10-17** (progress log). **D158: bare names reach the receiver's members** (decided 2026-10-14)                                                                                                                                                                                                                                                                                                                                                        | sema: the lookup order of the entry (locals, members of `this`, module, prelude) in methods, `init`, `implement`/`extend` bodies and trait defaults, with D5 narrowing and D22's `var` rule unchanged; statics reach static members only, with the error naming `static`; the shadowing warning (family `this`); lambdas capture `this`; conformance `D158-*` (each rule, a parameter shadowing a field, narrowing through a bare field, a sendable lambda naming a member, `executor` state unchanged); LSP hover, rename and references over both spellings; formatter round trip; docs chapter 5, cheat sheet, errors reference. Whether a lint prefers one spelling and whether std/`selfhost/` migrate are asked when it lands (checklist §11). Windows and WSL green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -162,10 +417,10 @@ _(2026-10-23: B26, B19, B21, B22, the F19 migration and S6–S8 are done but for
 | B26 | **Built 2026-10-18 except what checklist §11 lists** (progress log; `T.annotated<A>()` and the pair form of `inline loop` the same day). **D174: user-defined annotations** (decided 2026-10-18; large — the mechanism first, before C9)                                                                                                                                                                                                                          | (1) parser/AST/formatter (Go and `selfhost/`, G-gates): `annotation Name(params) on targets [for Traits]`, `@Name(args)` resolved as a type (imports, qualified, D142 visibility); sema: target check, constant arguments, the reader-clause warning, lowercase names reserved, "attribute" renamed "annotation" in the diagnostics, `ast` and docs; (2) reflection: `T.fields` / `Self.fields` as a constant description (name, type, doc comment, default, annotations; enum members and variants too), `f.attr<A>()`, `f has A`, readable from `const fun` (results stored read-only) and `inline loop (f in Self.fields)` in trait default bodies with typed `get`/`set` by field; errors inside an unrolled body name the field and its type; (3) hover shows values, `veles doc` lists annotations, the LSP completes them; (4) conformance `D174-*`, a driver test of a small library (a `Validate` trait and an `Args`-like table) used from another package; docs chapter 14 (written for readers who dislike annotations: data only), cheat sheet, errors reference. Then C9 on top; the Go `Codable` derive and its `@key`/`@skip`/`@required`/`@tag` move to `std/codec` later (checklist §11). Windows and WSL green                                                                                                                                                                                                                      |
 | B27 | **D177: lint levels, lint rules in Veles, formatter options** (decided 2026-10-18; parts 1–2 built 2026-10-18, part 3 built 2026-10-19 except `[lint.forbid]`, type-aware rules and exit callbacks)                                                                                                                                                                                                                                                               | (1) levels: a lint registry in `sema` (name, default, doc), `[lint] name = allow\|warn\|deny`, `[lint.forbid]`, errors for unknown names with a suggestion, `veles lint --list`; (2) formatter: `trailing_commas`, `line_endings`, the `long_line` lint with `max_width` 120; tests, `driver` manifest tests, docs (chapter 11, 25, cheat sheet, errors reference); (3) rule API: first measure the D113 evaluator running a visitor over the std tree (budget: no visible `veles check` slowdown), then `std/lint` (`Rule`, `Visitor`, `ctx`), the reflected AST, rules from dependencies by `package.name`, fixes through `veles check --fix`, a sample rules package with tests; if the evaluator is too slow, record the numbers and ask before changing the run model                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | B28 | **D178: skipping tests** (built 2026-10-18; left over: checklist §11)                                                                                                                                                                                                                                                                                                                                                                                             | (1) vocabulary `skip`/`skipIf` in test code (sema, as `require`; works in helpers and lambdas); (2) codegen/runtime: a third outcome, the `skipped: why` line, the summary `N passed, M failed, K skipped`, exit 0, `veles test --fail-on-skip`; (3) suite bodies accept `skip`/`skipIf` statements (parser Go and `selfhost/` with the G-gates, formatter, AST), evaluated once before the suite's first test; (4) std annotations `Skip`/`SkipIf` and the targets `test` and `suite` (D174), constant conditions, a skipped test is not run; (5) the Go driver tests' `t.Skip` conditions mirrored in `selfhost`/std tests where they exist; LSP outline/hover, docs chapter 14, cheat sheet, errors reference, conformance `D178-*`, driver tests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| B29 | **Done: part 1 (F1) 2026-10-26, parts 2 (D210) and 3 (D211 docs) 2026-10-27** (progress log). **D210: `lazy val` globals; D211's docs; the F1 race fix** (decided 2026-10-26, `veles-patterns.md`)                                                                                                                                                                                                                                                                                                                   | (1) **F1 first** (decision-free, checklist §11): a module `val` and a `static val` must have a `Sendable` type, error with a fix (`Mutex(value: …)`, an immutable collection, an executor), std/examples migrated; pinned by a sema rule test and the four-task `MutableMap` program refused. (2) **D210**: parser (Go and `selfhost/`, G-gates) `lazy` before a module or `static val`; sema (refused on `var`/locals/fields/`const`, initializer `sendable`, no suspend/throw, `Sendable` type, cycles counted); codegen a once-cell with an acquire fast path, hoisted out of loops; formatter modifier order; hover "lazy: built on first read"; tests: built once under 8 threads, never built when unread, panic raised again, debug and release, Windows and Linux; a bench showing the read costs no more than a plain global after the first. (3) **D211**: a docs chapter on application structure (resources made in `main`, passed down or bound to task-locals, fakes in tests).                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| B30 | **Done 2026-10-27. D212: `const struct`** (decided 2026-10-26)                                                                                                                                                                                                                                                                                                                                                                                                                     | parser (Go and `selfhost/`, G-gates): `const` before `struct`, also for variants in a sealed trait; AST, `Dump`, formatter modifier order; sema: the deep-immutability check per field with an error naming the field and the immutable alternative; per-instance check for generic const structs; const structs Sendable by construction; hover and API diff; tests: accepted and refused field kinds, generics, nested and sealed cases, a const struct as a module `val`, a map key and a `const`; docs chapter on structs and the cheat sheet. The pass-by-address optimisation only with a benchmark.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| B31 | **Done 2026-10-27. D213: allocation hints** (decided 2026-10-26)                                                                                                                                                                                                                                                                                                                                                                                                                   | sema: record each allocating site (the eight kinds in D213) in the index with what, why and how to avoid it; LSP: opt-in inlay hints `heap` with that hover (a client setting); `veles explain --alloc <file\|fun>`; a test comparing hinted sites with the allocation calls in the IR over a corpus (examples, bench); docs chapter on performance and the editor chapter.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| B32 | **Done: steps 1–5 2026-10-26, step 6 and `noalias` 2026-10-27** (Windows and Linux) (progress log). **Value layout: D214, D215 and the decision-free rest of `veles-layout-spec.md`** (decided 2026-10-26; user: "all but step by step" — each step green before the next)                                                                                                                                                                                                                                              | (1) **One layout truth** (§5.4, checklist §11 bugs 2–4): `constFields` from `StructPlan`/`fidx`, `isMem` at ≥ 128 as D121 says, `veles_task_set_unwrap` keeps `off`, the sealed payload offset from one `Layout` function; the nullable shape known only to `makeNullableT`/`nullFlag`/`nullVal` (IR byte-identical, goldens unchanged); regression test for the constant table of an `@align` struct. (2) **D214**: definite assignment for local `var`s in sema (read, `&`, capture, method call), error + docs (chapter 2, errors reference), conformance `D214-*`, the two §4.1 programs refused. (3) **Borrowed big arguments** (§5.3): `bench/bigargs` with a Go reference first; caller/callee rules, `readonly nocapture`, D121 text amended; conformance for every aliasing case in §6.3; `-record` before and after; `noalias` only after the stress runs. (4) **Nullable niche** (§5.2, needs 2): `Layout.Niche`, `T?` sized as `T` where it applies, GC descriptors, constants, D5 text amended; selfhost peak heap before/after. (5) **D215**: `compact struct` in the parser (Go and `selfhost/`, G-gates), AST/`Dump`, formatter modifier order, sema refusals and the one-field warning, `StructPlan` placement, hover size/padding/"`compact` would make it N"; tests and docs chapter 13. (6) Exact sealed pointer maps; over-aligned values in tuples/nullables/sealed payloads. Each step: the §6 checks, Windows/WSL/macOS green. |
+| B29 | **Done: part 1 (F1) 2026-10-26, parts 2 (D210) and 3 (D211 docs) 2026-10-27** (progress log). **D210: `lazy val` globals; D211's docs; the F1 race fix** (decided 2026-10-26, `veles-patterns.md`)                                                                                                                                                                                                                                                                | (1) **F1 first** (decision-free, checklist §11): a module `val` and a `static val` must have a `Sendable` type, error with a fix (`Mutex(value: …)`, an immutable collection, an executor), std/examples migrated; pinned by a sema rule test and the four-task `MutableMap` program refused. (2) **D210**: parser (Go and `selfhost/`, G-gates) `lazy` before a module or `static val`; sema (refused on `var`/locals/fields/`const`, initializer `sendable`, no suspend/throw, `Sendable` type, cycles counted); codegen a once-cell with an acquire fast path, hoisted out of loops; formatter modifier order; hover "lazy: built on first read"; tests: built once under 8 threads, never built when unread, panic raised again, debug and release, Windows and Linux; a bench showing the read costs no more than a plain global after the first. (3) **D211**: a docs chapter on application structure (resources made in `main`, passed down or bound to task-locals, fakes in tests).                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| B30 | **Done 2026-10-27. D212: `const struct`** (decided 2026-10-26)                                                                                                                                                                                                                                                                                                                                                                                                    | parser (Go and `selfhost/`, G-gates): `const` before `struct`, also for variants in a sealed trait; AST, `Dump`, formatter modifier order; sema: the deep-immutability check per field with an error naming the field and the immutable alternative; per-instance check for generic const structs; const structs Sendable by construction; hover and API diff; tests: accepted and refused field kinds, generics, nested and sealed cases, a const struct as a module `val`, a map key and a `const`; docs chapter on structs and the cheat sheet. The pass-by-address optimisation only with a benchmark.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| B31 | **Done 2026-10-27. D213: allocation hints** (decided 2026-10-26)                                                                                                                                                                                                                                                                                                                                                                                                  | sema: record each allocating site (the eight kinds in D213) in the index with what, why and how to avoid it; LSP: opt-in inlay hints `heap` with that hover (a client setting); `veles explain --alloc <file\|fun>`; a test comparing hinted sites with the allocation calls in the IR over a corpus (examples, bench); docs chapter on performance and the editor chapter.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| B32 | **Done: steps 1–5 2026-10-26, step 6 and `noalias` 2026-10-27** (Windows and Linux) (progress log). **Value layout: D214, D215 and the decision-free rest of `veles-layout-spec.md`** (decided 2026-10-26; user: "all but step by step" — each step green before the next)                                                                                                                                                                                        | (1) **One layout truth** (§5.4, checklist §11 bugs 2–4): `constFields` from `StructPlan`/`fidx`, `isMem` at ≥ 128 as D121 says, `veles_task_set_unwrap` keeps `off`, the sealed payload offset from one `Layout` function; the nullable shape known only to `makeNullableT`/`nullFlag`/`nullVal` (IR byte-identical, goldens unchanged); regression test for the constant table of an `@align` struct. (2) **D214**: definite assignment for local `var`s in sema (read, `&`, capture, method call), error + docs (chapter 2, errors reference), conformance `D214-*`, the two §4.1 programs refused. (3) **Borrowed big arguments** (§5.3): `bench/bigargs` with a Go reference first; caller/callee rules, `readonly nocapture`, D121 text amended; conformance for every aliasing case in §6.3; `-record` before and after; `noalias` only after the stress runs. (4) **Nullable niche** (§5.2, needs 2): `Layout.Niche`, `T?` sized as `T` where it applies, GC descriptors, constants, D5 text amended; selfhost peak heap before/after. (5) **D215**: `compact struct` in the parser (Go and `selfhost/`, G-gates), AST/`Dump`, formatter modifier order, sema refusals and the one-field warning, `StructPlan` placement, hover size/padding/"`compact` would make it N"; tests and docs chapter 13. (6) Exact sealed pointer maps; over-aligned values in tuples/nullables/sealed payloads. Each step: the §6 checks, Windows/WSL/macOS green. |
 | B25 | **Done 2026-10-17** (progress log). **D173: extension functions on types you do not own** (decided 2026-10-17)                                                                                                                                                                                                                                                                                                                                                    | parser (Go and `selfhost/`, G-gates): `extend T with fun …` as a one-function form beside `extend T { }`; sema: `extend` on a foreign type becomes an extension (inherent wins + "never called" warning, public API only, not satisfying bounds or `is`, importer-scoped through `use`, ambiguity error naming the fix, effects inferred, `public` per M5); the own-type `extend` unchanged; formatter keeps the one-line form; hover and `veles doc` name the source module; std gets a first user (a helper that was a free function or a one-method trait); tests per rule, conformance `D173-*`, docs (traits chapter, cheat sheet, errors reference); the open details in checklist §11 settled and removed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 | B10 | **Done 2026-10-01.** **D100: `with x = e` as a statement, `with t = async f()`, resources cannot outlive their block; whole tree migrated** (decided 2026-09-30) | parser: `with name = expr` in a braced statement list (not module level, expression bodies, braceless bodies or operands — each an error naming the block form), one binding per statement; checker: lowers to D43's block form over the rest of the block, one cleanup stack per block with block-form `with`s (last registered closes first); a statement-form `with` as the last statement warns "closed as soon as it is opened"; `async` allowed as a `with` value — a fail-fast child of the rest of the block, cancelled then joined at every exit unless finished, `await t` gives its value, errors join the inferred `throws`, captures under D35; the "`async` must be inside scope/gather" error names the `with` form; new family `resources` with the D43 not-Closeable message and D100 part 3's escape error (return, block value, stored outside, captured by a returned/stored lambda; passing as an argument allowed); formatter round trip; LSP hover on `with` says where it closes, inlay hint after the enclosing `}` lists the closes in order, completion; conformance `D100-*` (every error and warning, the ordering, loop iterations); driver/run tests that each exit path (end, return, break, continue, failed try, throw, panic, cancellation) closes in order and that a with-task is cancelled at the end, fails fast, and is not waited for when awaited; `examples/features/with` extended; migration of every statement-position `with` block that ends its block and every `scope { … t.cancel() }` background-task shape in std, examples, bench, templates, docs and Go test programs, expected outputs unchanged; docs chapters 7 and 12, cheat sheet, errors reference; Windows and WSL green |
@@ -555,7 +810,536 @@ on Linux).
 
 ## Progress log
 
+### 2026-10-31 — N7 start: the same program in Go, TypeScript and Swift
+
+- Four programs that Track 2 readers meet first became VitePress code groups
+  — Veles, Go, TypeScript, Swift — each other tab a complete program run by
+  hand (Go 1.27.2, Node 24.18 with type stripping, Swift 6.3.3) and printing
+  the Veles output, or showing its own printing in a comment: chapter 6
+  `findUser` (`T?` against Go's comma-ok, `??`/`?.`, optionals), chapter 7
+  `try` (against `if err != nil`, unchecked throws, typed throws), chapter 9
+  `Shape` (against an interface type switch, a discriminated union, an enum
+  with payloads), chapter 12 `awaitAll` (against goroutines with a context,
+  `Promise.all`, `async let`). `index.md` states the convention.
+- The docs test reads a code group: its `[Veles]` tab is compiled and the
+  `Output:` after `:::` compared (`fence`, pinned by
+  `TestFenceReadsCodeGroups`, which also shows a plain block cannot run into
+  a later group); `format` `TestCorpus` and the sema fuzz seeds take labelled
+  Veles blocks too.
+- Found on the way: `npx vitepress build` failed on `main` — a code span
+  split across two lines in `reference/registry-protocol.md` read as an
+  unclosed tag, then two links to the spec and the checklist outside the
+  site. Fixed (one line; `ignoreDeadLinks` for the two repository files);
+  the site builds.
+
+### 2026-10-30 — D229/D230: `expectEqual`, a message on `expect`, `expectNear`, `isClose`
+
+- Decided (Q78–Q80, checklist §10) and built: `expectEqual(expected,
+  actual)` — expected first, the user's choice over the recommended
+  inference from a literal side — reports `expected:`/`actual:` and a diff
+  `- expected, + actual`; `expect(cond, "message")` builds the message only
+  on failure and leads the report with it, as `assert` does;
+  `expectNear(expected, actual, within:)` for floats, a NaN never passing;
+  `isClose(other, relative:, absolute:)` on `f64` (1e-9) and `f32` (1e-6),
+  `const fun`, Python's `math.isclose`.
+- Decision-free before asking: a call on a side of a comparison shows its
+  arguments (`expect(parsePort(input) > 0)` adds `input:`), a part already
+  shown as a side is not repeated, and values on several lines keep their
+  column (`testIndent`). The diff's caret now follows the widest label.
+- Tests: driver `TestExpectEqualAndNear` (laziness of the message pinned by
+  a counter), `TestExpectShowsParts` extended, `TestTestVocabulary` and
+  `TestTestSuites` updated, conformance `D229-expect-words.vs` and the
+  D78 case; std `number.test.vs` isClose cases run in the compiler and the
+  program. Docs chapter 14, cheat sheet, stdlib reference.
+- Found on the way: the program cache (earlier today) made
+  `TestTestsRunAtOnceReportInOrder` depend on whether the cache was warm —
+  its first run linked and its second did not, eating the margin it measures.
+  It now runs one at a time first. Full `go test ./...` green on macOS after.
+
+### 2026-10-30 — Test tooling: expect shows its parts, cached test programs, CI and `-short`
+
+- A failed `expect` or `assert` shows what its condition was made of
+  (`sema/testing_power.go`): a call's receiver and arguments (arguments that
+  are not plain reads are moved into hidden variables evaluated in the same
+  order before the call), the operand of `&&` that failed and both of `||`
+  (followed only within a chain of one kind, so no part is checked twice),
+  `!`'s operand, both sides of `in`; the right operand of `&&` is checked
+  with the left one's facts, as `&&` does (found when `driver TestArrays`
+  broke on `l.len() == 2 && l.at(1)…`). Top-level comparisons keep their
+  `left:`/`right:` lines; for long texts, lists and structs `==` adds a line
+  diff or a caret from the prelude's `const fun testDiff`, so tests still run
+  in the compiler (D208). Pinned by `driver TestExpectShowsParts`;
+  `TestTestVocabulary` gained the `name:` line.
+- `--filter`, `--jobs`, `--timeout` and `--fail-on-skip` no longer change the
+  IR: the driver passes them as `VELES_TEST_*` in the program's environment,
+  read and removed when it starts (`veles_sync.c`); suite headings, gates and
+  the `filtered out` count are decided at run time. `run` and `test` keep the
+  32 programs linked last under the user cache (`driver/execache.go`, keyed by
+  IR, clang, arguments and the name). Measured on macOS: a second `veles test`
+  of a six-test package, another `--filter` included, 0.41 s → 0.05 s (clang
+  137 ms → skipped).
+- `go test -short ./...`: driver tests loop over `profiles()`/`threadCounts()`
+  (debug and the most threads under `-short`) and 13 stress/soak tests call
+  `skipInShort`. macOS: full 290 s → 187 s, driver 288 s → 101 s.
+- `.github/workflows/ci.yml` (build, vet, `go test` on Windows, Linux,
+  macOS) and `nightly.yml` (fuzzing, `-sanitize`, GC pressure, repeated
+  thread-sensitive tests) — written, not yet run.
+- Verified: `go build`, `go vet`, full `go test ./...` green on macOS (Go
+  1.27.2 local toolchain, Apple clang 21). Not verified: Windows, Linux,
+  thread stress of the changed test runner, the workflows themselves; what is
+  left is in checklist §11 ("Test tooling, left over").
+
+### 2026-10-30 — F47 retained test diagnostics and F46 path normalization
+
+- Captured an uncached `go test ./... -json -count=1` run in full: all packages
+  passed. The earlier unidentified driver failure did not reproduce; it is
+  not declared fixed. The default macOS wrapper now retains JSON test events
+  and command stderr in a unique directory, printing both paths on exit.
+  `VELES_TEST_LOG_DIR` selects its parent; default TMPDIR and custom commands
+  retain their previous behavior. Stub tests pin success/failure logging,
+  spaces in paths, status 9 through the pipeline and custom-command status 7.
+- Native sampling of path containment showed `clean` replacing separators,
+  splitting and joining even normalized paths. Added a conservative scan
+  that returns the original text only when it needs no normalization. Dot
+  components, backslashes, repeated separators and non-root trailing slashes
+  still use the original algorithm; root formatting/public APIs are unchanged.
+- A new independent oracle checked the unchanged baseline and candidate:
+  2,664 POSIX path inputs, clean output and containment against eight roots,
+  in debug/release. Added a module case covering canonical text, fallback and
+  idempotence for drives, UNC roots and Unicode; all six module cases pass in
+  both profiles and under GC threshold 256 with poisoning.
+- Three interleaved five-million-check runs: 1.346-1.379 seconds before and
+  0.607-0.643 seconds after, all checksum 2500000, about 52-56% less time for
+  already-normalized paths. Short paired timings: Veles 75.90-76.81 ms before
+  and 27.16-42.53 ms after, Go 7.56-7.82 and 7.39-9.26 ms. Benchmark scope and
+  fallback caveats are recorded; no claim is made for all path workloads.
+- The real default macOS wrapper passed build/vet/full tests with Go 1.27.1
+  and Apple clang 21. Its retained JSON contains 18 passing test-bearing
+  packages and no failure events; separate stderr and event logs were kept.
+  The earlier intermittent failure remains unexplained, not fixed. Windows/
+  Linux and staticcheck verification remain outstanding.
+
+### 2026-10-30 — F45 UNC share-root containment
+
+- Reproduced `path.within("//server/share/", "//server/share") == false`.
+  Four combinations of final separator and slash/backslash root spelling
+  failed the new root-equivalence test before the fix; sibling/root-kind
+  rejection already passed.
+- Added one comparison after absolute/relative validation so the two root
+  spellings are equivalent. Kept `clean`, `rootOf` and all public signatures
+  unchanged. Two new cases exercise 16 root-form pairs, child containment and
+  rejection of sibling shares, servers, relative paths and drive paths.
+- All five path tests pass in debug/release, and canonical formatting passes.
+  The doc comment and stdlib reference explain UNC-root equivalence without
+  implying symlink-aware security.
+- Added paired `bench/pathwithin` for ordinary POSIX children/siblings:
+  200,000 checks, checksum 100000. Veles 80.23 ms before and 78.22 ms after;
+  Go 7.95 and 7.88 ms. These single sanity runs do not establish a speed
+  change; the roughly 10x common-path gap needs profiling before optimization.
+  Benchmark caveats and platform/staticcheck follow-up remain recorded.
+- Build/vet passed. The first full Go test run had an unidentified driver
+  failure; its large output lost the beginning to terminal scrollback. A
+  complete diagnostic `go test ./driver -json -count=1` then passed. Other
+  packages and the focused path gates passed, and the workspace compiler was
+  rebuilt. The initial failure is not called pre-existing or fixed; checklist
+  section 11 retains the unresolved intermittent full-gate result.
+
+### 2026-10-30 — F44 negated POSIX classes; Q77 parked
+
+- The user parked Q77/F43 after the malformed process-text probe. Recorded
+  their direction in the pending decision and standing notes; no process API,
+  startup validation or replacement policy is implemented or selected.
+- Continued independent regex comparison and reproduced F44: `[[:^alpha:]]`
+  and related negated POSIX classes were parsed as ordinary characters rather
+  than a named complement. Seven regression expectations failed before the
+  fix, including outer negation, case folding and unknown-class refusal.
+- `posixClass` now recognizes `^` before the name and complements the named
+  set, applying case folding first when needed. Tests cover Unicode fold
+  closure, literal construction and the compile-time evaluator too. No new
+  public API or regex dialect choice was introduced; D182's RE2 contract wins.
+- All 31 regex module tests pass in debug/release. The independent Go oracle
+  now covers 59 patterns, 20 inputs and 952 results per build profile, plus an
+  importing program's negated POSIX literal. Canonical formatting passes.
+- Added `bench/regexcompile`: 3,000 compilations, Veles 10.81 ms before and
+  10.65 ms after, Go 3.70 and 2.94 ms. The checksum covers source/group metadata;
+  correctness is checked separately. Single runs do not establish a speed
+  change. Windows/Linux and staticcheck verification remain tracked.
+- Full macOS `go build ./...`, `go vet ./...` and `go test ./...` pass;
+  rebuilt the workspace-local compiler with the corrected embedded parser.
+
+### 2026-10-30 — F43 process metadata boundary audit; Q77 pending
+
+- An isolated probe supplied byte 0xFF as POSIX argv[0], the first argument
+  and VELES_UTF8_PROBE's value. Both debug and release printed
+  `programValid=false`, `argumentValid=false`, and
+  `environmentPresent=true environmentValid=false`. D18's UTF-8 invariant is
+  violated at all three accessors; runtime code copies native bytes unchanged.
+- Unlike F42, these public accessors cannot currently throw. No existing
+  spec/checklist/history decision settles how to reject malformed process
+  text. F43 and Q77 track the choice: checked text accessors (recommended),
+  argument startup validation plus checked environment access, or explicitly
+  lossy conversion. Signatures, startup behavior and replacement semantics
+  are not changed without the user's decision.
+- The probe lives outside the repository; no failing regression or runtime
+  modification was left in the worktree. Implementation requires migration
+  through std consumers (especially CLI/config), selfhost, examples and docs,
+  plus POSIX/Windows boundary tests after approval.
+- The user parked Q77 on 2026-10-30. Do not resume its API/startup/lossy-policy
+  choices without their direction; continue decision-free review work.
+
+### 2026-10-30 — F42 subprocess output keeps the UTF-8 invariant
+
+- Reproduced invalid strings escaping `os.run` when a child emitted malformed
+  stdout or captured stderr. The portable regression uses the Go test binary
+  as its child, with no shell or platform-specific command. It failed in
+  debug/release before the fix with `invalid string escaped`.
+- Windows and POSIX process paths now use one native finalizer that validates
+  both captured buffers before constructing either Veles string. Invalid data
+  frees both buffers and returns EILSEQ, already mapped to IoKind.InvalidData.
+  The child is waited for and pipe/thread resources are closed as before.
+- Eighteen scenarios per profile cover capture/merge/inherit, valid Unicode
+  and NUL, empty output, malformed stdout/stderr, nonzero exits, split writes
+  and a scalar split across stdout/stderr. Merge validates the combined byte
+  stream; inherited stderr is not decoded or returned as a string.
+- Existing argument, input/stderr and pipe-failure regressions remain green.
+  Public signatures are unchanged; doc comments and the stdlib reference now
+  describe the text-only result and typed rejection accurately.
+- Added paired `bench/osrun`: 20 children, 3,112,980 valid output bytes.
+  Three runs: Veles 208.65-217.74 ms before and 206.46-222.06 ms after;
+  Go 128.98-133.02 ms before and 129.40-130.11 ms after. Checksums agree;
+  startup/capture costs are included and no speed change is claimed.
+  Windows/Linux and staticcheck verification remain in checklist section 11.
+- Full macOS `go build ./...`, `go vet ./...` and `go test ./...` pass;
+  rebuilt the workspace-local compiler with the corrected runtime. Capture
+  size ceilings remain a separate public-API decision, not part of F42.
+
+### 2026-10-30 — F41 profiled regex stack allocation
+
+- Made the regex benchmark's operation count configurable, keeping the paired
+  runner's 50,000-search workload and checksum unchanged. Sampled a finite
+  20-million-search release run with macOS `sample`; list allocation, growth
+  and zeroing were substantial costs alongside backtracking itself.
+- The bounded backtracker now reserves a small initial capacity based on
+  program size (at most 32 entries) for its two local scratch stacks. It waits
+  until the first viable candidate, so a prefix-skip miss does not allocate
+  the buffers. This is not a stack limit: normal growth remains, and no cache
+  or mutable state was added to the shared Regex or the thread runtime.
+- Three sustained runs: 10 million searches took 2.020-2.044 seconds before
+  and 1.742-1.767 seconds after, about 13-15% less elapsed time; every checksum
+  was 30000000. Initial comparisons interleaved unchanged/candidate binaries;
+  the final candidate defers allocation. Short paired runs remained noisy:
+  Veles 14.18-20.22 ms before, 8.62-14.50 ms after; Go 4.11-5.04 ms before,
+  3.34-4.73 ms after. Scope and caveats are in `bench/results.md`.
+- Added a 40-capture growth/retained-result test and expanded the independent
+  Go oracle to 53 patterns and 851 results per debug/release profile. All 30
+  regex module cases pass; growth also passes with GC threshold 256 and
+  poisoning. Canonical formatting passes. Remaining throughput and platform/
+  staticcheck verification stay in checklist section 11.
+- Full macOS `go build ./...`, `go vet ./...` and `go test ./...` pass;
+  rebuilt the workspace-local compiler with the optimized embedded stdlib.
+
+### 2026-10-29 — Regex adversarial audit and F40 nullable captures
+
+- Added four parser-safety cases for malformed classes/properties, 2,048-digit
+  repeat counts and hex escapes, Unicode scalar boundaries and code-point
+  error positions. They passed without a parser change; no parser defect is
+  claimed from those probes.
+- Added `driver.TestRegexRE2Oracle`: 52 shared-syntax patterns, 20 inputs and
+  831 expected results per debug/release profile, computed independently by
+  Go's regexp for compile acceptance, byte offsets and every capture. The
+  first run reproduced F40: `(a*)*b` on `a\nb` had a null group rather than
+  the empty capture Go returned. A focused module regression failed too.
+- The bounded compiler now lowers nullable zero-or-more as `(body+)?`, so
+  visited-state suppression preserves capture priority. The VM, explicit
+  exhaustive engine and public APIs are unchanged. Tests pin greedy empty
+  captures, lazy zero iterations, forced Pike slots and compile-time lowering;
+  all 29 regex module cases pass in debug/release, and the Go oracle is green.
+- Added `bench/regex`, comparing 50,000 capture-producing searches with Go,
+  excluding compilation. Three runs: Veles 16.03-19.88 ms before and
+  15.91-20.56 ms after; Go 4.58-5.12 ms before and 5.21-6.29 ms after. All
+  whole-match checksums agree. No speedup/regression is claimed; the remaining
+  throughput gap is tracked separately in checklist section 11.
+- The stdlib reference explains absent versus empty captures. Formatting
+  passes; Windows/Linux and staticcheck verification remain tracked.
+- Updated and reviewed the const-function catalogue for `canBeEmpty`.
+  Full macOS `go build ./...`, `go vet ./...` and `go test ./...` pass;
+  rebuilt the workspace-local compiler with the corrected embedded stdlib.
+
+### 2026-10-29 — F11 enum-backed formatter and linter choices
+
+- Formatter import/comma/line-ending choices and the linter's implicit-return
+  choice now derive lowercase allowed words and member lookup from their
+  existing enums. Removed the manual conversion branches while retaining
+  `Setting.choice`, accepted spellings, declaration order, defaults and exact
+  diagnostic text. `LineEndings.Unset` stays internal and is never accepted
+  as a manifest value. Severity names already used enum operations.
+- Used only existing enum and settings APIs; no public helper, overload,
+  compiler-owned manifest key or language behavior was added.
+- Added 18 Go/selfhost manifest compatibility cases: six accepted choices
+  complete coverage of the enum values, and twelve cases pin empty strings,
+  capitalization, wrong TOML types and the line-ending sentinel refusal.
+  The expanded manifest oracle passed before and after the refactor.
+- Formatting, all six package schema tests, `TestR1Manifest`, `TestR1Lints`
+  and every selfhost oracle pass. Windows/Linux and staticcheck verification
+  remain in checklist section 11. No hot std/runtime/codegen path changed;
+  no performance improvement is claimed.
+- Package schema tests pass in debug/release; full macOS `go build ./...`,
+  `go vet ./...` and `go test ./...` pass.
+
+### 2026-10-29 — F13 AST printer organization and F10 lexer diagnostics
+
+- Rechecked the self-hosted lexer: only four `else if` sites remained, not
+  the old inventory's 28. Converted illegal-character description selection
+  to `when`, keeping Unicode, printable ASCII and code-point fallback text
+  unchanged. `TestP1Tokens` passes byte for byte against the Go lexer; the
+  other short scanner guards remain intentionally unchanged.
+- Split the 1,086-line AST printer into shared state/helpers (207 lines),
+  declaration methods (325), type methods (85), statement methods (128) and
+  expression methods (349). The four new files use `extend Printer` in the
+  same module, with only the imports each needs. A guarded mechanical
+  extraction reconstructed the original section text byte for byte before
+  writing; canonical formatting only removed redundant blank lines.
+- Kept explicit typed printer cases rather than introducing reflection or
+  changing dump semantics. No public API, AST definition, emitted text,
+  runtime or codegen implementation changed; no speedup is claimed.
+- Formatting, `TestP5Parse`, `TestLintAPI` and all selfhost tests pass,
+  including the release-built frontend's token, parse, span, layout and R1
+  manifest/lint gates. The README maps the new files. Windows/Linux and
+  staticcheck verification remain in checklist section 11; F10 remains open
+  for the other areas in the review plan.
+- Full macOS `go build ./...`, `go vet ./...` and `go test ./...` pass.
+
+### 2026-10-29 — F10 HTTP client decision chains
+
+- Converted four decisions in `std/http/client.vs` to `when`: default request
+  target, redirect target kind, dot-segment dispatch and duplicate response
+  header handling. Branch order, request targets, header rules and diagnostics
+  are unchanged. The short pool-lifecycle branch is intentionally retained;
+  the rechecked DB connection file also has only one short chain, not twelve.
+- Added two cases to the existing client suite: 19 redirect resolution vectors
+  covering relative/root paths, query-only and fragment-only locations, dot
+  segments, trailing/repeated slashes and encoded dots; accepted identical
+  repeated Content-Length fields alongside ordinary header coalescing. Existing
+  conflict and Set-Cookie tests remain unchanged.
+- All 186 HTTP tests pass in debug/release and canonical formatting passes.
+  HTTP benchmark: Veles 417.16 ms before and 411.42 ms after; Go 389.43 ms
+  before and 392.70 ms after. Checksums match; the difference is noise, not a
+  claimed speedup (`bench/results.md`).
+- This changes only existing HTTP-internal helpers, not the parked standalone
+  URL/HTML design. F10 remains open for the other areas in the review plan;
+  Windows/Linux and staticcheck verification remain in checklist section 11.
+- Full macOS `go build ./...`, `go vet ./...` and `go test ./...` pass;
+  rebuilt the workspace-local compiler with the updated embedded stdlib.
+
+### 2026-10-29 — F10 configuration decision chains
+
+- Rechecked the stale configuration inventory: three short decision chains
+  remained, not the original six. Converted schema-support diagnostics,
+  Boolean parsing and secret/missing error rewriting to `when`, retaining
+  condition order and message text. No API or accepted input changed.
+- Added one regression covering both lowercase Boolean literals and rejection
+  of uppercase/mixed-case, numeric and alternative spellings. All 30 config
+  tests pass in debug/release and canonical formatting passes.
+- Final macOS `go build ./...`, `go vet ./...` and `go test ./...` pass across
+  F9, F39 and this cleanup; rebuilt the workspace-local compiler.
+- F10 remains open for selfhost, DB, regex and HTTP; `regex expand` was already
+  done. Windows/Linux verification remains in checklist section 11.
+
+### 2026-10-29 — F9 OS/TLS/FFI coverage and F39 TLS initialization race
+
+- Added eight OS tests for exit status, runtime enum values, NUL validation,
+  process metadata and platform error context; nine TLS tests for secure
+  defaults, diagnostics, stream ownership on validation/handshake failure,
+  malformed credentials, ordered buffering and 32 concurrent cold clients;
+  eleven FFI tests for UTF-8 C strings, NUL byte offsets, copied memory,
+  zeroed allocations, shared closure, typed handles and stale-handle refusal.
+- TLS tests initially failed together with a false missing-OpenSSL error,
+  while the EOF case and existing certificate integration passed in isolation.
+  The POSIX loader raced on `tried`/`ok` and the function table. F39 replaces
+  that unsynchronized publication with `pthread_once`; Windows is unchanged.
+- All module tests pass in debug/release and through the standard driver gate.
+  TLS passed 20 runs each at 1/2/4/8 workers with GC threshold 256 and poisoning;
+  the standalone parallel initialization test passes in both profiles. The
+  existing native certificate/ALPN integration remains green.
+- The standalone cold-start regression also passed 20 release runs at each
+  worker count under the same GC stress; FFI passed at all four worker counts.
+  Full macOS build/vet/tests passed before the subsequent F10 cleanup.
+- HTTP sanity benchmark: Veles 413.71 ms before, 412.05 ms after; Go 389.05 ms
+  before, 393.99 ms after. No performance change is claimed; this checks the
+  broader HTTP runtime, not TLS initialization cost (`bench/results.md`).
+- F9 module-local coverage is complete: all eleven named modules have suites,
+  with 66 tests added across its batches. Windows/Linux, Linux sanitizers and
+  unavailable staticcheck remain tracked in checklist section 11.
+
+### 2026-10-29 — F9 random coverage and F38 wide-range overflow
+
+- Added ten deterministic module tests for the xoshiro256\*\* reference state,
+  signed-bound seed reproducibility, float/boolean bit mapping, exclusive
+  ranges, invalid ranges, empty picks/trivial shuffles, nullable picks,
+  repeatable permutations and all shared-generator adapters.
+- The wide-range test reproduced an integer-overflow panic at `hi - lo`.
+  F38 replaces the signed subtraction/addition with unsigned wrapping span
+  and offset arithmetic after validating `hi > lo`. Debug and release tests
+  pass; ordinary-range seeded output is unchanged.
+- Added `bench/random` with a checksum-matched Go reference using the same
+  splitmix64/xoshiro256\*\* algorithm. Five million draws, three runs each:
+  Veles 18.33-22.47 ms before and 19.17-20.72 ms after; Go 16.10-17.38 ms
+  before and 16.07-16.45 ms after. No speedup or regression is claimed;
+  `bench/results.md` records the run and scope.
+- Canonical formatting and automatic discovery via
+  `driver.TestStdModuleTests/random` pass. The stdlib reference documents the
+  full signed-endpoint contract. Remaining F9 module-local gaps: TLS, OS, FFI;
+  Windows/Linux and staticcheck verification remain in checklist section 11.
+- Full macOS `go build ./...`, `go vet ./...` and `go test ./...` pass.
+
+### 2026-10-29 — F9 I/O regression coverage
+
+- Added nine stdin-independent `std/io` tests for success, InvalidData,
+  TooLong and its exact limit, native error codes, unknown statuses and all
+  four negative-limit guards. The existing standard driver gate discovers
+  them; running module tests never waits for interactive stdin.
+- Extended `TestStandardInputTextAndByteReaders` instead of adding a second
+  subprocess fixture. Fifty line/all text/raw boundary combinations cover EOF,
+  empty lines, LF/CRLF, a final CR, internal CR, exact/zero/overflow byte limits,
+  Unicode byte widths, invalid/truncated UTF-8, NUL and Control-Z. Exact default
+  limits and larger explicit overrides are checked for all four readers.
+- The integration fixture now runs both debug and release builds; the local
+  suite also passes in both profiles. No production code, runtime behavior
+  or public API changed. Remaining F9 module-local gaps: TLS, OS, FFI, random.
+  Windows/Linux and staticcheck verification remain in checklist section 11.
+- Canonical Veles formatting, the focused I/O driver gate and full macOS
+  `go build ./...`, `go vet ./...` and `go test ./...` pass. No hot-path
+  implementation changed, so no benchmark applies.
+
+### 2026-10-29 — F9 encoding regression suites
+
+- Rechecked the stale F9 inventory: JSON, JWT and path already have module
+  tests. Added 19 cases: seven base64, four hex and eight UTF-8 tests, without
+  changing production code or public APIs.
+- Base64 and hex pin RFC 4648 section 10 vectors, all 256 byte values,
+  alphabet/case behavior, malformed input and error byte positions. Base64
+  additionally checks optional padding, unused tail bits and encoded lengths
+  across 257 input sizes.
+- UTF-8 pins RFC 3629/Unicode Table 3-7 scalar boundaries, overlong and
+  surrogate rejection, out-of-range values, every truncated prefix of selected
+  multibyte scalars, all single bytes, replacement encoding, UTF-16 surrogate
+  pairs, cursor boundaries and malformed-buffer counting. All eight UTF-8
+  cases also execute in the compile-time evaluator.
+- The existing `driver.TestStdModuleTests` discovers the new suites without
+  new Go test wrappers. Five module-local test gaps remain (`tls`, `os`, `ffi`,
+  `io`, `random`); F9 stays open and checklist section 11 tracks follow-up.
+- All 19 cases pass in debug and release; canonical formatting, the focused
+  standard driver gate and full macOS `go build ./...`, `go vet ./...` and
+  `go test ./...` pass. Windows/Linux and staticcheck remain unverified. No
+  production or hot-path implementation changed, so no benchmark applies.
+
+### 2026-10-29 — Template work parked; F8 prelude organization and coverage
+
+- Parked undecided template-module work at the user's request; retained D227 and
+  the D228 design packet without selecting further APIs.
+- Split the 1,005-line codec source into contracts/helpers (197 lines), errors
+  (97), schema metadata (90), primitive/container implementations (213) and the
+  value tree/encoder/decoder (404). Extraction preserved all original section
+  text before canonical formatting; no public codec signatures changed.
+- Added 12 cases in existing tests for lazy map defaults, factory failures,
+  map transforms and empty inputs, callback error propagation, ordered/short-
+  circuit list adapters, collection composition, UTF-8 string splitting,
+  whitespace/lines, derived codec round trips and capped source-path problems.
+  The prelude suite now has 69 passing tests, including eligible const tests.
+- The added callbacks exposed foreign std test bodies being checked during
+  consumer library checks and phase dumps. Reproduced before the fix, then
+  centralized test-file isolation for normal checks, phase dumps and editor
+  indexing while preserving the package's own tests. The three entry-point
+  regressions pass. Regenerated dump fixtures and verified only synthetic
+  identifiers/counters changed; conformance diagnostics were not reblessed.
+- Formatting, std catalogues and full macOS build/vet/tests pass; rebuilt the
+  workspace-local compiler. No runtime/codegen implementation changed and no
+  benchmark applies. Windows/Linux verification and unavailable staticcheck
+  remain unverified (checklist section 11).
+
+### 2026-10-29 — Local macOS compiler setup and decision-packet comparisons
+
+The installed editor extension had no compiler binary to discover. Built the
+git-ignored workspace-root `veles` as native macOS arm64, without a global
+installation or PATH change; the template example checks and an actual LSP
+initialize/shutdown/exit handshake pass. Updated extension setup/error guidance,
+added startup/discovery regressions (including explicit-path precedence), and
+packaged/installed the extension. Six Node tests and TypeScript compilation pass.
+The active editor retries after `Veles: Restart Language Server`.
+
+Expanded `veles-template-design.md` with worked, coexisting URL/HTML/JSON/SQL
+strategies, proposed signatures and the fine-grained error/type/limits/policy
+choices to approve together. Prioritized short safe usage, clear diagnostics
+and explicit advanced operations. No additional language or public API decision
+is approved by this preparation; D228 modules remain open.
+
+### 2026-10-29 — Template decision packet and VS Code tag coloring
+
+Prepared `veles-template-design.md` (T1-T15): the remaining public API, safety,
+validation, URL strategy, HTML/JS/CSS, JSON/SQL and integration choices, with
+examples and explicit coexistence options. Recommendations remain unapproved.
+Fixed the grammar's JSON backspace escape in the template-tag word boundary;
+plain and qualified tags now use the same scope as ordinary function calls.
+Added Node grammar regressions; tests, TypeScript compilation, VSIX packaging
+and local installation pass. Reload the editor window to refresh loaded grammar.
+
+### 2026-10-29 — D227 built; D228 module work pending
+
+The user chose two-list contextual `template fun` declarations, standalone
+HTML/URL modules, full contextual HTML (including JavaScript/CSS), and general
+absolute/relative URLs. Recorded acceptance gates; Q76 is decided and built as
+tag-only invocation. D227 now spans parser/AST, checker, formatter, hover,
+highlighting, selfhost parity and the generated lint AST. Migrated std/db,
+examples and docs; `@template` has an idempotent replacement fix. Tests cover
+contextual identifier use, qualified calls, aliases and calls inside holes.
+Full macOS build/vet/tests pass; Windows/WSL verification remains open.
+No HTML/URL implementation is claimed. Logging
+stays unchanged, localization remains separate, other tag domains are deferred.
+
 Older entries: `archive/progress-log-2026-09.md`.
+
+### 2026-10-29 — Q71 → D224, decided and built
+
+- Added public `fmt.quote` with Go-style escapes for quotes, backslashes,
+  controls and non-printable Unicode, using D223's pinned printability data.
+  `std/toml`, `std/version` and `selfhost/text` now delegate to it; `std/log`
+  remains JSON-encoded. The TOML and version regressions cover nonprinting
+  keys/input, and `selfhost.TestP3Quote` remains byte-identical to Go's
+  `strconv.Quote`. `std/fmt`, `std/toml` and `std/version` tests passed.
+- Updated the stdlib reference and F4 review status. No benchmark was needed;
+  this is a formatting helper with no runtime or codegen change.
+
+### 2026-10-29 — Q72 → D225, decided; F5 resolved
+
+- Kept custom rules on the generated `lint.*` tree before Veles 1.0. The source
+  is already `selfhost/ast/ast.vs`, and `TestLintAPI` verifies the generated
+  public tree, token kinds, source types and visitor; the focused test passed.
+  No duplicate hand-maintained Veles AST remains, so no implementation change
+  was needed. Recorded likely promotion to public `std/ast` as a 1.0 direction
+  whose final node, token, file and span contracts must be reviewed before the
+  API freeze.
+
+### 2026-10-29 — Q73 → D226; F6 done
+
+- Promoted the TOML-backed `Schema<T>`, `Setting<T>`, `Section`, `Entry` and
+  `SettingsError` API to `std/settings`; independent tools can apply typed
+  settings while compiler-owned manifest tables remain closed. The private
+  compiler copy was removed, and policy parsing keeps its one local list helper.
+  Added tests for typed reads, choices, names, lookup, fallback, removed keys
+  and source-located errors; added the stdlib reference and a runnable tool
+  example. The settings suite, `TestR1Manifest`, `TestLibraryLintFix`, and the
+  focused docs chapter pass; formatting is clean. The full `go build ./...`,
+  `go vet ./...`, and `go test ./...` gates pass. Removed the invalid bare
+  `stream` import from the edited HTTP example; no benchmark applies.
+
+### 2026-10-29 — F7 done
+
+- Moved the HTTP/1.1 wire parser, response framing, token helpers, and percent
+  decoding from the server/router file into `std/http/wire.vs`. The server and
+  client keep their existing APIs; bodies, cookies, forms and multipart were
+  already separate concerns. All 184 `std/http` tests and the full build, vet
+  and test gates pass; formatting is clean. No benchmark applies to this
+  behavior-preserving file split.
 
 ### 2026-10-27 — Q63 → D216, Q64 → D217, decided and built
 
@@ -674,7 +1458,7 @@ module-state section.
   are `const struct`s, so they can be fields of one.
 - Hover and listings show `const struct`; the `const` keyword's hover
   mentions it; the editor grammar no longer reads `struct` in `const
-  struct` as a constant's name.
+struct` as a constant's name.
 - Tests: `sema/testdata/conform/D212-const-struct.vs` (every accepted and
   refused field kind, generics through annotation, inference and a generic
   call, nested and sealed cases, a module `val`, a `const`, a map key, a
@@ -2949,3 +3733,28 @@ chapter 17 "Calling other servers", reference/stdlib. The example caught a bug t
 - 2026-10-27 — F20 built: D197 `cede`. Both front ends (`ast.CedeStmt`; `parser/cede.go`, `selfhost/parser/cede.vs`; a newline after `cede` always ends the statement), `task.cede` in the checker (a direct suspension seed, refused where suspension is), lowered to the runtime's zero sleep; formatter, `veles parse`, hover with D197's text, completion, the VS Code grammar, a diagnostic family. Every wrong form is one error that names the fix, and `=> cede` bodies are read as `{ cede }` so nothing cascades. `yieldNow` left the prelude: its uses are errors with fixes where the rewrite keeps the meaning (statement, function or lambda body, `async`, a value where a suspending `fun()` is wanted), none for a call in a value or with arguments, and a program's own `yieldNow` is untouched; the tree (bench/idle, driver tests, docs) migrated. Found on the way: (1) a yield abandoned by a cancellation left `TB_YIELDED` set, so the next `cede` returned at once with no turn and no cancellation check (pinned by `driver/cede_test.go`, which fails without the fix); (2) a bad expression that had taken all its tokens made both parsers skip the next statement as well. Tests: parser, sema, conformance `D197-*`, `driver/cede_test.go` (debug/release, 1/2/4/8 threads, GC stress and poisoning), golden `cede`, the self-host edge `p-cede`. Windows and Linux; macOS and the Linux sanitizer not run (checklist §11).
 - 2026-10-27 — F21 measured (`bench/preempt` with its F21 matrix, `bench/backedge`; `bench/results.md`): D145's slice stays — a ticker beside busy suspending loops wakes within ~16 ms (Windows) / ~14.5 ms (Linux) at 1 and 8 workers and on a one-thread executor, Go's asynchronous preemption 20–28 ms in the same program. Found: Windows 11 stopped honouring the process's 1 ms timer period seconds into a run (power throttling of a windowless process), so the monitor looked every 15.6 ms and a one-thread executor's slice became ~46 ms; the runtime now opts out (`veles_timer_period`). The poll costs the loop optimizations (a chain 8.8× slower than the same C loop, a sum no longer a closed form; the same poll in C reproduces it exactly) → Q65; a suspending loop pays 2× more for frame stores → checklist §11.
 - 2026-10-28 — Q65 decided as D218 (user, recommended of 4, after asking whether chunking leaves more for `cede` to do — it does not: a chunk is a microsecond, the slice 10 ms) and built (F22): a range or list loop over an i64 index whose condition, body and step call nothing, suspend nowhere and hold no loop runs as chunks of 16–1024 rounds by body size (`sema/chunk.go`), polling once per chunk; codegen's inner loop has the one exit `cond & idx < limit` (`chunkedLoop`), which LLVM counts. Measured first in C (strip-mining reaches C's speed at any chunk size; a register countdown does not help; a data-dependent loop pays nothing for the poll). `bench/backedge` 1.18 s → 0.125 s: the chain 865 → 107 ps a round (C 100), the sum 358 → 4, the suspending twins 1723/698 → 114/5 (their frame stores went with the poll); `lexer`, `sort`, `suscall` faster, the rest within noise (six suspects rerun six times each). TestChunkedLoops (debug/release, 1/2/4/8 threads, GC stress and poisoning; same output as the HEAD compiler), golden `chunks` (exactly the two eligible loops chunked; four goldens' IR regenerated, outputs unchanged); docs chapter 12, reference/concurrency. Found on the way: TestCede case 7 assumed one `cede` lets a child start (it flaked once at one thread, which D197 allows); the child now says it holds its resource. The sema dumps show the loop's chunk.
+- 2026-10-28 — Review F15 fixed: `Duration.parse` now checks decimal accumulation and fractional addition before arithmetic can overflow. Added prelude tests for the largest valid integer/fractional durations and the first out-of-range values; `go test ./driver -run 'TestStdModuleTests/prelude'` passes.
+- 2026-10-28 — Review F24 fixed: `path.within` now refuses absolute/relative root mismatches before its component-prefix check. Added path-module cases for drive-relative versus absolute roots and positive containment under matching drive and relative roots; `go test ./driver -run 'TestStdModuleTests/path'` passes.
+- 2026-10-28 — Review F34 fixed: `tls.client` now rejects NUL-containing server names before native conversion, closes the transferred stream, and throws an `IoError` with `InvalidInput`; `tls.connect` is covered through its delegation to `client`. The TLS integration test pins both entry points against a localhost-only certificate; `go test ./driver -run '^TestTLSClient$' -count=1` passes.
+- 2026-10-28 — Review F16 fixed: `Duration.toString` restores the minimum value's extra nanosecond after whole-day decomposition, and `parseDuration` accumulates negatively with sign-specific bounds so `i64` minimum is representable without permitting positive overflow. Tests cover the minimum literal and format/parse round trips at both bounds; the prelude std-module suite passes.
+- 2026-10-28 — Review F17 fixed: current guidance, D21's heading and compiler/golden-test/built-in descriptions now agree with D209: integer overflow is checked in every build, while the old policy remains only as struck-through history. README's `--release` guidance was already corrected. Docs, sema and LLVM tests pass.
+- 2026-10-28 — Review F18 built under D219: the native formatter produces exact fixed-point output through 1074 places, then appends zeroes for larger finite precisions; negative precision and unrepresentable result lengths panic before allocation. Tests cover 31 and 1075 digits on f64, f32 delegation, negative values and size overflow; the chapter and stdlib reference document the contract. The 200k-call `tofixed` benchmark stayed within noise: 38.34 ms median before vs 38.49 ms after (three runs each); a post-change result is recorded in `bench/results.md`. Full build, vet and tests pass.
+- 2026-10-28 — Review F19 fixed: `splitPath` now consumes an escaped quote inside bracket-quoted keys rather than ending the key; all other backslashes stay literal. Regression tests verify `Problem.pointer()` for quotes, backslashes, dots and brackets, including a nested path. The prelude and full repository gates pass.
+- 2026-10-28 — Review F20 fixed: `JsonDecoder.readU64` now accumulates nonnegative decimal digits with checked u64 multiply/add, while negative input retains the signed decoder's rejection behavior. Tests cover 0, `i64::MAX`, `i64::MAX + 1`, `u64::MAX`, encode/decode round trip, negative input and one past max. Three post-change `bench/json` runs were 45.35–51.34 ms (median 50.8 ms), within the existing 42.76–59.61 ms history; this change has no pre-edit benchmark sample. Full build, vet and tests pass.
+- 2026-10-28 — Review F21 fixed: `JsonDecoder.peek` validates JSON number grammar before classification, rejecting leading zeros and empty fraction/exponent digits. Tests cover `01`, `-01`, `1.`, `1e` and `1e+`; `examples/fuzz` now accepts 22 malformed-JSON mutations instead of 28. Three post-change `bench/json` runs were 45.47–52.31 ms (median 51.74 ms), within the historical 42.76–59.61 ms spread; no clean pre-change sample was taken. Full build, vet and tests pass.
+- 2026-10-29 — Review F22 fixed: grouped zero-padding now finds the minimum whole-part digit count needed for the requested width before adding separators, so grouping remains three digits from the right. Tests cover positive/negative, explicit sign, fractional grouping and radix prefix; prelude and full repository gates pass.
+- 2026-10-29 — D221 built: added `std/bytes` with IEC `i64` constants `B` through `EiB`, tested their exact powers, and migrated byte ceilings/buffer sizes across `io`, `fs`, `net`, `tls`, `compress`, `crypto/password`, `fmt` and `http`; README and stdlib reference updated. The affected std suites, docs and full build/vet/tests pass.
+- 2026-10-29 — F26/F27 implementation under D220: stdin text readers validate UTF-8 and return `InvalidData`; raw-byte variants preserve bytes; all four readers enforce the D220 bounded defaults and overrides with `TooLong`. Integration tests cover invalid text, byte preservation, negative limits, exact/over-limit inputs and the defaults; tutorial, process-I/O and sema fixtures migrated. Full macOS build/vet/tests pass; F27 is closed for the implemented behavior, while Windows and WSL/Linux verification remain open in checklist §11.
+- 2026-10-29 — Review F28 fixed: `veles_fs_list_dir` now separates names with NUL (forbidden in POSIX and Windows filenames), and `fs.listDir` splits that unambiguous transport before sorting. POSIX tests preserve LF and CR in names; full macOS build/vet/tests pass. `fslist` (50,000 listings) measured 26.19–27.76 ms before (median 26.84) and 27.66–36.21 ms after (median 30.23), with a wide post-fix spread; Go was 36.15–45.41 ms after. The local median increase is about 12.6%; one post-fix sample is recorded in `bench/results.md`. Windows and WSL/Linux remain unverified (checklist §11).
+- 2026-10-29 — Review F29 fixed: POSIX pipe pairs now start at `-1`, and failure cleanup closes only descriptors created by successful `pipe()` calls while preserving `errno`. A driver regression fills the fd table after a successful seed run, forces the next pipe creation to fail, and checks unrelated open files survive. Full macOS build/vet/tests pass. The uninitialized values did not manifest as a close on this macOS stack before the fix, so the test exercises the error path but is not a deterministic pre-fix failure here; no successful-path benchmark applies. WSL/Linux verification remains open (checklist §11).
+- 2026-10-29 — Review F30 fixed under D222: `Regex.split` returns `[]` for limit zero before searching; positive limits bound the number of pieces and leave the remainder in the final piece; negative limits remain unlimited. Tests cover zero with matches, no matches and empty input, plus limits one and negative; the stdlib reference documents the convention. The focused regex suite and full macOS build/vet/tests pass.
+- 2026-10-29 — Review F31 fixed: `std/toml` now counts nested arrays and inline tables with the shared `recursion.Depth`, returning `ParseError("nesting deeper than 1000")` instead of descending without bound. Tests accept depths 999/1000 and reject 1001 for both container forms; the TOML API and stdlib reference document the bound. Focused TOML tests, formatting and full macOS build/vet/tests pass; Windows and WSL/Linux stack-boundary verification remains open (checklist §11).
+- 2026-10-29 — Review F32 fixed: `Offset.of` now rejects hours outside `[-18, 18]` before multiplying, so extreme `i64` values return `null` instead of overflowing. Tests cover both ±18:00 boundaries, minutes beyond them, ±19 and `i64::MIN`/`i64::MAX`; the method docs state the null condition. Focused time tests, formatting and full macOS build/vet/tests pass.
+- 2026-10-29 — Review F35 fixed: the HTTP parser now combines repeated `Connection` fields, and the server parses comma-separated tokens case-insensitively with `close` taking precedence over `keep-alive`. Socket tests cover combined and repeated fields. Full macOS build/vet/tests pass. `httphello` (16,000 requests) measured 389.82–394.57 ms after the change (median 394.05 ms; 394.13 ms recorded), with matching checksums; no pre-change sample was captured, and historical results range 184–790 ms, so this does not establish a regression or gain. Windows and WSL/Linux tests remain open (checklist §11).
+- 2026-10-29 — Review F36 fixed: raw `inflate` and `gunzipMember` now share a saturating output-probe calculation, avoiding `i64::MAX + 1` overflow while preserving the one-byte-over-limit check for smaller ceilings. Tests cover both APIs at `i64::MAX` and `i64::MAX - 1`. Full macOS build/vet/tests pass. `gunzip` (16,777,232 bytes) measured 43.65–44.50 ms before (median 44.12) and 44.36–44.59 ms after (median 44.37); the 0.6% median change is within noise, and the recorded post-fix sample was 43.8 ms.
+- 2026-10-29 — Review F37 fixed: JWT time checks now guard overflowing `exp + leeway` and `now + leeway` comparisons, while rejection messages use bounded differences instead of overflowing. Tests cover signed-token verification at `i64::MAX`, extreme `exp`/`nbf`/`now`, and both leeway extremes. The focused JWT suite and full macOS build/vet/tests pass; there is no JWT-specific benchmark, and Windows/WSL verification remains open (checklist §11).
+- 2026-10-29 — Review F14 fixed: `Deque.moveTo` now initializes nullable slots with ordinary pushes rather than `MutableList.repeat`, whose `Sendable` bound was unrelated to deque storage. A regression grows `Deque<MutableList<i64>>` across capacities and verifies order and values. The focused prelude suite and full macOS build/vet/tests pass; no existing benchmark covers Deque growth.
+- 2026-10-29 — Review F2 fixed: the regex parser's code-point wrappers now delegate ASCII digit, letter and radix-16 classification through `sym` to D184's shared `u8` helpers. Non-ASCII code points still map to the nonmatching sentinel; the full regex suite and formatter check pass. F3's Unicode tables and public API question remain open.
+- 2026-10-29 — Review F3 built under D223: generated category, script, whitespace, regex word/fold, UAX #31 identifier, invisible and printable data now lives in `std/unicode/tables.vs`, generated and formatter-canonicalized by one test from Go Unicode 17.0 and the bootstrap lexer. Public code-point predicates and category/script lookup are tested; regex and selfhost use the shared module, with the selfhost byte-identical gate intact. Focused generator, unicode, regex and selfhost gates plus full macOS build/vet/tests pass; Windows and WSL/Linux verification remains open (checklist §11).
+- 2026-10-29 — Review F23 fixed: `path.dir` now preserves the root marker when the final separator falls inside a drive or UNC share root. Tests cover a file directly under a drive root, nested drive paths, a UNC share root and nested UNC paths; path formatting and the full macOS build/vet/test gates pass.
+- 2026-10-29 — Review F25 fixed: `fmt.ordinal` now derives its suffix from the magnitude of the signed remainder modulo 100, avoiding `i64::MIN.abs()` overflow. Tests cover `i64::MIN`, negative teens and negative endings 1/2/3; dedicated fmt tests, formatting checks and the full macOS build/vet/test gates pass.

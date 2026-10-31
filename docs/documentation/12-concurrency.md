@@ -146,7 +146,9 @@ async f()` followed straight by `await t` is `f()` with extra steps:
 argument order (D156). An argument is a handle or an `async` call written
 in place:
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 error NotFound { id: i64 }
@@ -172,6 +174,146 @@ fun main() {
   io.println(summary(-1) catch (e) { "no such user ${e.id}" })
 }
 ```
+
+```go [Go]
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+)
+
+type NotFound struct{ ID int64 }
+
+func (e *NotFound) Error() string { return fmt.Sprint("no user ", e.ID) }
+
+func user(ctx context.Context, id int64) (string, error) {
+	select {
+	case <-time.After(10 * time.Millisecond):
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	if id < 0 {
+		return "", &NotFound{ID: id}
+	}
+	return fmt.Sprint("user", id), nil
+}
+
+func orders(ctx context.Context, id int64) int64 {
+	select {
+	case <-time.After(5 * time.Millisecond):
+	case <-ctx.Done():
+	}
+	return id * 3
+}
+
+// both at once; the first failure cancels the other through the context
+func summary(id int64) (string, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type named struct {
+		name string
+		err  error
+	}
+	nameCh, countCh := make(chan named, 1), make(chan int64, 1)
+	go func() {
+		name, err := user(ctx, id)
+		if err != nil {
+			cancel()
+		}
+		nameCh <- named{name, err}
+	}()
+	go func() { countCh <- orders(ctx, id) }()
+	n, count := <-nameCh, <-countCh
+	if n.err != nil {
+		return "", n.err
+	}
+	return fmt.Sprintf("%s has %d orders", n.name, count), nil
+}
+
+func main() {
+	for _, id := range []int64{7, -1} {
+		s, err := summary(id)
+		var nf *NotFound
+		if errors.As(err, &nf) {
+			s = fmt.Sprint("no such user ", nf.ID)
+		}
+		fmt.Println(s)
+	}
+}
+```
+
+```ts [TypeScript]
+class NotFound extends Error {
+  id: number;
+  constructor(id: number) {
+    super(`no user ${id}`);
+    this.id = id;
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function user(id: number): Promise<string> {
+  await sleep(10);
+  if (id < 0) throw new NotFound(id);
+  return `user${id}`;
+}
+
+async function orders(id: number): Promise<number> {
+  await sleep(5);
+  return id * 3;
+}
+
+// Promise.all rejects on the first failure, but the other promise keeps running
+async function summary(id: number): Promise<string> {
+  const [name, count] = await Promise.all([user(id), orders(id)]);
+  return `${name} has ${count} orders`;
+}
+
+for (const id of [7, -1]) {
+  try {
+    console.log(await summary(id));
+  } catch (e) {
+    if (e instanceof NotFound) console.log(`no such user ${e.id}`);
+    else throw e;
+  }
+}
+```
+
+```swift [Swift]
+struct NotFound: Error { let id: Int }
+
+func user(_ id: Int) async throws(NotFound) -> String {
+    try? await Task.sleep(for: .milliseconds(10))
+    if id < 0 { throw NotFound(id: id) }
+    return "user\(id)"
+}
+
+func orders(_ id: Int) async -> Int {
+    try? await Task.sleep(for: .milliseconds(5))
+    return id * 3
+}
+
+// `async let` starts both; leaving the scope by a throw cancels the other
+func summary(_ id: Int) async throws -> String {
+    async let name = user(id)
+    async let count = orders(id)
+    return "\(try await name) has \(await count) orders"
+}
+
+for id in [7, -1] {
+    do {
+        print(try await summary(id))
+    } catch let e as NotFound {
+        print("no such user \(e.id)")
+    }
+}
+```
+
+:::
 
 Output:
 

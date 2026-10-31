@@ -192,7 +192,8 @@ Literals may be written in hex or binary: `0xFF`, `0b1010`.
 To shape a number as text inside a string, give it a format spec (`${n:06}`,
 `${x:.2}`, `${n:x}`; see [Format specs](#format-specs)). When you need the
 text as a value, ask the number: `n.toString(radix: 16)` for hex and
-`x.toFixed(2)` for two decimals.
+`x.toFixed(2)` for two decimals. Any nonnegative precision is accepted;
+negative precision or a result too large for a string panics.
 
 ```veles
 use io
@@ -384,7 +385,7 @@ the functions above the spec: `fmt.bytes`, `fmt.table`, `fmt.duration`.
 ### Template literals
 
 A name written **straight before** a string — no space — hands the string to
-a function marked `@template`, in two lists: the pieces of text, and the
+a function declared with `template fun`, in two lists: the pieces of text, and the
 values you interpolated. The function decides what a value means. Joining
 them into one string is exactly what it need not do, so the result can be a
 type a plain string can never be: markup whose values were escaped, a query
@@ -410,8 +411,7 @@ struct Html {
 }
 
 // `html"a ${x} b"` calls html(["a ", " b"], [x]): one more piece than values
-@template
-fun html(parts: List<string>, values: List<Markup>): Html {
+template fun html(parts: List<string>, values: List<Markup>): Html {
   val out = StringBuilder()
   loop ((i, part) in parts.enumerate()) {
     out.append(part)
@@ -439,10 +439,15 @@ The rules: the parameters are `(parts: List<string>, values: List<V>)` —
 does not is an error at its `${…}`); the pieces are what the source
 says, never input, and there is always one more than the values; `tag"…"` is
 the call `tag(pieces, values)` and has the function's result type, which is
-not a `string`. A name that is not `@template` cannot tag a literal, and a
+not necessarily a `string`. A function not declared with `template fun` cannot tag a literal, and a
 space (`html "…"`) is an error that says so. A module's function is tagged
 `db.sql"…"`. `examples/features/templates` writes an `html` and an `sql` tag; a
 database module (`std/db`) uses the same to make injection impossible.
+
+Template functions are tag-only (D227): ordinary calls with lists and using
+the function as a callback are refused, so runtime text cannot be supplied as
+trusted literal pieces. They take exactly two parameters, with no trailing
+options; `template` remains an ordinary identifier outside this modifier.
 
 ### Regular expressions
 

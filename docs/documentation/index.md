@@ -63,3 +63,10 @@ Code blocks are complete programs unless they begin with `// fragment`.
 Where a program prints something, the output follows the block. Run any
 program by saving it as `main.vs` in an empty directory and typing
 `veles run <that directory>`.
+
+Some programs come with tabs that show the same program in Go, TypeScript
+and Swift, for readers who know one of them: the chapters on nullable types,
+errors, sealed types and concurrency start that way. Only the Veles tab is
+compiled and run by the documentation's tests; the others were run by hand
+when they were written (Go 1.27, Node 24, Swift 6) and print the same
+output, except where a comment shows how their own printing differs.

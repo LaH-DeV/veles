@@ -8,7 +8,9 @@ compile error instead.
 
 ## Producing and consuming `T?`
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 fun findUser(id: i64): string? => when (id) {
@@ -24,6 +26,75 @@ fun main() {
   io.println("${a?.len() ?: 0} ${z?.len() ?: 0}")
 }
 ```
+
+```go [Go]
+package main
+
+import "fmt"
+
+// Go has no nullable type: "maybe absent" is a second result (or a pointer).
+func findUser(id int64) (string, bool) {
+	switch id {
+	case 1:
+		return "ann", true
+	case 2:
+		return "bob", true
+	}
+	return "", false
+}
+
+func main() {
+	a, aok := findUser(1)
+	z, zok := findUser(9)
+	if !aok {
+		a = "nobody"
+	}
+	if !zok {
+		z = "nobody"
+	}
+	fmt.Println(a, z)
+	aLen, zLen := 0, 0
+	if aok {
+		aLen = len(a)
+	}
+	if zok {
+		zLen = len(z)
+	}
+	fmt.Println(aLen, zLen)
+}
+```
+
+```ts [TypeScript]
+function findUser(id: number): string | null {
+  switch (id) {
+    case 1: return "ann";
+    case 2: return "bob";
+    default: return null;
+  }
+}
+
+const a = findUser(1);
+const z = findUser(9);
+console.log(`${a ?? "nobody"} ${z ?? "nobody"}`);
+console.log(`${a?.length ?? 0} ${z?.length ?? 0}`);
+```
+
+```swift [Swift]
+func findUser(_ id: Int) -> String? {
+    switch id {
+    case 1: return "ann"
+    case 2: return "bob"
+    default: return nil
+    }
+}
+
+let a = findUser(1)
+let z = findUser(9)
+print("\(a ?? "nobody") \(z ?? "nobody")")
+print("\(a?.count ?? 0) \(z?.count ?? 0)")
+```
+
+:::
 
 Output:
 ```text

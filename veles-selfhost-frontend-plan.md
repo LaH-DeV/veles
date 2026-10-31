@@ -2,7 +2,7 @@
 
 A plan for the first slice of self-hosting. Written against `veles-spec.md`
 v0.34; **refreshed against v0.49 on 2026-09-29 (plan S1)** — what changed is
-in §8, and the capability audit for the *whole* compiler is §9 (plan S3).
+in §8, and the capability audit for the _whole_ compiler is §9 (plan S3).
 This is a sequencing document with gates, not a schedule.
 
 > **Status 2026-10-23.** P0–P5 done 2026-10-08: gates P0, G1, G2, G3 and G4 are green
@@ -14,7 +14,7 @@ This is a sequencing document with gates, not a schedule.
 
 `archive/veles-build-plan.md` puts self-hosting at Stage 5 in one line. This file
 is that line expanded for the front end only — and argues that the front
-end is worth doing *before* the rest of Stage 5, because it is the one part
+end is worth doing _before_ the rest of Stage 5, because it is the one part
 that can be proved correct against the existing implementation instead of
 against a test suite someone has to write.
 
@@ -37,15 +37,15 @@ five times the work and a different decision.
 
 ### What the Go front end is, by the numbers
 
-| Package | Non-test lines | What it is |
-|---|---|---|
-| `lexer/` | 1036 | ~107 token kinds, automatic semicolons, interpolated strings, doc comments, UAX #31 identifiers |
-| `ast/` | 2017 | ~100 node structs in five disjoint families, plus the S-expression printer |
-| `parser/` | 2945 | recursive descent, Pratt expressions, error recovery, the formatter's `Layout` |
-| `source/` | 355 | files, byte spans, line/column, diagnostics |
-| | **6353** | |
+| Package   | Non-test lines | What it is                                                                                      |
+| --------- | -------------- | ----------------------------------------------------------------------------------------------- |
+| `lexer/`  | 1036           | ~107 token kinds, automatic semicolons, interpolated strings, doc comments, UAX #31 identifiers |
+| `ast/`    | 2017           | ~100 node structs in five disjoint families, plus the S-expression printer                      |
+| `parser/` | 2945           | recursive descent, Pratt expressions, error recovery, the formatter's `Layout`                  |
+| `source/` | 355            | files, byte spans, line/column, diagnostics                                                     |
+|           | **6353**       |                                                                                                 |
 
-*(2026-09-29: was 5472 lines at v0.34; `wc -l` of the non-test files.)*
+_(2026-09-29: was 5472 lines at v0.34; `wc -l` of the non-test files.)_
 
 Expect 1.2–1.5× that in Veles — call it 7500–9500 lines — most of it
 mechanical. The interesting part is not the volume.
@@ -57,7 +57,7 @@ mechanical. The interesting part is not the volume.
 **It is the only phase with a free oracle.** A lexer is a function from
 text to tokens and a parser is a function from text to a tree. Both are
 deterministic, both already have a working implementation, and both already
-have a *printed* form: `lexer` tokens are dumped by `veles parse` and
+have a _printed_ form: `lexer` tokens are dumped by `veles parse` and
 `ast.Dump` renders a file as an indented S-expression. So equivalence is
 a string comparison over a corpus, not a judgement call. No other phase has
 that: `sema`'s output is a `Program` graph, and "the same types were
@@ -121,11 +121,11 @@ Newcomers' mistakes are not removed spellings and stay in both: `for`,
 
 ### The three comparisons
 
-| Gate | Veles side prints | Go side prints | Why this one |
-|---|---|---|---|
-| **G1 tokens** | kind, byte span, text, auto-semi flag, one per line | the same, from `lexer.TokenizeAll` | the lexer alone, before any tree exists |
-| **G2 tree** | `ast.Dump` equivalent | `ast.Dump(parser.ParseFile(...))` | the parser, including every span |
-| **G3 diagnostics** | every diagnostic: span, severity, text | `source.Diagnostics.Render()` | error recovery and message wording |
+| Gate               | Veles side prints                                   | Go side prints                     | Why this one                            |
+| ------------------ | --------------------------------------------------- | ---------------------------------- | --------------------------------------- |
+| **G1 tokens**      | kind, byte span, text, auto-semi flag, one per line | the same, from `lexer.TokenizeAll` | the lexer alone, before any tree exists |
+| **G2 tree**        | `ast.Dump` equivalent                               | `ast.Dump(parser.ParseFile(...))`  | the parser, including every span        |
+| **G3 diagnostics** | every diagnostic: span, severity, text              | `source.Diagnostics.Render()`      | error recovery and message wording      |
 
 Byte-identical output on all three, over the whole corpus, is the
 definition of done. Not "equivalent trees" — identical text, because
@@ -144,7 +144,7 @@ A Go test, `selfhost/selfhost_test.go`, in the same shape as
 4. diff, and on a mismatch print the first differing line with context.
 
 `-update` writes nothing: there is no golden file to update, the Go
-compiler *is* the golden file. That is the whole point.
+compiler _is_ the golden file. That is the whole point.
 
 ### The final gate
 
@@ -176,7 +176,7 @@ pins the one function everything else's spans depend on.
 **Gate P0:** offsets agree, including on CRLF files and on the offset one
 past the end.
 
-*Done 2026-10-08.* `selfhost/source/source.vs` (`File.of`, `position`,
+_Done 2026-10-08._ `selfhost/source/source.vs` (`File.of`, `position`,
 `line`, `lineCount`, `Span` with `to` and `"$span"`, `Severity`,
 `Diagnostic`, `Diagnostics` with `errorAt`/`warnAt`/`render`),
 `selfhost/main.vs` (`--positions`, `--lines`, `--render`) and the harness
@@ -204,14 +204,16 @@ interpolation → character literals.
 
 **Gate P1 = G1** over the whole corpus, including the fuzz findings.
 
-*Done 2026-10-08.* `selfhost/lexer/` — `token.vs` (`Kind` in the Go
+_Done 2026-10-08._ `selfhost/lexer/` — `token.vs` (`Kind` in the Go
 order, `KEYWORDS` and the kind names as constant tables, `Token`,
 `StringPart`, `Comment`), `lexer.vs` (the scanner, automatic semicolons,
 interpolation, documentation comments, the module doc), `ident.vs` (UAX #31
 and how a diagnostic names a character) and `tables.vs`, the identifier and
 "invisible" character classes generated from the Go lexer's own decisions by
 `selfhost/tables_test.go` (which fails when they go stale) — about 900 lines
-of Veles plus the table. `selfhost --tokens` prints every token (kind number
+of Veles plus the table. D223 (2026-10-29) replaced those generated tables
+with the shared `std/unicode` predicates; the G1 byte-identical gate is
+unchanged. `selfhost --tokens` prints every token (kind number
 and name, span, inserted or not, text, doc, string parts), every comment,
 the module doc and every diagnostic; G1 agrees on all 357 corpus files,
 including hand-written broken ones (unterminated strings, comments and
@@ -251,7 +253,7 @@ variant round-trips through the printer. No parser yet.
 
 ### P3 — the printer (≈900 lines)
 
-`selfhost/ast/print.vs`: `Dump`, `DumpDecl`. This is ported *before* the
+`selfhost/ast/print.vs`: `Dump`, `DumpDecl`. This is ported _before_ the
 parser, so that P4 has its oracle from the first declaration it can parse.
 
 Three Go formatting behaviours have to be reproduced exactly:
@@ -292,7 +294,7 @@ corpus file.
 **Gate P5 = G2 and G3** over the whole corpus. The front end is now
 complete for valid input and for every malformed input in the corpus.
 
-*P2–P5 done 2026-10-08* (progress log of `veles-plan.md`; the self-sources are in the
+_P2–P5 done 2026-10-08_ (progress log of `veles-plan.md`; the self-sources are in the
 corpus, so G4 holds without P6).
 
 ### P6 — `Layout`, then self-parse (≈300 lines)
@@ -325,12 +327,12 @@ rather than during it.
 >   `examples/features/utf8` pins it against the Unicode Table 3-7 and Kuhn stress
 >   vectors. The lexer's three decode sites are `utf8.decode(s, i)`.
 > - **`unicode.IsPrint` turned out not to be a gap at all** (decision 2,
->   and *neither* of its options). The call is unreachable for anything
+>   and _neither_ of its options). The call is unreachable for anything
 >   above ASCII: `isIdentStart` accepts every byte ≥ 0x80 (D18), so
 >   `operator()` — the only caller — is only ever reached with a one-byte
 >   rune. The Go lexer now says `showAsItself(r)`, which is `r >= 0x20 &&
->   r != 0x7F`, and `lexer/lexer_test.go` pins both that and the fact that
->   an invisible character like U+00A0 or U+202E is lexed as an *identifier*
+r != 0x7F`, and `lexer/lexer_test.go` pins both that and the fact that
+>   an invisible character like U+00A0 or U+202E is lexed as an _identifier_
 >   rather than reported. The Veles port needs no Unicode data and has no
 >   documented divergence. (That a bidirectional override is a legal
 >   identifier byte is a real question, but it is D18's, not this plan's —
@@ -350,7 +352,7 @@ rather than during it.
 >   stack of its own, which is exactly the parser's shape —
 >   `examples/features/recursion` is that parser in miniature, and is the shape P5
 >   should copy. Writing it closed a hole in `std/json` on the way past: the
->   *encoder* was unbounded, so a tree too deep to decode could still be
+>   _encoder_ was unbounded, so a tree too deep to decode could still be
 >   walked on the way out.
 > - **`selfhost/`** is the package location (decision 4).
 >
@@ -372,13 +374,13 @@ places: copying one character out of a string literal, reading a character
 literal, and reporting an unexpected character. Veles has `byteAt`,
 `bytes()`, `substring` and `charCount`, and no rune API at all.
 
-- *(a)* A `std/utf8` module in Veles over `byteAt`: `decode(s, at): (code:
-  i64, size: i64)?`, `encode(code): List<u8>`. No compiler change, useful
+- _(a)_ A `std/utf8` module in Veles over `byteAt`: `decode(s, at): (code:
+i64, size: i64)?`, `encode(code): List<u8>`. No compiler change, useful
   to every user who touches text, and the lexer needs perhaps 40 lines of
   it. **Recommended.**
-- *(b)* Builtins `string.codeAt(i): i64?` and `string.charSize(i): i64`.
+- _(b)_ Builtins `string.codeAt(i): i64?` and `string.charSize(i): i64`.
   Faster, but adds surface to the catalogue for a rare need.
-- *(c)* Probe with `substring(i, i+1)` … `substring(i, i+4)` and take the
+- _(c)_ Probe with `substring(i, i+1)` … `substring(i, i+4)` and take the
   first that is not null. Works today with no new code, and is
   embarrassing.
 
@@ -386,23 +388,23 @@ literal, and reporting an unexpected character. Veles has `byteAt`,
 "unexpected character". Getting it right needs Unicode category tables;
 getting it wrong is a divergence on input no corpus file contains.
 
-- *(a)* Reproduce Go's behaviour for ASCII and treat every non-ASCII rune
+- _(a)_ Reproduce Go's behaviour for ASCII and treat every non-ASCII rune
   as printable. One-line divergence, documented, and the corpus can pin
-  the ASCII half. **Recommended** — and worth *changing the Go lexer to
-  match*, so the two agree by construction rather than by luck.
-- *(b)* A `std/unicode` with the `IsPrint` ranges (~200 lines of tables).
+  the ASCII half. **Recommended** — and worth _changing the Go lexer to
+  match_, so the two agree by construction rather than by luck.
+- _(b)_ A `std/unicode` with the `IsPrint` ranges (~200 lines of tables).
   Real, and nothing else needs it yet.
 
 **3. Recursion depth.** `parseBinary` → `parseUnary` → `parsePostfix` →
 `parsePrimary` → `parseExpr` is unbounded, and a file of 50 000 `(`
-overflows the stack in *either* implementation. Go's stacks grow; Veles
+overflows the stack in _either_ implementation. Go's stacks grow; Veles
 runs on the C stack.
 
-- *(a)* A depth counter in the parser, `maxDepth` in the low thousands,
+- _(a)_ A depth counter in the parser, `maxDepth` in the low thousands,
   reported as an ordinary diagnostic. Cheap, and §2 of the checklist
   already wants exactly this for the JSON decoder and the router — so do
   it once, the same way, in both. **Recommended.**
-- *(b)* Nothing, and a crash on hostile input.
+- _(b)_ Nothing, and a crash on hostile input.
 
 **4. Where the package lives.** `selfhost/` with its own `veles.toml` and
 modules `source`, `lexer`, `ast`, `parser` is the obvious shape and needs
@@ -440,7 +442,7 @@ Worth writing down, because each was a plausible blocker:
   wants one.~~ **Struck 2026-09-29 (D66, built 2026-09-27):** a module-level
   `var` whose type is not `Mutex`/`Atomic` is a compile error, because tasks
   run on one thread per core. An interning table is a value the parser or
-  lexer *owns* (a struct field, as `bench/intern` does with `Interner`), or a
+  lexer _owns_ (a struct field, as `bench/intern` does with `Interner`), or a
   module-level `val` of a `Mutex<...>`; the keyword table is a plain
   module-level `val`.
 - Enums give `toString()` for free, which is what G1 prints.
@@ -453,23 +455,23 @@ Worth writing down, because each was a plausible blocker:
 node and throws away most of a token list. The collector is stop-the-world
 mark-sweep. Parsing 7000 lines might allocate ~100 000 objects.
 
-*Mitigation:* measure at the end of P1, when a token list is the only
+_Mitigation:_ measure at the end of P1, when a token list is the only
 output and the number is easy to attribute. Print peak heap and total
 bytes allocated with `VELES_GC_THRESHOLD` varied. If the front end is more
 than ~10× the Go one, that is a finding about the collector — exactly the
 kind §3.1 of the checklist is waiting for — and it belongs in the
 benchmark set (§3.3) rather than being worked around here.
 
-*The trap to avoid:* rewriting the port to allocate less. The value of
+_The trap to avoid:_ rewriting the port to allocate less. The value of
 this exercise is that it is written the way a user would write it. Arena
 tricks would hide the finding.
 
 **Span arithmetic.** Every `Span` in Go carries a `*source.File`. In Veles
 that is a struct reference; passing it by value through 92 node
 constructors is a copy per node unless `File` is held behind a reference.
-G2 catches a wrong span immediately, but a *slow* span is invisible.
+G2 catches a wrong span immediately, but a _slow_ span is invisible.
 
-*Mitigation:* decide the representation in P0 and write it down. A `Span`
+_Mitigation:_ decide the representation in P0 and write it down. A `Span`
 of `(start, end)` with the file implied by the parser is smaller and is
 what most compilers do; it changes `Span`'s API, so it is a P0 decision,
 not a P5 discovery.
@@ -478,14 +480,14 @@ not a P5 discovery.
 Every one of the ~150 error messages must match to the character, including
 the ones that interpolate a token's text.
 
-*Mitigation:* accept that some will differ, and fix them **in the Go
+_Mitigation:_ accept that some will differ, and fix them **in the Go
 lexer** where the Veles wording is better. The point of the exercise is two
 implementations that agree, and the Go one is not sacred.
 
 **Scope creep into `sema`.** The moment the Veles parser works, the
 temptation is to resolve names with it.
 
-*Mitigation:* the plan ends at G4. `sema` is a separate decision with a
+_Mitigation:_ the plan ends at G4. `sema` is a separate decision with a
 separate oracle problem, and it is where the cut-over risk the build plan
 warns about actually lives.
 
@@ -530,7 +532,7 @@ first, and both are done (2026-09-23), so P0 is unblocked:
    the lexer is not the only program that will want it.~~ Done; §5.10 is
    ticked, and `std/json` is already a caller.
 
-And it *produces* one: `bench/parse` belongs in §3.3 from P1 onward.
+And it _produces_ one: `bench/parse` belongs in §3.3 from P1 onward.
 
 ---
 
@@ -539,17 +541,17 @@ And it *produces* one: `bench/parse` belongs in §3.3 from P1 onward.
 Checked against D60–D91 and the compiler as it stands. Nothing here moves a
 gate; each line is something P0–P6 would otherwise have tripped over.
 
-| Change | What it means for the port |
-|---|---|
-| **D66 — a module-level `var` must be `Mutex`/`Atomic`** | struck the "real mutable global" claim (§4). State lives in a struct the lexer or parser owns; the keyword table is a `val`. |
-| **D65 — `this` replaces `self`; the `init { }` block (v0.30)** | structs with derived fields (line tables, keyword sets) use `init` as-is; a parser that keeps token positions next to its tokens needs no `static fun` for the derivation. |
-| **D78 — `test "sentence" { }` with `expect`/`require`** | unit tests of the Veles lexer and parser sit beside the code in `*.test.vs` and run with `veles test`; the equivalence harness stays a Go test, because it compares against the Go front end. |
-| **D86 — no `as`; conversions are methods** | a byte-to-digit step is `(b - '0').toI64()`-shaped, truncation is `wrapU8()`; every `as` in the plan's sketches reads as a method. |
-| **D85 — named imports** | `use lexer { Token, TokenKind }` instead of qualifying every use; the Go package names (`lexer`, `ast`) collide with nothing. |
-| **D89 — `public use`** | `selfhost/` can present one facade module (`public use lexer`, `public use parser`) without a flat namespace. |
-| **D18 addendum — UAX #31 identifiers** | already in §4: a generated ID_Start/ID_Continue table (P1). |
-| **D64, D81, D88 — panics carry locations, call chains and the caller's line** | an invariant broken in the port reports `at file:line:col`, and in a debug build the chain, which makes a G1–G3 mismatch easier to chase. |
-| **D90, D91 — `lazy`, `std/log`** | `log.debug("token $t")` costs a closure while off (~30 ns, checklist §5.7): fine for diagnostics, not for the scanner's per-byte path, where the port logs nothing. |
+| Change                                                                        | What it means for the port                                                                                                                                                                    |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D66 — a module-level `var` must be `Mutex`/`Atomic`**                       | struck the "real mutable global" claim (§4). State lives in a struct the lexer or parser owns; the keyword table is a `val`.                                                                  |
+| **D65 — `this` replaces `self`; the `init { }` block (v0.30)**                | structs with derived fields (line tables, keyword sets) use `init` as-is; a parser that keeps token positions next to its tokens needs no `static fun` for the derivation.                    |
+| **D78 — `test "sentence" { }` with `expect`/`require`**                       | unit tests of the Veles lexer and parser sit beside the code in `*.test.vs` and run with `veles test`; the equivalence harness stays a Go test, because it compares against the Go front end. |
+| **D86 — no `as`; conversions are methods**                                    | a byte-to-digit step is `(b - '0').toI64()`-shaped, truncation is `wrapU8()`; every `as` in the plan's sketches reads as a method.                                                            |
+| **D85 — named imports**                                                       | `use lexer { Token, TokenKind }` instead of qualifying every use; the Go package names (`lexer`, `ast`) collide with nothing.                                                                 |
+| **D89 — `public use`**                                                        | `selfhost/` can present one facade module (`public use lexer`, `public use parser`) without a flat namespace.                                                                                 |
+| **D18 addendum — UAX #31 identifiers**                                        | already in §4: a generated ID_Start/ID_Continue table (P1).                                                                                                                                   |
+| **D64, D81, D88 — panics carry locations, call chains and the caller's line** | an invariant broken in the port reports `at file:line:col`, and in a debug build the chain, which makes a G1–G3 mismatch easier to chase.                                                     |
+| **D90, D91 — `lazy`, `std/log`**                                              | `log.debug("token $t")` costs a closure while off (~30 ns, checklist §5.7): fine for diagnostics, not for the scanner's per-byte path, where the port logs nothing.                           |
 
 Still true as written: `std/utf8`, `partitionPoint`, `recursion.Depth`, the
 disjoint AST families, `substring` not copying, `selfhost/` as the location.
@@ -571,21 +573,21 @@ was probed with a small program, not assumed. **has** means it works today
 and is measured or tested; **partial** and **gap** are listed below the
 table.
 
-| Need | Verdict | Evidence |
-|---|---|---|
-| Large pointer graphs, with cycles, under the GC | **has** | 800 000 nodes with parent↔child cycles (`var parent: (*Node)?`, `kids: MutableList<*Node>`) build and walk; `bench/trees` 0.2–0.5× Go |
-| A sealed family walked with `when`, exhaustively | **has** | `bench/ast` 0.4–0.6× Go; a missing arm is a compile error |
-| Interning: a string-keyed map handing out dense ids | **has** | `bench/intern` 0.6–2.0× Go |
-| Maps keyed by a struct, and by a sealed-family value | **has** | `MutableMap<Key, i64>` with `Key { a: i64, b: string }`, and `MutableMap<Type, i64>` over a sealed `Type`: equal values find the same entry |
-| Deterministic iteration order | **has** | maps and sets are insertion-ordered by guarantee (D25), so output is reproducible without sorting keys |
-| Sorting: stable, by key, by comparator | **has** | `sorted`, `sortedBy`, `sortedWith`, `sortWith`; stable (chapter 8) |
-| Building large text | **has** | `bench/emit`: 250 000 lines of IR through one `StringBuilder`, 0.4–1.2× Go |
-| Tokenising a large source | **has** | `bench/lexer` 0.6–1.5× Go |
-| A subprocess with captured output and its exit code | **has** | a C file compiled and run through `os.run("clang", ...)`; `Output.code`, `ok()`, stdin and stderr capture |
-| File I/O, directory walk, paths, args, env, exit codes | **has** | `std/fs`, `std/path`, `std/os` |
-| Parallel work (per-function codegen) | **has** | tasks on one thread per core (D66); `mapConcurrent` |
-| Emitting a float constant in LLVM's hex form | **has, since 2026-09-29 (D93)** | `x.toBits()` / `f64.fromBits(bits)`; was **partial**, see below |
-| Deep recursion | **gap, closed 2026-09-29 (D92)** | see below |
+| Need                                                   | Verdict                          | Evidence                                                                                                                                    |
+| ------------------------------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Large pointer graphs, with cycles, under the GC        | **has**                          | 800 000 nodes with parent↔child cycles (`var parent: (*Node)?`, `kids: MutableList<*Node>`) build and walk; `bench/trees` 0.2–0.5× Go       |
+| A sealed family walked with `when`, exhaustively       | **has**                          | `bench/ast` 0.4–0.6× Go; a missing arm is a compile error                                                                                   |
+| Interning: a string-keyed map handing out dense ids    | **has**                          | `bench/intern` 0.6–2.0× Go                                                                                                                  |
+| Maps keyed by a struct, and by a sealed-family value   | **has**                          | `MutableMap<Key, i64>` with `Key { a: i64, b: string }`, and `MutableMap<Type, i64>` over a sealed `Type`: equal values find the same entry |
+| Deterministic iteration order                          | **has**                          | maps and sets are insertion-ordered by guarantee (D25), so output is reproducible without sorting keys                                      |
+| Sorting: stable, by key, by comparator                 | **has**                          | `sorted`, `sortedBy`, `sortedWith`, `sortWith`; stable (chapter 8)                                                                          |
+| Building large text                                    | **has**                          | `bench/emit`: 250 000 lines of IR through one `StringBuilder`, 0.4–1.2× Go                                                                  |
+| Tokenising a large source                              | **has**                          | `bench/lexer` 0.6–1.5× Go                                                                                                                   |
+| A subprocess with captured output and its exit code    | **has**                          | a C file compiled and run through `os.run("clang", ...)`; `Output.code`, `ok()`, stdin and stderr capture                                   |
+| File I/O, directory walk, paths, args, env, exit codes | **has**                          | `std/fs`, `std/path`, `std/os`                                                                                                              |
+| Parallel work (per-function codegen)                   | **has**                          | tasks on one thread per core (D66); `mapConcurrent`                                                                                         |
+| Emitting a float constant in LLVM's hex form           | **has, since 2026-09-29 (D93)**  | `x.toBits()` / `f64.fromBits(bits)`; was **partial**, see below                                                                             |
+| Deep recursion                                         | **gap, closed 2026-09-29 (D92)** | see below                                                                                                                                   |
 
 **Partial — float bits (closed the same day, D93: `toBits()` / `fromBits()` in std, `examples/features/floatbits`).** As found: there was no `f64` ↔ `u64` bit reinterpretation in
 std. It works with an `unsafe` cast (`p.cast<*raw u64>()`: 1.5 gives

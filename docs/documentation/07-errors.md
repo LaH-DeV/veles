@@ -79,7 +79,9 @@ A task handle must be awaited before interpolation: `"${await task}"`.
 Inside another `throws` function, `try expr` unwraps a success and
 returns the error to _your_ caller otherwise:
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 error ParseError { text: string }
@@ -107,6 +109,118 @@ fun main() {
   }
 }
 ```
+
+```go [Go]
+package main
+
+import (
+	"fmt"
+	"strconv"
+)
+
+type ParseError struct{ Text string }
+
+func (e *ParseError) Error() string { return "not a number: " + e.Text }
+
+func parseAll(items []string) ([]int64, error) {
+	var out []int64
+	for _, it := range items {
+		n, err := strconv.ParseInt(it, 10, 64)
+		if err != nil {
+			return nil, &ParseError{Text: it}
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+// every caller passes the error up by hand
+func total(items []string) (int64, error) {
+	numbers, err := parseAll(items)
+	if err != nil {
+		return 0, err
+	}
+	var sum int64
+	for _, n := range numbers {
+		sum += n
+	}
+	return sum, nil
+}
+
+func report(items []string) {
+	r, err := total(items)
+	if pe, ok := err.(*ParseError); ok {
+		fmt.Println("bad input", pe.Text)
+		return
+	}
+	fmt.Println("total", r)
+}
+
+func main() {
+	report([]string{"1", "2", "3"})
+	report([]string{"1", "two"})
+}
+```
+
+```ts [TypeScript]
+class ParseError extends Error {
+  text: string;
+  constructor(text: string) {
+    super(`not a number: ${text}`);
+    this.text = text;
+  }
+}
+
+// nothing in the signature says this throws
+function parseAll(items: string[]): number[] {
+  return items.map((it) => {
+    const n = Number.parseInt(it, 10);
+    if (Number.isNaN(n)) throw new ParseError(it);
+    return n;
+  });
+}
+
+function total(items: string[]): number {
+  return parseAll(items).reduce((a, b) => a + b, 0);
+}
+
+for (const items of [["1", "2", "3"], ["1", "two"]]) {
+  try {
+    console.log(`total ${total(items)}`);
+  } catch (e) {
+    if (e instanceof ParseError) console.log(`bad input ${e.text}`);
+    else throw e;
+  }
+}
+```
+
+```swift [Swift]
+struct ParseError: Error { let text: String }
+
+func parseAll(_ items: [String]) throws(ParseError) -> [Int] {
+    var out: [Int] = []
+    for it in items {
+        guard let n = Int(it) else { throw ParseError(text: it) }
+        out.append(n)
+    }
+    return out
+}
+
+func total(_ items: [String]) throws(ParseError) -> Int {
+    let numbers = try parseAll(items)
+    return numbers.reduce(0, +)
+}
+
+for items in [["1", "2", "3"], ["1", "two"]] {
+    do {
+        print("total \(try total(items))")
+    } catch {
+        print("bad input \(error.text)")
+    }
+}
+```
+
+:::
 
 Output:
 
