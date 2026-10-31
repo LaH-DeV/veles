@@ -1828,8 +1828,29 @@ std/compress` exited 255, and `TestHashFlooding`,
       `go test ./driver` runs overlapped on one machine; seven isolated runs
       passed; not investigated (shared temp paths are the first suspect).
       (4) `-short` on macOS: `go test ./...` ~290 s → 187 s, `driver` 288 s
-      → 101 s; `docs` (100 s) is now the long pole of the quick tier and the
+      → 101 s (on Windows, as rebuilt 2026-10-31 with 9 tests in
+      `skipInShort`: `driver` 231 s → 154 s); `docs` (100 s) is now the long pole of the quick tier and the
       driver's serial phase (tests that capture stdio) is unchanged.
+
+- [ ] **CI workflow files missing from the tree (2026-10-31).** The
+      commits from macOS carried the 2026-10-30 test tooling without
+      anything under `driver/` (rebuilt on Windows 2026-10-31, see the
+      plan's log) and without `.github/workflows/ci.yml` and `nightly.yml`,
+      which CLAUDE.md and item (3) above describe. Not rewritten: add them
+      from the macOS tree, or write them anew.
+
+- [ ] **Runtime object cache races on Windows (2026-10-31).** On the first
+      `go test ./...` after a runtime change (a new cache directory under
+      `%LOCALAPPDATA%\veles\rt\`), parallel builds failed to link the freshly
+      installed `veles_ffi.o`: `ld: cannot find …veles_ffi.o: Permission
+      denied` (codegen golden `cede`), and twice `0-bit reloc in dll` /
+      `local symbol (NULL) has no section` (examples `listpatterns`,
+      `packages/app`). All three passed once the cache was warm.
+      `runtimeObjects` (driver.go) compiles to a private name and renames,
+      but on Windows a linker opening the object can still collide with
+      another build's rename over it. Not investigated; a lock file around
+      installing the directory, or installing it whole by renaming a
+      directory, are the first candidates.
 
 - [ ] **Checking the embedded std once, not per load (2026-10-23).** With
       parsed std cached (above), checking is what the language server and

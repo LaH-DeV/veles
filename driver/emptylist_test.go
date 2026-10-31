@@ -178,7 +178,7 @@ fun main() {
 		"toList: 0 1 0 false\n" +
 		"joined: 12670 word word\n" +
 		"concat: 4 4 0 wordword 20000 20000\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "emptylist.exe")
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)

@@ -361,6 +361,7 @@ receiver and arguments; `&&` shows the operand that was false,
       candidate: "/a"
   main.vs:19:3: expect(xs.len() == 3 && twice(n) == 11)
       twice(n): 10
+      n:        5
   main.vs:20:3: expect(n > 10 || xs.isEmpty())
       n:  5
       xs: [1, 2, 3]

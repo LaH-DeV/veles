@@ -6,8 +6,7 @@ fun parse(): i64 throws ParseError => throw ParseError()
 
 fun work(): i64 => 42
 
-@template
-fun text(parts: List<string>, values: List<Result<i64, ParseError>>): string => "${parts.len()} ${values.len()}"
+template fun text(parts: List<string>, values: List<Result<i64, ParseError>>): string => "${parts.len()} ${values.len()}"
 
 fun main() {
   val result = parse()

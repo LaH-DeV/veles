@@ -47,7 +47,7 @@ fun main() throws {
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(t.TempDir(), "interpolation.exe")
 		if code := Run(Options{Path: dir, Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build release=%v: exit %d", release, code)

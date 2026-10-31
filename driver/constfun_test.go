@@ -17,7 +17,7 @@ func TestConstFunMatchesRunTime(t *testing.T) {
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		out, code := runTestFiles(t, map[string]string{"fns.vs": constFunSrc, "cf.test.vs": constFunTests}, Options{Release: release})
 		if code != 0 || !strings.Contains(out, "30 passed") {
 			t.Fatalf("release=%v: exit %d, output:\n%s", release, code, out)

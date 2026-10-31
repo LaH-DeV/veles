@@ -181,7 +181,7 @@ fun main() {
 		"wide 109 1045\n" +
 		"grid [[1, 2, 3], [4, 5, 6]] 91\n" +
 		"huge 139 " + hugeSums() + "\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "arrays.exe")
 		if code := Run(Options{Path: dir, Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)

@@ -137,9 +137,9 @@ test "expectations about failing" {
 	out, code := runTests(t, src, Options{})
 	want := "test passes ... ok\n" +
 		"test keeps going ... FAILED\n" +
-		"  main.vs:20:3: expect(name.len() == 6)\n      left:  5\n      right: 6\n" +
+		"  main.vs:20:3: expect(name.len() == 6)\n      left:  5\n      right: 6\n      name:  \"veles\"\n" +
 		"  main.vs:21:3: expect(name == \"Veles\")\n      left:  \"veles\"\n      right: \"Veles\"\n" +
-		"  main.vs:22:3: expect(name.isEmpty())\n" +
+		"  main.vs:22:3: expect(name.isEmpty())\n      name: \"veles\"\n" +
 		"test stops ... FAILED\n" +
 		"  main.vs:26:11: require(parsePort(\"99999\"))\n      threw: RangeError(value: 99999)\n" +
 		"test expectations about failing ... FAILED\n" +
@@ -235,6 +235,7 @@ suite "errors" {
 		"      main.vs:5:5: expect(parseInt(text) == want)\n" +
 		"          left:  null\n" +
 		"          right: 0\n" +
+		"          text:  \"\"\n" +
 		"          called from main.vs:17:7\n" +
 		"\n4 passed, 2 failed: config / errors / empty input, parser / rejects / empty input\n"
 	if out != want || code != 1 {
@@ -388,19 +389,21 @@ test "fourth" {
 		"test third ... ok\n" +
 		"test fourth ... ok\n" +
 		"\n2 passed, 2 failed: slowest first, second\n"
+	// one at a time first: a link the program cache saves the second run
+	// then shortens the run at once, never the margin measured
 	start := time.Now()
-	out, code := runTests(t, src, Options{Jobs: 4})
-	took := time.Since(start)
-	if out != want || code != 1 {
-		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)
-	}
-	start = time.Now()
-	out, code = runTests(t, src, Options{Jobs: 1})
+	out, code := runTests(t, src, Options{Jobs: 1})
 	serial := time.Since(start)
 	if out != want || code != 1 {
 		t.Fatalf("--jobs 1: exit %d, output:\n%s", code, out)
 	}
-	// the build is in both; one after another adds at least 900ms of sleep
+	start = time.Now()
+	out, code = runTests(t, src, Options{Jobs: 4})
+	took := time.Since(start)
+	if out != want || code != 1 {
+		t.Fatalf("exit %d, output:\n%s\n--- want ---\n%s", code, out, want)
+	}
+	// the check is in both; one after another adds at least 900ms of sleep
 	if serial-took < 700*time.Millisecond {
 		t.Errorf("at once took %v, one at a time %v: the tests did not overlap", took, serial)
 	}

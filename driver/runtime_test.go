@@ -205,13 +205,13 @@ fun main() {
 		t.Fatal(err)
 	}
 	var want string
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("gc%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, markers := range []string{"1", "2", "8"} {
-			for _, threads := range []string{"2", "8"} {
+		for _, markers := range threadCounts("1", "2", "8") {
+			for _, threads := range threadCounts("2", "8") {
 				run := exec.Command(exe)
 				run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_MARKERS="+markers, "VELES_GC_POISON=1", "VELES_GC_THRESHOLD=300000")
 				out, err := run.CombinedOutput()
@@ -244,6 +244,7 @@ fun main() {
 // write watch on Windows) or takes every page as written (=all, every
 // platform); the sums must equal those of collections in one pause (=0).
 func TestConcurrentMarkingKeepsWhatIsLive(t *testing.T) {
+	skipInShort(t)
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -305,13 +306,13 @@ fun main() {
 	if runtime.GOOS == "windows" {
 		modes = append(modes, "1")
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("cmark%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
 		for _, mode := range modes {
-			for _, threads := range []string{"2", "8"} {
+			for _, threads := range threadCounts("2", "8") {
 				run := exec.Command(exe)
 				run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_CONCURRENT="+mode, "VELES_GC_POISON=1", "VELES_GC_THRESHOLD=65536")
 				out, err := run.CombinedOutput()
@@ -327,6 +328,7 @@ fun main() {
 // single instructions, and `update` retries a compare-and-swap. Eight
 // threads race on each kind so a lost update shows up in the totals.
 func TestAtomicWordsUnderThreads(t *testing.T) {
+	skipInShort(t)
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -386,6 +388,7 @@ fun main() {
 // consumers race on both kinds; a value lost or delivered twice shows in
 // the totals.
 func TestChannelHandoffUnderThreads(t *testing.T) {
+	skipInShort(t)
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -432,7 +435,7 @@ fun main() {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	want := "8000 4004000 8000 4004000 8000 4004000"
-	for _, threads := range []string{"1", "8", "8", "8"} {
+	for _, threads := range threadCounts("1", "8", "8", "8") {
 		run := exec.Command(exe)
 		run.Env = append(os.Environ(), "VELES_THREADS="+threads)
 		out, err := run.CombinedOutput()
@@ -597,12 +600,12 @@ fun main() {
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("calls%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"1", "2", "8"} {
+		for _, threads := range threadCounts("1", "2", "8") {
 			run := exec.Command(exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
 			out, err := run.CombinedOutput()
@@ -740,12 +743,12 @@ i32 add wraps: -2147483648, sub wraps back: 2147483647`
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("atomics%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"1", "2", "8"} {
+		for _, threads := range threadCounts("1", "2", "8") {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
@@ -970,12 +973,12 @@ lazy: panicked: no table today`
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("sync%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"1", "2", "8"} {
+		for _, threads := range threadCounts("1", "2", "8") {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
@@ -1134,12 +1137,12 @@ fun later() {
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("close%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"1", "2", "8"} {
+		for _, threads := range threadCounts("1", "2", "8") {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
@@ -1271,12 +1274,12 @@ variadic: a 3, b 0, c 9`
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("decl%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"1", "2", "8"} {
+		for _, threads := range threadCounts("1", "2", "8") {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
@@ -1620,12 +1623,12 @@ fun joinBoom() throws ThreadError {
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("exec%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"1", "2", "8"} {
+		for _, threads := range threadCounts("1", "2", "8") {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
@@ -1857,13 +1860,13 @@ fun main() {
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("loops%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
 		// a plain loop needs a second thread for the timeout to run on (D145)
-		for _, threads := range []string{"2", "4", "8"} {
+		for _, threads := range threadCounts("2", "4", "8") {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
@@ -1965,12 +1968,12 @@ fun main() {
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("woken%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"2", "4", "8"} {
+		for _, threads := range threadCounts("2", "4", "8") {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads)
@@ -2034,12 +2037,12 @@ fun main() {
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("putoff%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"1", "2", "4"} {
+		for _, threads := range threadCounts("1", "2", "4") {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads)
@@ -2281,12 +2284,12 @@ all within 10 s: true`
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("wt%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"1", "2", "8"} {
+		for _, threads := range threadCounts("1", "2", "8") {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=4096")
@@ -2308,6 +2311,7 @@ all within 10 s: true`
 // without yielding: parking 100k receivers kept every core busy for
 // seconds. Now both are O(1), and the run is bounded in time.
 func TestManyWaitersOnOneChannel(t *testing.T) {
+	skipInShort(t)
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -2353,7 +2357,7 @@ fun main() {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	want := "1250025000 50000"
-	for _, threads := range []string{"1", "8"} {
+	for _, threads := range threadCounts("1", "8") {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		run := exec.CommandContext(ctx, exe)
 		run.Env = append(os.Environ(), "VELES_THREADS="+threads)
@@ -2388,7 +2392,7 @@ func TestRaceWithManyArms(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("race%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
@@ -2407,6 +2411,7 @@ func TestRaceWithManyArms(t *testing.T) {
 // re-added nodes that were already listed, cutting the list). Every value
 // sent must be received exactly once.
 func TestRaceOverChannelsUnderThreads(t *testing.T) {
+	skipInShort(t)
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -2494,7 +2499,7 @@ fun main() {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	want := "8000 31996000 0 7" // 0 + 1 + … + 7999
-	for _, threads := range []string{"1", "2", "8", "8", "8"} {
+	for _, threads := range threadCounts("1", "2", "8", "8", "8") {
 		run := exec.Command(exe)
 		run.Env = append(os.Environ(), "VELES_THREADS="+threads)
 		out, err := run.CombinedOutput()
@@ -2509,6 +2514,7 @@ fun main() {
 // on whichever thread resumes them. A child keeps the value bound when it
 // started, and the binding ends with withValue also when the work throws.
 func TestTaskLocalsUnderThreads(t *testing.T) {
+	skipInShort(t)
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -2556,7 +2562,7 @@ fun main() {
 		t.Fatalf("build failed with exit %d", code)
 	}
 	want := "0 wrong, threw: true, outside: -1"
-	for _, threads := range []string{"1", "8", "8"} {
+	for _, threads := range threadCounts("1", "8", "8") {
 		run := exec.Command(exe)
 		run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_THRESHOLD=300000")
 		out, err := run.CombinedOutput()
@@ -2716,7 +2722,7 @@ fun main() throws IoError {
 	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
-	for _, threads := range []string{"1", "8"} {
+	for _, threads := range threadCounts("1", "8") {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		run := exec.CommandContext(ctx, exe)
 		run.Env = append(os.Environ(), "VELES_THREADS="+threads)
@@ -2789,16 +2795,16 @@ func TestRunInputAndStderr(t *testing.T) {
 	dir := t.TempDir()
 	src := `use io, os
 
-fun child(mode: string) {
+fun child(mode: string) throws {
   when (mode) {
     "echo"    => {
       io.eprintln("to stderr")
-      io.print(io.readAll())
+      io.print(try io.readAll())
     }
-    "noinput" => io.println("${io.readAll().len()} bytes in")
+    "noinput" => io.println("${(try io.readAll()).len()} bytes in")
     "flood"   => {
       io.eprintln("e".repeat(1000000))
-      val input = io.readAll()
+      val input = try io.readAll()
       io.println("${input.len()} " + "o".repeat(1000000))
     }
     else      => { }
@@ -2807,7 +2813,7 @@ fun child(mode: string) {
 
 fun main() throws {
   val args = os.args()
-  if (args.at(0) == "child") return child(args.at(1) ?: "")
+  if (args.at(0) == "child") return try child(args.at(1) ?: "")
   val me = os.program()
   val a = try os.run(me, ["child", "echo"], input: "hello\nworld\n")
   io.println("echo: stdout ${a.stdout.len()} ${a.stdout.startsWith("hello")} stderr '${a.stderr.trim()}'")
@@ -2912,10 +2918,10 @@ func TestStandardStreamsAreBytes(t *testing.T) {
 	dir := t.TempDir()
 	src := `use io
 
-fun main() {
-  io.print("[${io.readLine() ?: "-"}]")
-  io.print("[${io.readLine() ?: "-"}]")
-  io.print("[${io.readAll()}]")
+fun main() throws {
+  io.print("[${try io.readLine() ?: "-"}]")
+  io.print("[${try io.readLine() ?: "-"}]")
+  io.print("[${try io.readAll()}]")
   io.println("end")
   io.eprintln("err")
 }
@@ -3093,7 +3099,7 @@ fun main() {
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("susp%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
@@ -3172,7 +3178,7 @@ fun main() {
 		}
 		return strings.ReplaceAll(stdout.String(), "\r\n", "\n"), strings.ReplaceAll(stderr.String(), "\r\n", "\n"), code
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := build(release)
 		profile := map[bool]string{false: "debug", true: "release"}[release]
 		for _, mode := range []string{"main", "task"} {
@@ -3323,12 +3329,12 @@ race timeout of 300 us: never early true, median under 8 ms true`
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, fmt.Sprintf("fine%v.exe", release))
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build failed with exit %d", code)
 		}
-		for _, threads := range []string{"2", "8"} {
+		for _, threads := range threadCounts("2", "8") {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			run := exec.CommandContext(ctx, exe)
 			run.Env = append(os.Environ(), "VELES_THREADS="+threads)

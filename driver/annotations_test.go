@@ -80,7 +80,7 @@ fun main() {
 }
 `)
 	want := "[balance must be at least 5]\n[balance=-, note=-, owner=who]\nAccount(balance: 0, note: , owner: )\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(root, "app.exe")
 		if code := Run(Options{Path: filepath.Join(root, "app"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("release=%v: build failed (%d)", release, code)

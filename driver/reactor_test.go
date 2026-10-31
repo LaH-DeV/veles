@@ -144,10 +144,11 @@ func runReactorProgram(t *testing.T, threads []string) {
 }
 
 func TestReactorManyConnections(t *testing.T) {
+	skipInShort(t)
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
-	runReactorProgram(t, []string{"1", "2", "4", "8"})
+	runReactorProgram(t, threadCounts("1", "2", "4", "8"))
 }
 
 // The portable poll() reactor, built on Linux and macOS to test it:
@@ -162,7 +163,7 @@ func TestReactorPollFallback(t *testing.T) {
 	}
 	runtimeTestFlags = []string{"-DVELES_POLL_FALLBACK"}
 	defer func() { runtimeTestFlags = nil }()
-	runReactorProgram(t, []string{"1", "4"})
+	runReactorProgram(t, threadCounts("1", "4"))
 }
 
 func TestReactorKqueue(t *testing.T) {
@@ -237,6 +238,7 @@ int main(void) {
 // heap — and the rest each woken no earlier than its deadline and not
 // absurdly late. Cancelled ones never print; the totals say who woke.
 func TestTimerHeapUnderThreads(t *testing.T) {
+	skipInShort(t)
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
 	}
@@ -281,7 +283,7 @@ fun main() {
 	if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Sanitize: *sanitize}); code != 0 {
 		t.Fatalf("build failed with exit %d", code)
 	}
-	for _, n := range []string{"1", "8"} {
+	for _, n := range threadCounts("1", "8") {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		run := exec.CommandContext(ctx, exe)
 		run.Env = append(os.Environ(), "VELES_THREADS="+n)

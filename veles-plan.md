@@ -810,6 +810,36 @@ on Linux).
 
 ## Progress log
 
+### 2026-10-31 — The driver half of the 2026-10-30 test tooling, rebuilt on Windows
+
+- The commits brought from macOS (`way-of-life-improvement`, 7 commits on
+  `spec-driven`) held the sema, codegen and runtime side of the entry
+  below but nothing under `driver/`: `driver.go` still set the
+  `sema.Program` test fields `85b23db` removed, and nothing built. Rebuilt:
+  `veles test` passes its options as `VELES_TEST_*` (`testEnv`); the
+  program cache (`driver/execache.go`: keyed by IR, clang and its stat,
+  the link's arguments and the program's name; a fresh link runs from the
+  build directory and a copy is renamed into place; 32 entries, evicted by
+  last use, which a hit stamps on the entry's directory); `--timings` says
+  `skipped: this program was linked before (cached)`.
+  `TestTestsRunAtOnceReportInOrder` runs `--jobs 1` first.
+- `driver TestExpectShowsParts` pins chapter 14's rules (calls, `&&`, `||`,
+  `!`, `in`, a comparison's call arguments, one evaluation, facts across
+  `&&`, the caret, a message); chapter 14's `&&` example gained the `n:`
+  line the rule gives. `TestProgramCacheSkipsTheLink` and unit tests of the
+  key, store/lookup and pruning.
+- `-short`: `profiles()`, `threadCounts(...)` (`driver/short_test.go`)
+  replace 81 loops; 9 stress tests call `skipInShort`. `driver`: Windows
+  231 s → 154 s, Linux (WSL) 173 s → 91 s.
+- Also: conformance files moved to `template fun` (D227) and D229's
+  message argument, a conformance file for five uncovered test-word
+  errors, dump and codegen goldens regenerated (numbering and positions
+  only), driver tests updated for the parts lines and throwing
+  `io.readLine`/`readAll`.
+- Verified: build, vet, full `go test ./...` on Windows and Linux (WSL),
+  Go 1.27.1; `-short` on Linux. Not verified: macOS. The CI workflow
+  files are still missing from the tree (checklist §11).
+
 ### 2026-10-31 — N7 start: the same program in Go, TypeScript and Swift
 
 - Four programs that Track 2 readers meet first became VitePress code groups

@@ -7,7 +7,7 @@ fun v_main.area: fun(Shape): f64
         Return
           Value:
             Match: f64
-              Subject: $tmp9#1
+              Subject: $tmp1#1
               Init:
                 VarRef: Shape
                   Var: s#0
@@ -17,7 +17,7 @@ fun v_main.area: fun(Shape): f64
                     VariantTest: bool
                       X:
                         VarRef: Shape
-                          Var: $tmp9#1
+                          Var: $tmp1#1
                       Variant: Circle
                   Body:
                     Block
@@ -56,7 +56,7 @@ fun v_main.area: fun(Shape): f64
                     VariantTest: bool
                       X:
                         VarRef: Shape
-                          Var: $tmp9#1
+                          Var: $tmp1#1
                       Variant: Rect
                   Body:
                     Block
@@ -99,12 +99,12 @@ fun v_main.first: fun(List<string>): string?
                 Block
                   Stmts:
                     VarDecl
-                      Var: $tmp10#1
+                      Var: $tmp2#1
                       Init:
                         VarRef: List<string>
                           Var: xs#0
                     VarDecl
-                      Var: $tmp11#2
+                      Var: $tmp3#2
                       Init:
                         IntConst: i64
                           Value: 0
@@ -116,7 +116,7 @@ fun v_main.first: fun(List<string>): string?
                               Op: <
                               L:
                                 VarRef: i64
-                                  Var: $tmp11#2
+                                  Var: $tmp3#2
                               R:
                                 IntConst: i64
                                   Value: 0
@@ -126,19 +126,19 @@ fun v_main.first: fun(List<string>): string?
                                 Assign
                                   Target:
                                     VarRef: i64
-                                      Var: $tmp11#2
+                                      Var: $tmp3#2
                                   Value:
                                     Binary: i64
                                       Op: +%
                                       L:
                                         VarRef: i64
-                                          Var: $tmp11#2
+                                          Var: $tmp3#2
                                       R:
                                         Builtin: i64
                                           Op: "list.len"
                                           Args:
                                             VarRef: List<string>
-                                              Var: $tmp10#1
+                                              Var: $tmp2#1
                               Type: ()
                   Value:
                     If: string?
@@ -150,7 +150,7 @@ fun v_main.first: fun(List<string>): string?
                               Op: >=
                               L:
                                 VarRef: i64
-                                  Var: $tmp11#2
+                                  Var: $tmp3#2
                               R:
                                 IntConst: i64
                                   Value: 0
@@ -159,13 +159,13 @@ fun v_main.first: fun(List<string>): string?
                               Op: <
                               L:
                                 VarRef: i64
-                                  Var: $tmp11#2
+                                  Var: $tmp3#2
                               R:
                                 Builtin: i64
                                   Op: "list.len"
                                   Args:
                                     VarRef: List<string>
-                                      Var: $tmp10#1
+                                      Var: $tmp2#1
                       Then:
                         Block
                           Value:
@@ -175,9 +175,9 @@ fun v_main.first: fun(List<string>): string?
                                   Op: "list.get"
                                   Args:
                                     VarRef: List<string>
-                                      Var: $tmp10#1
+                                      Var: $tmp2#1
                                     VarRef: i64
-                                      Var: $tmp11#2
+                                      Var: $tmp3#2
                           Type: string?
                       Else:
                         Block
@@ -217,12 +217,12 @@ fun v_main.main: fun()
                         FloatConst: f64
                           Value: 3
         VarDecl
-          Var: $tmp12#1
+          Var: $tmp4#1
           Init:
             VarRef: List<Shape>
               Var: shapes#0
         VarDecl
-          Var: $tmp13#2
+          Var: $tmp5#2
           Init:
             IntConst: i64
               Value: 0
@@ -232,13 +232,13 @@ fun v_main.main: fun()
               Op: <
               L:
                 VarRef: i64
-                  Var: $tmp13#2
+                  Var: $tmp5#2
               R:
                 Builtin: i64
                   Op: "list.len"
                   Args:
                     VarRef: List<Shape>
-                      Var: $tmp12#1
+                      Var: $tmp4#1
           Body:
             Block
               Stmts:
@@ -249,9 +249,9 @@ fun v_main.main: fun()
                       Op: "list.get"
                       Args:
                         VarRef: List<Shape>
-                          Var: $tmp12#1
+                          Var: $tmp4#1
                         VarRef: i64
-                          Var: $tmp13#2
+                          Var: $tmp5#2
                 ExprStmt
                   X:
                     Call: ()
@@ -273,17 +273,17 @@ fun v_main.main: fun()
             Assign
               Target:
                 VarRef: i64
-                  Var: $tmp13#2
+                  Var: $tmp5#2
               Value:
                 Binary: i64
                   Op: +%
                   L:
                     VarRef: i64
-                      Var: $tmp13#2
+                      Var: $tmp5#2
                   R:
                     IntConst: i64
                       Value: 1
-          ID: 3
+          ID: 1
         ExprStmt
           X:
             Call: ()

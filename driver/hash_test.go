@@ -17,6 +17,7 @@ import (
 // longer know, are hashed before the first global initializer runs, which
 // reads one here.
 func TestHashFlooding(t *testing.T) {
+	skipInShort(t)
 	t.Parallel()
 	if _, err := findClang(); err != nil {
 		t.Skip("clang not available:", err)
@@ -71,7 +72,7 @@ fun main() {
 		"true false [x, y]\n" +
 		"second null\n" +
 		"200000 7 5000 true false\n"
-	for _, release := range []bool{false, true} {
+	for _, release := range profiles() {
 		exe := filepath.Join(dir, "hash.exe")
 		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release}); code != 0 {
 			t.Fatalf("build (release=%v) failed with exit %d", release, code)

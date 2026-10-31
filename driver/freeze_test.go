@@ -141,7 +141,7 @@ fun main() {
 			"asked false true true 1\n" +
 			"asked false false true true\n" +
 			"report true false [a]\n"
-		for _, release := range []bool{false, true} {
+		for _, release := range profiles() {
 			out, errs, err := run(t, body, release)
 			if err != nil {
 				t.Fatalf("release=%v: %v\n%s\n%s", release, err, out, errs)
@@ -175,7 +175,7 @@ fun main() {
 		t.Run("panics: "+c.name, func(t *testing.T) {
 			t.Parallel()
 			body := "fun main() {\n  " + c.setup + "\n  val frozen = xs.freeze()\n  io.println(\"frozen ${frozen}\")\n  " + c.use + "\n  io.println(\"not reached\")\n}\n"
-			for _, release := range []bool{false, true} {
+			for _, release := range profiles() {
 				out, errs, err := run(t, body, release)
 				if err == nil {
 					t.Fatalf("release=%v: changing a frozen collection should panic\n%s", release, out)
