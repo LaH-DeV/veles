@@ -5,7 +5,7 @@ hex round trip: 500 runs, 500 accepted, 0 failures
 http corpus: 10 runs, 10 accepted, 0 failures
 http mutated: 110 runs, 31 accepted, 0 failures
 http requests: 390 runs, 278 accepted, 0 failures
-json parse: 506 runs, 28 accepted, 0 failures
+json parse: 506 runs, 22 accepted, 0 failures
 json value round trip: 500 runs, 500 accepted, 0 failures
 percentDecode: 500 runs, 500 accepted, 0 failures
 utf8 validators agree: 500 runs, 50 accepted, 0 failures
