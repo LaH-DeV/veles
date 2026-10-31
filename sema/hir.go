@@ -40,15 +40,6 @@ type Program struct {
 	// Tests are the tests (D78); in test mode the entry point runs them.
 	Tests    []*Func
 	TestMode bool
-	// TestTimeoutMs bounds each test's run (0: unbounded) and TestsFiltered
-	// counts the tests `veles test --filter` left out; the driver sets both.
-	TestTimeoutMs int64
-	TestsFiltered int
-	// FailOnSkip makes a skipped test fail the run (`veles test --fail-on-skip`, D178).
-	FailOnSkip bool
-	// TestJobs is how many tests run at once (D80): 0 is one per worker
-	// thread, 1 runs them one at a time.
-	TestJobs int64
 	// Threads is the program's `[runtime] threads` (D143): the default
 	// pool's size, 0 for one per core.
 	Threads int64

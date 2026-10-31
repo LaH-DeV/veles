@@ -572,6 +572,11 @@ func (f *fnCtx) bindArgs(params []types.Param, args []ast.Arg, what string, span
 // callTemplate checks a call to a function template, inferring any type
 // arguments from the arguments (D8 stenciling — one instance per type set).
 func (f *fnCtx) callTemplate(t *FuncTemplate, ownerSubst map[*types.TypeParam]types.Type, typeArgs []types.Type, args []ast.Arg, span source.Span, want types.Type) Expr {
+	if t.Decl.Template && (len(args) != 2 || f.templateValues == nil || args[1].Value != f.templateValues) {
+		f.errorf(span, "template function '%s' is tag-only: use %s\"...\"; ordinary calls cannot supply trusted literal pieces (D227)", t.Name, t.Name)
+		f.checkArgsLoosely(args)
+		return bad()
+	}
 	return f.callTemplateRecv(t, ownerSubst, typeArgs, nil, args, span, want)
 }
 
@@ -2177,6 +2182,10 @@ func (f *fnCtx) receiverPlace(x Expr, src ast.Expr, fnv Expr) (arg Expr, tmp *Va
 // funcValue turns a named, non-generic function into a value; it captures
 // nothing, so it is sendable (D35).
 func (f *fnCtx) funcValue(t *FuncTemplate, span source.Span) Expr {
+	if t.Decl.Template {
+		f.errorf(span, "template function '%s' cannot be used as a function value; use %s\"...\" (D227)", t.Name, t.Name)
+		return bad()
+	}
 	f.c.resolveSignature(t)
 	if len(t.TypeParams) > 0 {
 		f.errorf(span, "generic function '%s' cannot be used as a value; wrap the call in a lambda, whose parameter types pick the instance: '(x) => %s(x)'", t.Name, t.Name)

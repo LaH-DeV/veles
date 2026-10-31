@@ -12,7 +12,7 @@ import (
 // library function cannot. They are in scope only in test code; `assert`,
 // the invariant form, is in scope everywhere. A declaration of the same
 // name wins, as with `panic`.
-var testWords = map[string]bool{"expect": true, "require": true, "expectThrows": true, "expectPanics": true, "fail": true, "skip": true, "skipIf": true}
+var testWords = map[string]bool{"expect": true, "expectEqual": true, "expectNear": true, "require": true, "expectThrows": true, "expectPanics": true, "fail": true, "skip": true, "skipIf": true}
 
 // inTest reports whether the code being checked is test code: a test, a
 // `test fun`, a function in a `*.test.vs` file, or a lambda inside one.
@@ -56,6 +56,34 @@ func (f *fnCtx) testCall(name string, typeArgs []types.Type, e *ast.CallExpr, wa
 	if name == "skip" || name == "skipIf" {
 		return f.skipCall(name, e)
 	}
+	switch name {
+	case "expect":
+		// a message, evaluated only when the condition fails (D229)
+		if len(e.Args) == 2 && e.Args[0].Name == nil && e.Args[1].Name == nil {
+			cond := e.Args[0].Value
+			why := f.checkExprTo(e.Args[1].Value, types.TString)
+			return f.expectCall(name, "expect("+srcText(cond)+")", cond, why, e.Pos)
+		}
+		if len(e.Args) != 1 || e.Args[0].Name != nil {
+			f.errorf(e.Pos, "'expect' takes a condition and, if it helps, a message shown when it fails: expect(port > 0, \"case ${input}\")")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+	case "expectEqual":
+		if len(e.Args) != 2 || e.Args[0].Name != nil || e.Args[1].Name != nil {
+			f.errorf(e.Pos, "'expectEqual' takes the expected value, then the actual one: expectEqual(80, parsePort(\"80\"))")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		return f.expectEqualCall(srcText(e), e.Args[0].Value, e.Args[1].Value, e.Pos)
+	case "expectNear":
+		if len(e.Args) != 3 || e.Args[0].Name != nil || e.Args[1].Name != nil || e.Args[2].Name == nil || e.Args[2].Name.Name != "within" {
+			f.errorf(e.Pos, "'expectNear' takes the expected value, the actual one and a named tolerance: expectNear(0.3, total, within: 1.0e-9)")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		return f.expectNearCall(srcText(e), e.Args[0].Value, e.Args[1].Value, e.Args[2].Value, e.Pos)
+	}
 	if len(e.Args) != 1 || e.Args[0].Name != nil {
 		f.errorf(e.Pos, "'%s' takes one argument: %s", name, testWordSigs[name])
 		f.checkArgsLoosely(e.Args)
@@ -87,7 +115,9 @@ func (f *fnCtx) testCall(name string, typeArgs []types.Type, e *ast.CallExpr, wa
 }
 
 var testWordSigs = map[string]string{
-	"expect":       "fun expect(condition: bool)",
+	"expect":       "fun expect(condition: bool, message: string = \"\")",
+	"expectEqual":  "fun expectEqual<T>(expected: T, actual: T)",
+	"expectNear":   "fun expectNear(expected: f64, actual: f64, within: f64)",
 	"require":      "fun require<T>(value: T? or Result<T, E>): T",
 	"expectThrows": "fun expectThrows<E>(body: fun() throws E)",
 	"expectPanics": "fun expectPanics(body: fun())",
@@ -100,7 +130,13 @@ var testWordSigs = map[string]string{
 var testWordDocs = map[string]string{
 	"expect": "Records a failure when `condition` is false, and the test goes on — one run reports every broken expectation. " +
 		"The report shows the expression as written and, for a comparison, the value of each side:\n\n" +
-		"```text\n  main.vs:4:3: expect(parsePort(\"80\") == 80)\n      left:  81\n      right: 80\n```\n\nIn test code only (D78).",
+		"```text\n  main.vs:4:3: expect(parsePort(\"80\") == 80)\n      left:  81\n      right: 80\n```\n\n" +
+		"A second argument, `expect(ok, \"case ${name}\")`, is a message evaluated only when the condition fails, shown first (D229). In test code only (D78).",
+	"expectEqual": "Records a failure unless `actual == expected` — the expected value first — and the test goes on. " +
+		"The report labels the two `expected:` and `actual:`, and for long texts, lists and structs shows where they differ: " +
+		"`expectEqual(80, parsePort(\"80\"))`. In test code only (D229).",
+	"expectNear": "Records a failure unless the two floats are equal or `|actual - expected| <= within`; a NaN never passes: " +
+		"`expectNear(0.3, total, within: 1.0e-9)`. For a relative tolerance outside tests, `a.isClose(b)`. In test code only (D230).",
 	"require": "The value of a `T?` or a `Result`; when there is none, records the failure (with the error) and ends the test: " +
 		"`val cfg = require(load(\"app.toml\"))`. In test code only (D78).",
 	"expectThrows": "Calls `body` and records a failure unless it throws — an `E`, when one is named: " +
@@ -188,54 +224,24 @@ func (f *fnCtx) unless(cond Expr, body Expr, span source.Span) Expr {
 	return &If{exprBase{types.TUnit}, not, f.valueBlock(body), nil}
 }
 
-// expectCall is `expect(cond)` and `assert(cond, why)`. A comparison has
-// each side evaluated once, in source order, so the report can show its
-// value; a literal side is shown as written. An assert's reason leads its
-// panic — "panic: a report has rows", then the condition — and is only
-// evaluated when the condition is false.
+// expectCall is `expect(cond)` and `assert(cond, why)`. The parts of the
+// condition are evaluated once, in source order, so the report can show
+// their values (testing_power.go). An assert's reason leads its panic —
+// "panic: a report has rows", then the condition — and is only evaluated
+// when the condition is false.
 func (f *fnCtx) expectCall(word, head string, cond ast.Expr, why Expr, span source.Span) Expr {
 	lead := []Expr{strConst(head)}
 	if why != nil {
 		lead = []Expr{why, strConst(failIndent + head)}
 	}
-	b, isCmp := cond.(*ast.BinaryExpr)
-	if !isCmp || !isComparison(b.Op) {
-		c := f.checkExprTo(cond, types.TBool)
-		if types.IsInvalid(c.Type()) {
-			return bad()
-		}
-		return f.unless(c, f.failWith(word, concat(lead...), span), span)
+	miss := func(parts []part) Expr {
+		return f.failWith(word, concat(append(append([]Expr{}, lead...), f.partLines(parts, span)...)...), span)
 	}
-	f.pushScope()
-	defer f.popScope()
-	// a literal side takes its type from the other, as it does in the
-	// comparison itself: `expect(port == 80)` with a u16 port
-	var l, r Expr
-	if isLiteral(b.L) && !isLiteral(b.R) {
-		r = f.checkExpr(b.R, nil)
-		l = f.checkExpr(b.L, r.Type())
-	} else {
-		l = f.checkExpr(b.L, nil)
-		r = f.checkExpr(b.R, l.Type())
-	}
-	if types.IsInvalid(l.Type()) || types.IsInvalid(r.Type()) {
+	x := f.failing(cond, true, true, logicNone, miss, nil)
+	if x == nil {
 		return bad()
 	}
-	lv, ln := f.hiddenName("left", l, b.L.Span())
-	rv, rn := f.hiddenName("right", r, b.R.Span())
-	c := f.checkExprTo(&ast.BinaryExpr{Op: b.Op, L: ln, R: rn, Pos: b.Pos}, types.TBool)
-	if types.IsInvalid(c.Type()) {
-		return bad()
-	}
-	side := func(v *Var, x ast.Expr) Expr {
-		if isLiteral(x) {
-			return strConst(srcText(x))
-		}
-		return f.shown(&VarRef{exprBase{v.Type}, v}, span)
-	}
-	msg := concat(append(lead, strConst(failIndent+"left:  "), side(lv, b.L), strConst(failIndent+"right: "), side(rv, b.R))...)
-	test := f.unless(c, f.failWith(word, msg, span), span)
-	return &Let{exprBase{types.TUnit}, lv, l, &Let{exprBase{types.TUnit}, rv, r, test}}
+	return x
 }
 
 // requireCall is `require(x)`: the value of a `T?` or a `Result`, or the

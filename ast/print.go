@@ -474,6 +474,9 @@ func (p *printer) fun(d *FunDecl) {
 	if d.Const {
 		p.w("const ")
 	}
+	if d.Template {
+		p.w("template ")
+	}
 	p.w(d.Name.Name)
 	p.typeParams(d.TypeParams)
 	p.paramList(d.Params)

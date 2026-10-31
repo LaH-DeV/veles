@@ -24,7 +24,7 @@ func FuzzCheck(f *testing.F) {
 			return nil
 		})
 	}
-	fence := regexp.MustCompile("(?s)```veles\n(.*?)```")
+	fence := regexp.MustCompile("(?s)```veles(?: \\[[^\\]\\n]*\\])?\n(.*?)```")
 	filepath.WalkDir("../docs/documentation", func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
 			return nil

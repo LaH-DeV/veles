@@ -47,7 +47,7 @@ var builtinFamilies = []struct{ family, header, doc string }{
 	{"Result", "sealed trait Result<T, E>", "A success or a typed error. Handle it before interpolation; toString() explicitly prints the wrapper (D157)."},
 	{"Range", "struct Range<T>", "`lo..hi` (inclusive) or `lo..<hi` (exclusive); iterate with `loop (i in r)`."},
 	{"float", "struct f64", "Floating-point numbers (`f64`, `f32`). Every method is a single machine instruction."},
-	{"int", "struct i64", "Integers (`i8`..`i64`, `u8`..`u64`). Arithmetic panics on overflow in debug builds."},
+	{"int", "struct i64", "Integers (`i8`..`i64`, `u8`..`u64`). Arithmetic panics on overflow in every build (D209)."},
 	{"enum", "struct Enum", "Every `enum E : i64 { A = 1, B }` (D57): a closed set of named values of one integer type. `E.A` names a member, `x.value` reads its number."},
 	{"any", "extend<T> T", "Every value, whatever its type, unless the type has a method of the same name (D207)."},
 }
@@ -181,7 +181,7 @@ var builtinDocs = []BuiltinDoc{
 	{"float", "isSignNegative", "(): bool", "True when the sign bit is set: for negative numbers, `-0.0` and a negative NaN, which `< 0.0` cannot tell (D104)."},
 	{"float", "copySign", "(sign: f64): f64", "This number's magnitude with the sign of `sign`, `-0.0` and NaNs included (D104)."},
 	{"float", "isInfinite", "(): bool", "True for positive or negative infinity (not for NaN)."},
-	{"int", "abs", "(): i64", "Absolute value (the type's own width; unsigned types return themselves). The minimum has no positive counterpart: `MIN.abs()` is an overflow, a panic in a debug build and `MIN` in a release one, like `-MIN` (D21)."},
+	{"int", "abs", "(): i64", "Absolute value (the type's own width; unsigned types return themselves). The minimum has no positive counterpart: `MIN.abs()` panics on overflow in every build, like `-MIN` (D209)."},
 	{"int", "min", "(y: i64): i64", "The smaller of this and `y`."},
 	{"int", "max", "(y: i64): i64", "The larger of this and `y`."},
 	{"int", "mod", "(y: i64): i64", "Euclidean modulo: the remainder in `0..<|y|`, never negative, so `(-7).mod(3)` is `2` where `-7 % 3` is `-1`. Panics when `y` is 0."},

@@ -73,11 +73,6 @@ func NewPhaseDump(w io.Writer, kind string, opts DumpOptions) (*PhaseDump, error
 
 // CheckWithDump is Check (or CheckTests), writing d on the way.
 func CheckWithDump(pkg *Package, diags *source.Diagnostics, release, testMode bool, d *PhaseDump) *Program {
-	if testMode {
-		dropForeignTestFiles(pkg)
-	} else if pkg.NeedMain {
-		dropTestFiles(pkg)
-	}
 	prog, _ := checkCollectObserved(pkg, diags, release, testMode, nil, d)
 	return prog
 }

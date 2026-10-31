@@ -65,6 +65,16 @@ func expectWarning(t *testing.T, src, want string) {
 
 const prelude = "use io\n"
 
+func TestTemplateModifierAndTrust(t *testing.T) {
+	const declaration = `template fun tag(parts: List<string>, values: List<i64>): string => parts.join("?")
+`
+	expectClean(t, prelude+declaration+`fun main() { val text = tag"a ${1} b"; text.len() }`)
+	expectError(t, prelude+declaration+`fun main() { tag(["untrusted"], []) }`, "is tag-only")
+	expectError(t, prelude+declaration+`fun main() { val alias = tag }`, "cannot be used as a function value")
+	expectError(t, prelude+declaration+`fun main() { val text = tag"${tag(["runtime"], [])}" }`, "is tag-only")
+	expectError(t, prelude+`template fun tag(parts: List<string>, values: List<i64>, extra: bool = false): string => ""`, "exactly two parameters")
+}
+
 func TestInterpolationRequiresHandledResult(t *testing.T) {
 	cases := []struct {
 		name, src string
@@ -80,8 +90,7 @@ fun main() { io.println("${parse():>8}") }`},
 fun main() { with task = async work(); io.println("$task") }`},
 		{"template", `error ParseError { }
 fun parse(): i64 throws ParseError => 42
-@template
-fun text(parts: List<string>, values: List<Result<i64, ParseError>>): string => parts.join("")
+template fun text(parts: List<string>, values: List<Result<i64, ParseError>>): string => parts.join("")
 fun main() { io.println(text"${parse()}") }`},
 	}
 	for _, tc := range cases {
@@ -107,8 +116,7 @@ func TestInterpolationHandledValues(t *testing.T) {
 fun parse(): i64 throws ParseError => throw ParseError()
 fun work(): i64 => 42
 fun display<T>(value: T): string => "$value"
-@template
-fun text(parts: List<string>, values: List<i64>): string => "${parts.len()} ${values.len()}"
+template fun text(parts: List<string>, values: List<i64>): string => "${parts.len()} ${values.len()}"
 test "handled interpolated values" { `+body+` }
 fun main() { }`)
 		})
@@ -1279,7 +1287,7 @@ use fs
 use time
 use random
 
-fun main() throws IoError {
+fun main() throws IoError | io.TooLong {
   val now: time.Timestamp = time.now()
   val d: time.DateTime = now.utc()
   val l: time.DateTime = now.local()
@@ -1301,7 +1309,7 @@ fun main() throws IoError {
   val bytes: List<u8> = try fs.readBytes("a.bin")
   try fs.writeBytes("a.bin", bytes)
   try fs.appendBytes("a.bin", [1, 2])
-  val all: string = io.readAll()
+	val all: string = try io.readAll()
   io.println("${bytes.len()} ${all.len()} ${(2.0 / 3.0).toFixed(2)} ${(255).toString(radix: 16)} ${(7).wrapU64().toString(radix: 2)} ${(1.5).toF32().toFixed(1)}")
   val flags: u8 = 0b1010
   val nested: List<List<i64>> = [[1]]

@@ -5,20 +5,33 @@
   "version": "0.1.0",
   "publisher": "veles-lang",
   "license": "MIT",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Programming Languages"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "languages": [
       {
         "id": "veles",
-        "aliases": ["Veles", "veles"],
-        "extensions": [".vs", ".vss", ".veles"],
+        "aliases": [
+          "Veles",
+          "veles"
+        ],
+        "extensions": [
+          ".vs",
+          ".vss",
+          ".veles"
+        ],
         "configuration": "./language-configuration.json"
       },
       {
         "id": "toml",
-        "filenames": ["veles.toml"]
+        "filenames": [
+          "veles.toml"
+        ]
       }
     ],
     "grammars": [
@@ -43,19 +56,33 @@
         },
         "veles.trace.server": {
           "type": "string",
-          "enum": ["off", "messages", "verbose"],
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
           "default": "off",
           "description": "Trace the communication with the language server."
         }
       }
     },
     "commands": [
-      { "command": "veles.restartServer", "title": "Veles: Restart Language Server" },
-      { "command": "veles.run", "title": "Veles: Run Current Package" },
-      { "command": "veles.test", "title": "Veles: Test Current Package" }
+      {
+        "command": "veles.restartServer",
+        "title": "Veles: Restart Language Server"
+      },
+      {
+        "command": "veles.run",
+        "title": "Veles: Run Current Package"
+      },
+      {
+        "command": "veles.test",
+        "title": "Veles: Test Current Package"
+      }
     ]
   },
   "scripts": {
+    "test": "node --test test/*.test.cjs",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "npx vsce package --allow-missing-repository",
