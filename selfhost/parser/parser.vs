@@ -341,6 +341,9 @@ struct Parser {
       }
       Kind.KwStruct => return this.parseStruct(head, false)
       Kind.Ident => {
+        if (this.atWord("template") && (this.peek(1).kind == Kind.KwFun || this.peek(1).kind == Kind.KwConst && this.peek(2).kind == Kind.KwFun)) {
+          return this.topLevelFun(head, this.parseFun(head.attrs, FunContext.Free))
+        }
         if (this.atWord("compact") && (this.peek(1).kind == Kind.KwStruct || this.peek(1).kind == Kind.KwExtern && this.peek(2).kind == Kind.KwStruct)) {
           this.next()  // the compiler places the fields (D215); refused on an extern struct by the checker
           val isExtern = this.accept(Kind.KwExtern)
@@ -400,6 +403,9 @@ struct Parser {
         return this.parseImpl(head.attrs, false)
       }
       Kind.KwConst => {
+        if (this.peek(1).kind == Kind.Ident && this.peek(1).text == "template" && this.peek(2).kind == Kind.KwFun) {
+          return this.topLevelFun(head, this.parseFun(head.attrs, FunContext.Free))
+        }
         if (this.structWordsAt(1) > 0) {
           // `const struct`: immutable all the way down (D212), checked by the
           // checker; then `compact` (D215) and `extern` as without it
@@ -707,6 +713,10 @@ struct Parser {
         }
         Kind.KwUnsafe   => fn.isUnsafe = true
         Kind.KwConst    => fn.isConst = true
+        Kind.Ident      => {
+          if (!this.atWord("template") || this.peek(1).kind !in [Kind.KwFun, Kind.KwConst]) break
+          fn.template = true
+        }
         else            => break
       }
       this.next()

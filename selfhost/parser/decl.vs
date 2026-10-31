@@ -32,6 +32,11 @@ extend Parser {
       val afterMember = this.peek(at + 1).kind
       when (member.kind) {
         Kind.Ident, Kind.KwVar, Kind.KwVal, Kind.KwProtected => {
+          if (member.kind == Kind.Ident && member.text == "template" && afterMember in [Kind.KwFun, Kind.KwConst]) {
+            methods.push(this.parseFun(memberAttrs, FunContext.Method))
+            this.parseMemberSeparator()
+            continue
+          }
           // `init { }`, `init(value: T) { }`; a field named init is `init: T`
           if (member.text == "init" && afterMember in [Kind.LBrace, Kind.LParen]) {
             declaration = this.parseInit(declaration, hasVis)

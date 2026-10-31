@@ -184,7 +184,7 @@ func TestTestsInTheEditor(t *testing.T) {
 		json.Unmarshal(res, &h)
 		return h.Contents.Value
 	}
-	if h := hover("expect("); !strings.Contains(h, "fun expect(condition: bool)") || !strings.Contains(h, "the test goes on") {
+	if h := hover("expect("); !strings.Contains(h, "fun expect(condition: bool, message: string = \"\")") || !strings.Contains(h, "the test goes on") {
 		t.Errorf("expect: %s", h)
 	}
 	if h := hover("require("); !strings.Contains(h, "fun require<T>") {

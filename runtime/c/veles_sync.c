@@ -1139,11 +1139,103 @@ static void watch_main(void *arg) {
 
 void veles_test_jobs(int64_t jobs);
 
-/* The runner's first call: how many tests may run at once (0: one per
- * worker thread), each one's bound (0: none), and how many there are. */
+/* ---- `veles test`'s options ---------------------------------------------
+ * They reach the test program in its environment rather than in its code,
+ * so the program does not change with them: one build — cached by the
+ * driver — serves `--filter a`, `--filter b` and `--jobs 1` alike. Each is
+ * read once, before the first test, and removed, so a program a test starts
+ * does not inherit it. Without them (a test program run by hand) every test
+ * runs, one per worker thread at a time, each bounded by ten minutes, as
+ * `veles test` does by default. */
+
+static int test_opts_read;
+static char *test_filter;          /* --filter: a test runs when its name contains it */
+static int64_t test_jobs;          /* --jobs: 0 is one per worker thread */
+static int64_t test_timeout_ms = 10 * 60 * 1000; /* --timeout: 0 is no bound */
+static int64_t test_fail_on_skip;  /* --fail-on-skip */
+
+/* the variable as UTF-8 (a test's name may not be ASCII), or NULL; it is
+ * removed from the environment */
+static char *test_env(const char *name) {
+#if defined(_WIN32)
+    wchar_t wname[64];
+    MultiByteToWideChar(CP_UTF8, 0, name, -1, wname, 64);
+    DWORD n = GetEnvironmentVariableW(wname, NULL, 0);
+    if (n == 0) return NULL;
+    wchar_t *w = malloc(n * sizeof(wchar_t));
+    GetEnvironmentVariableW(wname, w, n);
+    int len = WideCharToMultiByte(CP_UTF8, 0, w, -1, NULL, 0, NULL, NULL);
+    char *out = malloc((size_t)len);
+    WideCharToMultiByte(CP_UTF8, 0, w, -1, out, len, NULL, NULL);
+    free(w);
+    SetEnvironmentVariableW(wname, NULL);
+    _putenv_s(name, ""); /* the CRT keeps its own copy */
+    return out;
+#else
+    const char *v = getenv(name);
+    if (!v) return NULL;
+    char *out = strdup(v);
+    unsetenv(name);
+    return out;
+#endif
+}
+
+static void test_options(void) {
+    if (test_opts_read) return;
+    test_opts_read = 1;
+    test_filter = test_env("VELES_TEST_FILTER");
+    char *v;
+    if ((v = test_env("VELES_TEST_JOBS"))) {
+        test_jobs = strtoll(v, NULL, 10);
+        free(v);
+    }
+    if ((v = test_env("VELES_TEST_TIMEOUT_MS"))) {
+        test_timeout_ms = strtoll(v, NULL, 10);
+        free(v);
+    }
+    if ((v = test_env("VELES_TEST_FAIL_ON_SKIP"))) {
+        test_fail_on_skip = strcmp(v, "1") == 0;
+        free(v);
+    }
+}
+
+/* whether the test of this name runs: every one, or those whose name
+ * contains the filter */
+int64_t veles_test_selected(const char *name, int64_t len) {
+    test_options();
+    if (!test_filter || !*test_filter) return 1;
+    size_t n = strlen(test_filter);
+    if ((int64_t)n > len) return 0;
+    for (int64_t i = 0; i + (int64_t)n <= len; i++) {
+        if (memcmp(name + i, test_filter, n) == 0) return 1;
+    }
+    return 0;
+}
+
+/* A filter that matches no test is an error: a mistyped one that runs
+ * nothing must not pass. */
+void veles_test_filter_check(int64_t selected, int64_t total) {
+    test_options();
+    if (!test_filter || !*test_filter || selected > 0) return;
+    fflush(stdout);
+    fprintf(stderr, "veles test: no test name contains \"%s\" (%lld test%s in the package)\n", test_filter,
+            (long long)total, total == 1 ? "" : "s");
+    fflush(stderr);
+    exit(1);
+}
+
+int64_t veles_test_fail_on_skip(void) {
+    test_options();
+    return test_fail_on_skip;
+}
+
+/* The runner's first call after choosing the tests: how many will run (the
+ * suites' gates included). */
 void veles_gc_root(void *addr, void *desc);
 
-void veles_test_setup(int64_t jobs, int64_t timeout_ms, int64_t total) {
+void veles_test_setup(int64_t total) {
+    test_options();
+    int64_t jobs = test_jobs, timeout_ms = test_timeout_ms;
     if (!recs_lock) recs_lock = veles_lock_new();
     veles_gc_root(&recs, NULL); /* the records, until the process ends */
     tests_total = total;

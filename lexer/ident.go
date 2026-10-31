@@ -138,13 +138,13 @@ func (lx *Lexer) checkComment(start, end int) {
 }
 
 // IsIDStart and IsIDContinue are the identifier rules above, for the
-// generator of the self-hosted lexer's tables (selfhost/lexer/tables.vs),
-// which must classify every character as this lexer does.
+// generator of std/unicode's shared tables and its parity test against this
+// lexer.
 func IsIDStart(r rune) bool    { return isIDStart(r) }
 func IsIDContinue(r rune) bool { return isIDContinue(r) }
 
 // IsInvisible is describeRune's "an invisible character" class, for the same
-// generator: format characters and the separators.
+// shared-table generator: format characters and the separators.
 func IsInvisible(r rune) bool {
 	return unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zs, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r)
 }

@@ -12,6 +12,7 @@
 #define _GNU_SOURCE
 #endif
 #include <stdint.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -213,43 +214,89 @@ bool veles_stderr_is_terminal(void) {
 
 void veles_blocking_enter(void);
 void veles_blocking_leave(void);
+static bool veles_utf8_valid(const unsigned char *p, int64_t len);
+
+/* Statuses shared with std/io: success 0, EOF 1, invalid UTF-8 2,
+ * too long 3, system read error 4. */
+enum { STDIN_OK, STDIN_EOF, STDIN_INVALID_UTF8, STDIN_TOO_LONG, STDIN_IO_ERROR };
 
 /* Waiting for the terminal can take forever: the line is read into memory
- * outside the Veles heap, in a safe region (D66), then copied. */
-bool veles_read_line(veles_string *out) {
-    size_t cap = 128, n = 0;
+ * outside the Veles heap, in a bounded safe region (D66), then copied. */
+int64_t veles_read_line(int64_t max, int64_t text, veles_string *out, int64_t *error) {
+    *error = 0;
+    if (max < 0) {
+        *error = EINVAL;
+        return STDIN_IO_ERROR;
+    }
+    size_t cap = max < 126 ? (size_t)max + 2 : 128;
+    size_t n = 0;
     char *buf = malloc(cap);
-    if (!buf) veles_panic("out of memory", 13);
+    if (!buf) {
+        veles_panic("out of memory", 13);
+        return STDIN_IO_ERROR;
+    }
     int c;
     bool any = false;
+    bool too_long = false;
     veles_blocking_enter();
     while ((c = fgetc(stdin)) != EOF) {
         any = true;
         if (c == '\n') break;
+        if ((uint64_t)n >= (uint64_t)max + 1 || n >= (size_t)INT64_MAX - 1) {
+            too_long = true;
+            break;
+        }
         if (n + 1 >= cap) {
-            cap *= 2;
-            char *nb = realloc(buf, cap);
+            if (cap > SIZE_MAX / 2) {
+                too_long = true;
+                break;
+            }
+            size_t next_cap = cap * 2;
+            uint64_t cap_limit = (uint64_t)max + 2;
+            if ((uint64_t)next_cap > cap_limit) next_cap = (size_t)cap_limit;
+            char *nb = realloc(buf, next_cap);
             if (!nb) {
                 veles_blocking_leave();
+                free(buf);
                 veles_panic("out of memory", 13);
+                return STDIN_IO_ERROR;
             }
             buf = nb;
+            cap = next_cap;
         }
         buf[n++] = (char)c;
     }
+    int read_error = ferror(stdin) ? (errno ? errno : EIO) : 0;
     veles_blocking_leave();
+    if (read_error) {
+        free(buf);
+        *error = read_error;
+        return STDIN_IO_ERROR;
+    }
     if (!any) {
         free(buf);
-        return false;
+        return STDIN_EOF;
+    }
+    if (too_long) {
+        free(buf);
+        return STDIN_TOO_LONG;
     }
     if (n > 0 && buf[n - 1] == '\r') n--;
+    if ((uint64_t)n > (uint64_t)max) {
+        free(buf);
+        return STDIN_TOO_LONG;
+    }
+    if (text && !veles_utf8_valid((const unsigned char *)buf, (int64_t)n)) {
+        free(buf);
+        return STDIN_INVALID_UTF8;
+    }
     char *data = veles_alloc((int64_t)n + 1);
     memcpy(data, buf, n);
     data[n] = 0;
     free(buf);
     out->data = data;
     out->len = (int64_t)n;
-    return true;
+    return STDIN_OK;
 }
 
 /* ---- strings (D18: immutable, validated UTF-8, byte-indexed) ------------ */

@@ -118,7 +118,7 @@ func TestCorpus(t *testing.T) {
 			}
 		})
 	}
-	fence := regexp.MustCompile("(?s)```veles\\n(.*?)```")
+	fence := regexp.MustCompile("(?s)```veles(?: \\[[^\\]\\n]*\\])?\\n(.*?)```")
 	filepath.WalkDir("../docs/documentation", func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
 			return nil
@@ -142,6 +142,9 @@ func TestCorpus(t *testing.T) {
 // exercises loosely: spacing, parentheses, comments, blank lines.
 func TestStyle(t *testing.T) {
 	cases := []struct{ name, in, want string }{
+		{"template function modifier",
+			"public template fun tag(parts:List<string>,values:List<i64>):string=>parts.join(\"?\")\n",
+			"public template fun tag(parts: List<string>, values: List<i64>): string => parts.join(\"?\")\n"},
 		{"receiver blocks go after the call (D207)",
 			"fun f(s: *S) {\n  s.apply({ port = 1 })\n  configure(s,   {\n    port = 2\n  })\n  val t = \"x\".edit {trim();  toLower()}\n  measure() { work() }\n  val g: fun on S(i64): bool = (n) => n > 0\n}\n",
 			"fun f(s: *S) {\n  s.apply { port = 1 }\n  configure(s) {\n    port = 2\n  }\n  val t = \"x\".edit { trim(); toLower() }\n  measure { work() }\n  val g: fun on S(i64): bool = (n) => n > 0\n}\n"},

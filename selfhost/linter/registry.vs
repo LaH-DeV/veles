@@ -75,14 +75,11 @@ fun lintOptions(): List<Setting<LintSettings>> => [
     settings.maxWidth = columns
   }),
   Setting.choice(
-    "implicit_return", "where a body's last expression may be its value: full, lambda or expr", ["full", "lambda", "expr"],
+    "implicit_return", "where a body's last expression may be its value: full, lambda or expr", ImplicitReturn.values().map(member => member.toString().toLower()),
     "[lint] implicit_return is \"full\" (a body's last expression is its value anywhere, the default), \"lambda\" (in a lambda and an '=> expr' body) or \"expr\" (only in a body without braces)",
     (word, settings) => {
-      settings.implicitReturn = when (word) {
-        "full"   => ImplicitReturn.Full
-        "lambda" => ImplicitReturn.Lambda
-        else     => ImplicitReturn.Expr
-      }
+      settings.implicitReturn = ImplicitReturn.values().find(member => member.toString().toLower() == word) ?:
+        panic("linter: implicit_return choice was validated against ImplicitReturn")
     },
   ),
 ]
