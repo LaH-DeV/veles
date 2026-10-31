@@ -7,8 +7,12 @@ use os
 use path
 use time
 
+// a directory of this run's own: two runs at once (two `go test ./driver`,
+// say) would otherwise write and remove each other's files
+test fun scratchDir(): string => path.join(os.tempDir(), "veles-fs-test-${os.pid()}")
+
 test fun scratch(name: string): string {
-  val dir = path.join(os.tempDir(), "veles-fs-test")
+  val dir = scratchDir()
   when (mkdir(dir)) {
     is Err(e) => panic("cannot make the scratch directory: ${e.message()}")
     is Ok(_)  => path.join(dir, name)
@@ -68,7 +72,7 @@ test "opening what is not there, or a directory to read, fails" {
     is Err(e) => e.kind == IoKind.NotFound
     is Ok(_)  => false
   })
-  expect(when (open(path.join(os.tempDir(), "veles-fs-test"))) {
+  expect(when (open(scratchDir())) {
     is Err(_) => true
     is Ok(f)  => {
       f.close()
@@ -115,7 +119,7 @@ test "stat reports size, kind and a recent write time" {
   expect(st.size == 5 && st.isFile() && !st.isDir)
   val now = time.now().toSeconds()
   expect(st.modified.toSeconds() > now - 3600 && st.modified.toSeconds() < now + 3600)
-  expect((try stat(path.join(os.tempDir(), "veles-fs-test"))).isDir)
+  expect((try stat(scratchDir())).isDir)
   try remove(p)
 }
 

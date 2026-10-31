@@ -1687,9 +1687,19 @@ fun spinSuspending(n: i64): i64 {
   x
 }
 
-fun ticker(sw: time.Stopwatch, first: Atomic<i64>) {
+// the loop of spinSuspending, marking when it is over
+fun spinThenMark(n: i64, over: Atomic<bool>): i64 {
+  val x = spinSuspending(n)
+  over.store(true)
+  x
+}
+
+// whether the loop was still going when the ticker woke: by the clock, a
+// machine whose cores are all busy may keep the only thread off for longer
+// than any margin, yielding or not
+fun ticker(over: Atomic<bool>, early: Atomic<bool>) {
   await sleep(Duration.millis(50))
-  val _ = first.swap(sw.elapsed().toMillis())
+  early.store(!over.load())
 }
 
 // a lock region and a close() are shielded
@@ -1702,9 +1712,15 @@ struct Slow {
   }
 }
 
+// the region outlasts the 5 ms limit fifty times over by the clock, not
+// by a count of iterations a loaded machine may finish before the timer
+// fires
 fun holdLock(m: Mutex<i64>): i64 {
+  val sw = time.Stopwatch.start()
   m.withLock(p => {
-    val _ = spin(30000000)
+    loop (sw.elapsed().toMillis() < 250) {
+      val _ = spin(1000000)
+    }
     *p = 1
     *p
   })
@@ -1779,13 +1795,13 @@ fun callsSpin(): i64 {
 
 fun fair() {
   io.println("2. a suspending loop gives its thread up:")
-  val sw = time.Stopwatch.start()
-  val first = Atomic(value: 0)
+  val over = Atomic(value: false)
+  val early = Atomic(value: false)
   scope {
-    async ticker(sw, first)
-    async spinSuspending(300000000)
+    async ticker(over, early)
+    async spinThenMark(300000000, over)
   }
-  io.println("  -> the ticker ran within 150 ms: ${first.load() < 150}")
+  io.println("  -> the ticker ran before the loop ended: ${early.load()}")
 }
 
 fun main() {
@@ -1837,7 +1853,7 @@ fun main() {
   closed spinWith
   -> timed out true, within 400 ms: true
 2. a suspending loop gives its thread up:
-  -> the ticker ran within 150 ms: true
+  -> the ticker ran before the loop ended: true
 3. a lock region is shielded:
   -> timed out true, the region finished: true
 4. a close() is shielded:
@@ -1884,7 +1900,7 @@ fun main() {
 		out, err := run.CombinedOutput()
 		cancel()
 		got := strings.TrimSpace(strings.ReplaceAll(string(out), "\r\n", "\n"))
-		if err != nil || !strings.HasSuffix(got, "the ticker ran within 150 ms: true") {
+		if err != nil || !strings.HasSuffix(got, "the ticker ran before the loop ended: true") {
 			t.Fatalf("release=%v, one thread: got %q (%v)", release, got, err)
 		}
 	}

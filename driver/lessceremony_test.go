@@ -157,8 +157,16 @@ fun lazyOrder(): string {
   out
 }
 
+// the first call waits until all three are under way (or 2 s passed), so
+// "3" says the calls ran ahead of the loop, not that the other two were
+// scheduled within a few milliseconds
 fun counted(started: Atomic<i64>, x: i64): i64 {
   val _ = started.add(1)
+  var waited = 0
+  loop (x == 1 && started.load() < 3 && waited < 2000) {
+    await sleep(Duration.millis(1))
+    waited += 1
+  }
   await sleep(Duration.millis(5))
   x
 }

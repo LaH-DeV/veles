@@ -1756,13 +1756,25 @@ std/compress` exited 255, and `TestHashFlooding`,
   The specified generic limit remains: a parameter declared `T` can be
   interpolated when instantiated as a Result; direct parameter coverage
   pins this exception, not a generic-effect or wrapper analysis.
-- [ ] **Runtime timing-test investigation (2026-10-22).** The initial B19
-      full run failed `TestLoopsAreCancellationPoints` at release/8 workers
-      (the shielded lock region finished before its timeout). The unchanged
-      HEAD worktree's isolated test and the subsequent full driver suite passed.
-      No timing assertion was weakened and no runtime fix was made; the
-      load-sensitive failure's cause remains unverified.
-- [ ] **`TestLessCeremony` flake under load (2026-10-22).** A full WSL run
+- [x] **Fixed 2026-10-31 (plan N1c): `TestLoopsAreCancellationPoints`
+      under load.** Two of its checks measured time against a margin. Case 3:
+      `withTimeout(5 ms)` around a lock region of 30 M iterations reports a
+      timeout only if the deadline's timer fired before the region ended
+      (`veles_deadline_end` returns `fired`); a loaded 8-thread release run
+      could finish the region (~30 ms) first. The region now lasts 250 ms
+      by a stopwatch. Case 2 (with one thread too) asked that a ticker
+      sleeping 50 ms beside a suspending loop ran "within 150 ms": with
+      every core busy the OS kept the only thread off for longer (2 of 50
+      runs on Windows under a 32-thread CPU burner). It now asks whether
+      the loop was still going when the ticker woke, which no amount of
+      load changes. 50 runs under that burner: no failure.
+- [x] **Fixed: `TestLessCeremony` flake under load (2026-10-22).** The
+      `stopped()` half was fixed in 689bca8 (the loop waits until a second
+      call has started). 2026-10-31 (plan N1c): `runAhead` had the same
+      kind of assumption — that calls 2 and 3 started within call 1's 5 ms
+      sleep; call 1 now waits (up to 2 s) until three have started. 50 runs
+      on Windows under a 32-thread CPU burner: no failure.
+      Original report: a full WSL run
       of the `macos` branch failed it at release/4 threads: `stopped()`
       printed `every started call closed: false`. Five isolated reruns
       passed. The check `started.load() >= 2` assumes a second
@@ -1824,9 +1836,13 @@ std/compress` exited 255, and `TestHashFlooding`,
       arguments; `expectNear` has no relative tolerance (`expect(a.isClose(b))`
       gives one) and no `f32`/`f64` mixing; `isClose`'s `f32` default
       (relative `1.0e-6`) was the implementer's choice, not asked.
-      (6) `driver TestStdFsUnitTests` failed once (2026-10-30) while two
-      `go test ./driver` runs overlapped on one machine; seven isolated runs
-      passed; not investigated (shared temp paths are the first suspect).
+      (6) Fixed 2026-10-31 (plan N1c): `driver TestStdFsUnitTests` failed
+      once while two `go test ./driver` runs overlapped — every `std/fs` test
+      wrote into one fixed `$TMP/veles-fs-test`, so two runs removed each
+      other's files. The `fs`, `config` and `http` (gzip, files, multipart)
+      tests now put the process id in their directory's name. Left: those
+      directories stay in the temp directory after a run (std has no
+      recursive remove, and tests have no teardown).
       (4) `-short` on macOS: `go test ./...` ~290 s → 187 s, `driver` 288 s
       → 101 s (on Windows, as rebuilt 2026-10-31 with 9 tests in
       `skipInShort`: `driver` 231 s → 154 s); `docs` (100 s) is now the long pole of the quick tier and the
@@ -1894,8 +1910,14 @@ std/compress` exited 255, and `TestHashFlooding`,
       checker, not a cache; measure first how much of `Check` is std bodies
       (`--timings` reports check time per module).
 
-- [ ] **A fresh Windows checkout fails three tests (found 2026-10-23, by
-      both the codegen and the std-parse sessions).** With
+- [x] **Fixed 2026-10-27, confirmed 2026-10-31 (plan N1d).** The lexer
+      and formatter change of 2026-10-27 ("a string spanning lines kept the
+      file's `\r`") fixed this: with both files checked out CRLF, `format
+      TestCorpus` and `examples` `todo`/`regex` pass, pinned by
+      `TestLineEndings` and `TestStringLineBreaksIgnoreCRLF`, which feed
+      CRLF sources. `.gitattributes` was left alone. Original report — a
+      fresh Windows checkout failed three tests (found 2026-10-23, by
+      both the codegen and the std-parse sessions): with
       `core.autocrlf=true`, `examples/regex/main.vs` and
       `examples/todo/main.vs` check out with CRLF (the main checkout has
       them with LF): `format` `TestCorpus` says both are not formatted, and
@@ -2093,11 +2115,17 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
       method calling `this.apply { … }` makes its callers' receivers escape
       (heap) whatever the block does — the receiver pass sees a pointer into
       `this` handed out. (9) Not measured on Linux.
-- [ ] **Intermittent on Linux (found 2026-10-24): `driver TestExecutors`
-      panics "deadlock: every task is blocked"** in case 12 (a task waiting for
-      a `Thread`) or 13 (`runBlocking`), about 1 run in 10 under `-count`;
-      reproduced at the committed HEAD with none of the day's changes, so it
-      predates D207/D208. Not diagnosed.
+- [x] **Fixed 2026-10-31 (plan N1c): intermittent on Linux (found
+      2026-10-24), `driver TestExecutors` panicked "deadlock: every task is
+      blocked"** in case 12 (a task waiting for a `Thread`) or 13
+      (`runBlocking`). Cause: `os_thread_main` published `status = 1`, which
+      lets `Thread.start` return, and only then added itself to
+      `active_workers`; the starter could block on what the thread would
+      send, and an idle worker find no timer, no socket and nothing active
+      in between. The thread is now counted before the status is published
+      (`runtime/c/veles_task.c`). In WSL: without the fix `-count=50` failed
+      within four runs; with it, 50 of 50 passed. No test forces the window
+      deterministically; `TestExecutors` under `-count` is the pin.
 - [ ] **D208 (built 2026-10-24, plan C12), what is left.** (1) The report
       for "the program failed, the compiler passed" is built but not pinned by a
       test (there is no hook to make the runtime wrong). (2) A test that uses

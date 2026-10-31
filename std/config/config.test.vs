@@ -308,7 +308,8 @@ struct OnlyPath {
 }
 
 test fun scratch(name: string): string {
-  val dir = path.join(os.tempDir(), "veles-config-test-$name")
+  // the pid keeps two runs at once out of each other's files
+  val dir = path.join(os.tempDir(), "veles-config-test-${os.pid()}-$name")
   when (makeDir(dir)) {
     is Err(e) => panic("cannot make ${dir}: ${e.message()}")
     is Ok(_)  => dir

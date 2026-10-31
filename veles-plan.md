@@ -104,11 +104,15 @@ else is decision-free.
      `TestLoopsAreCancellationPoints` (release/8), `TestExecutors` (Linux),
      `TestStdFsUnitTests` (overlapping runs). Each run 50× under load on
      one platform (`go test -count=50 -run …`) without a failure.
+     _2026-10-31: done — see the progress log; `TestExecutors` was a
+     runtime race, not the test._
    - (d) The fresh-Windows-checkout CRLF failures (§11): `*.vs text eol=lf`
      in `.gitattributes`, or the formatter and multi-line string literals
      made independent of the checkout's line endings — the second is the
      better fix, the first the quicker; take one, with a test that writes a
      CRLF source.
+     _2026-10-31: already done by the 2026-10-27 lexer/formatter change (the
+     second fix); confirmed on a CRLF checkout._
    - (e) `nightly.yml` green once; a crasher it finds becomes a regression.
    Acceptance: three consecutive green CI runs; §11 holds no platform item
    older than a week.
@@ -825,6 +829,31 @@ on Linux).
 ---
 
 ## Progress log
+
+### 2026-10-31 — N1 (c), (d): the known flakes fixed at their cause
+
+- `TestExecutors` (Linux, ~1 in 10): a runtime race, not the test.
+  `os_thread_main` set `status = 1` (so `Thread.start` returns) before
+  adding itself to `active_workers`; the starter could block on a channel
+  the thread feeds and an idle worker declare "deadlock: every task is
+  blocked" in between. Now counted first (`runtime/c/veles_task.c`). WSL
+  `-count=50`: without the fix it failed within four runs, with it 50/50.
+- `TestLoopsAreCancellationPoints`: case 3's lock region is 250 ms by a
+  stopwatch instead of 30 M iterations (the 5 ms deadline must fire before
+  it ends); case 2 asks whether the suspending loop was still running when
+  the ticker woke, not "within 150 ms" (that failed 2/50 with one thread
+  under a 32-thread CPU burner).
+- `TestLessCeremony`: `stopped()` was fixed in 689bca8; `runAhead`'s first
+  call now waits (up to 2 s) until three calls have started.
+- `TestStdFsUnitTests`: std tests shared fixed temp directories; `fs`,
+  `config` and `http` tests now name theirs with `os.pid()`.
+- (d) CRLF: already fixed by the 2026-10-27 lexer/formatter change;
+  confirmed with `examples/{todo,regex}` checked out CRLF.
+- Verified: the four tests `-count=50` under a CPU burner on Windows
+  (`TestExecutors` on WSL); full build/vet/test green on Windows and WSL,
+  Go 1.27.1. Not run on macOS. Left: N1 (a), (b), (e) need the user's
+  push and CI; the pid-named test directories are not removed (checklist
+  §11, test tooling (6)).
 
 ### 2026-10-31 — N7: "coming from" pages, the Markdown inventory
 
