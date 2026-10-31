@@ -8,7 +8,7 @@ const K: Array<u32, 4> = [10, 20, 30, 40]
 
 struct Page {
   var bytes: Array<u8, 256>
-  used: i64
+  used:      i64
 }
 
 fun sum<const N: i64>(a: Array<i64, N>): i64 {

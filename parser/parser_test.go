@@ -27,6 +27,22 @@ func TestSyntaxTourParsesCleanly(t *testing.T) {
 	}
 }
 
+func TestTemplateModifier(t *testing.T) {
+	for _, prefix := range []string{"template", "public template", "template const", "const template"} {
+		file, diags := parse(t, prefix+" fun sql(parts: List<string>, values: List<i64>): string => parts.join(\"?\")\n")
+		if diags.HasErrors() {
+			t.Fatalf("%s: %s", prefix, diags.Render())
+		}
+		if !file.Decls[0].(*ast.FunDecl).Template {
+			t.Fatalf("%s: template modifier lost", prefix)
+		}
+	}
+	_, diags := parse(t, "fun template(template: string): string => template\n")
+	if diags.HasErrors() {
+		t.Fatal(diags.Render())
+	}
+}
+
 func TestExpressions(t *testing.T) {
 	cases := map[string]string{
 		"1 + 2 * 3":            "(+ 1 (* 2 3))",

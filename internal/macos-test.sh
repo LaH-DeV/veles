@@ -19,5 +19,11 @@ if [[ $# -gt 0 ]]; then
 else
     go build ./...
     go vet ./...
-    go test ./...
+    log_base=${VELES_TEST_LOG_DIR:-${TMPDIR:-/tmp}}
+    mkdir -p "$log_base"
+    log_dir=$(mktemp -d "$log_base/veles-macos-test.XXXXXX")
+    test_events="$log_dir/go-test.jsonl"
+    test_stderr="$log_dir/go-test.stderr"
+    trap 'cat "$test_stderr" >&2; printf "\nmacos-test: test events: %s\nmacos-test: test stderr: %s\n" "$test_events" "$test_stderr" >&2' EXIT
+    go test -json ./... 2>"$test_stderr" | tee "$test_events"
 fi

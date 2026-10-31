@@ -1408,14 +1408,17 @@ func (g *gen) testRunner() {
 	// `skip` / `skipIf` statements run once each, as a task of their own,
 	// before the first test is queued: a gate that skipped decides for every
 	// test below it.
+	//
+	// `--filter` and the other options of `veles test` are read when the
+	// program starts (veles_sync.c), so one build serves them all: a test
+	// the filter leaves out is not run, not reported and has no heading, and
+	// a gate none of whose tests runs does not run either.
 	var gates []*sema.Func
 	gateAt := map[*sema.Func]int{}
-	runnable := 0
 	for _, t := range g.prog.Tests {
 		if t.Skipped {
 			continue
 		}
-		runnable++
 		for _, gt := range t.Gates {
 			if _, ok := gateAt[gt]; !ok {
 				gateAt[gt] = len(gates)
@@ -1423,12 +1426,50 @@ func (g *gen) testRunner() {
 			}
 		}
 	}
-	g.emit("call void @veles_test_setup(i64 %d, i64 %d, i64 %d)", g.prog.TestJobs, g.prog.TestTimeoutMs, runnable+len(gates))
+	// which tests the filter keeps, and how many; then how many will run
+	selected := make([]string, len(g.prog.Tests))
+	gateNeeded := make([]string, len(gates))
+	for k := range gates {
+		gateNeeded[k] = "false"
+	}
+	kept, runs := "0", "0"
+	add := func(sum, bit string) string {
+		ext, out := g.newTmp(), g.newTmp()
+		g.emit("%s = zext i1 %s to i64", ext, bit)
+		g.emit("%s = add i64 %s, %s", out, sum, ext)
+		return out
+	}
+	for i, t := range g.prog.Tests {
+		np, nl := g.strPtrLen(g.stringConst(t.Display))
+		r := g.newTmp()
+		g.emit("%s = call i64 @veles_test_selected(ptr %s, i64 %s)", r, np, nl)
+		selected[i] = g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", selected[i], r)
+		kept = add(kept, selected[i])
+		if t.Skipped {
+			continue
+		}
+		runs = add(runs, selected[i])
+		for _, gt := range t.Gates {
+			k := gateAt[gt]
+			or := g.newTmp()
+			g.emit("%s = or i1 %s, %s", or, gateNeeded[k], selected[i])
+			gateNeeded[k] = or
+		}
+	}
+	for k := range gates {
+		runs = add(runs, gateNeeded[k])
+	}
+	g.emit("call void @veles_test_filter_check(i64 %s, i64 %d)", kept, len(g.prog.Tests))
+	g.emit("call void @veles_test_setup(i64 %s)", runs)
 	gateHit, gateWhy := make([]string, len(gates)), make([]string, len(gates))
 	for i, gt := range gates {
 		gateHit[i], gateWhy[i] = g.alloca("i64"), g.alloca(strType)
 		g.emit("store i64 0, ptr %s", gateHit[i])
 		g.emit("store %s %s, ptr %s", strType, g.stringConst(""), gateWhy[i])
+		runL, afterL := g.newLabel("gate.run"), g.newLabel("gate.after")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", gateNeeded[i], runL, afterL)
+		g.placeLabel(runL)
 		np, nl := g.strPtrLen(g.stringConst(gt.Display))
 		rec, task, prev := g.newTmp(), g.newTmp(), g.newTmp()
 		g.emit("%s = call ptr @veles_test_new(ptr %s, i64 %s)", rec, np, nl)
@@ -1446,6 +1487,8 @@ func (g *gen) testRunner() {
 		g.emit("store i64 %s, ptr %s", sk, gateHit[i])
 		g.emit("%s = load %s, ptr %s", why, strType, buf)
 		g.emit("store %s %s, ptr %s", strType, why, gateWhy[i])
+		g.emitTerm("br label %%%s", afterL)
+		g.placeLabel(afterL)
 	}
 	// gateOf is whether a gate above the test skipped it, and why: the
 	// outermost one that did
@@ -1480,31 +1523,69 @@ func (g *gen) testRunner() {
 		if !fn.Suspends {
 			fn = g.rampFor(fn)
 		}
-		queueL, afterL := "", ""
+		// queued unless the filter left it out or a gate skipped it
+		hold := g.newTmp()
+		g.emit("%s = xor i1 %s, true", hold, selected[i])
 		if len(t.Gates) > 0 {
 			skipHit[i], skipWhy[i] = gateOf(t)
-			queueL, afterL = g.newLabel("test.queue"), g.newLabel("test.queued")
-			g.emitTerm("br i1 %s, label %%%s, label %%%s", skipHit[i], afterL, queueL)
-			g.placeLabel(queueL)
+			or := g.newTmp()
+			g.emit("%s = or i1 %s, %s", or, hold, skipHit[i])
+			hold = or
 		}
+		queueL, afterL := g.newLabel("test.queue"), g.newLabel("test.queued")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", hold, afterL, queueL)
+		g.placeLabel(queueL)
 		g.emit("call void @veles_test_queue(ptr %s, ptr @%s, ptr null)", tasks[i], g.entryThunk(fn, nil, nil))
-		if afterL != "" {
-			g.emitTerm("br label %%%s", afterL)
-			g.placeLabel(afterL)
-		}
+		g.emitTerm("br label %%%s", afterL)
+		g.placeLabel(afterL)
 	}
-	var open []string // the suites whose heading is printed, outermost first
+	// the suite whose heading is printed at each depth, as a number (0:
+	// none): which headings a test needs depends on which tests ran before
+	// it, which the filter decides when the program starts
+	maxDepth := 0
+	suiteIDs := map[string]int{}
+	for _, t := range g.prog.Tests {
+		maxDepth = max(maxDepth, len(t.Suite))
+	}
+	openAt := make([]string, maxDepth)
+	for d := range openAt {
+		openAt[d] = g.alloca("i64")
+		g.emit("store i64 0, ptr %s", openAt[d])
+	}
 	for i, t := range g.prog.Tests {
+		reportL, nextL := g.newLabel("test.report"), g.newLabel("test.next")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", selected[i], reportL, nextL)
+		g.placeLabel(reportL)
+		next := func() {
+			g.emitTerm("br label %%%s", nextL)
+			g.placeLabel(nextL)
+		}
 		// suites are headings, their tests indented under them (D78):
 		// print the ones this test enters
-		same := 0
-		for same < len(open) && same < len(t.Suite) && open[same] == t.Suite[same] {
-			same++
-		}
-		for d := same; d < len(t.Suite); d++ {
+		for d := range t.Suite {
+			key := strings.Join(t.Suite[:d+1], "\x00")
+			id, ok := suiteIDs[key]
+			if !ok {
+				id = len(suiteIDs) + 1
+				suiteIDs[key] = id
+			}
+			cur, differ := g.newTmp(), g.newTmp()
+			g.emit("%s = load i64, ptr %s", cur, openAt[d])
+			g.emit("%s = icmp ne i64 %s, %d", differ, cur, id)
+			headL, onL := g.newLabel("test.heading"), g.newLabel("test.headed")
+			g.emitTerm("br i1 %s, label %%%s, label %%%s", differ, headL, onL)
+			g.placeLabel(headL)
 			say(g.stringConst(strings.Repeat("  ", d) + t.Suite[d] + "\n"))
+			g.emit("store i64 %d, ptr %s", id, openAt[d])
+			for e := d + 1; e < maxDepth; e++ {
+				g.emit("store i64 0, ptr %s", openAt[e])
+			}
+			g.emitTerm("br label %%%s", onL)
+			g.placeLabel(onL)
 		}
-		open = t.Suite
+		for e := len(t.Suite); e < maxDepth; e++ {
+			g.emit("store i64 0, ptr %s", openAt[e])
+		}
 		depth = len(t.Suite)
 		leaf := t.Display
 		if depth > 0 {
@@ -1521,6 +1602,7 @@ func (g *gen) testRunner() {
 		}
 		if t.Skipped { // an annotation: the test never ran
 			reportSkip(g.stringConst(t.SkipWhy))
+			next()
 			continue
 		}
 		finalL := ""
@@ -1620,6 +1702,7 @@ func (g *gen) testRunner() {
 		if rs == nil {
 			passOrRecorded(doneL)
 			finish()
+			next()
 			continue
 		}
 		rp := g.newTmp()
@@ -1640,6 +1723,7 @@ func (g *gen) testRunner() {
 		g.placeLabel(okL)
 		passOrRecorded(doneL)
 		finish()
+		next()
 	}
 	// the summary: `3 passed, 1 failed: parsesDates` (and what a filter left out)
 	np, nf := g.newTmp(), g.newTmp()
@@ -1673,18 +1757,25 @@ func (g *gen) testRunner() {
 	colon := g.newTmp()
 	g.emit("%s = select i1 %s, %s %s, %s %s", colon, has, strType, g.stringConst(": "), strType, g.stringConst(""))
 	summary = g.concat(g.concat(summary, colon), listed)
-	if k := g.prog.TestsFiltered; k > 0 {
-		summary = g.concat(summary, g.stringConst(fmt.Sprintf("; %d filtered out", k)))
-	}
+	// what the filter left out
+	out, anyOut := g.newTmp(), g.newTmp()
+	g.emit("%s = sub i64 %d, %s", out, len(g.prog.Tests), kept)
+	g.emit("%s = icmp ne i64 %s, 0", anyOut, out)
+	outText := g.concat(g.concat(g.stringConst("; "), g.show(types.TI64, out)), g.stringConst(" filtered out"))
+	shownOut := g.newTmp()
+	g.emit("%s = select i1 %s, %s %s, %s %s", shownOut, anyOut, strType, outText, strType, g.stringConst(""))
+	summary = g.concat(summary, shownOut)
 	say(g.concat(summary, g.stringConst("\n")))
 	anyFail := g.newTmp()
 	g.emit("%s = icmp ne i64 %s, 0", anyFail, nf)
 	// only skips: success, unless `--fail-on-skip` (D178)
-	if g.prog.FailOnSkip {
-		bad := g.newTmp()
-		g.emit("%s = or i1 %s, %s", bad, anyFail, anySkip)
-		anyFail = bad
-	}
+	fos, failSkip, bad := g.newTmp(), g.newTmp(), g.newTmp()
+	g.emit("%s = call i64 @veles_test_fail_on_skip()", fos)
+	g.emit("%s = icmp ne i64 %s, 0", failSkip, fos)
+	g.emit("%s = and i1 %s, %s", bad, failSkip, anySkip)
+	anyFail2 := g.newTmp()
+	g.emit("%s = or i1 %s, %s", anyFail2, anyFail, bad)
+	anyFail = anyFail2
 	code := g.newTmp()
 	g.emit("%s = select i1 %s, i32 1, i32 0", code, anyFail)
 	g.emitTerm("ret i32 %s", code)

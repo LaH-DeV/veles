@@ -2,14 +2,14 @@
 use io
 
 fun classify(n: i64): string => when {
-  n < 0 => "negative"
+  n < 0  => "negative"
   n == 0 => "zero"
   n < 10 => "small"
-  else => "large"
+  else   => "large"
 }
 
 fun digits(n: i64): string => when (n) {
-  1 => "one"
+  1    => "one"
   2, 3 => "few"
   else => "many"
 }

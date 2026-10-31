@@ -5,17 +5,23 @@ use io
 
 fun get(xs: MutableList<i64>, i: i64): i64 {
   // SAFETY: callers pass an index below xs.len()
-  unsafe { xs.atUnchecked(i) }
+  unsafe {
+    xs.atUnchecked(i)
+  }
 }
 
 fun put(xs: MutableList<i64>, i: i64, v: i64) {
   // SAFETY: callers pass an index below xs.len()
-  unsafe { xs.setUnchecked(i, v) }
+  unsafe {
+    xs.setUnchecked(i, v)
+  }
 }
 
 fun byte(s: string, i: i64): u8 {
   // SAFETY: callers pass an index below s.len()
-  unsafe { s.byteAtUnchecked(i) }
+  unsafe {
+    s.byteAtUnchecked(i)
+  }
 }
 
 fun main() {

@@ -5,16 +5,25 @@ use io
 
 sealed trait Expr {
   fun eval(): i64 => when (this) {
-    is Num(v) => v
+    is Num(v)    => v
     is Add(l, r) => l.eval() + r.eval()
-    is Neg(e) => -e.eval()
+    is Neg(e)    => -e.eval()
   }
 }
-struct Num : Expr { v: i64 }
-struct Add : Expr { l: *Expr; r: *Expr }
-struct Neg : Expr { e: *Expr }
+struct Num : Expr {
+  v: i64
+}
+struct Add : Expr {
+  l: *Expr
+  r: *Expr
+}
+struct Neg : Expr {
+  e: *Expr
+}
 
-error TooBig { n: i64 }
+error TooBig {
+  n: i64
+}
 
 fun check(n: i64): i64 throws TooBig => if (n > 100) throw TooBig(n) else n
 
@@ -30,7 +39,7 @@ fun main() {
   val g = half(7)?.toString() ?: "odd"
   io.println("$h $g")
   when (val r = check(500)) {
-    is Ok => io.println("ok $r")
+    is Ok  => io.println("ok $r")
     is Err => io.println("too big ${r.n}")
   }
   val fine = check(5)
