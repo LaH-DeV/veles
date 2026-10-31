@@ -117,6 +117,58 @@ for s in shapes { print("\(s) -> \(area(s))") }
 // point -> 0.0
 ```
 
+```kotlin [Kotlin]
+sealed interface Shape
+data class Circle(val r: Double) : Shape
+data class Rect(val w: Double, val h: Double) : Shape
+data object Point : Shape
+
+fun area(s: Shape): Double = when (s) {
+    is Circle -> 3.0 * s.r * s.r
+    is Rect -> s.w * s.h
+    Point -> 0.0
+}
+
+fun main() {
+    val shapes: List<Shape> = listOf(Circle(r = 1.0), Rect(w = 2.0, h = 3.0), Point)
+    for (s in shapes) println("$s -> ${area(s)}")
+}
+
+// Circle(r=1.0) -> 3.0
+// Rect(w=2.0, h=3.0) -> 6.0
+// Point -> 0.0
+```
+
+```rust [Rust]
+// an enum's variants are not types of their own, as Circle is in Veles:
+// a function cannot take just a Circle
+#[derive(Debug)]
+enum Shape {
+    Circle { r: f64 },
+    Rect { w: f64, h: f64 },
+    Point,
+}
+
+fn area(s: &Shape) -> f64 {
+    match s {
+        Shape::Circle { r } => 3.0 * r * r,
+        Shape::Rect { w, h } => w * h,
+        Shape::Point => 0.0,
+    }
+}
+
+fn main() {
+    let shapes = [Shape::Circle { r: 1.0 }, Shape::Rect { w: 2.0, h: 3.0 }, Shape::Point];
+    for s in &shapes {
+        println!("{s:?} -> {:?}", area(s));
+    }
+}
+
+// Circle { r: 1.0 } -> 3.0
+// Rect { w: 2.0, h: 3.0 } -> 6.0
+// Point -> 0.0
+```
+
 :::
 
 Output:

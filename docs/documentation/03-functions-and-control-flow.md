@@ -2,7 +2,9 @@
 
 ## Declaring functions
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 fun square(x: i64): i64 {
@@ -22,6 +24,109 @@ fun main() {
   greet(punctuation: ".", name: "Cy")
 }
 ```
+
+```go [Go]
+package main
+
+import "fmt"
+
+func square(x int64) int64 {
+	return x * x
+}
+
+func cube(x int64) int64 { return x * x * x }
+
+// Go has neither default nor named arguments: every call passes both
+func greet(name, punctuation string) {
+	fmt.Printf("Hello, %s%s\n", name, punctuation)
+}
+
+func main() {
+	fmt.Println(square(4), cube(3))
+	greet("Ada", "!")
+	greet("Bob", "?")
+	greet("Cy", ".")
+}
+```
+
+```ts [TypeScript]
+function square(x: number): number {
+  return x * x;
+}
+
+const cube = (x: number): number => x * x * x;
+
+// defaults, but no named arguments: an options object stands in for them
+function greet({ name, punctuation = "!" }: { name: string; punctuation?: string }) {
+  console.log(`Hello, ${name}${punctuation}`);
+}
+
+console.log(`${square(4)} ${cube(3)}`);
+greet({ name: "Ada" });
+greet({ name: "Bob", punctuation: "?" });
+greet({ punctuation: ".", name: "Cy" });
+```
+
+```swift [Swift]
+func square(_ x: Int) -> Int {
+    return x * x
+}
+
+func cube(_ x: Int) -> Int { x * x * x }
+
+func greet(_ name: String, punctuation: String = "!") {
+    print("Hello, \(name)\(punctuation)")
+}
+
+print("\(square(4)) \(cube(3))")
+greet("Ada")
+greet("Bob", punctuation: "?")
+// labels keep the declared order: greet(punctuation: ".", name: "Cy") does not compile
+greet("Cy", punctuation: ".")
+```
+
+```kotlin [Kotlin]
+fun square(x: Long): Long {
+    return x * x
+}
+
+fun cube(x: Long): Long = x * x * x
+
+fun greet(name: String, punctuation: String = "!") {
+    println("Hello, $name$punctuation")
+}
+
+fun main() {
+    println("${square(4)} ${cube(3)}")
+    greet("Ada")
+    greet("Bob", punctuation = "?")
+    greet(punctuation = ".", name = "Cy")
+}
+```
+
+```rust [Rust]
+fn square(x: i64) -> i64 {
+    x * x
+}
+
+fn cube(x: i64) -> i64 {
+    x * x * x
+}
+
+// no default or named arguments: None asks for the default
+fn greet(name: &str, punctuation: Option<&str>) {
+    println!("Hello, {name}{}", punctuation.unwrap_or("!"));
+}
+
+fn main() {
+    println!("{} {}", square(4), cube(3));
+    greet("Ada", None);
+    greet("Bob", Some("?"));
+    greet("Cy", Some("."));
+}
+```
+
+:::
 
 Output:
 ```text

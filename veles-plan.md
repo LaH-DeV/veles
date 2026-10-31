@@ -202,6 +202,22 @@ else is decision-free.
    filled where they are thin (a first-steps track that assumes no other
    language; a "from Go/Kotlin/Swift" page per language); research and
    decided notes moved to `archive/`.
+   _2026-10-31: done — a `from/` section (Go, TypeScript, Swift, Kotlin,
+   Rust), code groups in chapters 2–10 and 12, the inventory below,
+   `veles-cede-spec.md` archived. Open — the first-steps track; the notes
+   below that wait on the user._
+   Inventory of the root Markdown (2026-10-31): rules and records —
+   `CLAUDE.md`, `README.md`, `veles-spec.md`, `veles-checklist.md`,
+   `veles-plan.md`, `veles-code-review-plan.md`, `notes_to_change.txt`,
+   `to_figure_out.md`; plans in progress — `veles-selfhost-frontend-plan.md`,
+   `veles-selfhost-sema-plan.md`; a living design reference cited by code —
+   `veles-layout-spec.md` (§5.2, null representation); waiting on the user,
+   so not archived — `veles-idioms-and-apis.md` (menu), `veles-patterns.md`
+   (Q59, Q60, R1–R8), `veles-syntax-ideas.md`, `veles-template-design.md`
+   (parked), `veles-streams-spec.md` and `veles-research-streams.md` (S1,
+   S2 open), `veles-research-generators.md` (§6 questions),
+   `veles-research-views.md` (options C, D), `veles-ecosystem-research.md`
+   (backlog).
 
 Decisions waiting for the user (checklist §9), to be asked in one batch when
 the user wants: Q45 (cancellation outcome), Q57 (a panics marker), Q59
@@ -809,6 +825,57 @@ on Linux).
 ---
 
 ## Progress log
+
+### 2026-10-31 — N7: "coming from" pages, the Markdown inventory
+
+- `docs/documentation/from/`: an index and one page each for Go,
+  TypeScript, Swift, Kotlin and Rust — a mapping table, the rules that run
+  opposite to that language (Swift's `??` is Veles' `?:`, and `??` is the
+  fallback for a failed call; `MutableList` is shared where a Swift array
+  copies; Kotlin's `List` is a view where Veles' is immutable; TypeScript's
+  integers past 2^53; Go's zero values; Rust's lifetimes and `Send`), with
+  12 runnable programs compiled by `go test ./docs`. Track 2 in `index.md`
+  starts from them; the sidebar picks the directory up by itself.
+- Facts checked while writing, each by a probe: structs copy and a
+  `MutableList` is shared (D7); `charCount()` counts Unicode scalars
+  (`"e\u{301}"` is 2; no grapheme count exists yet); `throws` must be
+  written, only its error list is inferred; `async` inside a lambda is
+  refused (a task cannot escape its block), so the Go page uses
+  `mapConcurrent`; an extension function is usable without `use` in its
+  own file; there is no `===`.
+- Inventory of the root Markdown recorded under N7; `veles-cede-spec.md`
+  (D197, built) moved to `archive/`, with the spec's and the checklist's
+  links updated. Everything else still holds open items or is cited by code.
+- Defender still quarantined `go build` output from this directory after
+  the user's change (detections at 18:45); the runs above used
+  `GOFLAGS=-trimpath`.
+
+### 2026-10-31 — N7: the core chapters in Go, TypeScript, Swift, Kotlin and Rust
+
+- Chapters 2, 3, 4, 5, 8 and 10 gained a code group (numeric conversions,
+  default and named arguments, immutable and mutable lists, a struct with
+  methods, a trait with a default and an override, capture by reference);
+  chapters 6, 7, 9 and 12 gained Kotlin and Rust tabs. Rule (user): each tab
+  is the closest idiomatic program, with a comment where the language
+  cannot say the same thing; no new test.
+- Equivalence fixed where the earlier tabs were not: chapter 7's TypeScript
+  parsed with `parseInt` (accepts `"12abc"`; now a regex as strict as
+  `toInt()`, which takes an optional sign and decimal digits only, in `i64`
+  range); chapter 6's Swift counted characters (now `utf8.count`, bytes
+  like `len()`, D18); TypeScript and Kotlin `length` carry a UTF-16 comment.
+- Veles tabs made idiomatic: chapter 5's `manhattan` read `if (x < 0) -x
+  else x + |y|`, which dropped `|y|` for a negative `x` (now `x.abs() +
+  y.abs()`); chapters 5 and 8 use bare member names (D158); chapter 10's
+  log is a `val`.
+- Checked: the 30 Go, TypeScript and Rust tabs run by hand (a throwaway
+  extractor in the session scratchpad compared each with the group's
+  `Output:` or its trailing comment); `go test ./docs ./format`. Swift
+  (chapters 2–5, 8, 10) and Kotlin (all) not run: no toolchain here, and
+  the user chose not to install them (checklist §11).
+- Found: Windows Defender quarantines the compiler built from this tree
+  (`Trojan:Win32/Bearfoos.A!ml`, a machine-learning verdict); the same code
+  built from another directory, or with `-trimpath`, passes (checklist
+  §11). The docs test above ran with `GOFLAGS=-trimpath`.
 
 ### 2026-10-31 — The driver half of the 2026-10-30 test tooling, rebuilt on Windows
 

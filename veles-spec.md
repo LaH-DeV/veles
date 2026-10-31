@@ -7950,7 +7950,7 @@ cede` and `fun checkpoint() => cede` are errors. Use a block body;
    remain. Historical records and archives are not rewritten.
 
 The detailed normative rules and acceptance matrix are in sections 1-7 of
-[Cede: explicit cooperative scheduling](veles-cede-spec.md), alongside
+[Cede: explicit cooperative scheduling](archive/veles-cede-spec.md), alongside
 research sources, migration inventory and implementation guidance. All
 compiler layers and both frontends must agree before this is built.
 

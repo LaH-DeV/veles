@@ -313,6 +313,83 @@ for id in [7, -1] {
 }
 ```
 
+```kotlin [Kotlin]
+// kotlinx.coroutines
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+
+class NotFound(val id: Long) : Exception("no user $id")
+
+suspend fun user(id: Long): String {
+    delay(10)
+    if (id < 0) throw NotFound(id)
+    return "user$id"
+}
+
+suspend fun orders(id: Long): Long {
+    delay(5)
+    return id * 3
+}
+
+// coroutineScope: the first failure cancels the other child and is rethrown
+suspend fun summary(id: Long): String = coroutineScope {
+    val name = async { user(id) }
+    val count = async { orders(id) }
+    "${name.await()} has ${count.await()} orders"
+}
+
+fun main() = runBlocking {
+    for (id in listOf(7L, -1L)) {
+        try {
+            println(summary(id))
+        } catch (e: NotFound) {
+            println("no such user ${e.id}")
+        }
+    }
+}
+```
+
+```rust [Rust]
+// tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+use std::time::Duration;
+use tokio::time::sleep;
+
+struct NotFound {
+    id: i64,
+}
+
+async fn user(id: i64) -> Result<String, NotFound> {
+    sleep(Duration::from_millis(10)).await;
+    if id < 0 {
+        return Err(NotFound { id });
+    }
+    Ok(format!("user{id}"))
+}
+
+async fn orders(id: i64) -> i64 {
+    sleep(Duration::from_millis(5)).await;
+    id * 3
+}
+
+// try_join! runs both at once; the first error drops (cancels) the other
+async fn summary(id: i64) -> Result<String, NotFound> {
+    let (name, count) = tokio::try_join!(user(id), async { Ok(orders(id).await) })?;
+    Ok(format!("{name} has {count} orders"))
+}
+
+#[tokio::main]
+async fn main() {
+    for id in [7, -1] {
+        match summary(id).await {
+            Ok(s) => println!("{s}"),
+            Err(e) => println!("no such user {}", e.id),
+        }
+    }
+}
+```
+
 :::
 
 Output:

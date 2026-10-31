@@ -119,7 +119,9 @@ There is **no implicit conversion** between numeric types (D21). Mixing
 `i32` and `i64` in one expression is an error; say what you mean with a
 conversion method (D86). Each one names what it can lose:
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 fun main() {
@@ -135,6 +137,110 @@ fun main() {
   io.println("$wide $narrow $fits $big ${-7 / 2}")
 }
 ```
+
+```go [Go]
+package main
+
+import (
+	"fmt"
+	"math"
+)
+
+// toU8 is Veles' toU8(): nil when the value does not fit. A plain uint8(x)
+// keeps the low 8 bits without a word.
+func toU8(x int64) *uint8 {
+	if x < 0 || x > math.MaxUint8 {
+		return nil
+	}
+	u := uint8(x)
+	return &u
+}
+
+func show(u *uint8) string {
+	if u == nil {
+		return "null"
+	}
+	return fmt.Sprint(*u)
+}
+
+func main() {
+	a, b := int64(7), int64(2)
+	fmt.Println(a/b, a%b, float64(a)/float64(b))
+	var small int32 = 7
+	wide := int64(small) * 1000000000
+	count := int64(300)
+	narrow := uint8(count) // uint8(300) on a constant does not compile
+	fits := toU8(200)
+	big := toU8(count)
+	fmt.Println(wide, narrow, show(fits), show(big), -7/2)
+}
+```
+
+```ts [TypeScript]
+// one number type, a double: integer division and the u8 range are by hand
+function toU8(x: number): number | null {
+  return Number.isInteger(x) && x >= 0 && x <= 255 ? x : null;
+}
+
+const a = 7;
+const b = 2;
+console.log(`${Math.trunc(a / b)} ${a % b} ${a / b}`);
+const small = 7;
+const wide = small * 1000000000; // exact: below 2^53
+const narrow = 300 & 0xff; // the low 8 bits: 44
+const fits = toU8(200);
+const count = 300;
+const big = toU8(count);
+console.log(`${wide} ${narrow} ${fits} ${big} ${Math.trunc(-7 / 2)}`);
+```
+
+```swift [Swift]
+let a = 7
+let b = 2
+print("\(a / b) \(a % b) \(Double(a) / Double(b))")
+let small: Int32 = 7
+let wide = Int(small) * 1000000000
+let narrow = UInt8(truncatingIfNeeded: 300) // keeps the low 8 bits: 44
+let fits = UInt8(exactly: 200) // UInt8?, here 200
+let count = 300
+let big = UInt8(exactly: count) // nil
+print("\(wide) \(narrow) \(fits.map { "\($0)" } ?? "null") \(big.map { "\($0)" } ?? "null") \(-7 / 2)")
+```
+
+```kotlin [Kotlin]
+// Veles' toU8(): null when the value does not fit; toUByte() keeps the low 8 bits
+fun Long.toU8(): UByte? = if (this in 0L..255L) toUByte() else null
+
+fun main() {
+    val a = 7L
+    val b = 2L
+    println("${a / b} ${a % b} ${a.toDouble() / b.toDouble()}")
+    val small: Int = 7
+    val wide = small.toLong() * 1000000000
+    val narrow = 300.toUByte() // keeps the low 8 bits: 44
+    val fits = 200L.toU8()
+    val count = 300L
+    val big = count.toU8()
+    println("$wide $narrow $fits $big ${-7 / 2}")
+}
+```
+
+```rust [Rust]
+fn main() {
+    let (a, b) = (7_i64, 2_i64);
+    println!("{} {} {}", a / b, a % b, a as f64 / b as f64);
+    let small: i32 = 7;
+    let wide = i64::from(small) * 1_000_000_000;
+    let count: i64 = 300;
+    let narrow = count as u8; // `as` keeps the low 8 bits: 44
+    let fits = u8::try_from(200_i64).ok(); // Option<u8>, here Some(200)
+    let big = u8::try_from(count).ok(); // None
+    let show = |x: Option<u8>| x.map_or("null".to_string(), |v| v.to_string());
+    println!("{wide} {narrow} {} {} {}", show(fits), show(big), -7 / 2);
+}
+```
+
+:::
 
 Output:
 

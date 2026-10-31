@@ -66,7 +66,9 @@ A lambda can use variables from the surrounding function. It captures
 them **by reference**: reads see later writes, and writes are visible
 outside (D37).
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 fun counter(): fun(): i64 {
@@ -83,7 +85,7 @@ fun main() {
   next()
   io.println("third call: ${next()}")
 
-  var log: MutableList<string> = []
+  val log: MutableList<string> = []
   val record = (msg: string) => log.push(msg)
   record("a")
   record("b")
@@ -95,6 +97,165 @@ fun main() {
   io.println(show())
 }
 ```
+
+```go [Go]
+package main
+
+import "fmt"
+
+func counter() func() int64 {
+	var n int64
+	return func() int64 {
+		n++
+		return n
+	}
+}
+
+func main() {
+	next := counter()
+	next()
+	next()
+	fmt.Println("third call:", next())
+
+	var log []string
+	record := func(msg string) { log = append(log, msg) }
+	record("a")
+	record("b")
+	fmt.Println(log)
+
+	captured := "before"
+	show := func() string { return captured }
+	captured = "after"
+	fmt.Println(show())
+}
+
+// third call: 3
+// [a b]
+// after
+```
+
+```ts [TypeScript]
+function counter(): () => number {
+  let n = 0;
+  return () => {
+    n += 1;
+    return n;
+  };
+}
+
+const next = counter();
+next();
+next();
+console.log(`third call: ${next()}`);
+
+const log: string[] = [];
+const record = (msg: string) => log.push(msg);
+record("a");
+record("b");
+console.log(`[${log.join(", ")}]`);
+
+let captured = "before";
+const show = () => captured;
+captured = "after";
+console.log(show());
+```
+
+```swift [Swift]
+func counter() -> () -> Int {
+    var n = 0
+    return {
+        n += 1
+        return n
+    }
+}
+
+let next = counter()
+_ = next()
+_ = next()
+print("third call: \(next())")
+
+var log: [String] = []
+let record = { (msg: String) in log.append(msg) }
+record("a")
+record("b")
+print(log)
+
+var captured = "before"
+let show = { captured }
+captured = "after"
+print(show())
+
+// third call: 3
+// ["a", "b"]
+// after
+```
+
+```kotlin [Kotlin]
+fun counter(): () -> Long {
+    var n = 0L
+    return {
+        n += 1
+        n
+    }
+}
+
+fun main() {
+    val next = counter()
+    next()
+    next()
+    println("third call: ${next()}")
+
+    val log = mutableListOf<String>()
+    val record = { msg: String -> log.add(msg) }
+    record("a")
+    record("b")
+    println(log)
+
+    var captured = "before"
+    val show = { captured }
+    captured = "after"
+    println(show())
+}
+```
+
+```rust [Rust]
+use std::cell::Cell;
+
+// the closure owns n (`move`) and changes it on each call (FnMut)
+fn counter() -> impl FnMut() -> i64 {
+    let mut n = 0;
+    move || {
+        n += 1;
+        n
+    }
+}
+
+fn main() {
+    let mut next = counter();
+    next();
+    next();
+    println!("third call: {}", next());
+
+    let mut log = Vec::new();
+    let mut record = |msg: &str| log.push(msg.to_string());
+    record("a");
+    record("b");
+    println!("{log:?}");
+
+    // a closure that reads a variable written after it was made needs a
+    // Cell: the borrow checker refuses a plain `let mut` here
+    let captured = Cell::new("before");
+    let show = || captured.get();
+    captured.set("after");
+    println!("{}", show());
+}
+
+// third call: 3
+// ["a", "b"]
+// after
+```
+
+:::
 
 Output:
 

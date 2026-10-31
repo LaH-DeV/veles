@@ -174,9 +174,9 @@ class ParseError extends Error {
 // nothing in the signature says this throws
 function parseAll(items: string[]): number[] {
   return items.map((it) => {
-    const n = Number.parseInt(it, 10);
-    if (Number.isNaN(n)) throw new ParseError(it);
-    return n;
+    // as strict as toInt(): parseInt("12abc") would give 12
+    if (!/^[+-]?\d+$/.test(it)) throw new ParseError(it);
+    return Number(it); // a double: exact up to 2^53, where Veles has i64
   });
 }
 
@@ -216,6 +216,53 @@ for items in [["1", "2", "3"], ["1", "two"]] {
         print("total \(try total(items))")
     } catch {
         print("bad input \(error.text)")
+    }
+}
+```
+
+```kotlin [Kotlin]
+class ParseError(val text: String) : Exception("not a number: $text")
+
+// nothing in the signature says this throws
+fun parseAll(items: List<String>): List<Long> =
+    items.map { it.toLongOrNull() ?: throw ParseError(it) }
+
+fun total(items: List<String>): Long = parseAll(items).sum()
+
+fun main() {
+    for (items in listOf(listOf("1", "2", "3"), listOf("1", "two"))) {
+        try {
+            println("total ${total(items)}")
+        } catch (e: ParseError) {
+            println("bad input ${e.text}")
+        }
+    }
+}
+```
+
+```rust [Rust]
+struct ParseError {
+    text: String,
+}
+
+fn parse_all(items: &[&str]) -> Result<Vec<i64>, ParseError> {
+    items
+        .iter()
+        .map(|it| it.parse::<i64>().map_err(|_| ParseError { text: it.to_string() }))
+        .collect()
+}
+
+fn total(items: &[&str]) -> Result<i64, ParseError> {
+    let numbers = parse_all(items)?;
+    Ok(numbers.iter().sum())
+}
+
+fn main() {
+    for items in [&["1", "2", "3"][..], &["1", "two"]] {
+        match total(items) {
+            Ok(sum) => println!("total {sum}"),
+            Err(e) => println!("bad input {}", e.text),
+        }
     }
 }
 ```

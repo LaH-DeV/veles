@@ -7,20 +7,22 @@ you write one function that works on many types (D6).
 
 ## Declaring and implementing
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 trait Shape {
   fun area(): f64
   fun name(): string
-  fun describe(): string => "${this.name()} with area ${this.area()}"   // default body
+  fun describe(): string => "${name()} with area ${area()}"   // default body
 }
 
 struct Circle {
   r: f64
 
   implement Shape {
-    fun area(): f64 => 3.0 * this.r * this.r
+    fun area(): f64 => 3.0 * r * r
     fun name(): string => "circle"
   }
 }
@@ -29,9 +31,9 @@ struct Square {
   side: f64
 
   implement Shape {
-    fun area(): f64 => this.side * this.side
+    fun area(): f64 => side * side
     fun name(): string => "square"
-    override fun describe(): string => "a square of side ${this.side}"
+    override fun describe(): string => "a square of side $side"
   }
 }
 
@@ -40,6 +42,208 @@ fun main() {
   io.println(Square(side: 2.0).describe())
 }
 ```
+
+```go [Go]
+package main
+
+import "fmt"
+
+type Shape interface {
+	Area() float64
+	Name() string
+}
+
+// Go interfaces have no method bodies: the default is a function, and a
+// type that describes itself is found by asking for this interface
+type describer interface{ Describe() string }
+
+func describe(s Shape) string {
+	if d, ok := s.(describer); ok {
+		return d.Describe()
+	}
+	return fmt.Sprintf("%s with area %v", s.Name(), s.Area())
+}
+
+type Circle struct{ R float64 }
+
+func (c Circle) Area() float64 { return 3.0 * c.R * c.R }
+func (c Circle) Name() string  { return "circle" }
+
+type Square struct{ Side float64 }
+
+func (s Square) Area() float64    { return s.Side * s.Side }
+func (s Square) Name() string     { return "square" }
+func (s Square) Describe() string { return fmt.Sprintf("a square of side %v", s.Side) }
+
+func main() {
+	fmt.Println(describe(Circle{R: 1.0}))
+	fmt.Println(describe(Square{Side: 2.0}))
+}
+
+// circle with area 3
+// a square of side 2
+```
+
+```ts [TypeScript]
+// an interface has no method bodies: an abstract class carries the default
+abstract class Shape {
+  abstract area(): number;
+  abstract name(): string;
+
+  describe(): string {
+    return `${this.name()} with area ${this.area()}`;
+  }
+}
+
+class Circle extends Shape {
+  r: number;
+
+  constructor(r: number) {
+    super();
+    this.r = r;
+  }
+
+  area(): number {
+    return 3.0 * this.r * this.r;
+  }
+
+  name(): string {
+    return "circle";
+  }
+}
+
+class Square extends Shape {
+  side: number;
+
+  constructor(side: number) {
+    super();
+    this.side = side;
+  }
+
+  area(): number {
+    return this.side * this.side;
+  }
+
+  name(): string {
+    return "square";
+  }
+
+  override describe(): string {
+    return `a square of side ${this.side}`;
+  }
+}
+
+console.log(new Circle(1.0).describe());
+console.log(new Square(2.0).describe());
+
+// circle with area 3
+// a square of side 2
+```
+
+```swift [Swift]
+// describe is declared in the protocol too, so a Square seen as a Shape
+// still uses its own; a method only in the extension would not be replaced
+protocol Shape {
+    func area() -> Double
+    func name() -> String
+    func describe() -> String
+}
+
+extension Shape {
+    func describe() -> String { "\(name()) with area \(area())" }
+}
+
+struct Circle: Shape {
+    let r: Double
+    func area() -> Double { 3.0 * r * r }
+    func name() -> String { "circle" }
+}
+
+struct Square: Shape {
+    let side: Double
+    func area() -> Double { side * side }
+    func name() -> String { "square" }
+    func describe() -> String { "a square of side \(side)" }
+}
+
+print(Circle(r: 1.0).describe())
+print(Square(side: 2.0).describe())
+```
+
+```kotlin [Kotlin]
+interface Shape {
+    fun area(): Double
+    fun name(): String
+    fun describe(): String = "${name()} with area ${area()}" // default body
+}
+
+class Circle(val r: Double) : Shape {
+    override fun area(): Double = 3.0 * r * r
+    override fun name(): String = "circle"
+}
+
+class Square(val side: Double) : Shape {
+    override fun area(): Double = side * side
+    override fun name(): String = "square"
+    override fun describe(): String = "a square of side $side"
+}
+
+fun main() {
+    println(Circle(r = 1.0).describe())
+    println(Square(side = 2.0).describe())
+}
+```
+
+```rust [Rust]
+trait Shape {
+    fn area(&self) -> f64;
+    fn name(&self) -> &str;
+
+    // default body
+    fn describe(&self) -> String {
+        format!("{} with area {:?}", self.name(), self.area())
+    }
+}
+
+struct Circle {
+    r: f64,
+}
+
+impl Shape for Circle {
+    fn area(&self) -> f64 {
+        3.0 * self.r * self.r
+    }
+
+    fn name(&self) -> &str {
+        "circle"
+    }
+}
+
+struct Square {
+    side: f64,
+}
+
+impl Shape for Square {
+    fn area(&self) -> f64 {
+        self.side * self.side
+    }
+
+    fn name(&self) -> &str {
+        "square"
+    }
+
+    fn describe(&self) -> String {
+        format!("a square of side {:?}", self.side)
+    }
+}
+
+fn main() {
+    println!("{}", Circle { r: 1.0 }.describe());
+    println!("{}", Square { side: 2.0 }.describe());
+}
+```
+
+:::
 
 Output:
 

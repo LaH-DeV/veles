@@ -9,7 +9,9 @@ shared between tasks without locks (D35).
 
 ## Lists
 
-```veles
+::: code-group
+
+```veles [Veles]
 use io
 
 fun main() {
@@ -26,6 +28,118 @@ fun main() {
   io.println("$frozen $names")
 }
 ```
+
+```go [Go]
+package main
+
+import (
+	"fmt"
+	"slices"
+)
+
+func main() {
+	primes := []int64{2, 3, 5, 7} // nothing stops a later primes[0] = 1
+	tenth := int64(-1)
+	if len(primes) > 10 {
+		tenth = primes[10]
+	}
+	fmt.Println(len(primes), primes[0], tenth, slices.Contains(primes, 5))
+
+	names := []string{"ann", "bob"}
+	names = append(names, "cy")
+	last := "-"
+	if len(names) > 0 {
+		last, names = names[len(names)-1], names[:len(names)-1]
+	}
+	fmt.Println(names, last, len(names) == 0)
+
+	frozen := slices.Clone(names) // `frozen := names` would share the array
+	names = append(names, "dee")
+	fmt.Println(frozen, names)
+}
+
+// 4 2 -1 true
+// [ann bob] cy false
+// [ann bob] [ann bob dee]
+```
+
+```ts [TypeScript]
+const primes: readonly number[] = [2, 3, 5, 7]; // readonly: no push, no index write
+console.log(`${primes.length} ${primes[0]} ${primes.at(10) ?? -1} ${primes.includes(5)}`);
+
+const names = ["ann", "bob"];
+names.push("cy");
+const last = names.pop(); // string | undefined
+console.log(`[${names.join(", ")}] ${last ?? "-"} ${names.length === 0}`);
+
+const frozen: readonly string[] = [...names]; // a copy
+names.push("dee");
+console.log(`[${frozen.join(", ")}] [${names.join(", ")}]`);
+```
+
+```swift [Swift]
+let primes = [2, 3, 5, 7] // a `let` array cannot change
+print("\(primes.count) \(primes[0]) \(primes.indices.contains(10) ? primes[10] : -1) \(primes.contains(5))")
+
+var names = ["ann", "bob"]
+names.append("cy")
+let last = names.popLast() // String?
+print("\(names) \(last ?? "-") \(names.isEmpty)")
+
+let frozen = names // arrays are values: this is already a copy
+names.append("dee")
+print("\(frozen) \(names)")
+
+// 4 2 -1 true
+// ["ann", "bob"] cy false
+// ["ann", "bob"] ["ann", "bob", "dee"]
+```
+
+```kotlin [Kotlin]
+fun main() {
+    // List is a read-only view, not immutable: a MutableList passed
+    // as a List can still change under its reader
+    val primes = listOf(2L, 3L, 5L, 7L)
+    println("${primes.size} ${primes[0]} ${primes.getOrNull(10) ?: -1L} ${primes.contains(5)}")
+
+    val names = mutableListOf("ann", "bob")
+    names.add("cy")
+    val last = names.removeLastOrNull() // String?
+    println("$names ${last ?: "-"} ${names.isEmpty()}")
+
+    val frozen = names.toList() // a copy
+    names.add("dee")
+    println("$frozen $names")
+}
+```
+
+```rust [Rust]
+fn main() {
+    let primes = vec![2_i64, 3, 5, 7]; // not `mut`: cannot change
+    println!(
+        "{} {} {} {}",
+        primes.len(),
+        primes[0],
+        primes.get(10).copied().unwrap_or(-1),
+        primes.contains(&5)
+    );
+
+    let mut names = vec!["ann", "bob"];
+    names.push("cy");
+    let last = names.pop(); // Option<&str>
+    println!("{names:?} {} {}", last.unwrap_or("-"), names.is_empty());
+
+    let frozen = names.clone(); // a copy
+    names.push("dee");
+    println!("{frozen:?} {names:?}");
+}
+
+// 4 2 -1 true
+// ["ann", "bob"] cy false
+// ["ann", "bob"] ["ann", "bob", "dee"]
+```
+
+:::
 
 Output:
 ```text
