@@ -1,3 +1,5 @@
+use recursion
+
 test fun read(text: string): *Table => parse(text) catch (e) {
   panic("bad test document: line ${e.line}: ${e.message}")
 }
@@ -8,6 +10,24 @@ test fun why(text: string, strict: bool = false): string {
     return "line ${e.line}: ${e.message}"
   }
   "ok"
+}
+
+test fun nestedArrays(levels: i64): string {
+  val text = StringBuilder()
+  text.append("a = ")
+  loop (_ in 0..<levels) text.append("[")
+  text.append("0")
+  loop (_ in 0..<levels) text.append("]")
+  text.toString()
+}
+
+test fun nestedInlineTables(levels: i64): string {
+  val text = StringBuilder()
+  text.append("a = ")
+  loop (_ in 0..<levels) text.append("{a = ")
+  text.append("0")
+  loop (_ in 0..<levels) text.append("}")
+  text.toString()
 }
 
 test fun str(table: *Table, key: string): string => table.get(key)?.asString() ?: "-"
@@ -108,6 +128,15 @@ test arrays "nested and mixed arrays, several lines" {
   expect(why("a = [1 2]") == "line 1: expected ',' or ']' in the list")
 }
 
+test depth "nested arrays respect the shared recursion limit" {
+  val limit = recursion.maxRecursionDepth
+  expect(parse(nestedArrays(limit - 1)) is Ok)
+  expect(parse(nestedArrays(limit)) is Ok)
+  expect(why(nestedArrays(limit + 1)) == "line 1: nesting deeper than $limit")
+  expect(parse(nestedInlineTables(limit)) is Ok)
+  expect(why(nestedInlineTables(limit + 1)) == "line 1: nesting deeper than $limit")
+}
+
 test tables "headers, dotted keys and inline tables" {
   val doc = read("[server]\nhost = \"x\"\n[server.tls]\non = true\n[owner]\nname.first = \"Tom\"\nname.last = \"P\"\npoint = { x = 1, y = 2 }\n")
   val server = doc.get("server")?.asTable() ?: panic("server")
@@ -138,6 +167,7 @@ test refusals "documents the full language refuses" {
   expect(why("a = { x = 1 }\na.y = 2\n") == "line 2: cannot add to the table \"a\": it is defined elsewhere")
   expect(why("a = { x = 1 }\n[a.b]\n") == "line 2: cannot add to the inline table \"a\"")
   expect(why("a = 1\na = 2\n") == "line 2: key \"a\" is set twice")
+  expect(why("\"a\\u200B\" = 1\n\"a\\u200B\" = 2") == "line 2: key \"a\\u200b\" is set twice")
   expect(why("a = {\n x = 1 }\n").startsWith("line 1: an inline table is one line"))
 }
 

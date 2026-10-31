@@ -23,7 +23,10 @@ fun join2(a: string, b: string): string {
 /// Everything before the last separator, `""` when there is none.
 public fun dir(p: string): string {
   val i = lastSep(p)
-  if (i < 0) "" else if (i == 0) "/" else p.substring(0, i) ?: p
+  if (i < 0) return ""
+  val root = rootOf(p)
+  if (!root.isEmpty() && i < root.len()) return root
+  if (i == 0) "/" else p.substring(0, i) ?: p
 }
 
 /// Everything after the last separator.
@@ -73,6 +76,7 @@ fun lastSep(p: string): i64 {
 public fun clean(p: string): string {
   if (p.isEmpty()) return "."
   val root = rootOf(p)
+  if (cleanBody(p, root.len())) return p
   var parts: MutableList<string> = []
   loop (seg in p.substring(root.len(), p.len())?.replace("\\", "/")?.split("/") ?: []) {
     when {
@@ -90,6 +94,20 @@ public fun clean(p: string): string {
   }
 }
 
+fun cleanBody(p: string, from: i64): bool {
+  if (p.contains("\\")) return false
+  if (from == p.len()) return true
+  var start = from
+  loop (end in from..p.len()) {
+    if (end < p.len() && p.byteAt(end) != '/') continue
+    val count = end - start
+    if (count == 0) return false
+    if (p.byteAt(start) == '.' && (count == 1 || (count == 2 && p.byteAt(start + 1) == '.'))) return false
+    start = end + 1
+  }
+  true
+}
+
 /// True when `p` is `root` itself or lies inside it, comparing the
 /// cleaned paths component by component: `/srv/www2` is not within
 /// `/srv/www`, and `/srv/www/../etc` is not within anything under `/srv/www`.
@@ -99,6 +117,8 @@ public fun clean(p: string): string {
 ///     val file = path.join(root, requested)
 ///     if (!path.within(root, file)) throw forbidden()
 ///
+/// A UNC share root with or without its final separator denotes the same root.
+///
 /// Lexical, like `clean`: a symbolic link inside `root` that points out of
 /// it is not detected. Both separators count, on every platform, so
 /// `..\secret` is caught on Linux as well as on Windows.
@@ -106,7 +126,9 @@ public fun within(root: string, p: string): bool {
   val r = clean(root)
   val q = clean(p)
   if (r == ".") return !isAbsolute(q) && q != ".." && !q.startsWith("../")
+  if (isAbsolute(r) != isAbsolute(q)) return false
   if (q == r) return true
+  if (r.endsWith("/") && r == q + "/") return true
   q.startsWith(if (r.endsWith("/")) r else r + "/")
 }
 

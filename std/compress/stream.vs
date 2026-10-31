@@ -1,6 +1,7 @@
 // Streaming gzip: a writer that compresses as bytes are written and a reader
 // that decompresses as they arrive, each over an io.Stream. Memory stays at
 // a window and a buffer whatever the size of the data.
+use bytes
 use io
 
 // where compressed bytes go, and where they come from
@@ -147,7 +148,9 @@ struct Gzipper {
 /// handed out before the check fails only if they fit one `read`).
 ///
 /// ```veles
-/// var gz = compress.GzipReader(from: conn, max: 1024 * 1024)
+/// use bytes
+/// use compress
+/// var gz = compress.GzipReader(from: conn, max: bytes.MiB)
 /// loop {
 ///   val chunk = try gz.read()
 ///   if (chunk.isEmpty()) break
@@ -164,7 +167,7 @@ public struct GzipReader {
   }
 
   /// Up to `max` bytes of decompressed data; empty at the end of the stream.
-  public fun read(max: i64 = 65536): List<u8> suspends throws IoError | CompressError {
+  public fun read(max: i64 = bytes.KiB * 64): List<u8> suspends throws IoError | CompressError {
     try this.inner.read(max)
   }
 
@@ -172,7 +175,7 @@ public struct GzipReader {
   public fun readAll(): List<u8> suspends throws IoError | CompressError {
     val out: MutableList<u8> = []
     loop {
-      val chunk = try this.inner.read(65536)
+      val chunk = try this.inner.read(bytes.KiB * 64)
       if (chunk.isEmpty()) break
       out.addAll(chunk)
     }

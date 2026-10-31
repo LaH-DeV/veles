@@ -118,12 +118,10 @@ fun collect(who: string, schema: codec.Schema, varPrefix: string, declared: List
       continue
     }
     val elem = inner.element()
-    val bad = if (inner.kind == codec.SchemaKind.Unsupported) {
-      inner.what
-    } else if (elem != null && (elem.kind == codec.SchemaKind.Object || elem.kind == codec.SchemaKind.List || elem.kind == codec.SchemaKind.Unsupported)) {
-      "a list of ${elem.what}"
-    } else {
-      ""
+    val bad = when {
+      inner.kind == codec.SchemaKind.Unsupported => inner.what
+      elem != null && (elem.kind == codec.SchemaKind.Object || elem.kind == codec.SchemaKind.List || elem.kind == codec.SchemaKind.Unsupported) => "a list of ${elem.what}"
+      else => ""
     }
     if (!bad.isEmpty()) {
       panic("$who: field '${path.join(".")}' is $bad, which a variable cannot hold; mark it @skip (with a default), or read it yourself")
@@ -223,12 +221,10 @@ struct Load {
         if (x == null) this.bad(variable, schema, text) else out = codec.VFloat(value: x)
       }
       schema.kind == codec.SchemaKind.Bool => {
-        if (text == "true") {
-          out = codec.VBool(value: true)
-        } else if (text == "false") {
-          out = codec.VBool(value: false)
-        } else {
-          this.bad(variable, schema, text)
+        when (text) {
+          "true"  => out = codec.VBool(value: true)
+          "false" => out = codec.VBool(value: false)
+          else    => this.bad(variable, schema, text)
         }
       }
       schema.kind == codec.SchemaKind.List => {
@@ -259,12 +255,10 @@ struct Load {
     val leaf = leaves.get(variable)
     val what = if (leaf == null) "a value" else leaf.schema.what
     val secret = leaf != null && leaf.schema.secret
-    if (p.message == "missing") {
-      this.fail(variable, "not set (expected $what)")
-    } else if (secret) {
-      this.fail(variable, "is not valid (expected $what)")
-    } else {
-      this.fail(variable, p.message)
+    when {
+      p.message == "missing" => this.fail(variable, "not set (expected $what)")
+      secret                 => this.fail(variable, "is not valid (expected $what)")
+      else                   => this.fail(variable, p.message)
     }
   }
 }

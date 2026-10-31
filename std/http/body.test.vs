@@ -3,6 +3,7 @@
 // happens to what the handler never read. The first tests use `call`, no
 // socket; the rest run a server on a loopback port.
 
+use bytes
 use net
 
 test fun reader(): Handler => handler(req => Response.text("${try req.bytes().len()}:${try req.text()}"))
@@ -48,7 +49,7 @@ test "a body over the ceiling is a 413, and max: moves the ceiling" {
   val big = "x".repeat(1048577)
   val h = handler(req => Response.text("${try req.bytes().len()}"))
   expect(call(h, Method.post, "/", body: big).status == Status.contentTooLarge)
-  expect(call(h, Method.post, "/", body: "x".repeat(1048576)).status == Status.ok)
+  expect(call(h, Method.post, "/", body: "x".repeat(bytes.MiB)).status == Status.ok)
   val small = handler(req => Response.text("${try req.bytes(max: 4).len()}"))
   expect(text(call(small, Method.post, "/", body: "abcd")) == "4")
   expect(call(small, Method.post, "/", body: "abcde").status == Status.contentTooLarge)
@@ -203,7 +204,7 @@ test "a body the handler left unread is thrown away and the connection goes on" 
 }
 
 test "an unread body too long to be worth reading closes the connection" {
-  with srv = try testServer(ignorer(), Limits(bodyBytes: 100000000))
+  with srv = try testServer(ignorer(), Limits(bodyBytes: bytes.MiB * 100))
   val port = srv.port()
   val r = try talk(port, ["POST / HTTP/1.1\r\nHost: t\r\nContent-Length: 1000000\r\n\r\n" + "z".repeat(100)])
   expect(r.startsWith("HTTP/1.1 200 OK"))

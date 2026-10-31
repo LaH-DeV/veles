@@ -4,11 +4,12 @@
 /// other.
 ///
 /// ```veles
+/// use bytes
 /// use tls
 ///
 /// with conn = try tls.connect("example.com", 443)
 /// try conn.writeText("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
-/// val head = try conn.readLine(8192)
+/// val head = try conn.readLine(bytes.KiB * 8)
 /// ```
 ///
 /// The certificate is checked against the system's trusted roots and the
@@ -21,6 +22,7 @@
 /// socket — it is given the bytes that arrived and hands back the bytes to
 /// send — so every call there is short and the waiting happens here, where
 /// a task can be parked.
+use bytes
 use fs
 use io
 use log as logs { field }
@@ -56,7 +58,7 @@ public struct Options {
   /// means the system's trusted roots.
   public roots: string = ""
   /// The name the certificate must be valid for, and the one sent for SNI.
-  /// Empty means the host that was dialled.
+  /// Empty means the host that was dialled. It must not contain a NUL byte.
   public serverName: string = ""
   /// The application protocols to offer (ALPN), most preferred first.
   public alpn: List<string> = []
@@ -87,6 +89,15 @@ public fun connect(host: string, port: i64, options: Options = Options()): Conn 
 /// failed handshake.
 public fun client(stream: io.Stream, serverName: string, options: Options = Options(), address: string = ""): Conn suspends throws IoError {
   val label = if (address.isEmpty()) serverName else address
+  if (serverName.contains("\u{0}")) {
+    stream.close()
+    throw IoError(
+      path: label.replace("\u{0}", "\\0"),
+      code: 22,
+      detail: "tls: server name cannot contain a NUL byte",
+      kind: IoKind.InvalidInput,
+    )
+  }
   var handle: i64 = 0
   var reason = ""
   val alpn = options.alpn.join(",")
@@ -307,7 +318,7 @@ public struct Conn {
     /// Up to `max` bytes, as soon as any are available; an empty list means
     /// the peer ended the session (close_notify). A connection that is cut
     /// without it throws, so a truncated body is never taken for a whole one.
-    fun read(max: i64 = 65536): List<u8> suspends throws IoError {
+    fun read(max: i64 = bytes.KiB * 64): List<u8> suspends throws IoError {
       try this.ensureHandshake()
       val buffered = this.take(max)
       if (!buffered.isEmpty()) return buffered
@@ -320,7 +331,7 @@ public struct Conn {
     fun readExact(n: i64): List<u8> suspends throws IoError {
       try this.ensureHandshake()
       loop (this.buffered() < n) {
-        val chunk = try this.fetch(65536)
+        val chunk = try this.fetch(bytes.KiB * 64)
         if (chunk.isEmpty()) break
         this.buffer.withLock(b => b.addAll(chunk))
       }
@@ -349,7 +360,7 @@ public struct Conn {
         }
         scanned = this.buffered()
         if (scanned > max) throw this.tooLong("line", max)
-        val chunk = try this.fetch(65536)
+        val chunk = try this.fetch(bytes.KiB * 64)
         if (chunk.isEmpty()) {
           val rest = this.take(scanned)
           if (rest.isEmpty()) return null
@@ -462,7 +473,7 @@ public struct Certificate {
   private creds: Credentials
 
   /// Reads the chain (the server's certificate first, then the authorities
-  /// that vouch for it) and the private key from PEM files. The key is read
+  /// val head = try conn.readLine(bytes.KiB * 8)
   /// into a `Secret`. `alpn` lists the application protocols the server
   /// speaks, most preferred first.
   public static fun load(certPath: string, keyPath: string, alpn: List<string> = []): Certificate throws IoError {

@@ -307,9 +307,11 @@ public const struct Offset {
   /// `Offset.of(2)` is `+02:00`, `Offset.of(-5, 30)` is `-05:30`: the sign
   /// of `hours` is the sign of the whole offset, and `minutes` is never
   /// negative. For `-00:30`, whose hour has no sign to carry, use
-  /// `ofMinutes(-30)`.
+  /// `ofMinutes(-30)`. Returns `null` for invalid minutes or an offset beyond
+  /// ±18:00.
   public static fun of(hours: i64, minutes: i64 = 0): Offset? {
     if (minutes < 0 || minutes > 59) return null
+    if (hours < -18 || hours > 18) return null
     Offset.ofMinutes(if (hours < 0) hours * 60 - minutes else hours * 60 + minutes)
   }
 
@@ -813,9 +815,10 @@ public fun measure<R, E>(f: fun(): R suspends throws E): (R, Duration) throws E 
 /// reader either.
 ///
 /// ```veles
+/// use bytes
 /// val head = time.Deadline.after(limits.headerTimeout)
 /// loop (!head.expired()) {
-///   val line = try withTimeout(head.remaining(), () => try c.readLine(max: 8192))
+///   val line = try withTimeout(head.remaining(), () => try c.readLine(max: bytes.KiB * 8))
 ///   ...
 /// }
 /// ```

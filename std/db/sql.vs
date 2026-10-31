@@ -79,8 +79,7 @@ public struct Sql {
 /// The template behind `sql"…"`: the text between the values stays text,
 /// every value becomes a parameter, and a `Sql` among the values is spliced
 /// in with its own parameters.
-@template
-public fun sql(parts: List<string>, values: List<Param>): Sql {
+public template fun sql(parts: List<string>, values: List<Param>): Sql {
   val outParts: MutableList<string> = []
   val outArgs: MutableList<Arg> = []
   // the piece being written: it continues across a spliced fragment

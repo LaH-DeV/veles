@@ -1,6 +1,7 @@
 // Tests of std/fs's open files (D97): reading a piece at a time, writing as
 // data arrives, and what a closed or wrongly opened file says.
 
+use build
 use io
 use os
 use path
@@ -274,6 +275,20 @@ test "writeAtomic replaces the file whole and leaves no temporary file behind" {
   expect(try readBytes(p).isEmpty())
   expect((try listDir(dir)) == ["state.bin"])
   try remove(p)
+  try remove(dir)
+}
+
+@SkipIf(build.target.os.isWindows(), "Windows filenames cannot contain line breaks")
+test "listDir preserves line breaks in POSIX filenames" {
+  val dir = scratch("list-dir-lines")
+  try mkdir(dir)
+  val newline = path.join(dir, "a\nb")
+  val carriageReturn = path.join(dir, "c\rd")
+  try writeFile(newline, "")
+  try writeFile(carriageReturn, "")
+  expect((try listDir(dir)) == ["a\nb", "c\rd"])
+  try remove(newline)
+  try remove(carriageReturn)
   try remove(dir)
 }
 

@@ -48,6 +48,9 @@ use crypto
 use json
 use time
 
+const MAX_I64: i64 = 9223372036854775807
+const MIN_I64: i64 = -9223372036854775807 - 1
+
 /// The HMAC algorithms of RFC 7518. The name on the wire is the member
 /// name: `"HS256"`.
 public enum Algorithm {
@@ -383,13 +386,31 @@ fun checkTime(claims: Claims, options: Options) throws Invalid {
         reason: Reason.MissingClaim,
       )
     }
-  } else if (at >= exp + options.leeway) {
-    throw Invalid(message: "jwt: expired ${at - exp} seconds ago", reason: Reason.Expired)
+  } else {
+    val high = additionOverflowsHigh(exp, options.leeway)
+    val low = additionOverflowsLow(exp, options.leeway)
+    if (low || (!high && at >= exp + options.leeway)) {
+      throw Invalid(message: "jwt: expired ${safeDifference(at, exp)} seconds ago", reason: Reason.Expired)
+    }
   }
   val nbf = claims.notBefore
-  if (nbf != null && at + options.leeway < nbf) {
-    throw Invalid(message: "jwt: not valid for another ${nbf - at} seconds", reason: Reason.NotYetValid)
+  if (nbf != null) {
+    val high = additionOverflowsHigh(at, options.leeway)
+    val low = additionOverflowsLow(at, options.leeway)
+    if (low || (!high && at + options.leeway < nbf)) {
+      throw Invalid(message: "jwt: not valid for another ${safeDifference(nbf, at)} seconds", reason: Reason.NotYetValid)
+    }
   }
+}
+
+fun additionOverflowsHigh(value: i64, delta: i64): bool => delta > 0 && value > MAX_I64 - delta
+
+fun additionOverflowsLow(value: i64, delta: i64): bool => delta < 0 && value < MIN_I64 - delta
+
+fun safeDifference(left: i64, right: i64): i64 {
+  if (right < 0 && left > MAX_I64 + right) return MAX_I64
+  if (right > 0 && left < MIN_I64 + right) return MIN_I64
+  left - right
 }
 
 fun checkParties(claims: Claims, options: Options) throws Invalid {

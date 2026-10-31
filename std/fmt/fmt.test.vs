@@ -1,3 +1,4 @@
+use bytes
 use fmt
 
 test thousands "groups digits in threes" {
@@ -10,10 +11,10 @@ test thousands "groups digits in threes" {
 test bytes "picks the largest binary unit" {
   expect(fmt.bytes(0) == "0 B")
   expect(fmt.bytes(12) == "12 B")
-  expect(fmt.bytes(1024) == "1.0 KiB")
-  expect(fmt.bytes(1536) == "1.5 KiB")
-  expect(fmt.bytes(5 * 1024 * 1024) == "5.0 MiB")
-  expect(fmt.bytes(-2048) == "-2.0 KiB")
+  expect(fmt.bytes(bytes.KiB) == "1.0 KiB")
+  expect(fmt.bytes(bytes.KiB + bytes.KiB / 2) == "1.5 KiB")
+  expect(fmt.bytes(bytes.MiB * 5) == "5.0 MiB")
+  expect(fmt.bytes(-bytes.KiB * 2) == "-2.0 KiB")
 }
 
 test percent "scales a fraction" {
@@ -31,6 +32,13 @@ test ordinal "uses st nd rd th" {
   expect(fmt.ordinal(12) == "12th")
   expect(fmt.ordinal(22) == "22nd")
   expect(fmt.ordinal(113) == "113th")
+  expect(fmt.ordinal(-11) == "-11th")
+  expect(fmt.ordinal(-12) == "-12th")
+  expect(fmt.ordinal(-13) == "-13th")
+  expect(fmt.ordinal(-21) == "-21st")
+  expect(fmt.ordinal(-22) == "-22nd")
+  expect(fmt.ordinal(-23) == "-23rd")
+  expect(fmt.ordinal(-9223372036854775807 - 1) == "-9223372036854775808th")
 }
 
 test duration "writes the largest units" {
@@ -47,4 +55,13 @@ test duration "writes the largest units" {
 test table "aligns columns by characters" {
   val out = fmt.table([["name", "n"], ["café", "12"], ["tea", "3"]], right: [1], header: true)
   expect(out == "name   n\n----  --\ncafé  12\ntea    3")
+}
+
+test quote "matches Go-style escaping" {
+  expect(fmt.quote("plain") == "\"plain\"")
+  expect(fmt.quote("say \"hi\"\\") == "\"say \\\"hi\\\"\\\\\"")
+  expect(fmt.quote("\u{7}\u{8}\u{C}\n\r\t\u{B}") == "\"\\a\\b\\f\\n\\r\\t\\v\"")
+  expect(fmt.quote("\u{1}\u{7F}") == "\"\\x01\\x7f\"")
+  expect(fmt.quote("café🙂") == "\"café🙂\"")
+  expect(fmt.quote("\u{200B}\u{E0001}") == "\"\\u200b\\U000e0001\"")
 }

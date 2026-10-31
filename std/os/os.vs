@@ -174,8 +174,9 @@ public enum Stderr {
 /// output and — unless `stderr` says otherwise — its standard error apart.
 /// `input` is written to its standard input, which is then closed; with
 /// none, the program reads the end of its input at once. Throws when the
-/// program cannot be started; a non-zero exit is reported in
-/// `Output.code`, not thrown.
+/// program cannot be started or captured output is not valid UTF-8
+/// (`IoKind.InvalidData`). A non-zero exit is reported in `Output.code`,
+/// not thrown when its captured text is valid.
 ///
 /// ```veles
 /// val r = try os.run("git", ["apply", "-"], input: patch)

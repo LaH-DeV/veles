@@ -126,7 +126,8 @@ public struct Deque<T> {
   // the live elements, in order, at the start of a buffer of `cap` slots
   fun moveTo(cap: i64) {
     val s = this.state
-    val fresh = MutableList<T?>.repeat(null, cap)
+    val fresh: MutableList<T?> = []
+    loop (_ in 0..<cap) fresh.push(null)
     loop (i in 0..<s.size) fresh.set(i, this.slot(i))
     s.buf = fresh
     s.head = 0

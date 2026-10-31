@@ -12,6 +12,7 @@
 /// the caller says otherwise) is a `TooLarge`, so a few kilobytes of input
 /// cannot be turned into gigabytes. Corrupt or cut-short input is a
 /// `CompressError`, never a panic.
+use bytes
 
 /// Why a stream could not be decoded.
 public enum CompressKind {
@@ -30,7 +31,13 @@ public error CompressError {
 }
 
 /// The default ceiling on decompressed output: 64 MiB.
-const DEFAULT_MAX: i64 = 64 * 1024 * 1024
+const DEFAULT_MAX: i64 = bytes.MiB * 64
+
+fun outputProbeLimit(max: i64): i64 {
+  val limit = max.max(1)
+  if (limit == 9223372036854775807) return limit
+  limit + 1
+}
 
 /// The bytes of a raw DEFLATE stream, decompressed. Output past `max` bytes
 /// throws `TooLarge`.
@@ -38,7 +45,7 @@ public fun inflate(bytes: List<u8>, max: i64 = DEFAULT_MAX): List<u8> throws Com
   val decoder = Inflater(limit: max)
   decoder.feed(bytes)
   decoder.end()
-  val status = try decoder.run(max.max(1) + 1)
+  val status = try decoder.run(outputProbeLimit(max))
   if (status != FINISHED) throw corrupt("the output is larger than expected")
   decoder.all()
 }
@@ -114,7 +121,7 @@ fun gunzipMember(bytes: List<u8>, start: i64, max: i64): Member throws CompressE
   val decoder = Inflater(limit: max)
   decoder.feed(bytes.drop(start + header))
   decoder.end()
-  val status = try decoder.run(max.max(1) + 1)
+  val status = try decoder.run(outputProbeLimit(max))
   if (status != FINISHED) throw corrupt("the output is larger than expected")
   val data = decoder.all()
   val rest = decoder.unread()

@@ -2,6 +2,7 @@
 ///
 /// Implemented on top of runtime/c/veles_os.c; every extern call is confined
 /// to one `unsafe` block (D44).
+use bytes
 use io
 use os
 use path as paths
@@ -157,7 +158,7 @@ public enum FileMode {
 /// with f = try fs.open("big.bin")              // closed when the block ends
 /// val header = try f.readAt(0, 16)             // any place, in any order
 /// loop {
-///   val chunk = try f.read(65536)              // then from where the last read ended
+///   val chunk = try f.read(bytes.KiB * 64)     // then from where the last read ended
 ///   if (chunk.isEmpty()) break
 /// }
 /// ```
@@ -256,7 +257,7 @@ public struct File {
   implement io.Stream {
     /// Up to `max` bytes from where the last `read` ended; empty at the end of
     /// the file. Fewer than `max` is normal and does not mean the end.
-    fun read(max: i64 = 65536): List<u8> throws IoError {
+    fun read(max: i64 = bytes.KiB * 64): List<u8> throws IoError {
       val at = this.next.load()
       val chunk = try this.readAt(at, max)
       this.next.store(at + chunk.len())
@@ -277,7 +278,7 @@ public struct File {
     fun readExact(n: i64): List<u8> throws IoError {
       val out: MutableList<u8> = []
       loop (out.len() < n) {
-        val chunk = try this.read((n - out.len()).min(65536))
+        val chunk = try this.read((n - out.len()).min(bytes.KiB * 64))
         if (chunk.isEmpty()) break
         out.addAll(chunk)
       }
@@ -292,7 +293,7 @@ public struct File {
       var at = start
       val line: MutableList<u8> = []
       loop {
-        val chunk = try this.readAt(at, 4096)
+        val chunk = try this.readAt(at, bytes.KiB * 4)
         if (chunk.isEmpty()) {
           // the end of the file: what is left is the last line
           if (line.isEmpty()) return null
@@ -435,7 +436,9 @@ public struct Lines {
 /// not an allocation. Each item is a `Result`; `try line` passes its error on:
 ///
 /// ```veles
-/// loop (line in try fs.lines("access.log", max: 8192)) {
+/// use bytes
+/// use fs
+/// loop (line in try fs.lines("access.log", max: bytes.KiB * 8)) {
 ///   val text = try line
 ///   handle(text)
 /// }
@@ -453,7 +456,7 @@ public fun copy(from: string, to: string) throws IoError {
   with source = try open(from)
   with target = try open(to, FileMode.Write)
   loop {
-    val chunk = try source.read(65536)
+    val chunk = try source.read(bytes.KiB * 64)
     if (chunk.isEmpty()) break
     try target.write(chunk)
   }
@@ -509,7 +512,7 @@ public fun listDir(path: string): List<string> throws IoError {
   }
   if (code != 0) throw os.ioError(code, path)
   if (out.isEmpty()) return []
-  out.split("\n").sorted()
+  out.split("\u{0}").sorted()
 }
 
 /// Every file under `root`, recursively: full paths (joined onto `root`),

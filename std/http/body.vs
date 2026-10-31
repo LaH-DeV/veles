@@ -4,6 +4,7 @@
 // under a ceiling it can see. A handler that never asks costs the server no
 // read (and a client that sent `Expect: 100-continue` is never told to go
 // ahead).
+use bytes as byteUnits
 use io
 use net
 
@@ -28,7 +29,7 @@ struct BodyState {
   var cached:  List<u8>? = null
 }
 
-/// The unread body of a request: `req.stream(max: 100 * 1024 * 1024)`.
+/// The unread body of a request: `req.stream(max: byteUnits.MiB * 100)`.
 /// `read` hands out what has arrived, a piece at a time, so a body larger
 /// than memory can go to a file or a parser as it comes.
 public struct Body {
@@ -80,7 +81,7 @@ public struct Body {
   /// body. Reading past this handle's ceiling is a 413, a silence longer
   /// than `Limits.bodyTimeout` a 408, and a body that ends short or is
   /// framed wrongly a 400.
-  public fun read(max: i64 = 65536): List<u8> suspends throws Fail | IoError {
+  public fun read(max: i64 = byteUnits.KiB * 64): List<u8> suspends throws Fail | IoError {
     val st = this.state.get()
     if (st.done || max <= 0) return []
     if (st.broken) throw badRequest("the request body could not be read")
@@ -122,7 +123,7 @@ public struct Body {
   public fun readAll(): List<u8> suspends throws Fail | IoError {
     val out: MutableList<u8> = []
     loop {
-      val chunk = try this.read(65536)
+      val chunk = try this.read(byteUnits.KiB * 64)
       if (chunk.isEmpty()) break
       out.addAll(chunk)
     }
@@ -205,11 +206,11 @@ public struct Body {
     var lines: i64 = 0
     var bytes: i64 = 0
     loop {
-      val line = try this.recvLine(c, 8192)
+      val line = try this.recvLine(c, byteUnits.KiB * 8)
       if (line.isEmpty()) return
       lines += 1
       bytes += line.len()
-      if (lines > 32 || bytes > 8192) throw badRequest("trailer fields too large")
+      if (lines > 32 || bytes > byteUnits.KiB * 8) throw badRequest("trailer fields too large")
     }
   }
 
@@ -254,7 +255,7 @@ public struct Body {
     if (!this.reusable(cap)) return false
     val rest = this.withLimit(st.total + cap)
     loop {
-      when (rest.read(65536)) {
+      when (rest.read(byteUnits.KiB * 64)) {
         is Ok(chunk) => if (chunk.isEmpty()) return true
         is Err(_)    => return false
       }
@@ -279,4 +280,4 @@ fun parseChunkSize(line: string): i64? {
 
 // How much an unread body may be to keep the connection: more is closed on
 // rather than read for nothing
-const drainCap: i64 = 65536
+const drainCap: i64 = byteUnits.KiB * 64

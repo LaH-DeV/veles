@@ -1,3 +1,4 @@
+use unicode { unicodeWord }
 use utf8
 
 // The matching machine: a Pike VM over a `Program`. All live threads move over
@@ -320,13 +321,20 @@ fun backtrack(prog: Program, text: string, from: i64, anchored: bool, full: bool
   val cur = scratch.cur
   val stackA = scratch.stackA
   val stackB = scratch.stackB
+  val initialStack = insts.len().min(32)
   stackA.clear()
   stackB.clear()
+  var reserved = false
   var start = from
   loop (start <= n) {
     if (prog.skips && !anchored) {
       loop (start < n && !(prog.first.at(text.byteAt(start).toI64()) ?: true)) start += 1
       if (start >= n) return null
+    }
+    if (!reserved) {
+      stackA.reserve(initialStack)
+      stackB.reserve(initialStack)
+      reserved = true
     }
     loop (k in 0..<width) cur.set(k, -1)
     stackA.push(0)

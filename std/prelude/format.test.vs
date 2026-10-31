@@ -21,3 +21,11 @@ test "u64 and i64 are written as they are" {
   expect("${big:x}" == "ffffffffffffffff")
   expect("${-1:x}" == "-1")
 }
+
+test "zero padding keeps grouped digits in groups of three" {
+  expect("${1234567:012,d}" == "0,001,234,567")
+  expect("${-1234567:013,d}" == "-0,001,234,567")
+  expect("${1234567:+012,d}" == "+001,234,567")
+  expect("${1234.5:010,.1}" == "0,001,234.5")
+  expect("${255:#08x}" == "0x0000ff")
+}

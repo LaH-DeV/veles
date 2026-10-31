@@ -80,3 +80,20 @@ test "slice is what substring gives where substring succeeds" {
   val text = "slice and substring agree"
   expect(text.slice(3, 9) == (text.substring(3, 9) ?: ""))
 }
+
+test "split preserves empty fields and splitOnce keeps the unsplit remainder" {
+  expect("a,,b,".split(",") == ["a", "", "b", ""])
+  expect("é🙂".split("") == ["é", "🙂"])
+  expect("abc".split("missing") == ["abc"])
+  expect("key=a=b".splitOnce("=") == ("key", "a=b"))
+  expect("word".splitOnce("") == ("", "word"))
+  expect("word".splitOnce("=") == null)
+}
+
+test "trim and lines handle ASCII whitespace and mixed line endings" {
+  expect("\t\r\nword \t".trim() == "word")
+  expect("  word  ".trimStart() == "word  ")
+  expect("  word  ".trimEnd() == "  word")
+  expect("one\r\n\r\ntwo\n".lines() == ["one", "", "two"])
+  expect("".lines().isEmpty())
+}

@@ -46,6 +46,7 @@ extend u64 {
 
 extend f64 {
   /// The number with exactly `digits` decimals, rounded: `(2.0 / 3.0).toFixed(2)` is `"0.67"`.
+  /// Any nonnegative precision is accepted; a negative precision or result too large for a string panics.
   public fun toFixed(digits: i64): string {
     var out = ""
     // SAFETY: stores the text in `out`, a local that outlives the call
@@ -91,10 +92,25 @@ extend f64 {
 
   /// The nearest representable number below this one: `-((-x).nextUp())`.
   public fun nextDown(): f64 => -((-this).nextUp())
+
+  /// True when the two are equal or within a tolerance of each other (D230):
+  /// `relative` of the larger magnitude, or `absolute`, whichever is wider —
+  /// Python's `math.isclose`. `(0.1 + 0.2).isClose(0.3)` is true where `==` is
+  /// false. An infinity is close only to itself and a NaN to nothing; near
+  /// zero only `absolute` helps: a fraction of a tiny number is tinier still.
+  /// A negative tolerance panics.
+  public const fun isClose(other: f64, relative: f64 = 1.0e-9, absolute: f64 = 0.0): bool {
+    if (relative < 0.0 || absolute < 0.0) panic("isClose: a tolerance cannot be negative: relative ${relative}, absolute ${absolute}")
+    if (this == other) return true
+    if (this.isInfinite() || other.isInfinite()) return false
+    val off = (this - other).abs()
+    off <= relative * this.abs().max(other.abs()) || off <= absolute
+  }
 }
 
 extend f32 {
-  /// The number with exactly `digits` decimals, rounded.
+  /// The number with exactly `digits` decimals, rounded. Any nonnegative precision is accepted;
+  /// a negative precision or result too large for a string panics.
   public fun toFixed(digits: i64): string => (this.toF64()).toFixed(digits)
 
   /// The IEEE 754 binary32 bit pattern of the number, as an integer: sign,
@@ -131,4 +147,18 @@ extend f32 {
 
   /// The nearest representable number below this one: `-((-x).nextUp())`.
   public fun nextDown(): f32 => -((-this).nextUp())
+
+  /// True when the two are equal or within a tolerance of each other (D230):
+  /// `relative` of the larger magnitude, or `absolute`, whichever is wider —
+  /// Python's `math.isclose`. `(0.1 + 0.2).isClose(0.3)` is true where `==` is
+  /// false. An infinity is close only to itself and a NaN to nothing; near
+  /// zero only `absolute` helps: a fraction of a tiny number is tinier still.
+  /// A negative tolerance panics.
+  public const fun isClose(other: f32, relative: f32 = 1.0e-6, absolute: f32 = 0.0): bool {
+    if (relative < 0.0 || absolute < 0.0) panic("isClose: a tolerance cannot be negative: relative ${relative}, absolute ${absolute}")
+    if (this == other) return true
+    if (this.isInfinite() || other.isInfinite()) return false
+    val off = (this - other).abs()
+    off <= relative * this.abs().max(other.abs()) || off <= absolute
+  }
 }

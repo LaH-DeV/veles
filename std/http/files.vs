@@ -3,6 +3,7 @@
 // conditional requests that use them, one byte range, `Cache-Control`, and
 // what a directory means. The decisions are taken from `fs.stat` alone, so a
 // request that ends in a 304 or a 412 never reads the file.
+use bytes
 use fs
 use path
 use time
@@ -162,7 +163,7 @@ fun sendFile(p: string, from: i64, count: i64): sendable fun(BodyWriter) suspend
   var at = from
   var left = count
   loop (left > 0) {
-    val chunk = try f.readAt(at, if (left < 65536) left else 65536)
+    val chunk = try f.readAt(at, if (left < bytes.KiB * 64) left else bytes.KiB * 64)
     // the file is shorter than it was: what was announced cannot be sent
     if (chunk.isEmpty()) break
     try out.write(chunk)

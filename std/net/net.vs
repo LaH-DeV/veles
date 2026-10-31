@@ -16,6 +16,7 @@
 /// confined to one `unsafe` block (D44). The sockets are non-blocking: a
 /// call that would block returns 1, the task parks with `await ioWait(fd,
 /// write)` until the executor's poll sees the socket ready, and retries.
+use bytes
 use io
 use os
 
@@ -260,7 +261,7 @@ public struct Conn {
   implement io.Stream {
     /// Up to `max` bytes, as soon as any are available; an empty list means
     /// the peer closed its side.
-    fun read(max: i64 = 65536): List<u8> suspends throws IoError {
+    fun read(max: i64 = bytes.KiB * 64): List<u8> suspends throws IoError {
       val buffered = this.take(max)
       if (!buffered.isEmpty()) return buffered
       with held = this.fd.using()
@@ -379,7 +380,7 @@ public struct Conn {
       // SAFETY: stores what arrived in `data`, a local that outlives the call; on a
       // closed connection the number is -1 and the call fails
       val code = unsafe {
-        veles_net_recv(held.fd(), 65536, &data)
+        veles_net_recv(held.fd(), bytes.KiB * 64, &data)
       }
       if (code == 0) {
         val chunk = data.bytes()

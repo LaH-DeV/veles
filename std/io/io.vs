@@ -8,14 +8,21 @@ extern "C" {
   fun veles_eprint(s: string)
   fun veles_println(s: string)
   fun veles_eprintln(s: string)
-  fun veles_read_line(out: *raw string): bool
-  fun veles_read_all(out: *raw string): i64
+  fun veles_read_line(max: i64, text: i64, out: *raw string, error: *raw i64): i64
+  fun veles_read_all(max: i64, text: i64, out: *raw string, error: *raw i64): i64
 }
 
-/// A read that would have exceeded the ceiling its caller gave. The bytes
-/// read so far are dropped and the stream is left where it stood, so
-/// there is nothing sensible to resume from: close it. A server answers
-/// the peer first — 431 for headers, 413 for a body — and then closes.
+use bytes
+
+const stdinOK: i64 = 0
+const stdinEOF: i64 = 1
+const stdinInvalidUTF8: i64 = 2
+const stdinTooLong: i64 = 3
+const stdinIOError: i64 = 4
+
+/// A bounded read exceeded the ceiling its caller gave. The partial result
+/// is discarded and the input remains where overflow was detected. Close a
+/// stream after this error; stdin has no handle to close.
 public error TooLong {
   public message: string
   /// The ceiling that was passed, in bytes.
@@ -42,7 +49,7 @@ public error TooLong {
 public trait Stream : Closeable + Sendable {
   /// Up to `max` bytes, as soon as any are available; an empty list means
   /// the end of the stream. Fewer than `max` is normal.
-  fun read(max: i64 = 65536): List<u8> suspends throws IoError
+  fun read(max: i64 = bytes.KiB * 64): List<u8> suspends throws IoError
 
   /// Exactly `n` bytes, or fewer when the stream ends first. `n` is the
   /// ceiling as well as the count, so a caller that takes it from the peer
@@ -91,23 +98,72 @@ public fun eprintln(s: string) {
   }
 }
 
-/// Reads one line from standard input without the trailing newline, or
-/// `null` at end of input.
-public fun readLine(): string? {
-  var line = ""
-  // SAFETY: stores the line in `line`, a local that outlives the call
-  val ok = unsafe {
-    veles_read_line(&line)
+fun checkStdinStatus(status: i64, code: i64, max: i64, what: string) throws IoError | TooLong {
+  if (status == stdinOK) return
+  if (status == stdinInvalidUTF8) {
+    throw IoError(path: "stdin", code: 0, detail: "standard input $what is not valid UTF-8", kind: IoKind.InvalidData)
   }
-  if (ok) line else null
+  if (status == stdinTooLong) {
+    throw TooLong(message: "standard input $what exceeded its $max-byte limit", limit: max)
+  }
+  if (status == stdinIOError) {
+    throw IoError(path: "stdin", code, detail: "could not read standard input", kind: IoKind.Other)
+  }
+  throw IoError(path: "stdin", code, detail: "unknown standard-input status $status", kind: IoKind.Other)
 }
 
-/// Reads standard input to its end (the rest of it, after any `readLine`).
-public fun readAll(): string {
-  var text = ""
-  // SAFETY: stores the input in `text`, a local that outlives the call
-  unsafe {
-    veles_read_all(&text)
+/// Reads one validated UTF-8 line from standard input without the trailing
+/// newline, or `null` at end of input. The default ceiling is 64 KiB.
+public fun readLine(max: i64 = bytes.KiB * 64): string? throws IoError | TooLong {
+  if (max < 0) panic("io.readLine: max must be nonnegative")
+  var line = ""
+  var code: i64 = 0
+  // SAFETY: stores validated text in `line`, a local that outlives the call
+  val status = unsafe {
+    veles_read_line(max, 1, &line, &code)
   }
+  if (status == stdinEOF) return null
+  try checkStdinStatus(status, code, max, "line")
+  line
+}
+
+/// Reads one raw-byte line, without the trailing newline or a preceding CR.
+/// The default ceiling is 64 KiB.
+public fun readLineBytes(max: i64 = bytes.KiB * 64): List<u8>? throws IoError | TooLong {
+  if (max < 0) panic("io.readLineBytes: max must be nonnegative")
+  var data = ""
+  var code: i64 = 0
+  // SAFETY: stores raw bytes in a temporary buffer consumed immediately below
+  val status = unsafe {
+    veles_read_line(max, 0, &data, &code)
+  }
+  if (status == stdinEOF) return null
+  try checkStdinStatus(status, code, max, "line")
+  data.bytes()
+}
+
+/// Reads the rest of standard input as validated UTF-8, up to 1 MiB by default.
+public fun readAll(max: i64 = bytes.MiB): string throws IoError | TooLong {
+  if (max < 0) panic("io.readAll: max must be nonnegative")
+  var text = ""
+  var code: i64 = 0
+  // SAFETY: stores validated text in `text`, a local that outlives the call
+  val status = unsafe {
+    veles_read_all(max, 1, &text, &code)
+  }
+  try checkStdinStatus(status, code, max, "input")
   text
+}
+
+/// Reads the rest of standard input as bytes, up to 1 MiB by default.
+public fun readAllBytes(max: i64 = bytes.MiB): List<u8> throws IoError | TooLong {
+  if (max < 0) panic("io.readAllBytes: max must be nonnegative")
+  var data = ""
+  var code: i64 = 0
+  // SAFETY: stores raw bytes in a temporary buffer consumed immediately below
+  val status = unsafe {
+    veles_read_all(max, 0, &data, &code)
+  }
+  try checkStdinStatus(status, code, max, "input")
+  data.bytes()
 }

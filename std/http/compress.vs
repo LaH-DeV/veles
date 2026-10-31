@@ -1,6 +1,7 @@
 // Response compression (D124): `http.compress()` gzips what a client says it
 // can read, `http.files` serves a `.gz` that lies beside a file, and
 // `http.decompressRequests()` opens a request body a client compressed.
+use bytes
 use compress as gz
 
 /// Compresses responses with gzip when the client's `Accept-Encoding` allows
@@ -15,14 +16,15 @@ use compress as gz
 /// length no longer known, so it goes out chunked.
 ///
 /// ```veles
-/// app.wrap(http.compress())                       // 1 KiB and up
+/// use bytes
+/// app.wrap(http.compress(minBytes: bytes.KiB))     // 1 KiB and up
 /// app.wrap(http.compress(minBytes: 256, level: 4)) // smaller bodies, faster
 /// ```
 ///
 /// `level` is 0–9 as in `compress.gzip` (6 by default); another value panics
 /// at this call, as does a negative `minBytes`.
 @caller_location
-public fun compress(minBytes: i64 = 1024, level: i64 = 6): Middleware {
+public fun compress(minBytes: i64 = bytes.KiB, level: i64 = 6): Middleware {
   if (minBytes < 0) panic("http.compress: minBytes is $minBytes; it cannot be negative")
   if (level < 0 || level > 9) panic("http.compress: level is $level; it is 0 (stored) to 9 (smallest)")
   next => req => {
@@ -108,7 +110,7 @@ fun gzipped(resp: Response, level: i64): Response {
 /// `Content-Encoding` header, which no longer describes it.
 ///
 /// ```veles
-/// app.wrap(http.decompressRequests(max: 8 * 1024 * 1024))
+/// app.wrap(http.decompressRequests(max: bytes.MiB * 8))
 /// ```
 ///
 /// A negative or zero `max` panics at this call.

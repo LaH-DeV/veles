@@ -356,13 +356,56 @@ public struct JsonDecoder {
   }
 
   /// Whether the number at the cursor has a fraction or an exponent.
-  private fun numberIsFloat(): bool {
-    loop (i in this.pos()..<this.src.len()) {
-      val b = this.src.at(i) ?: break
-      if (b in ['.', 'e', 'E']) return true
-      if (b != '-' && (b < '0' || b > '9')) return false
+  private fun numberIsFloat(): bool throws DecodeError {
+    var i = this.pos()
+    val end = this.src.len()
+    if (this.src.at(i) == '-') i += 1
+    if (i >= end) throw this.malformed("expected a number")
+    val first = this.src.at(i) ?: throw this.malformed("expected a number")
+    if (first == '0') {
+      i += 1
+      if (i < end) {
+        val next = this.src.at(i) ?: 0
+        if (next >= '0' && next <= '9') throw this.malformed("a number has a leading zero")
+      }
+    } else if (first >= '1' && first <= '9') {
+      i += 1
+      loop (i < end) {
+        val b = this.src.at(i) ?: break
+        if (b < '0' || b > '9') break
+        i += 1
+      }
+    } else {
+      throw this.malformed("expected a number")
     }
-    false
+    var isFloat = false
+    if (i < end && this.src.at(i) == '.') {
+      isFloat = true
+      i += 1
+      val fractionStart = i
+      loop (i < end) {
+        val b = this.src.at(i) ?: break
+        if (b < '0' || b > '9') break
+        i += 1
+      }
+      if (i == fractionStart) throw this.malformed("expected a digit after the decimal point")
+    }
+    if (i < end && this.src.at(i) in ['e', 'E']) {
+      isFloat = true
+      i += 1
+      if (i < end) {
+        val sign = this.src.at(i) ?: 0
+        if (sign == '+' || sign == '-') i += 1
+      }
+      val exponentStart = i
+      loop (i < end) {
+        val b = this.src.at(i) ?: break
+        if (b < '0' || b > '9') break
+        i += 1
+      }
+      if (i == exponentStart) throw this.malformed("expected exponent digits")
+    }
+    isFloat
   }
 
   private fun literal(word: string) throws DecodeError {
@@ -486,7 +529,7 @@ public struct JsonDecoder {
         b == '"'                     => codec.Kind.String
         b == 't' || b == 'f'         => codec.Kind.Bool
         b == 'n'                     => codec.Kind.Null
-        b == '-' || b.isAsciiDigit() => if (this.numberIsFloat()) codec.Kind.Float else codec.Kind.Int
+        b == '-' || b.isAsciiDigit() => if (try this.numberIsFloat()) codec.Kind.Float else codec.Kind.Int
         else                         => throw this.malformed("unexpected character")
       }
     }
@@ -551,12 +594,37 @@ public struct JsonDecoder {
     }
 
     fun readU64(): u64 throws DecodeError {
-      val n = try this.readI64()
-      if (n < 0) {
-        this.recorded.record(this.path(), "$n is negative")
+      if (try this.peek() != codec.Kind.Int) {
+        try this.wrong("an integer")
         return 0
       }
-      n.wrapU64()
+      if (this.peekByte() == '-') {
+        val n = try this.readI64()
+        if (n < 0) {
+          this.recorded.record(this.path(), "$n is negative")
+          return 0
+        }
+        return n.wrapU64()
+      }
+      val start = this.pos()
+      var n: u64 = 0
+      var fits = true
+      loop (val b = this.peekByte()) {
+        if (b < '0' || b > '9') break
+        if (fits) {
+          val digit = (b - '0').toU64()
+          val next = n.checkedMul(10)?.checkedAdd(digit)
+          if (next == null) fits = false else n = next
+        }
+        this.setPos(this.pos() + 1)
+      }
+      if (this.pos() == start) throw this.malformed("expected a number")
+      if (!fits) {
+        val text = listDecodeUtf8Range(this.src, start, this.pos()) ?: ""
+        this.recorded.record(this.path(), "$text does not fit an unsigned integer")
+        return 0
+      }
+      n
     }
 
     fun readF64(): f64 throws DecodeError {

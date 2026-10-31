@@ -3,9 +3,10 @@
 // parameters and salt, so raising the cost later does not invalidate the
 // hashes already stored.
 use base64
+use bytes
 
 // OWASP's first choice for Argon2id: 19 MiB, two passes, one lane
-const passwordMemoryKiB: i64 = 19456
+const passwordMemoryKiB: i64 = 19 * bytes.MiB / bytes.KiB
 const passwordPasses: i64 = 2
 const passwordLanes: i64 = 1
 const passwordSaltBytes: i64 = 16
@@ -13,7 +14,7 @@ const passwordTagBytes: i64 = 32
 
 // what `verifyPassword` accepts in a hash it is given: a hash from a database is trusted
 // less than code, and an absurd cost in one would make a login stall or run out of memory
-const maxMemoryKiB: i64 = 1048576
+const maxMemoryKiB: i64 = bytes.GiB / bytes.KiB
 const maxPasses: i64 = 64
 const maxLanes: i64 = 64
 
