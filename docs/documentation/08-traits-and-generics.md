@@ -474,6 +474,57 @@ every trait can be used this way: one with generic methods, associated
 types, static functions, or `This` in a signature has no single method
 table to build, and the compiler says so.
 
+### Objects that change the value: `&x`
+
+A trait object made from a value holds a copy of it, as passing a struct
+does. When the trait's methods change `this` — a sink that collects
+bytes, a counter — the changes happen to that copy. Pass `&x` to make an
+object that holds the pointer instead, so the methods change `x` itself
+(D232):
+
+```veles
+use io
+
+trait Sink {
+  fun put(b: u8)
+}
+
+struct Collect {
+  var bytes: List<u8> = []
+  implement Sink {
+    fun put(b: u8) {
+      this.bytes.push(b)
+    }
+  }
+}
+
+fun writeAll(to: Sink, data: List<u8>) {
+  loop (b in data) to.put(b)
+}
+
+fun main() {
+  var out = Collect()
+  writeAll(&out, [1, 2, 3])
+  io.println("${out.bytes.len()} bytes")
+}
+```
+
+Output:
+
+```text
+3 bytes
+```
+
+Writing `writeAll(out, …)` here is an error: the object would get a copy
+of `out`, `put` would change the copy, and `out` would stay empty. The
+compiler names the method and offers `&out`, or `out.copy()` when a
+separate copy is what you meant. A temporary — `writeAll(Collect(), …)` —
+is fine, since nothing else could see the change. Go has the same rule
+(a type whose methods take a pointer receiver satisfies an interface only
+as a pointer), and Rust spells it `&mut out` for a `&mut dyn Write`. A
+pointer cannot become an object of a trait that requires `Sendable`:
+another task could then change the value through it.
+
 ### Objects of a trait that requires another
 
 A trait may require others — `trait Shape : Named` means every `Shape` is
@@ -543,7 +594,7 @@ struct Console {
   }
 }
 struct Buffered {
-  pending: MutableList<string> = []
+  pending: List<string> = []
   implement Sink {
     fun write(line: string) {
       this.pending.push(line)
@@ -633,7 +684,7 @@ Output:
 `Box(item: 7)` is a `Box<i64>`: a constructor takes its type arguments
 from what it is given. So does a static function of a generic type (D137):
 `Pair.of(1, "a")` below is a `Pair<i64, string>`, and the prelude's
-`MutableList.repeat(false, 3)` a `MutableList<bool>`. When the arguments
+`List.repeat(false, 3)` a `List<bool>`. When the arguments
 say nothing — `Pair.empty()` — the expected type can
 (`val p: Pair<i64, string>? = Pair.empty()`), or the type arguments are
 written: `Pair<i64, string>.empty()`.
@@ -642,16 +693,16 @@ written: `Pair<i64, string>.empty()`.
 use io
 
 struct Pair<A, B> {
-  first: A
+  first:  A
   second: B
-  public static fun of(a: A, b: B): Pair<A, B> => Pair(first: a, second: b)
-  public static fun empty(): Pair<A, B>? => null
+  static fun of(a: A, b: B): Pair<A, B> => Pair(first: a, second: b)
+  static fun empty(): Pair<A, B>? => null
 }
 
 fun main() {
   val p = Pair.of(1, "a")
   val none: Pair<i64, string>? = Pair.empty()
-  val flags = MutableList.repeat(false, 3)
+  val flags = List.repeat(false, 3)
   io.println("${p.first} ${p.second} ${none == null} $flags")
 }
 ```
@@ -722,11 +773,11 @@ struct Score {
 }
 
 fun counts<V: Default>(keys: List<string>, add: fun(V): V): Map<string, V> {
-  val out: MutableMap<string, V> = [:]
+  val out: Map<string, V> = [:]
   loop (k in keys) {
     out.set(k, add(out.get(k) ?: V.default()))
   }
-  out.toMap()
+  out
 }
 
 fun main() {
@@ -805,7 +856,7 @@ fun main() {
   val a = Version(major: 1, minor: 10)
   val b = Version(major: 1, minor: 9)
   io.println("${a > b} ${[a, b].sorted()} ${largest(a, b)} ${largest("x", "y")}")
-  var seen = mut [Name(text: "Ann"): 1]
+  var seen = [Name(text: "Ann"): 1]
   seen.set(Name(text: "ANN"), 2)
   io.println("${Name(text: "ann") == Name(text: "ANN")} ${seen.len()}")
 }
@@ -898,7 +949,7 @@ Three questions have three separate answers in Veles: _are these equal?_
 | sealed types                              | same variant, equal fields           | only with `implement Comparable`   | when the variants are                      |
 | `T?`                                      | both null, or both present and equal | no                                 | when `T` is                                |
 | `List`, `Map`, `Set`                      | by content (chapter 4)               | no                                 | immutable ones, when the elements are      |
-| `MutableList`, `MutableMap`, `MutableSet` | by content                           | no                                 | never — they can change after being stored |
+| `List`, `Map`, `Set` | by content                           | no                                 | never — they can change after being stored |
 | pointers, channels, tasks                 | same object (identity)               | no                                 | pointers: by identity                      |
 | functions                                 | not comparable                       | no                                 | no                                         |
 

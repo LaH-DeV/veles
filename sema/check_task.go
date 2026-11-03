@@ -108,11 +108,12 @@ func sendableIn(t types.Type, seen map[types.Type]bool) bool {
 	case *types.Range:
 		return true
 	case *types.List:
-		return !t.Mutable && sendableIn(t.Elem, seen)
+		// a value whose shared storage is never written (D231)
+		return sendableIn(t.Elem, seen)
 	case *types.Map:
-		return !t.Mutable && sendableIn(t.Key, seen) && sendableIn(t.Value, seen)
+		return sendableIn(t.Key, seen) && sendableIn(t.Value, seen)
 	case *types.Set:
-		return !t.Mutable && sendableIn(t.Elem, seen)
+		return sendableIn(t.Elem, seen)
 	case *types.Struct:
 		if seen[t] {
 			return true

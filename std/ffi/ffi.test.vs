@@ -11,8 +11,8 @@ test "C strings preserve empty ASCII and Unicode text with a terminator" {
       readBytes(owned.ptr(), text.len() + 1)
     }
     expect(bytes.len() == text.len() + 1)
-    expect(bytes.at(text.len()) == 0)
-    loop (index in 0..<text.len()) expect(bytes.at(index) == text.byteAt(index))
+    expect(bytes.get(text.len()) == 0)
+    loop (index in 0..<text.len()) expect(bytes.get(index) == text.byteAt(index))
   }
 }
 
@@ -86,17 +86,17 @@ test "handles round trip integers text and nullable payloads" {
   with number = handle<i64>(9223372036854775807)
   // SAFETY: this open handle was created with the same payload type.
   expect(unsafe {
-    Handle<i64>.from(number.ptr())
+    *Handle<i64>.from(number.ptr())
   } == 9223372036854775807)
   with text = handle("\u{E9}/payload")
   // SAFETY: this open handle contains a string.
   expect(unsafe {
-    Handle<string>.from(text.ptr())
+    *Handle<string>.from(text.ptr())
   } == "\u{E9}/payload")
   with absent = handle<i64?>(null)
   // SAFETY: this open handle contains a nullable i64.
   expect(unsafe {
-    Handle<i64?>.from(absent.ptr())
+    *Handle<i64?>.from(absent.ptr())
   } == null)
 }
 
@@ -105,7 +105,7 @@ test "handle copies share closure and repeated close is harmless" {
   val alias = owned
   // SAFETY: alias shares the open string handle.
   expect(unsafe {
-    Handle<string>.from(alias.ptr())
+    *Handle<string>.from(alias.ptr())
   } == "shared")
   alias.close()
   owned.close()
@@ -127,7 +127,7 @@ test "C callbacks cannot recover a value through a closed handle" {
     owned.close()
     // SAFETY: the runtime checks this stale handle before any dereference.
     unsafe {
-      Handle<i64>.from(pointer)
+      *Handle<i64>.from(pointer)
     }
   })
 }
@@ -138,6 +138,6 @@ test "closing one handle does not invalidate another" {
   first.close()
   // SAFETY: second is still open and contains a string.
   expect(unsafe {
-    Handle<string>.from(second.ptr())
+    *Handle<string>.from(second.ptr())
   } == "second")
 }

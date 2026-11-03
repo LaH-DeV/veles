@@ -15,10 +15,10 @@ fun main() {
   val text = Box.of("x")
   val absent: Box<i64>? = Box.none()
   val built = Box.build(() => 2.5)
-  val flags = MutableList.repeat(false, 3)
-  val squares = MutableList.make(4, i => i * i)
-  val small: MutableList<i8> = MutableList.repeat(1, 2)
+  val flags = List.repeat(false, 3)
+  val squares = List.make(4, i => i * i)
+  val small: List<i8> = List.repeat(1, 2)
   io.println("${text.value} ${absent == null} ${built.value} $flags $squares $small")
-  val unknown = Box.none() // error: cannot infer type parameter 'T' of 'Box' from this call; write the type arguments, e.g. 'Box<T>.none(...)', or annotate the binding
+  val unknown = Box.none()  // error: cannot infer type parameter 'T' of 'Box' from this call; write the type arguments, e.g. 'Box<T>.none(...)', or annotate the binding
   io.println("${unknown == null}")
 }

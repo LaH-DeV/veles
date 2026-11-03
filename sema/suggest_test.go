@@ -45,7 +45,7 @@ func TestTypoSuggestions(t *testing.T) {
 fun main() { io.println("${totl()}") }`, "unknown function 'totl'; did you mean 'total'?", "total"},
 		{`fun main() { io.printn("x") }`, "module 'io' has no declaration 'printn'; did you mean 'io.println'?", "println"},
 		{`fun main() { io.println("${[1].lenght()}") }`, "no method 'lenght' on type 'List<i64>'; did you mean 'len'?", "len"},
-		{`fun main() { val xs: MutableList<i64> = []; xs.append(1) }`, "did you mean 'push'?", "push"},
+		{`fun main() { val xs: List<i64> = []; xs.append(1) }`, "did you mean 'push'?", "push"},
 		{`fun main() { io.println("x".toUpperCase()) }`, "did you mean 'toUpper'?", "toUpper"},
 		{`fun main() { val m = [1: 2]; io.println("${m.has(1)}") }`, "did you mean 'containsKey'?", "containsKey"},
 		{`struct P { x: i64

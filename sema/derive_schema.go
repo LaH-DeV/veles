@@ -45,7 +45,7 @@ func (c *Checker) deriveSchema(b *synth, impl *Impl) (*ast.FunDecl, string) {
 		field := c.preludeType("SchemaField")
 		encodable, _ := c.preludeType("Encodable").(*types.Trait)
 		f := &fnCtx{c: c}
-		body := []ast.Stmt{b.val("$fields", &types.List{Elem: field, Mutable: true}, &ast.ListLit{Pos: b.sp})}
+		body := []ast.Stmt{b.val("$fields", &types.List{Elem: field}, &ast.ListLit{Pos: b.sp})}
 		for _, df := range fields {
 			if df.skipAll || df.init {
 				continue
@@ -69,7 +69,7 @@ func (c *Checker) deriveSchema(b *synth, impl *Impl) (*ast.FunDecl, string) {
 				body = append(body, add)
 			}
 		}
-		body = append(body, b.stmt(build("object", b.str(t.Name), b.mcall(b.name("$fields"), "toList"))))
+		body = append(body, b.stmt(build("object", b.str(t.Name), b.name("$fields"))))
 		return b.fun("schema", true, params, schemaT, nil, body), ""
 	}
 	return nil, ""

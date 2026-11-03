@@ -127,7 +127,9 @@ find-references, a rename that refuses to change what the program means, and
 completion. Its `README.md` has three-line install instructions. The
 language server is the compiler itself (`veles lsp`), so what the editor
 says and what the compiler says never disagree. Inlay hints show the types
-and effects the compiler inferred; turn on `veles.inlayHints.allocations`
+and effects the compiler inferred, and where a change copies a list, map or
+set (chapter 4, "Seeing where it copies"; `veles.inlayHints.copies` turns
+those off); turn on `veles.inlayHints.allocations`
 to also see a `heap` hint wherever the program allocates on the heap
 (chapter 13, "Where a program allocates").
 

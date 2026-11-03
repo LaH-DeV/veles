@@ -21,8 +21,8 @@ fun half(n: i64): i64? => if (n % 2 == 0) n / 2 else null
 /// A helper only tests can call: it may use the vocabulary itself.
 test fun expectSorted(xs: List<i64>) {
   loop (i in 1..<xs.len()) {
-    val before = xs.at(i - 1) ?: 0
-    expect(before <= xs.at(i))
+    val before = xs.get(i - 1) ?: 0
+    expect(before <= xs.get(i))
   }
 }
 
@@ -69,7 +69,7 @@ test "sorts" {
 
 test "panics are expected" {
   expectPanics(() => {
-    [1].at(3) ?: panic("index 3 is out of range")
+    [1].get(3) ?: panic("index 3 is out of range")
   })
 }
 

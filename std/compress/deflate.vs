@@ -41,10 +41,10 @@ const BLOCK_TOKENS: i64 = 32768
 const NONE: i64 = -1000000000000
 
 fun buildLengthSymbols(): List<i64> {
-  val table: MutableList<i64> = MutableList.repeat(0, 259)
+  val table: List<i64> = List.repeat(0, 259)
   loop (slot in 0..<29) {
-    val base = LENGTH_BASE.at(slot)
-    val span = 1 << (LENGTH_EXTRA.at(slot))
+    val base = LENGTH_BASE.get(slot)
+    val span = 1 << (LENGTH_EXTRA.get(slot))
     loop (n in base..<(base + span)) {
       if (n <= 258) table.set(n, 257 + slot)
     }
@@ -55,10 +55,10 @@ fun buildLengthSymbols(): List<i64> {
 
 fun buildDistSymbols(): List<i64> {
   // index d - 1 for d <= 256; for larger d, 256 + ((d - 1) >> 7)
-  val table: MutableList<i64> = MutableList.repeat(0, 512)
+  val table: List<i64> = List.repeat(0, 512)
   loop (slot in 0..<30) {
-    val base = DIST_BASE.at(slot)
-    val span = 1 << (DIST_EXTRA.at(slot))
+    val base = DIST_BASE.get(slot)
+    val span = 1 << (DIST_EXTRA.get(slot))
     loop (d in base..<(base + span)) {
       if (d <= 256) {
         table.set(d - 1, slot)
@@ -74,7 +74,7 @@ fun buildDistSymbols(): List<i64> {
     if (d > 256) {
       var slot = 0
       loop (s in 0..<30) {
-        if (DIST_BASE.at(s) <= d) slot = s
+        if (DIST_BASE.get(s) <= d) slot = s
       }
       table.set(256 + k, slot)
     }
@@ -88,7 +88,7 @@ val distSymbols: List<i64> = buildDistSymbols()
 fun distSymbol(d: i64): i64 {
   // SAFETY: d is 1..(32 KiB), so both indexes are inside the 512 entries
   unsafe {
-    if (d <= 256) distSymbols.atUnchecked(d - 1) else distSymbols.atUnchecked(256 + ((d - 1) >> 7))
+    if (d <= 256) distSymbols.getUnchecked(d - 1) else distSymbols.getUnchecked(256 + ((d - 1) >> 7))
   }
 }
 
@@ -97,26 +97,26 @@ fun distSymbol(d: i64): i64 {
 
 // code lengths for `freqs` (symbols 0..<n), none longer than `maxBits`;
 // a symbol with frequency 0 gets length 0
-fun huffmanLengths(freqs: MutableList<i64>, n: i64, maxBits: i64): MutableList<i64> {
-  val lens: MutableList<i64> = MutableList.repeat(0, n)
-  val keyed: MutableList<i64> = []
+fun huffmanLengths(freqs: List<i64>, n: i64, maxBits: i64): List<i64> {
+  val lens: List<i64> = List.repeat(0, n)
+  val keyed: List<i64> = []
   loop (sym in 0..<n) {
-    val f = freqs.at(sym) ?: 0
+    val f = freqs.get(sym) ?: 0
     if (f > 0) keyed.push((f << 10) | sym)
   }
   val order = keyed.sorted()  // ascending frequency
   val m = order.len()
   if (m == 0) return lens
   if (m == 1) {
-    lens.set(order.at(0) & 1023, 1)
+    lens.set(order.get(0) & 1023, 1)
     return lens
   }
   // the two-queue construction: leaves in order, internal nodes made in
   // order of weight, so each queue stays sorted
-  val weight: MutableList<i64> = MutableList.repeat(0, 2 * m)
-  val parent: MutableList<i64> = MutableList.repeat(0, 2 * m)
+  val weight: List<i64> = List.repeat(0, 2 * m)
+  val parent: List<i64> = List.repeat(0, 2 * m)
   loop (i in 0..<m) {
-    weight.set(i, order.at(i) >> 10)
+    weight.set(i, order.get(i) >> 10)
   }
   var leaf = 0
   var made = m
@@ -125,7 +125,7 @@ fun huffmanLengths(freqs: MutableList<i64>, n: i64, maxBits: i64): MutableList<i
     var pair = 0
     loop (_ in 0..<2) {
       var pick = 0
-      if (leaf < m && (open >= made || (weight.at(leaf) ?: 0) <= (weight.at(open) ?: 0))) {
+      if (leaf < m && (open >= made || (weight.get(leaf) ?: 0) <= (weight.get(open) ?: 0))) {
         pick = leaf
         leaf += 1
       } else {
@@ -133,36 +133,36 @@ fun huffmanLengths(freqs: MutableList<i64>, n: i64, maxBits: i64): MutableList<i
         open += 1
       }
       parent.set(pick, made)
-      pair += weight.at(pick) ?: 0
+      pair += weight.get(pick) ?: 0
     }
     weight.set(made, pair)
     made += 1
   }
   // depths, from the root down (a parent always comes after its children)
-  val depth: MutableList<i64> = MutableList.repeat(0, 2 * m)
+  val depth: List<i64> = List.repeat(0, 2 * m)
   var node = made - 2
   loop (node >= 0) {
-    depth.set(node, (depth.at(parent.at(node) ?: 0) ?: 0) + 1)
+    depth.set(node, (depth.get(parent.get(node) ?: 0) ?: 0) + 1)
     node -= 1
   }
   // how many leaves per length, the long ones folded into maxBits
-  val counts: MutableList<i64> = MutableList.repeat(0, maxBits + 1)
+  val counts: List<i64> = List.repeat(0, maxBits + 1)
   loop (i in 0..<m) {
-    val d = (depth.at(i) ?: 1).min(maxBits)
+    val d = (depth.get(i) ?: 1).min(maxBits)
     counts.incrementAt(d)
   }
   // folding made the code over-full; lengthen shorter codes until it is not
   var kraft = 0
   loop (len in 1..maxBits) {
-    kraft += (counts.at(len) ?: 0) << (maxBits - len)
+    kraft += (counts.get(len) ?: 0) << (maxBits - len)
   }
   loop (kraft > (1 << maxBits)) {
-    counts.set(maxBits, (counts.at(maxBits) ?: 0) - 1)
+    counts.set(maxBits, (counts.get(maxBits) ?: 0) - 1)
     var len = maxBits - 1
     loop (len >= 1) {
-      if ((counts.at(len) ?: 0) > 0) {
-        counts.set(len, (counts.at(len) ?: 0) - 1)
-        counts.set(len + 1, (counts.at(len + 1) ?: 0) + 2)
+      if ((counts.get(len) ?: 0) > 0) {
+        counts.set(len, (counts.get(len) ?: 0) - 1)
+        counts.set(len + 1, (counts.get(len + 1) ?: 0) + 2)
         break
       }
       len -= 1
@@ -173,8 +173,8 @@ fun huffmanLengths(freqs: MutableList<i64>, n: i64, maxBits: i64): MutableList<i
   var next = 0
   loop (j in 0..<maxBits) {
     val len = maxBits - j
-    loop (_ in 0..<(counts.at(len) ?: 0)) {
-      lens.set((order.at(next) ?: 0) & 1023, len)
+    loop (_ in 0..<(counts.get(len) ?: 0)) {
+      lens.set((order.get(next) ?: 0) & 1023, len)
       next += 1
     }
   }
@@ -183,24 +183,24 @@ fun huffmanLengths(freqs: MutableList<i64>, n: i64, maxBits: i64): MutableList<i
 
 // the canonical codes of `lens`, each with its bits reversed (the stream
 // carries a code's top bit first, into the low end of the byte)
-fun canonicalCodes(lens: MutableList<i64>, n: i64): MutableList<i64> {
-  val counts: MutableList<i64> = MutableList.repeat(0, 17)
+fun canonicalCodes(lens: List<i64>, n: i64): List<i64> {
+  val counts: List<i64> = List.repeat(0, 17)
   loop (sym in 0..<n) {
-    val len = lens.at(sym) ?: 0
+    val len = lens.get(sym) ?: 0
     counts.incrementAt(len)
   }
   counts.set(0, 0)
-  val next: MutableList<i64> = MutableList.repeat(0, 17)
+  val next: List<i64> = List.repeat(0, 17)
   var code = 0
   loop (len in 1..15) {
-    code = (code + (counts.at(len - 1) ?: 0)) << 1
+    code = (code + (counts.get(len - 1) ?: 0)) << 1
     next.set(len, code)
   }
-  val codes: MutableList<i64> = MutableList.repeat(0, n)
+  val codes: List<i64> = List.repeat(0, n)
   loop (sym in 0..<n) {
-    val len = lens.at(sym) ?: 0
+    val len = lens.get(sym) ?: 0
     if (len == 0) continue
-    val canonical = next.at(len) ?: 0
+    val canonical = next.get(len) ?: 0
     next.set(len, canonical + 1)
     var reversed = 0
     var rest = canonical
@@ -213,8 +213,8 @@ fun canonicalCodes(lens: MutableList<i64>, n: i64): MutableList<i64> {
   codes
 }
 
-fun fixedLitLengths(): MutableList<i64> {
-  val lens: MutableList<i64> = MutableList.repeat(8, 288)
+fun fixedLitLengths(): List<i64> {
+  val lens: List<i64> = List.repeat(8, 288)
   loop (i in 144..<256) {
     lens.set(i, 9)
   }
@@ -224,9 +224,9 @@ fun fixedLitLengths(): MutableList<i64> {
   lens
 }
 
-val fixedLitLens: List<i64> = fixedLitLengths().toList()
-val fixedLitCodes: List<i64> = canonicalCodes(fixedLitLengths(), 288).toList()
-val fixedDistCodes: List<i64> = canonicalCodes(MutableList.repeat(5, 30), 30).toList()
+val fixedLitLens: List<i64> = fixedLitLengths()
+val fixedLitCodes: List<i64> = canonicalCodes(fixedLitLengths(), 288)
+val fixedDistCodes: List<i64> = canonicalCodes(List.repeat(5, 30), 30)
 
 // ---------------------------------------------------------------------------
 
@@ -236,22 +236,22 @@ struct Deflater {
   private var effort: Effort
 
   // input not yet forgotten: buf[0] is absolute position `base`
-  private var buf:         MutableList<u8> = []
+  private var buf:         List<u8> = []
   private var base:        i64 = 0
   private var pos:         i64 = 0
-  private var head:        MutableList<i64> = MutableList.repeat(NONE, HASH_SIZE)
-  private var prev:        MutableList<i64> = MutableList.repeat(NONE, HASH_SIZE)
+  private var head:        List<i64> = List.repeat(NONE, HASH_SIZE)
+  private var prev:        List<i64> = List.repeat(NONE, HASH_SIZE)
   private var havePending: bool = false
   private var pendingLen:  i64 = 0
   private var pendingDist: i64 = 0
 
   // the block being built
-  private var tokens:     MutableList<i64> = []
+  private var tokens:     List<i64> = []
   private var blockStart: i64 = 0
   private var covered:    i64 = 0
 
   // output
-  private var out:      MutableList<u8> = []
+  private var out:      List<u8> = []
   private var acc:      i64 = 0
   private var nbits:    i64 = 0
   private var finished: bool = false
@@ -267,7 +267,7 @@ struct Deflater {
     val keepFrom = this.pos - bytes.KiB * 32 - 1
     if (keepFrom - this.base > bytes.KiB * 64) {
       val drop = keepFrom - this.base
-      this.buf = this.buf.drop(drop).toMutable()
+      this.buf = this.buf.drop(drop)
       this.base += drop
     }
     this.buf.addAll(data)
@@ -275,7 +275,7 @@ struct Deflater {
 
   /// The bytes produced so far, handed over; whole bytes only, until `finish`.
   fun take(): List<u8> {
-    val bytes = this.out.toList()
+    val bytes = this.out
     this.out.clear()
     bytes
   }
@@ -338,7 +338,7 @@ struct Deflater {
     val at = p - this.base
     // SAFETY: callers hash only positions with two more bytes after them
     val v = unsafe {
-      this.buf.atUnchecked(at).toI64() | (this.buf.atUnchecked(at + 1).toI64() << 8) | (this.buf.atUnchecked(at + 2).toI64() << 16)
+      this.buf.getUnchecked(at).toI64() | (this.buf.getUnchecked(at + 1).toI64() << 8) | (this.buf.getUnchecked(at + 2).toI64() << 16)
     }
     ((v * 2654435761) >> 15) & HASH_MASK
   }
@@ -348,7 +348,7 @@ struct Deflater {
     val h = this.hashAt(p)
     // SAFETY: h is masked to the table size, and so is the ring index
     unsafe {
-      val candidate = this.head.atUnchecked(h)
+      val candidate = this.head.getUnchecked(h)
       this.prev.setUnchecked(p & HASH_MASK, candidate)
       this.head.setUnchecked(h, p)
       candidate
@@ -372,9 +372,9 @@ struct Deflater {
       // SAFETY: c + best < at + best < len (best < limit <= avail), and every
       // compared index is below `limit` bytes from c and from at
       unsafe {
-        if (best >= limit || this.buf.atUnchecked(c + best) == this.buf.atUnchecked(at + best)) {
+        if (best >= limit || this.buf.getUnchecked(c + best) == this.buf.getUnchecked(at + best)) {
           var n = 0
-          loop (n < limit && this.buf.atUnchecked(c + n) == this.buf.atUnchecked(at + n)) {
+          loop (n < limit && this.buf.getUnchecked(c + n) == this.buf.getUnchecked(at + n)) {
             n += 1
           }
           if (n > best) {
@@ -386,7 +386,7 @@ struct Deflater {
       }
       // SAFETY: the ring index is masked to the table size
       val next = unsafe {
-        this.prev.atUnchecked(candidate & HASH_MASK)
+        this.prev.getUnchecked(candidate & HASH_MASK)
       }
       if (next >= candidate) break  // the ring entry was overwritten
       candidate = next
@@ -400,7 +400,7 @@ struct Deflater {
   private fun literal(at: i64) {
     // SAFETY: at is a position inside the buffer
     this.tokens.push(unsafe {
-      this.buf.atUnchecked(at - this.base).toI64()
+      this.buf.getUnchecked(at - this.base).toI64()
     })
     this.covered += 1
     if (this.tokens.len() >= BLOCK_TOKENS) this.flush(false)
@@ -482,7 +482,7 @@ struct Deflater {
     loop (k in 0..<n) {
       // SAFETY: the callers pass n no larger than what is left in the buffer
       this.out.push(unsafe {
-        this.buf.atUnchecked(this.pos - this.base + k)
+        this.buf.getUnchecked(this.pos - this.base + k)
       })
     }
     this.pos += n
@@ -492,8 +492,8 @@ struct Deflater {
   // there are none and `final`)
   private fun flush(final: bool) {
     if (this.tokens.isEmpty() && !final) return
-    val litFreq: MutableList<i64> = MutableList.repeat(0, 286)
-    val distFreq: MutableList<i64> = MutableList.repeat(0, 30)
+    val litFreq: List<i64> = List.repeat(0, 286)
+    val distFreq: List<i64> = List.repeat(0, 30)
     var extraBits = 0
     loop (token in this.tokens) {
       if (token < 256) {
@@ -501,11 +501,11 @@ struct Deflater {
       } else {
         val len = token >> 16
         val dist = token & 65535
-        val ls = lengthSymbols.at(len) ?: 257
+        val ls = lengthSymbols.get(len) ?: 257
         val ds = distSymbol(dist)
         litFreq.incrementAt(ls)
         distFreq.incrementAt(ds)
-        extraBits += (LENGTH_EXTRA.at(ls - 257) ?: 0) + (DIST_EXTRA.at(ds) ?: 0)
+        extraBits += (LENGTH_EXTRA.get(ls - 257) ?: 0) + (DIST_EXTRA.get(ds) ?: 0)
       }
     }
     litFreq.set(256, 1)
@@ -520,42 +520,42 @@ struct Deflater {
     // the cost of each way to write it
     var litBits = 0
     loop (sym in 0..<286) {
-      litBits += (litFreq.at(sym) ?: 0) * (litLens.at(sym) ?: 0)
+      litBits += (litFreq.get(sym) ?: 0) * (litLens.get(sym) ?: 0)
     }
     var distBits = 0
     loop (sym in 0..<30) {
-      distBits += (distFreq.at(sym) ?: 0) * (distLens.at(sym) ?: 0)
+      distBits += (distFreq.get(sym) ?: 0) * (distLens.get(sym) ?: 0)
     }
     var fixedBits = 3 + extraBits
     loop (sym in 0..<286) {
-      fixedBits += (litFreq.at(sym) ?: 0) * (fixedLitLens.at(sym) ?: 8)
+      fixedBits += (litFreq.get(sym) ?: 0) * (fixedLitLens.get(sym) ?: 8)
     }
     loop (sym in 0..<30) {
-      fixedBits += (distFreq.at(sym) ?: 0) * 5
+      fixedBits += (distFreq.get(sym) ?: 0) * 5
     }
     // the header of a dynamic block: lengths run-length coded, themselves Huffman coded
     var hlit = 286
-    loop (hlit > 257 && (litLens.at(hlit - 1) ?: 0) == 0) {
+    loop (hlit > 257 && (litLens.get(hlit - 1) ?: 0) == 0) {
       hlit -= 1
     }
     var hdist = 30
-    loop (hdist > 1 && (distLens.at(hdist - 1) ?: 0) == 0) {
+    loop (hdist > 1 && (distLens.get(hdist - 1) ?: 0) == 0) {
       hdist -= 1
     }
-    val sequence: MutableList<i64> = []
+    val sequence: List<i64> = []
     loop (i in 0..<hlit) {
-      sequence.push(litLens.at(i) ?: 0)
+      sequence.push(litLens.get(i) ?: 0)
     }
     loop (i in 0..<hdist) {
-      sequence.push(distLens.at(i) ?: 0)
+      sequence.push(distLens.get(i) ?: 0)
     }
     // symbols of the code-length alphabet, with the extra-bit values after 16-18
-    val coded: MutableList<i64> = []
+    val coded: List<i64> = []
     var i = 0
     loop (i < sequence.len()) {
-      val value = sequence.at(i) ?: 0
+      val value = sequence.get(i) ?: 0
       var run = 1
-      loop (i + run < sequence.len() && (sequence.at(i + run) ?: -1) == value) {
+      loop (i + run < sequence.len() && (sequence.get(i + run) ?: -1) == value) {
         run += 1
       }
       if (value == 0 && run >= 3) {
@@ -584,20 +584,20 @@ struct Deflater {
         i += 1
       }
     }
-    val clenFreq: MutableList<i64> = MutableList.repeat(0, 19)
+    val clenFreq: List<i64> = List.repeat(0, 19)
     loop (c in coded) {
       val sym = c & 255
       clenFreq.incrementAt(sym)
     }
     val clenLens = huffmanLengths(clenFreq, 19, 7)
     var hclen = 19
-    loop (hclen > 4 && (clenLens.at(CLEN_ORDER.at(hclen - 1) ?: 0) ?: 0) == 0) {
+    loop (hclen > 4 && (clenLens.get(CLEN_ORDER.get(hclen - 1) ?: 0) ?: 0) == 0) {
       hclen -= 1
     }
     var headerBits = 3 + 14 + 3 * hclen
     loop (c in coded) {
       val sym = c & 255
-      headerBits += (clenLens.at(sym) ?: 0) + (when {
+      headerBits += (clenLens.get(sym) ?: 0) + (when {
         sym == 16 => 2
         sym == 17 => 3
         sym == 18 => 7
@@ -615,7 +615,7 @@ struct Deflater {
     } else if (fixedBits <= dynamicBits) {
       this.putBits(if (final) 1 else 0, 1)
       this.putBits(1, 2)
-      this.writeTokens(fixedLitCodes.toMutable(), fixedLitLens.toMutable(), fixedDistCodes.toMutable(), MutableList.repeat(5, 30))
+      this.writeTokens(fixedLitCodes, fixedLitLens, fixedDistCodes, List.repeat(5, 30))
     } else {
       this.putBits(if (final) 1 else 0, 1)
       this.putBits(2, 2)
@@ -623,12 +623,12 @@ struct Deflater {
       this.putBits(hdist - 1, 5)
       this.putBits(hclen - 4, 4)
       loop (k in 0..<hclen) {
-        this.putBits(clenLens.at(CLEN_ORDER.at(k) ?: 0) ?: 0, 3)
+        this.putBits(clenLens.get(CLEN_ORDER.get(k) ?: 0) ?: 0, 3)
       }
       val clenCodes = canonicalCodes(clenLens, 19)
       loop (c in coded) {
         val sym = c & 255
-        this.putBits(clenCodes.at(sym) ?: 0, clenLens.at(sym) ?: 0)
+        this.putBits(clenCodes.get(sym) ?: 0, clenLens.get(sym) ?: 0)
         if (sym == 16) this.putBits(c >> 8, 2)
         if (sym == 17) this.putBits(c >> 8, 3)
         if (sym == 18) this.putBits(c >> 8, 7)
@@ -652,7 +652,7 @@ struct Deflater {
       loop (k in 0..<n) {
         // SAFETY: the range was checked to lie inside the buffer by the caller
         this.out.push(unsafe {
-          this.buf.atUnchecked(at - this.base + k)
+          this.buf.getUnchecked(at - this.base + k)
         })
       }
       at += n
@@ -660,23 +660,23 @@ struct Deflater {
     }
   }
 
-  private fun writeTokens(litCodes: MutableList<i64>, litLens: MutableList<i64>, distCodes: MutableList<i64>, distLens: MutableList<i64>) {
+  private fun writeTokens(litCodes: List<i64>, litLens: List<i64>, distCodes: List<i64>, distLens: List<i64>) {
     loop (token in this.tokens) {
       if (token < 256) {
-        this.putBits(litCodes.at(token) ?: 0, litLens.at(token) ?: 0)
+        this.putBits(litCodes.get(token) ?: 0, litLens.get(token) ?: 0)
         continue
       }
       val len = token >> 16
       val dist = token & 65535
-      val ls = lengthSymbols.at(len) ?: 257
-      this.putBits(litCodes.at(ls) ?: 0, litLens.at(ls) ?: 0)
-      val lextra = LENGTH_EXTRA.at(ls - 257) ?: 0
-      if (lextra > 0) this.putBits(len - (LENGTH_BASE.at(ls - 257) ?: 3), lextra)
+      val ls = lengthSymbols.get(len) ?: 257
+      this.putBits(litCodes.get(ls) ?: 0, litLens.get(ls) ?: 0)
+      val lextra = LENGTH_EXTRA.get(ls - 257) ?: 0
+      if (lextra > 0) this.putBits(len - (LENGTH_BASE.get(ls - 257) ?: 3), lextra)
       val ds = distSymbol(dist)
-      this.putBits(distCodes.at(ds) ?: 0, distLens.at(ds) ?: 0)
-      val dextra = DIST_EXTRA.at(ds) ?: 0
-      if (dextra > 0) this.putBits(dist - (DIST_BASE.at(ds) ?: 1), dextra)
+      this.putBits(distCodes.get(ds) ?: 0, distLens.get(ds) ?: 0)
+      val dextra = DIST_EXTRA.get(ds) ?: 0
+      if (dextra > 0) this.putBits(dist - (DIST_BASE.get(ds) ?: 1), dextra)
     }
-    this.putBits(litCodes.at(256) ?: 0, litLens.at(256) ?: 0)
+    this.putBits(litCodes.get(256) ?: 0, litLens.get(256) ?: 0)
   }
 }

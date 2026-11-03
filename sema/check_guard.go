@@ -133,7 +133,7 @@ func (f *fnCtx) letElse(s *ast.ValStmt) []Stmt {
 	if types.IsInvalid(xt) {
 		return f.brokenBinding(s)
 	}
-	tmp := f.newTemp(xt)
+	tmp := f.newLentTemp(xt) // its parts are bound, each a copy (D231)
 	ref := &VarRef{exprBase{xt}, tmp}
 	out := []Stmt{&VarDecl{Var: tmp, Init: x}}
 

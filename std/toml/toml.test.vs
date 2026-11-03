@@ -154,9 +154,9 @@ test arrayOfTables "[[array of tables]]" {
   val doc = read("[[fruit]]\nname = \"apple\"\n[fruit.physical]\ncolor = \"red\"\n[[fruit.variety]]\nname = \"red delicious\"\n[[fruit.variety]]\nname = \"granny smith\"\n[[fruit]]\nname = \"banana\"\n")
   val fruit = doc.get("fruit")?.asList() ?: panic("fruit")
   expect(fruit.len() == 2)
-  expect(fruit.at(0)?.asTable()?.get("physical")?.asTable()?.get("color")?.asString() == "red")
-  expect(fruit.at(0)?.asTable()?.get("variety")?.asList()?.len() == 2)
-  expect(fruit.at(1)?.asTable()?.get("name")?.asString() == "banana")
+  expect(fruit.get(0)?.asTable()?.get("physical")?.asTable()?.get("color")?.asString() == "red")
+  expect(fruit.get(0)?.asTable()?.get("variety")?.asList()?.len() == 2)
+  expect(fruit.get(1)?.asTable()?.get("name")?.asString() == "banana")
   expect(why("a = [1]\n[[a]]\n") == "line 2: \"a\" is already a list, not an array of tables")
   expect(why("[[a]]\n[a]\n").startsWith("line 2:"))
 }

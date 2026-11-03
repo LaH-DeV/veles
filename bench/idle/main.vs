@@ -34,7 +34,7 @@ fun main() {
   var sum: i64 = 0
   var perTask: i64 = 0
   scope {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     tasks.reserve(n)
     loop (_ in 0..<n) tasks.push(async waiter(ch, parked))
     loop (parked.load() < n) cede

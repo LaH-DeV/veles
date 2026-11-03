@@ -28,7 +28,7 @@ func (f *fnCtx) localVar(v *Var) *Var {
 		return inner
 	}
 	outer := f.parent.localVar(v)
-	outer.AddrTaken = true
+	outer.heapPromote()
 	inner := f.newVar(outer.Name, outer.Type, outer.Mutable, outer.Span)
 	inner.Captured = true
 	inner.ErrPoly = outer.ErrPoly
@@ -342,7 +342,8 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 			ct = ct.(*types.Pointer).Elem
 			isVar = false
 		}
-		if isVar || !sendable(ct) || hasVarFields(ct) {
+		changed := changesCaptured(fn, v)
+		if isVar || !sendable(ct) || hasVarFields(ct) || changed {
 			fn.Sig.Sendable = false
 			if expected != nil && expected.Sendable {
 				why := "a 'var'"
@@ -350,6 +351,10 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 				case isVar:
 				case !sendable(ct):
 					why = "of type '" + ct.String() + "', which is not Sendable"
+				case changed:
+					// the variable is shared with the maker, which may read it
+					// while the lambda runs in another task (D231)
+					why = "a collection the lambda changes; copy it into a variable of the lambda's own first ('var mine = " + v.Name + "')"
 				default:
 					why = "of type '" + ct.String() + "', which has 'var' fields another task could see change; copy what the lambda needs into vals first"
 				}

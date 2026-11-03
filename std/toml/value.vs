@@ -129,7 +129,7 @@ enum Origin {
 
 /// A table of keys to values.
 public struct Table {
-  entries:     MutableMap<string, Value> = [:]
+  entries:     Map<string, Value> = [:]
   public line: i64
   var origin:  Origin = Origin.Implied
 

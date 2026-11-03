@@ -49,7 +49,7 @@ public trait AsyncIterator {             // an iterator whose next() may wait (D
 }
 ```
 
-`List<T>`, `MutableList<T>` and `Range<T>` implement `Iterable`;
+`List<T>` and `Range<T>` implement `Iterable`;
 `loop (x in c)` accepts any `Iterable`, `Iterator` or `AsyncIterator` (the
 loop's function then suspends). Maps iterate as `(K, V)` tuples and sets
 as elements directly. `ConcurrentMap` (what `mapConcurrent` on an iterator
@@ -162,10 +162,9 @@ public struct Watch<T> {                 // D146: the latest value; each copy re
 ```
 
 These are `Sendable` when `T` is. `Sendable` itself is the marker for
-values with no shared mutable state — numbers, strings, immutable
-collections, structs of such fields; never a mutable collection, a pointer
-or a closure. It is what may cross a task boundary, and what a function may
-duplicate: `MutableList<T>.repeat` and `fill` require it.
+values with no shared mutable state — numbers, strings, lists, maps and
+sets (values, D231), structs of such fields; never a pointer or a closure. It is what may cross a task boundary, and what a function may
+duplicate: `List<T>.repeat` and `fill` require it.
 
 ### Reflection (D174)
 
@@ -223,7 +222,7 @@ public struct Panic {                             // a task's panic, as seen by 
 ```
 
 `panic(message)` raises one deliberately (D20). It never returns, so it
-can stand in for a value: `val x = xs.at(i) ?: panic("index $i")`. A panic
+can stand in for a value: `val x = xs.get(i) ?: panic("index $i")`. A panic
 prints its message and, on the next line, `at file:line:col in function`
 relative to the package root (D64), then in a debug build a `called from`
 line per call that led there (D81).
@@ -351,8 +350,8 @@ public error EncodeError { message, path }; public error DecodeError { problems:
 ```
 
 The wire traits ([chapter 18](../18-codable-and-json.md)). Implemented
-by the prelude for the numbers, `bool`, `string`, `T?`, `List`,
-`MutableList`, `Map<string, V>` and `MutableMap<string, V>`; derived for
+by the prelude for the numbers, `bool`, `string`, `T?`, `List` and
+`Map<string, V>`; derived for
 structs and sealed traits by an empty `implement`; automatic for enums.
 `Comparable` is derived the same way. A struct field takes `@key`, `@skip`
 and `@required`; a sealed trait `@tag`. Deriving needs no import; the
@@ -367,7 +366,7 @@ public trait Encoder { format(); enums(); keys(); beginObject(); key(name); endO
 public trait Decoder { format(); enums(); keys(); peek(): Kind; beginObject(); nextKey(): string?; endObject(); beginList(); hasNext(); endList(); readI64/U64/F64/Bool/String/Null(); skip(); path(); problem(msg); problemAt(path, msg); problems() }
 public struct Problem { path, message; pointer() }; public struct Problems   // what a decoder records
 public enum EnumStyle { Name, Number }; public enum DurationStyle { Seconds, Iso8601, Text, Nanos, Millis }; public enum Case { AsWritten, SnakeCase, CamelCase, UpperSnake }; public enum Kind { Null, Bool, Int, Float, String, List, Object }
-public sealed trait Value   // VNull, VBool, VInt, VFloat, VString, VList, VObject; get(k), at(i), asString/asI64/asF64/asBool(), isNull()
+public sealed trait Value   // VNull, VBool, VInt, VFloat, VString, VList, VObject; get(k), elementAt(i), asString/asI64/asF64/asBool(), isNull()
 ValueEncoder.of(format, enums, keys, durations); ValueDecoder.of(v, format, enums, keys, durations)   // a Value as the sink / the source
 public struct Schema { kind: SchemaKind, what: string, secret: bool, fields: List<SchemaField>; element(): Schema?; asSecret() }   // the shape of a Decodable (D125): what `config` asks for by name
 public struct SchemaField { name, key, schema: Schema, required: bool, nullable: bool, fallback: string? }   // key: as decode matches it for the format and key style
@@ -409,7 +408,8 @@ public struct Deque<T> {                           // Deque<i64>() starts an emp
   public fun removeLast(): T?
   public fun first(): T?
   public fun last(): T?
-  public fun at(i: i64): T?          // from the front; a negative i counts from the back
+  public fun get(i: i64): T?         // a copy, from the front; a negative i counts from the back
+  public fun at(i: i64): (*T)?       // a pointer to the element itself: q.at(0)?.n += 1 (D231 addendum 5)
   public fun len(): i64
   public fun isEmpty(): bool
   public fun reserve(n: i64)         // room for n elements in all (D105)
@@ -430,7 +430,7 @@ public struct PriorityQueue<T> {
 }
 ```
 
-Both are reference types like `MutableList` (D25): a `val` binding can
+Both are reference types like `List` (D25): a `val` binding can
 grow them and a callee shares the caller's. `Deque` is a ring buffer —
 O(1) at both ends, amortised O(1) growth — and serves as a FIFO queue
 (`addLast` / `removeFirst`), a stack, or a sliding window. `PriorityQueue`
@@ -547,22 +547,22 @@ A `u8` is a byte, not a code point, so the names say ASCII; they are `const fun`
 x.toBeBytes(): Array<u8, N>; x.toLeBytes()            // every integer type; N = 1, 2, 4, 8 (isize, usize: 8)
 u32.fromBeBytes(a: Array<u8, 4>): u32; u32.fromLeBytes(a)   // likewise on every integer type
 list.readU16Be(offset: i64): u16?                      // List<u8>; U16, U32, U64, I16, I32, I64 × Be, Le; null when the bytes are not all there
-out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the same twelve
+out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // List<u8>; the same twelve
 ```
 
-### `List<T>` and `MutableList<T>`
+### `List<T>`
 
 | Method                                                                                     | Result                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `at(i)`                                                                                    | `T?`; null when out of range, or `T` where the index is known to be in range (D62). A negative `i` counts from the end (`at(-1)` is the last). A copy, like every read. Where it cannot fail, say why: `xs.at(i) ?: panic("…")`                                                                                                             |
-| `atUnchecked(i)`, `setUnchecked(i, v)`                                                     | `T`, `()`; only in `unsafe`, `0 <= i < len`, checked in a debug build only (D114); `set…` on `MutableList`                                                                                                                                                                                                                                  |
-| `ref(i)`                                                                                   | `(*T)?`: a pointer to the element itself (`MutableList` only), or `*T` where the index is known. `xs.ref(i)?.bump()`, `xs.ref(i)?.n = 0` change the element; `loop (&x in xs)` visits every element this way                                                                                                                                |
-| `indices()`                                                                                | `0..<len()`; in `loop (i in xs.indices())` each `xs.at(i)` is a `T`                                                                                                                                                                                                                                                                         |
-| `atOrDefault(i, d)`                                                                        | `T`; `at(i) ?: d`                                                                                                                                                                                                                                                                                                                           |
+| `get(i)` | `T?`; null when out of range, or `T` where the index is known to be in range (D62). A negative `i` counts from the end (`get(-1)` is the last). A copy, like every read. Where it cannot fail, say why: `xs.get(i) ?: panic("…")` |
+| `getUnchecked(i)`, `setUnchecked(i, v)`                                                     | `T`, `()`; only in `unsafe`, `0 <= i < len`, checked in a debug build only (D114)                                                                                                                                                                                                                                  |
+| `at(i)` | `(*T)?`: a pointer to the element itself, or `*T` where the index is known. `xs.at(i)?.bump()`, `xs.at(i)?.n = 0` change the element; `loop (&x in xs)` visits every element this way (D231) |
+| `indices()`                                                                                | `0..<len()`; in `loop (i in xs.indices())` each `xs.get(i)` is a `T`                                                                                                                                                                                                                                                                         |
+| `getOrDefault(i, d)`                                                                        | `T`; `get(i) ?: d`                                                                                                                                                                                                                                                                                                                           |
 | `len()`, `isEmpty()`, `lastIndex()`                                                        | `lastIndex` is `len() - 1`: −1 when empty                                                                                                                                                                                                                                                                                                   |
 | `contains(x)`, `indexOf(x)`, `count(p)`                                                    | `bool`, `i64?` (null if absent, D165), `i64`                                                                                                                                                                                                                                                                                                |
 | `first()`, `last()`, `min()`, `max()`                                                      | `T?`; `min`/`max` need `Comparable` elements                                                                                                                                                                                                                                                                                                |
-| `take(n)`, `drop(n)`, `slice(from, to)`                                                    | new `List`, bounds clamped; on an immutable `List` a window onto the same storage, no copy (`toList()` detaches it), on a `MutableList` a copy (D196)                                                                                                                                                                                       |
+| `take(n)`, `drop(n)`, `slice(from, to)`                                                    | new `List`, bounds clamped: a window onto the same storage, copied only when either list is changed (D196, D231)                                                                                                                                                                                       |
 | `map(f)`, `filter(p)`, `fold(z, f)`, `forEach(f)`, `flatMap(f)`                            | eager; return `List`. These and `any`, `all`, `find`, `count`, `indexOfFirst`, `mapNotNull`, `partition` are prelude Veles generic over what the function does: they throw what it throws (`xs.map(a => try parse(a))` is a `Result` until `try`) and suspend only when it suspends (D116) — `xs.map(x => fetch(x))` waits for each in turn |
 | `mapNotNull(f)`, `partition(p)`                                                            | `f` returns `U?`, nulls dropped; `(List<T>, List<T>)` of accepted and rest                                                                                                                                                                                                                                                                  |
 | `filterIs<V>()`, `filterNotNull()`                                                         | on a list of a sealed type: the elements of variant `V` as `List<V>`; on `List<T?>`: the present ones as `List<T>`                                                                                                                                                                                                                          |
@@ -577,45 +577,43 @@ out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // MutableList<u8>; the s
 | `sum()`                                                                                    | `List<i64>` and `List<f64>` only                                                                                                                                                                                                                                                                                                            |
 | `join(sep)`                                                                                | `string`                                                                                                                                                                                                                                                                                                                                    |
 | `iter()`                                                                                   | lazy iterator                                                                                                                                                                                                                                                                                                                               |
-| `toList()`, `toMutable()`                                                                  | copies (D25)                                                                                                                                                                                                                                                                                                                                |
-| `toSet()`, `toMutableSet()`                                                                | the distinct elements as a set (iterators have `toSet()` too)                                                                                                                                                                                                                                                                               |
-| `push(x)`, `pop(): T?`, `set(i, x)`, `clear()`, `reserve(n)`                               | `MutableList` only; `reserve` makes room for `n` in all, so pushing up to `n` never grows the list (D83)                                                                                                                                                                                                                                    |
-| `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()`                                   | `MutableList` only; `sort` is in place                                                                                                                                                                                                                                                                                                      |
-| `swap(i, j)`, `sortWith(compare)`                                                          | `MutableList` only; in place                                                                                                                                                                                                                                                                                                                |
-| `fill(x)`                                                                                  | `MutableList` only; overwrites every element, length unchanged                                                                                                                                                                                                                                                                              |
-| `incrementAt(i)`                                                                           | `MutableList<i64>` only; increments one element in place, panics out of range; negative indexes count from the end                                                                                                                                                                                                                          |
-| `updateAt(i, transform): T`                                                                | `MutableList<T>` only; transforms and replaces one element, returning the new value. The synchronous callback runs once and must not mutate the same list; panics out of range, negative indexes count from the end                                                                                                                         |
-| `MutableList<T>.repeat(x, count)`, `MutableList<T>.make(n, i => ...)`                      | statics (the `<T>` may be left out when the arguments or the expected type give it, D137): `count` copies of `x`, or `init(i)` called once per slot. `repeat` and `fill` need `T: Sendable` (D35): a mutable collection or pointer would be one value aliased by every slot, which is what `make` is for                                    |
+| `toSet()`                                                                  | the distinct elements as a set (iterators have `toSet()` too)
+| `push(x)`, `pop(): T?`, `set(i, x)`, `clear()`, `reserve(n)`                               | `reserve` makes room for `n` in all, so pushing up to `n` never grows the list (D83)                                                                                                                                                                                                                                    |
+| `insert(i, x)`, `removeAt(i): T`, `addAll(xs)`, `sort()`                                   | `sort` is in place                                                                                                                                                                                                                                                                                                      |
+| `swap(i, j)`, `sortWith(compare)`                                                          | in place                                                                                                                                                                                                                                                                                                                |
+| `fill(x)`                                                                                  | overwrites every element, length unchanged                                                                                                                                                                                                                                                                              |
+| `incrementAt(i)`                                                                           | `List<i64>` only; increments one element in place, panics out of range; negative indexes count from the end                                                                                                                                                                                                                          |
+| `updateAt(i, transform): T`                                                                | `List<T>` only; transforms and replaces one element, returning the new value. The synchronous callback runs once and must not mutate the same list; panics out of range, negative indexes count from the end                                                                                                                         |
+| `List<T>.repeat(x, count)`, `List<T>.make(n, i => ...)`                      | statics (the `<T>` may be left out when the arguments or the expected type give it, D137): `count` copies of `x`, or `init(i)` called once per slot. `repeat` and `fill` need `T: Sendable` (D35): a mutable collection or pointer would be one value aliased by every slot, which is what `make` is for                                    |
 
-A `MutableList<T>` has every `List<T>` method; a `val` binding is enough to
+A `List<T>` has every `List<T>` method; a `val` binding is enough to
 call the mutating ones, since the list is a reference (D25).
 
-The prelude helpers that take no function — `atOrDefault`, `take`, `drop`,
+The prelude helpers that take no function — `getOrDefault`, `take`, `drop`,
 `concat`, `indices`, `enumerate`, `zip`, `distinct`, `chunked`, `windowed`,
-`lastIndex`, `toSet`, `toMutableSet`, `sortedDescending`, `min`, `max`, `sum`,
-and `MutableList`'s `repeat`, `fill`, `swap`, `insert`, `removeAt`, `sort` — are
+`lastIndex`, `toSet`, `sortedDescending`, `min`, `max`, `sum`,
+and `List`'s `repeat`, `fill`, `swap`, `insert`, `removeAt`, `sort` — are
 `const fun`s: a constant's function may use them (D113). So are the ones that
 take a function (`map`, `filter`, `fold`, `forEach`, `any`, `all`, `find`,
 `count`, `indexOfFirst`, `flatMap`, `mapNotNull`, `partition`, `sortedBy`,
 `sortedByDescending`, `sortedWith`, `sortWith`, `minBy`, `maxBy`, `minWith`,
 `maxWith`, `distinctBy`, `partitionPoint`, `binarySearch`, `binarySearchBy`,
 `binarySearchWith`, `lowerBound`, `upperBound`, `make`, `updateAt`) and a `Map`'s
-`mapValues`, `filter`, `forEach` and `getOrPut`, when the function given is
+`mapValues`, `filter` and `forEach`, when the function given is
 one the compiler can run.
 
-### `Map<K, V>` and `MutableMap<K, V>`
+### `Map<K, V>`
 
 | Method                                                                   | Result                                                                                                                                                    |
 | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `get(k)`                                                                 | `V?`                                                                                                                                                      |
 | `getOrDefault(k, d)`                                                     | `V`: `get(k) ?: d`. A copy of the value. Where a key must be there, say why: `m.get(k) ?: panic("…")`                                                     |
-| `ref(k)`                                                                 | `(*V)?`: a pointer to the stored value (`MutableMap` only): `m.ref(k)?.bump()`, `m.ref(k)?.n += 1`; `loop ((k, &v) in m)` visits every value by reference |
+| `at(k)` | `(*V)?`: a pointer to the stored value: `m.at(k)?.bump()`, `m.at(k)?.n += 1`; `loop ((k, &v) in m)` visits every value by reference (D231) |
 | `containsKey(k)`, `len()`, `isEmpty()`                                   |                                                                                                                                                           |
 | `keys()`, `values()`, `entries()`                                        | `List<K>`, `List<V>`, `List<(key: K, value: V)>` in insertion order                                                                                       |
-| `toMap()`, `toMutable()`                                                 | copies                                                                                                                                                    |
-| `set(k, v)`, `remove(k): bool`, `clear()`, `reserve(n)`                  | `MutableMap` only; after `reserve(n)` inserting up to `n` entries never grows or rehashes (D105)                                                          |
+| `set(k, v)`, `remove(k): bool`, `clear()`, `reserve(n)`                  | after `reserve(n)` inserting up to `n` entries never grows or rehashes (D105)                                                          |
 | `forEach((k, v) => ...)`, `mapValues(v => ...)`, `filter((k, v) => ...)` | iterate over the entries as they were when the call starts; new `Map`. Prelude Veles: they throw and suspend as the function does (D116)                  |
-| `getOrPut(k, () => v)`                                                   | `V` — `MutableMap` only: stores `v` when `k` is absent                                                                                                    |
+| `atOrPut(k, () => v)`                                                   | `*V`: the stored value to change, `v` stored first when `k` is absent: `groups.atOrPut(k, () => []).push(x)`
 
 Keys must be hashable: scalars, strings, tuples and structs of hashable
 fields.
@@ -623,9 +621,9 @@ fields.
 ### `Array<T, N>` (D121)
 
 `N` elements stored inline, a value: `val b = a` copies it. `len()` (the constant `N`),
-`isEmpty()`, `at(i)` (`T?`; a `T` for a constant index in range or one the bounds facts prove),
-`first()`, `last()`, `indices()` (`0..<N`), `set(i, x)` on a `var`, `atUnchecked(i)` and
-`setUnchecked(i, x)` (`unsafe`), `toList()`, `toMutable()`; `loop (x in a)` over a copy and
+`isEmpty()`, `get(i)` (`T?`; a `T` for a constant index in range or one the bounds facts prove), `at(i)` (`(*T)?`, on a `var`),
+`first()`, `last()`, `indices()` (`0..<N`), `set(i, x)` on a `var`, `getUnchecked(i)` and
+`setUnchecked(i, x)` (`unsafe`), `toList()`; `loop (x in a)` over a copy and
 `loop (&x in a)` in place. `map`, `filter`, `forEach`, `fold`, `any`, `all` and `find` read the
 array where it lies; every other read-only `List` method runs on a copy. Created from a literal
 where an array type is expected, `Array<T, N>.make(x)` (`N` copies), `xs.toArray<N>()`
@@ -634,12 +632,12 @@ text are a list's; it is `Codable` (a list of exactly `N`), `Sendable` when `T` 
 `withRaw(f)` lends C its storage when `T` is `CLayout`. `N` is a constant argument
 (`Array<u8, 4 * 16>`) or a `<const N: i64>` parameter.
 
-### `Set<T>` and `MutableSet<T>`
+### `Set<T>`
 
-`contains(x)`, `len()`, `isEmpty()`, `toList()`, `toSet()`, `toMutable()`,
-`union(s)`, `intersect(s)`, `difference(s)`, `isSubsetOf(s)`; on `MutableSet`:
+`contains(x)`, `len()`, `isEmpty()`, `toList()` (the members),
+`union(s)`, `intersect(s)`, `difference(s)`, `isSubsetOf(s)`,
 `add(x): bool`, `remove(x): bool`, `clear()`, `reserve(n)` (D105). Construct with `Set<T>()` /
-`MutableSet<T>()`, or with a list literal where a set type is expected:
+`Set<T>()`, or with a list literal where a set type is expected:
 `val s: Set<i64> = [1, 2]`.
 
 ### `Range<T>`
@@ -1195,7 +1193,7 @@ random.float(): f64                   // 0.0..<1.0
 random.boolean(): bool
 random.nextU64(): u64
 random.pick<T>(xs: List<T>): T?       // null when empty
-random.shuffle<T>(xs: MutableList<T>) // in place
+random.shuffle<T>(xs: List<T>) // in place
 random.Rng.seeded(n: i64): Rng        // an independent generator with the same methods
 ```
 
@@ -1295,7 +1293,7 @@ use utf8
 utf8.decode(s: string, at: i64): utf8.Rune?        // null: out of range, or mid-character
 utf8.decodeLast(s: string, before: i64): utf8.Rune?
 utf8.decodeBytes(bytes: List<u8>, at: i64): utf8.Rune?   // null: also malformed
-utf8.encodeTo(out: MutableList<u8>, code: i64): i64      // bytes appended, 1..4
+utf8.encodeTo(out: *List<u8>, code: i64): i64     // bytes appended to the caller's list (`&out`), 1..4
 utf8.encode(code: i64): List<u8>
 utf8.char(code: i64): string                       // a one-character string
 utf8.size(code: i64): i64?                         // how many bytes it takes
@@ -1369,9 +1367,11 @@ unsafe ffi.readString(p: *raw u8): string                // copies up to the NUL
 unsafe ffi.readBytes(p: *raw u8, n: i64): List<u8>       // copies n bytes
 ffi.alloc(n: i64): *raw u8;  unsafe ffi.free(p: *raw u8)  // zeroed, unmanaged memory
 ffi.handle(value: T): Handle<T>                          // a Veles value as C's `void *userdata`; Closeable
-h.ptr(): *raw u8;  unsafe ffi.Handle<T>.from(p): T       // the value back, in the callback
+h.ptr(): *raw u8;  unsafe ffi.Handle<T>.from(p): *raw T  // the handle's copy, to read and change in the callback
+h.value(): T                                             // the handle's copy as the callbacks left it
 // ffi.CLayout: memory C can read as it is (derived from the shape, never implemented by hand)
-// prelude: xs.withRaw(p => ...) on a List<T: ffi.CLayout> lends the elements for the closure, no copy
+// prelude: xs.withRaw(p => ...) on a List<T: ffi.CLayout> lends the elements for C to read, no copy;
+//          xs.withRawMut(p => ...) for C to write, the list made the only holder of its storage first (D231)
 // language: extern "C" fun name(...) { }  and  &name: extern fun(...); p.cast<*raw T>() in unsafe
 ```
 
@@ -1384,7 +1384,7 @@ The API a lint rule is written against ([chapter 11](../11-modules-and-packages.
 use lint
 lint.Rule(name: string, doc: string = "", level: lint.Level = lint.Level.Warn, create: fun(lint.Context): lint.Visitor)
 lint.Visitor(onCallExpr: ((lint.CallExpr, lint.Context) => ())? = null, ...)   // one optional callback per node struct of selfhost/ast: onFunDecl, onNameExpr, onBlock, onIdent, …
-ctx.report(span: lint.Span, message: string, fix: lint.Fix? = null)
+ctx.report(span: lint.Span, message: string, fix: lint.Fix? = null);  ctx.reports(): List<lint.Report>   // a copy of what was reported
 ctx.text(span): string;  ctx.file: lint.File   // path, content, position(offset), line(n)
 lint.Fix.replace(span, text);  lint.Fix.remove(span);  lint.Fix.insertBefore(span, text);  lint.Fix(edits: [lint.Edit(span, text)])
 // the tree: lint.Expr / Stmt / Decl / Type / Pattern (sealed), lint.CallExpr, lint.FunDecl, …, lint.Kind (token kinds)

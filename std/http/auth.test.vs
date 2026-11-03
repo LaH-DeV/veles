@@ -17,7 +17,7 @@ test fun basic(user: string, pass: string): Map<string, string> =>
   ["Authorization": "Basic " + base64.encode("$user:$pass".bytes())]
 
 test fun forged(user: string, pass: string, remote: string): Map<string, string> {
-  val h = basic(user, pass).toMutable()
+  val h = basic(user, pass)
   h.set("X-Remote-User", remote)
   h
 }

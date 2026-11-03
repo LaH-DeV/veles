@@ -25,7 +25,7 @@ core, and a function that waits does not change the type of its callers.
 | `await Promise.all([f(), g()])` | `awaitAll(async f(), async g())` |
 | `throw` anything, catch `unknown` | `throws E` in the signature, `try`, a typed `catch` |
 | `import { x } from "./m"` | `use m` (a module is a directory), then `m.x` |
-| `arr.length`, `arr[i]` | `xs.len()`, `xs.at(i)` (a `T?`) |
+| `arr.length`, `arr[i]` | `xs.len()`, `xs.get(i)` (a `T?`) |
 
 ## Integers are integers
 
@@ -163,11 +163,11 @@ or pass it on with `try`: the compiler will not let it go unnoticed.
 
 - `string.length` counts UTF-16 units; `s.len()` counts UTF-8 bytes, and
   `s.charCount()` counts characters ([chapter 2](../02-values-and-strings.md)).
-- `xs.at(i)` returns a `T?` instead of `undefined` past the end, and the
+- `xs.get(i)` returns a `T?` instead of `undefined` past the end, and the
   compiler makes you say what happens then. A negative index counts from
   the end, as `Array.prototype.at` does.
 - `List<T>` cannot change at all — not `readonly` by convention but by
-  type — and `MutableList<T>` can ([chapter 4](../04-collections.md)).
+  type — and `List<T>` can ([chapter 4](../04-collections.md)).
 - No `this` binding rules: a lambda captures the variables around it, and
   in a method `this` is always the receiver.
 - No `undefined` field and no optional-field object literals: a struct is

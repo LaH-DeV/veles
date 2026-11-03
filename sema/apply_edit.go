@@ -148,23 +148,9 @@ func (f *fnCtx) run(b *blockRunner, ptr Expr, v *Var, span source.Span) Stmt {
 func (f *fnCtx) editCopy(x Expr, rt, work types.Type, block *blockRunner, span source.Span) Expr {
 	tmp := f.newTemp(work)
 	var init Expr
-	freeze := ""
-	switch t := rt.(type) {
-	case *types.List:
-		init = &Builtin{exprBase{work}, "list.copy", []Expr{x}, span}
-		if !t.Mutable {
-			freeze = "list.freeze"
-		}
-	case *types.Map:
-		init = &Builtin{exprBase{work}, "map.copy", []Expr{x}, span}
-		if !t.Mutable {
-			freeze = "map.freeze"
-		}
-	case *types.Set:
-		init = &Builtin{exprBase{work}, "map.copy", []Expr{x}, span}
-		if !t.Mutable {
-			freeze = "map.freeze"
-		}
+	switch rt.(type) {
+	case *types.List, *types.Map, *types.Set:
+		init = &Share{exprBase{work}, x} // a copy: its first change copies the storage (D231)
 	default:
 		init = x
 		if rt == types.TString {
@@ -179,8 +165,6 @@ func (f *fnCtx) editCopy(x Expr, rt, work types.Type, block *blockRunner, span s
 	}
 	var back Expr = ref(tmp)
 	switch {
-	case freeze != "":
-		back = &Builtin{exprBase{rt}, freeze, []Expr{ref(tmp)}, span}
 	case rt == types.TString:
 		b := &synth{sp: span}
 		back = f.checkExpr(b.call(b.prelude("builderText"), &ast.CheckedExpr{X: ref(tmp), Pos: span}), rt)
@@ -260,7 +244,7 @@ func (c *Checker) settleOnCalls() {
 				continue
 			}
 		}
-		v.AddrTaken = true
+		v.heapPromote()
 	}
 	c.onCalls = nil
 }
@@ -276,18 +260,6 @@ func (f *fnCtx) workForm(t types.Type) types.Type {
 				return types.TInvalid
 			}
 			return sb
-		}
-	case *types.List:
-		if !t.Mutable {
-			return &types.List{Elem: t.Elem, Mutable: true}
-		}
-	case *types.Map:
-		if !t.Mutable {
-			return &types.Map{Key: t.Key, Value: t.Value, Mutable: true}
-		}
-	case *types.Set:
-		if !t.Mutable {
-			return &types.Set{Elem: t.Elem, Mutable: true}
 		}
 	}
 	return t

@@ -40,15 +40,14 @@ fun forEachDigit(text: string, visit: extern fun(i64, *raw u8), userdata: *raw u
 }
 
 struct Digits {
-  seen: MutableList<i64>
+  seen: List<i64>
 }
 
 extern "C" fun onDigit(d: i64, userdata: *raw u8) {
   // SAFETY: forEachDigit passes on the pointer `main` gave it, from a Handle<Digits>
-  val digits = unsafe {
-    ffi.Handle<Digits>.from(userdata)
+  unsafe {
+    ffi.Handle<Digits>.from(userdata).seen.push(d)
   }
-  digits.seen.push(d)
 }
 
 fun main() throws ffi.NulByte {
@@ -66,18 +65,18 @@ fun main() throws ffi.NulByte {
   }
 
   // a list lent for the length of a call: no copy
-  val buf: MutableList<u8> = [1, 2, 3, 4, 5, 6]
-  // SAFETY: withRaw lends the list's storage for this call; memset writes 3 of
+  val buf: List<u8> = [1, 2, 3, 4, 5, 6]
+  // SAFETY: withRawMut lends the list's storage for this call; memset writes 3 of
   // its 6 bytes
-  buf.withRaw(p => unsafe {
+  buf.withRawMut(p => unsafe {
     memset(p, 0, 3)
   })
   println("memset: $buf")
 
   // a Veles function as a C callback
-  val xs: MutableList<i64> = [42, 7, 19, 3, 88, 21]
+  val xs: List<i64> = [42, 7, 19, 3, 88, 21]
   // SAFETY: qsort sorts xs.len() elements of 8 bytes inside the lent storage
-  xs.withRaw(p => unsafe {
+  xs.withRawMut(p => unsafe {
     qsort(p.cast<*raw u8>(), xs.len().wrapU64(), 8, &ascending)
   })
   println("qsort: $xs")
@@ -95,8 +94,9 @@ fun main() throws ffi.NulByte {
   val digits = Digits(seen: [])
   with (h = ffi.handle(digits)) {
     forEachDigit("a1b22c333", &onDigit, h.ptr())
+    // the handle lent C a copy of `digits`: the callback changed that one
+    println("digits: ${h.value().seen}")
   }
-  println("digits: ${digits.seen}")
 
   // memory C keeps past a call: allocated and freed explicitly
   val block = ffi.alloc(4)

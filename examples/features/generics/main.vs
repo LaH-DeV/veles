@@ -1,7 +1,7 @@
 use io { println }
 
 struct Stack<T> {
-  items: MutableList<T> = []
+  items: List<T> = []
 
   fun push(x: T) {
     this.items.push(x)
@@ -30,7 +30,7 @@ fun describe<T: Show>(x: T): string => x.shout()
 
 fun first<T>(xs: List<T>, fallback: T): T {
   if (xs.len() == 0) return fallback
-  xs.at(0)  // a T: the check above proves the list is not empty
+  xs.get(0)  // a T: the check above proves the list is not empty
 }
 
 // `Default` (D119): a value generic code can start from. A tally per key
@@ -44,7 +44,7 @@ struct Score {
 }
 
 fun tally<V: Default>(keys: List<string>, add: fun(V): V): Map<string, V> {
-  val out: MutableMap<string, V> = [:]
+  val out: Map<string, V> = [:]
   loop (k in keys) {
     out.set(k, add(out.get(k) ?: V.default()))
   }

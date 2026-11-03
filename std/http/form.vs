@@ -13,7 +13,7 @@ public struct Fields {
   /// The fields of `text`: `name=value` pairs joined by `&`, `+` a space,
   /// `%XX` escapes decoded; a name without `=` has the empty value.
   public static fun parse(text: string): Fields {
-    val pairs: MutableList<(string, string)> = []
+    val pairs: List<(string, string)> = []
     if (!text.isEmpty()) {
       loop (pair in text.split("&")) {
         if (pair.isEmpty()) continue
@@ -34,7 +34,7 @@ public struct Fields {
 
   /// Every value of `name`, in order (empty when it is absent).
   public fun all(name: string): List<string> {
-    val out: MutableList<string> = []
+    val out: List<string> = []
     loop ((k, v) in this.pairs) {
       if (k == name) out.push(v)
     }
@@ -43,8 +43,8 @@ public struct Fields {
 
   /// The distinct names, in the order they first appear.
   public fun names(): List<string> {
-    val seen: MutableSet<string> = []
-    val out: MutableList<string> = []
+    val seen: Set<string> = []
+    val out: List<string> = []
     loop ((k, _) in this.pairs) {
       if (seen.contains(k)) continue
       seen.add(k)
@@ -77,6 +77,7 @@ struct FormState {
   var listAt:   i64 = 0
   var nested:   i64 = 0  // objects opened inside the member: forms have none, so they are skipped
   var skipList: i64 = 0  // the same for lists inside a list
+  recorded:     codec.Problems = codec.Problems()  // shared by every copy, as the rest (D231)
 }
 
 /// The `codec.Decoder` over `Fields`: one flat object whose members are
@@ -92,7 +93,6 @@ public struct FormDecoder {
   private fields:   Fields
   private names:    List<string>
   private state:    *FormState
-  private recorded: codec.Problems = codec.Problems()
   private keyStyle: Case = Case.AsWritten
 
   public static fun of(fields: Fields, keys: Case = Case.AsWritten): FormDecoder =>
@@ -113,17 +113,17 @@ public struct FormDecoder {
   private fun take(): string? {
     val s = this.state
     if (s.inList) {
-      val v = s.values.at(s.listAt)
+      val v = s.values.get(s.listAt)
       s.listAt += 1
       return v
     }
     val at = this.here()
     s.pending = false
     if (s.values.len() != 1) {
-      this.recorded.record(at, "expected one value, found ${s.values.len()}")
+      this.state.recorded.record(at, "expected one value, found ${s.values.len()}")
       return null
     }
-    s.values.at(0)
+    s.values.get(0)
   }
 
   implement codec.Decoder {
@@ -134,7 +134,7 @@ public struct FormDecoder {
       val s = this.state
       if (s.stage == 0) return codec.Kind.Object
       if (!s.inList && s.values.len() > 1) return codec.Kind.List
-      val v = (if (s.inList) s.values.at(s.listAt) else s.values.at(0)) ?: return codec.Kind.Null
+      val v = (if (s.inList) s.values.get(s.listAt) else s.values.get(0)) ?: return codec.Kind.Null
       if (v.isEmpty()) codec.Kind.Null else codec.Kind.String
     }
 
@@ -144,7 +144,7 @@ public struct FormDecoder {
         s.stage = 1
         return
       }
-      this.recorded.record(this.here(), "a form has no nested values")
+      this.state.recorded.record(this.here(), "a form has no nested values")
       s.pending = false
       s.nested += 1
     }
@@ -152,7 +152,7 @@ public struct FormDecoder {
     fun nextKey(): string? throws DecodeError {
       val s = this.state
       if (s.nested > 0) return null
-      val k = this.names.at(s.next) ?: return null
+      val k = this.names.get(s.next) ?: return null
       s.next += 1
       s.name = k
       s.values = this.fields.all(k)
@@ -174,14 +174,14 @@ public struct FormDecoder {
     fun beginList() throws DecodeError {
       val s = this.state
       if (s.inList) {
-        this.recorded.record(this.here(), "a form has no nested lists")
+        this.state.recorded.record(this.here(), "a form has no nested lists")
         s.skipList += 1
         return
       }
       s.inList = true
       s.listAt = 0
       // `tags=` alone is an empty list, not a list of one empty string
-      if (s.values.len() == 1 && (s.values.at(0) ?: "").isEmpty()) s.values = []
+      if (s.values.len() == 1 && (s.values.get(0) ?: "").isEmpty()) s.values = []
     }
 
     fun hasNext(): bool throws DecodeError {
@@ -206,7 +206,7 @@ public struct FormDecoder {
       val text = this.take() ?: return 0
       val n = text.trim().toInt()
       if (n == null) {
-        this.recorded.record(at, "expected an integer, found \"$text\"")
+        this.state.recorded.record(at, "expected an integer, found \"$text\"")
         return 0
       }
       n
@@ -217,7 +217,7 @@ public struct FormDecoder {
       val text = this.take() ?: return 0
       val n = text.trim().toInt()
       if (n == null || n < 0) {
-        this.recorded.record(at, "expected a whole number, not negative, found \"$text\"")
+        this.state.recorded.record(at, "expected a whole number, not negative, found \"$text\"")
         return 0
       }
       n.wrapU64()
@@ -228,7 +228,7 @@ public struct FormDecoder {
       val text = this.take() ?: return 0.0
       val x = text.trim().toF64()
       if (x == null) {
-        this.recorded.record(at, "expected a number, found \"$text\"")
+        this.state.recorded.record(at, "expected a number, found \"$text\"")
         return 0.0
       }
       x
@@ -241,7 +241,7 @@ public struct FormDecoder {
         "true", "on", "yes", "1"  => true
         "false", "off", "no", "0" => false
         else                      => {
-          this.recorded.record(at, "expected true or false (or on/off, yes/no, 1/0), found \"$text\"")
+          this.state.recorded.record(at, "expected true or false (or on/off, yes/no, 1/0), found \"$text\"")
           false
         }
       }
@@ -258,8 +258,8 @@ public struct FormDecoder {
 
     fun path(): string => this.here()
 
-    fun problemAt(path: string, message: string) => this.recorded.record(path, message)
+    fun problemAt(path: string, message: string) => this.state.recorded.record(path, message)
 
-    fun problems(): List<codec.Problem> => this.recorded.list()
+    fun problems(): List<codec.Problem> => this.state.recorded.list()
   }
 }

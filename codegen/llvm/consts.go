@@ -35,8 +35,8 @@ func (g *gen) constTable(v sema.ConstVal, name string) string {
 	case *sema.CList:
 		data := g.constArray(name+".data", base+".", v.T.Elem, v.Elems)
 		size, _ := g.layout(v.T.Elem)
-		fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr %s, i64 %d, i64 %d, i64 %d, ptr %s, i64 0, i64 0 }\n",
-			name, listHeader, data, len(v.Elems), len(v.Elems), size, g.arrayDescOf(v.T.Elem))
+		fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr %s, i64 %d, i64 %d, i64 %d, ptr %s, i64 0, i64 %d }\n",
+			name, listHeader, data, len(v.Elems), len(v.Elems), size, g.arrayDescOf(v.T.Elem), flagShared)
 	case *sema.CArray:
 		// the array itself, inline: a use reads it in place or loads it
 		g.constArrayAs(name, base+".", v.T.Elem, v.Elems)
@@ -50,11 +50,12 @@ func (g *gen) constTable(v sema.ConstVal, name string) string {
 	return name
 }
 
-// emptyList, emptyMap: the one empty immutable List / Map / Set of an element
-// (key, value) type, a constant like the tables above. An immutable
-// collection never changes, so every `[]` of that type can be the same
-// object: it costs no allocation at all (D187). Its storage pointers are null
-// and its counts zero, which is how the runtime already sees an empty one.
+// emptyList, emptyMap: the one empty List / Map / Set of an element (key,
+// value) type, a constant like the tables above. It is marked shared, so
+// it is never written: its first change copies it (D231), and every `[]`
+// of that type can be the same object, costing no allocation (D187). Its
+// storage pointers are null and its counts zero, which is how the runtime
+// already sees an empty one.
 func (g *gen) emptyList(elem types.Type) string {
 	desc := g.arrayDescOf(elem)
 	key := "list " + desc
@@ -64,8 +65,8 @@ func (g *gen) emptyList(elem types.Type) string {
 	name := fmt.Sprintf("@const.empty.list.%d", len(g.emptyShared))
 	g.emptyShared[key] = name
 	size, _ := g.layout(elem)
-	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr null, i64 0, i64 0, i64 %d, ptr %s, i64 0, i64 0 }\n",
-		name, listHeader, size, desc)
+	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr null, i64 0, i64 0, i64 %d, ptr %s, i64 0, i64 %d }\n",
+		name, listHeader, size, desc, flagShared)
 	return name
 }
 
@@ -83,8 +84,8 @@ func (g *gen) emptyMap(kt, vt types.Type) string {
 	name := fmt.Sprintf("@const.empty.map.%d", len(g.emptyShared))
 	g.emptyShared[key] = name
 	keySize, _ := g.layout(kt)
-	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr null, ptr null, ptr null, ptr %s, ptr %s, ptr null, i64 0, i64 0, i64 0, i64 0, i64 %d, i64 %d, i64 0, i64 0 }\n",
-		name, mapHeader, kd, vd, keySize, valSize)
+	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr null, ptr null, ptr null, ptr %s, ptr %s, ptr null, i64 0, i64 0, i64 0, i64 0, i64 %d, i64 %d, i64 0, i64 %d }\n",
+		name, mapHeader, kd, vd, keySize, valSize, flagShared)
 	return name
 }
 
@@ -154,8 +155,8 @@ func (g *gen) constMap(name, base string, kt, vt types.Type, keys, vals []sema.C
 	fmt.Fprintf(&g.constOut, "%s.meta = internal global [%d x { i64, i8 }] %s\n", name, n, metaBody)
 	fmt.Fprintf(&g.constOut, "%s.index = internal global [%d x i64] zeroinitializer\n", name, icap)
 	keySize, _ := g.layout(kt)
-	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr %s, ptr %s, ptr %s.meta, ptr %s, ptr %s, ptr %s.index, i64 %d, i64 %d, i64 %d, i64 %d, i64 %d, i64 %d, i64 0, i64 0 }\n",
-		name, mapHeader, keyArr, valArr, name, g.arrayDescOf(kt), valDesc, name, icap, n, n, n, keySize, valSize)
+	fmt.Fprintf(&g.constOut, "%s = private unnamed_addr constant %s { ptr %s, ptr %s, ptr %s.meta, ptr %s, ptr %s, ptr %s.index, i64 %d, i64 %d, i64 %d, i64 %d, i64 %d, i64 %d, i64 0, i64 %d }\n",
+		name, mapHeader, keyArr, valArr, name, g.arrayDescOf(kt), valDesc, name, icap, n, n, n, keySize, valSize, flagShared)
 }
 
 // constMapRef is a constant Map or Set whose hashes veles_init_const_maps fills.

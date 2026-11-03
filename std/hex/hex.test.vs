@@ -10,16 +10,16 @@ test "RFC 4648 section 10 base16 vectors" {
 }
 
 test "all byte values round trip in both hex cases" {
-  val buffer: MutableList<u8> = []
+  val buffer: List<u8> = []
   loop (value in 0..<256) buffer.push(value.wrapU8())
-  val bytes = buffer.toList()
+  val bytes = buffer
   val lower = encode(bytes)
   val upper = encodeUpper(bytes)
   expect(lower.len() == 512)
   expect(upper == lower.toUpper())
   val decoded = try decode(lower)
   expect(decoded.len() == 256)
-  loop (index in 0..<256) expect(decoded.at(index) == bytes.at(index))
+  loop (index in 0..<256) expect(decoded.get(index) == bytes.get(index))
   expect(encode(try decode(upper)) == lower)
   expect(encode(try decode("aBcD09eF")) == "abcd09ef")
 }

@@ -26,6 +26,8 @@ type Checker struct {
 	bareDone      map[*ast.FunDecl]bool    // the methods whose bare member names are resolved (D158)
 	blockDone     map[*ast.LambdaExpr]bool // the receiver blocks whose bare member names are resolved (D207)
 	onCalls       []onCall                 // variables given to a function on a receiver: heap or stack, settled by the receiver pass (D207)
+	funcValues    []funcValueUse           // named functions used as values: none may keep a pointer parameter (D233)
+	boxedPlaces   []boxedPlace             // copies of named places boxed as trait objects: refused when a method changes them (D232)
 	diags         *source.Diagnostics
 	// roundDiags collects diagnostics of the current inference round; only
 	// the final round's are kept (D45 fixpoint).
@@ -267,6 +269,9 @@ func checkCollectObserved(pkg *Package, diags *source.Diagnostics, release bool,
 	if prog != nil && !c.roundDiags.HasErrors() {
 		c.orderGlobals(prog)
 		c.receiverPass(prog)
+		c.sharePass(prog) // D231: after ReadOnly, captures and address-taken are settled
+		c.lintCollectionParamCopies(prog)
+		c.lintChangedCopies(prog)
 		c.inferSuspension(prog)
 		c.checkHeldRegions(prog)
 		c.indexInferred(prog)
@@ -2671,16 +2676,16 @@ func unify(pattern, concrete types.Type, m map[*types.TypeParam]types.Type) bool
 		return ok && p.V == cc.V
 	case *types.List:
 		cc, ok := concrete.(*types.List)
-		return ok && p.Mutable == cc.Mutable && unify(p.Elem, cc.Elem, m)
+		return ok && unify(p.Elem, cc.Elem, m)
 	case *types.Range:
 		cc, ok := concrete.(*types.Range)
 		return ok && unify(p.Elem, cc.Elem, m)
 	case *types.Map:
 		cc, ok := concrete.(*types.Map)
-		return ok && p.Mutable == cc.Mutable && unify(p.Key, cc.Key, m) && unify(p.Value, cc.Value, m)
+		return ok && unify(p.Key, cc.Key, m) && unify(p.Value, cc.Value, m)
 	case *types.Set:
 		cc, ok := concrete.(*types.Set)
-		return ok && p.Mutable == cc.Mutable && unify(p.Elem, cc.Elem, m)
+		return ok && unify(p.Elem, cc.Elem, m)
 	case *types.Channel:
 		cc, ok := concrete.(*types.Channel)
 		return ok && unify(p.Elem, cc.Elem, m)
@@ -3280,19 +3285,10 @@ func (c *Checker) unhashableIn(t types.Type, seen map[types.Type]bool) string {
 	case *types.Array:
 		return c.unhashableIn(t.Elem, seen)
 	case *types.List:
-		if t.Mutable {
-			return "a MutableList can change after it is stored; use an immutable List"
-		}
 		return c.unhashableIn(t.Elem, seen)
 	case *types.Set:
-		if t.Mutable {
-			return "a MutableSet can change after it is stored; use an immutable Set"
-		}
 		return c.unhashableIn(t.Elem, seen)
 	case *types.Map:
-		if t.Mutable {
-			return "a MutableMap can change after it is stored; use an immutable Map"
-		}
 		if r := c.unhashableIn(t.Key, seen); r != "" {
 			return r
 		}

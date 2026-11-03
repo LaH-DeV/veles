@@ -3,9 +3,9 @@
 Swift and Veles agree on more than they differ: optionals with `?.`,
 values that are structs, protocols with default methods, typed errors,
 structured concurrency and a `Sendable` rule. Most of the work is
-learning new spellings for familiar ideas — and two rules that run the
-other way: `??` means something else, and collections are shared, not
-copied.
+learning new spellings for familiar ideas — and a few rules that run the
+other way: `??` means something else, and `val` does not freeze a value
+the way `let` does.
 
 ## At a glance
 
@@ -21,6 +21,8 @@ copied.
 | `enum Color: Int { case red = 1 }` | `enum Color { Red = 1 }` |
 | `protocol P` + `extension P { default }` | `trait P { fun f() => default }` |
 | `class C` | `struct C`; share it through a pointer `*C` or a `Mutex` |
+| `[T]`, `[K: V]`, `Set<T>` (values, copied on write) | `List<T>`, `Map<K, V>`, `Set<T>` (the same) |
+| `func f(_ xs: inout [Int])`, `f(&xs)` | `fun f(xs: *List<i64>)`, `f(&xs)` |
 | `throws(ParseError)` | `throws ParseError` |
 | `async func f()`, `await f()` | `fun f()`, `f()` (suspension is inferred) |
 | `async let a = f()` | `val a = async f()`, then `await a` |
@@ -40,12 +42,14 @@ that must leave.
 ```veles
 use io
 
-error NotANumber { text: string }
+error NotANumber {
+  text: string
+}
 
 fun parse(text: string): i64 throws NotANumber => text.toInt() ?: throw NotANumber(text)
 
 fun firstWord(line: string): string? {
-  val word = line.split(" ").at(0) ?: return null
+  val word = line.split(" ").get(0) ?: return null
   if (word.isEmpty()) null else word
 }
 
@@ -71,32 +75,35 @@ A throwing call without `try` is not an error in Veles: it is a
 `Result<T, E>` you can match, store or fall back from, so there is no
 `try?` and no `try!`.
 
-## Structs copy, collections are shared
+## Structs and collections copy, as in Swift
 
-As in Swift, a struct is a value: `var b = a` copies it and changing `b`
-leaves `a` alone. Collections are where the languages part. A Swift array
-is a value too (copied on write); a Veles `MutableList` is one object that
-every name holding it sees. A `List`, which can never change, makes the
-difference invisible, which is why it is the type to pass around; reach
-for `MutableList` where the sharing is the point, and copy with
-`toList()` where it is not ([chapter 4](../04-collections.md),
-[chapter 5](../05-structs-and-methods.md#structs-are-values)).
+A struct is a value, and so are `List`, `Map` and `Set`: `val b = a`
+copies, changing `b` leaves `a` alone, and the copy is cheap — the
+elements are copied at the first change, as Swift's copy-on-write does
+(D231). Where Swift writes `inout`, Veles passes a pointer: the function
+takes `*List<T>` and the caller writes `&xs`.
+
+The difference is `val`. Swift's `let` freezes a value all the way down;
+Veles's `val` only stops the name from being bound to another one, so a
+`val` list can be pushed to, as a `val` struct's methods can change it
+([chapter 4](../04-collections.md#a-list-is-a-value),
+[chapter 5](../05-structs-and-methods.md#structs-are-values)):
 
 ```veles
 use io
 
 fun main() {
-  val shared: MutableList<string> = ["a"]
-  val alias = shared
-  alias.push("b")
-  io.println("$shared")
+  val names: List<string> = ["a"]
+  val copy = names
+  copy.push("b")     // allowed on a val; changes only `copy`
+  io.println("$names $copy")
 }
 ```
 
 Output:
 
 ```text
-[a, b]
+[a] [a, b]
 ```
 
 ## Enums with payloads are sealed types

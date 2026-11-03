@@ -216,9 +216,6 @@ func (f *fnCtx) arrayLit(e *ast.ListLit, at *types.Array) Expr {
 	if !types.ContainsTypeParam(at.Elem) {
 		elem = at.Elem
 	}
-	if e.Mut {
-		f.errorf(e.Pos, "'mut' makes a MutableList; an Array is changed through a 'var' binding, so the literal needs no 'mut' (D121)")
-	}
 	lit := &ListLit{}
 	for _, el := range e.Elems {
 		var x Expr

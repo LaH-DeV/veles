@@ -58,12 +58,12 @@ test "empty picks and trivial shuffles do not advance the generator" {
   var reference = Rng.seeded(5)
   val empty: List<i64> = []
   expect(rng.pick(empty) == null)
-  val emptyDeck: MutableList<i64> = []
-  val singleton: MutableList<i64> = [42]
-  rng.shuffle(emptyDeck)
-  rng.shuffle(singleton)
+  val emptyDeck: List<i64> = []
+  val singleton: List<i64> = [42]
+  rng.shuffle(&emptyDeck)
+  rng.shuffle(&singleton)
   expect(emptyDeck.isEmpty())
-  expect(singleton.at(0) == 42)
+  expect(singleton.get(0) == 42)
   expect(rng.nextU64() == reference.nextU64())
 }
 
@@ -81,18 +81,18 @@ test "picks always belong to their input including nullable elements" {
 
 test "seeded shuffles reproduce a permutation including duplicate elements" {
   val original: List<i64> = [0, 1, 1, 2, 3, 5, 8, 13]
-  val first: MutableList<i64> = []
-  val second: MutableList<i64> = []
+  val first: List<i64> = []
+  val second: List<i64> = []
   loop (value in original) {
     first.push(value)
     second.push(value)
   }
   var rng = Rng.seeded(17)
   var reference = Rng.seeded(17)
-  rng.shuffle(first)
-  reference.shuffle(second)
-  expect(first.toList() == second.toList())
-  expect(first.toList().sorted() == original)
+  rng.shuffle(&first)
+  reference.shuffle(&second)
+  expect(first == second)
+  expect(first.sorted() == original)
 }
 
 test "module seed resets all shared generator adapters" {
@@ -105,11 +105,11 @@ test "module seed resets all shared generator adapters" {
     expect(boolean() == reference.boolean())
     expect(pick([1, 2, 3]) == reference.pick([1, 2, 3]))
   }
-  val first: MutableList<i64> = [1, 2, 3, 4]
-  val second: MutableList<i64> = [1, 2, 3, 4]
-  shuffle(first)
-  reference.shuffle(second)
-  expect(first.toList() == second.toList())
+  val first: List<i64> = [1, 2, 3, 4]
+  val second: List<i64> = [1, 2, 3, 4]
+  shuffle(&first)
+  reference.shuffle(&second)
+  expect(first == second)
   seed(23)
   expect(nextU64() == Rng.seeded(23).nextU64())
 }

@@ -75,7 +75,7 @@ fun thrown(): i64 throws Oops {
 fun panics(): i64 {
   with a = open("a")
   await sleep(Duration.zero)
-  [1].at(5) ?: panic("boom")
+  [1].get(5) ?: panic("boom")
 }
 
 fun holds(name: string) {

@@ -311,7 +311,7 @@ extend Parser {
     val saved = this.noLambda
     this.noLambda = 0
     this.expect(Kind.LParen)
-    val args: MutableList<ast.Arg> = []
+    val args: List<ast.Arg> = []
     loop (!this.atAny(Kind.RParen, Kind.EOF)) {
       var name: ast.Ident? = null
       if (this.at(Kind.Ident) && this.peek(1).kind == Kind.Colon) {
@@ -356,7 +356,7 @@ extend Parser {
       }
       Kind.Char => {
         this.next()
-        return ast.CharLit(value: (t.parts.at(0) ?: lexer.StringPart()).text, pos: t.span)
+        return ast.CharLit(value: (t.parts.get(0) ?: lexer.StringPart()).text, pos: t.span)
       }
       Kind.Regex => {
         this.next()
@@ -401,7 +401,7 @@ extend Parser {
         }
       }
       Kind.KwMut => {
-        // `mut [1, 2]`, `mut ["k": v]`, `mut [:]`
+        // `[1, 2]`, `["k": v]`, `[:]`
         this.next()
         if (!this.at(Kind.LBracket)) {
           this.errorAt(this.span(), "'mut' in an expression must be followed by a collection literal, e.g. 'mut [1, 2]' or 'mut [:]'")
@@ -473,7 +473,7 @@ extend Parser {
   // a string literal; each interpolated expression is scanned and parsed on
   // its own, with the file's offsets
   fun stringLit(t: Token): ast.StringLit {
-    val parts: MutableList<ast.StringPart> = []
+    val parts: List<ast.StringPart> = []
     loop (part in t.parts) {
       if (!part.isExpr) {
         parts.push(ast.StringPart(text: part.text))
@@ -553,7 +553,7 @@ extend Parser {
 
   fun parseLambda(): ast.Expr {
     val start = this.span()
-    val params: MutableList<ast.Param> = []
+    val params: List<ast.Param> = []
     var ret: (*ast.Type)? = null
     if (this.atAny(Kind.Ident, Kind.Under)) {
       val t = this.next()
@@ -614,8 +614,8 @@ extend Parser {
     val start = this.span()
     this.next()  // (
     if (this.accept(Kind.RParen)) return ast.TupleExpr(pos: this.spanFrom(start))  // unit
-    val elems: MutableList<ast.Expr> = []
-    val labels: MutableList<ast.Ident> = []
+    val elems: List<ast.Expr> = []
+    val labels: List<ast.Ident> = []
     var missing: Span? = null
     var trailingComma = false
     loop (!this.atAny(Kind.RParen, Kind.EOF)) {
@@ -626,9 +626,9 @@ extend Parser {
     }
     this.expect(Kind.RParen)
     if (!labels.isEmpty()) {
-      return ast.TupleExpr(elems: elems.toList(), labels: this.tupleLabels(labels, missing), pos: this.spanFrom(start))
+      return ast.TupleExpr(elems, labels: this.tupleLabels(labels, missing), pos: this.spanFrom(start))
     }
-    val [only] = elems else return ast.TupleExpr(elems: elems.toList(), pos: this.spanFrom(start))
+    val [only] = elems else return ast.TupleExpr(elems, pos: this.spanFrom(start))
     if (trailingComma) return ast.TupleExpr(elems, pos: this.spanFrom(start))
     this.parens.push(ast.exprSpan(only))
     // parentheses end a `?.` chain (D70)
@@ -667,7 +667,7 @@ extend Parser {
     val first = this.parseExpr()
     if (this.accept(Kind.Colon)) {
       val value = this.parseExpr()
-      val entries: MutableList<ast.MapEntry> = [ast.MapEntry(key: &first, value: &value)]
+      val entries: List<ast.MapEntry> = [ast.MapEntry(key: &first, value: &value)]
       loop (this.accept(Kind.Comma) && !this.at(Kind.RBracket)) {
         val key = this.parseExpr()
         this.expect(Kind.Colon)
@@ -677,7 +677,7 @@ extend Parser {
       this.expect(Kind.RBracket)
       return ast.MapLit(entries, pos: this.spanFrom(start))
     }
-    val elems: MutableList<ast.Expr> = [first]
+    val elems: List<ast.Expr> = [first]
     loop (this.accept(Kind.Comma) && !this.at(Kind.RBracket)) elems.push(this.parseExpr())
     this.expect(Kind.RBracket)
     ast.ListLit(elems, pos: this.spanFrom(start))
@@ -747,7 +747,7 @@ extend Parser {
       w.pos = this.spanFrom(start)
       return w
     }
-    val arms: MutableList<ast.WhenArm> = []
+    val arms: List<ast.WhenArm> = []
     loop {
       this.skipSemis()
       if (this.atAny(Kind.RBrace, Kind.EOF)) break
@@ -771,7 +771,7 @@ extend Parser {
     if (this.accept(Kind.KwElse)) {
       arm.isElse = true
     } else if (hasSubject) {
-      val patterns: MutableList<ast.Pattern> = [this.parsePattern(false)]
+      val patterns: List<ast.Pattern> = [this.parsePattern(false)]
       loop (this.accept(Kind.Comma)) patterns.push(this.parsePattern(false))
       arm.patterns = patterns
       if (this.accept(Kind.KwIf)) arm.guard = &this.parseArmHead()
@@ -836,7 +836,7 @@ extend Parser {
   // => body` and a bare `src` — kept for the checker to name
   fun parseArms(what: string): List<ast.RaceArm> {
     if (!this.expect(Kind.LBrace)) return []
-    val arms: MutableList<ast.RaceArm> = []
+    val arms: List<ast.RaceArm> = []
     loop {
       this.skipSemis()
       if (this.atAny(Kind.RBrace, Kind.EOF)) break

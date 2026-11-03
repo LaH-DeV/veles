@@ -58,6 +58,8 @@ type Server struct {
 	stdNames []importCandidate // the standard modules' public names
 	// allocHints: the client asked for `heap` hints (D213), off by default
 	allocHints bool
+	// noCopyHints: the client turned the `copies` hints off (D231), on by default
+	noCopyHints bool
 }
 
 type document struct {
@@ -208,11 +210,13 @@ func (s *Server) handle(req *request) {
 		s.materializeStd()
 		var p struct {
 			Options struct {
-				AllocationHints bool `json:"allocationHints"`
+				AllocationHints bool  `json:"allocationHints"`
+				CopyHints       *bool `json:"copyHints"`
 			} `json:"initializationOptions"`
 		}
 		json.Unmarshal(req.Params, &p)
 		s.allocHints = p.Options.AllocationHints
+		s.noCopyHints = p.Options.CopyHints != nil && !*p.Options.CopyHints
 		s.reply(req.ID, map[string]any{
 			"capabilities": map[string]any{
 				"textDocumentSync": map[string]any{
@@ -241,11 +245,13 @@ func (s *Server) handle(req *request) {
 	case "initialized":
 	case "workspace/didChangeConfiguration":
 		// the client's `veles` settings: whether to show `heap` hints (D213)
+		// and `copies` hints (D231)
 		var p struct {
 			Settings struct {
 				Veles struct {
 					InlayHints struct {
 						Allocations *bool `json:"allocations"`
+						Copies      *bool `json:"copies"`
 					} `json:"inlayHints"`
 				} `json:"veles"`
 			} `json:"settings"`
@@ -253,6 +259,9 @@ func (s *Server) handle(req *request) {
 		json.Unmarshal(req.Params, &p)
 		if on := p.Settings.Veles.InlayHints.Allocations; on != nil {
 			s.allocHints = *on
+		}
+		if on := p.Settings.Veles.InlayHints.Copies; on != nil {
+			s.noCopyHints = !*on
 		}
 	case "shutdown":
 		s.shutdown = true

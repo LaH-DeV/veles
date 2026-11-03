@@ -214,8 +214,8 @@ test nullableCapture "greedy nullable repetition retains its empty capture" {
       var threads = Machine.of(re(pattern).program)
       threads.threadsOnly = true
       val slots = threads.search(text, 0, false, false) ?: panic("the trailing b must match")
-      expect(slots.at(2) == matched.start())
-      expect(slots.at(3) == matched.start())
+      expect(slots.get(2) == matched.start())
+      expect(slots.get(3) == matched.start())
     }
   }
   val lazy = re("(a*)*?b").find("b") ?: panic("the trailing b must match")
@@ -230,9 +230,9 @@ test scratchGrowth "search stacks grow past their initial reservation" {
     expect(matched.groupAt(40) == "")
     expect(matched.groupCount() == 40)
   }
-  expect(matches.at(0)?.value() == "b")
-  expect(matches.at(1)?.value() == "ab")
-  expect(matches.at(2)?.value() == "b")
+  expect(matches.get(0)?.value() == "b")
+  expect(matches.get(1)?.value() == "ab")
+  expect(matches.get(2)?.value() == "b")
   expect(re("needle").find("x".repeat(100)) == null)
 }
 

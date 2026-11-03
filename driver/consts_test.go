@@ -51,25 +51,25 @@ val base: i64 = "four".len()
 test "a constant's text is the run time's" {
   val f = [SHORT, BIG, EDGE, HUGE, TINY, TINIER, NEG_ZERO, MAXED]
   loop (i in 0..<f.len()) {
-    expect(TEXTS.at(i) == "${f.at(i)}")
+    expect(TEXTS.get(i) == "${f.get(i)}")
   }
-  expect(TEXTS.at(8) == "${THIRD}")
-  expect(TEXTS.at(9) == "${ODD}")
+  expect(TEXTS.get(8) == "${THIRD}")
+  expect(TEXTS.get(9) == "${ODD}")
 }
 
 test "every key of a constant table is found" {
-  loop ((k, _) in BY_NAME.toMutable()) { expect(BY_NAME.containsKey(k)) }
-  loop ((k, _) in BY_INT.toMutable()) { expect(BY_INT.containsKey(k)) }
-  loop ((k, _) in BY_SMALL.toMutable()) { expect(BY_SMALL.containsKey(k)) }
-  loop ((k, _) in BY_WORD.toMutable()) { expect(BY_WORD.containsKey(k)) }
-  loop ((k, _) in BY_KIND.toMutable()) { expect(BY_KIND.containsKey(k)) }
-  loop ((k, _) in BY_BOOL.toMutable()) { expect(BY_BOOL.containsKey(k)) }
-  loop (k in BY_PAIR.toMutable()) { expect(BY_PAIR.contains(k)) }
-  loop (k in BY_KEY.toMutable()) { expect(BY_KEY.contains(k)) }
-  loop (k in BY_MAYBE.toMutable()) { expect(BY_MAYBE.contains(k)) }
-  loop (k in BY_FLOAT.toMutable()) { expect(BY_FLOAT.contains(k)) }
-  loop (k in BY_F32.toMutable()) { expect(BY_F32.contains(k)) }
-  loop (k in BY_LIST.toMutable()) { expect(BY_LIST.contains(k)) }
+  loop ((k, _) in BY_NAME) { expect(BY_NAME.containsKey(k)) }
+  loop ((k, _) in BY_INT) { expect(BY_INT.containsKey(k)) }
+  loop ((k, _) in BY_SMALL) { expect(BY_SMALL.containsKey(k)) }
+  loop ((k, _) in BY_WORD) { expect(BY_WORD.containsKey(k)) }
+  loop ((k, _) in BY_KIND) { expect(BY_KIND.containsKey(k)) }
+  loop ((k, _) in BY_BOOL) { expect(BY_BOOL.containsKey(k)) }
+  loop (k in BY_PAIR) { expect(BY_PAIR.contains(k)) }
+  loop (k in BY_KEY) { expect(BY_KEY.contains(k)) }
+  loop (k in BY_MAYBE) { expect(BY_MAYBE.contains(k)) }
+  loop (k in BY_FLOAT) { expect(BY_FLOAT.contains(k)) }
+  loop (k in BY_F32) { expect(BY_F32.contains(k)) }
+  loop (k in BY_LIST) { expect(BY_LIST.contains(k)) }
   loop (k in 0..<34) { expect(BIG_SET.contains(k)) }
   expect(!BIG_SET.contains(34))
   expect(BY_NAME.get("val") == Kind.Val && BY_NAME.get("loop") == null)
@@ -78,7 +78,7 @@ test "every key of a constant table is found" {
 }
 
 test "a constant table is copied, never changed" {
-  val copy = BY_INT.toMutable()
+  val copy = BY_INT
   copy.set(7, "seven")
   expect(copy.len() == 5 && BY_INT.len() == 4)
   expect(BY_INT == BY_INT && BY_LIST.len() == 3)

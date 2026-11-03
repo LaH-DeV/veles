@@ -154,7 +154,7 @@ public struct Multipart {
   // the header lines of a part, up to the blank line, as a map of lower-case
   // names
   fun partHeaders(): Map<string, string> suspends throws Fail | IoError {
-    val out: MutableMap<string, string> = [:]
+    val out: Map<string, string> = [:]
     loop {
       // a line of the block, ended by CR LF
       var end = -1
@@ -218,7 +218,7 @@ public struct Part {
 
   /// The rest of the part, at most `max` bytes: a longer one is a 413.
   public fun bytes(max: i64): List<u8> suspends throws Fail | IoError {
-    val out: MutableList<u8> = []
+    val out: List<u8> = []
     loop {
       val piece = try this.read(byteUnits.KiB * 64)
       if (piece.isEmpty()) break
@@ -266,7 +266,7 @@ fun findBytes(xs: List<u8>, needle: List<u8>, from: i64): i64 {
   loop (i in from..last) {
     var same = true
     loop (j in 0..<needle.len()) {
-      if (xs.at(i + j) != needle.at(j)) {
+      if (xs.get(i + j) != needle.get(j)) {
         same = false
         break
       }
@@ -282,10 +282,10 @@ fun findBytes(xs: List<u8>, needle: List<u8>, from: i64): i64 {
 // name as it is, `C:\dir\a.txt` included). Names are lower-cased.
 fun parseParams(value: string): (string, Map<string, string>) {
   val bytes = value.bytes()
-  val params: MutableMap<string, string> = [:]
+  val params: Map<string, string> = [:]
   var first = ""
-  var current: MutableList<u8> = []
-  val fields: MutableList<string> = []
+  var current: List<u8> = []
+  val fields: List<string> = []
   var quoted = false
   loop (b in bytes) {
     when {
@@ -298,7 +298,7 @@ fun parseParams(value: string): (string, Map<string, string>) {
         current.push(b)
       }
       b == ';' => {
-        fields.push(current.toList().decodeUtf8() ?: "")
+        fields.push(current.decodeUtf8() ?: "")
         current = []
       }
       else     => {
@@ -306,9 +306,9 @@ fun parseParams(value: string): (string, Map<string, string>) {
       }
     }
   }
-  fields.push(current.toList().decodeUtf8() ?: "")
+  fields.push(current.decodeUtf8() ?: "")
   loop (k in 0..<fields.len()) {
-    val field = (fields.at(k) ?: "").trim()
+    val field = fields.get(k).trim()
     if (k == 0) {
       first = field
       continue

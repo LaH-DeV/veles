@@ -8,8 +8,8 @@ fun inRanges(ranges: List<i64>, code: i64): bool {
   var high = ranges.len() / 2
   loop (low < high) {
     val middle = (low + high) / 2
-    val first = ranges.at(middle * 2) ?: return false
-    val last = ranges.at(middle * 2 + 1) ?: return false
+    val first = ranges.get(middle * 2) ?: return false
+    val last = ranges.get(middle * 2 + 1) ?: return false
     if (code < first) high = middle
     else if (code > last) low = middle + 1
     else return true
@@ -19,7 +19,7 @@ fun inRanges(ranges: List<i64>, code: i64): bool {
 
 fun inPairs(ranges: List<(i64, i64)>, code: i64): bool {
   val i = ranges.partitionPoint(range => range.1 < code)
-  val (first, _) = ranges.at(i) ?: return false
+  val (first, _) = ranges.get(i) ?: return false
   first <= code
 }
 

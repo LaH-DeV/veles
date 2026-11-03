@@ -36,7 +36,7 @@ extend Parser {
           this.next()
           this.parseFunType(ast.FunType(sendable: true), start)
         } else {
-          val path: MutableList<ast.Ident> = [this.ident()]
+          val path: List<ast.Ident> = [this.ident()]
           loop (this.at(Kind.Dot) && this.peek(1).kind == Kind.Ident) {
             this.next()
             path.push(this.ident())
@@ -63,8 +63,8 @@ extend Parser {
   // `(A, B)`, `(A,)` and `()` are tuples; `(A)` is A
   fun parseTupleType(start: Span): ast.Type {
     this.next()  // (
-    val elems: MutableList<ast.Type> = []
-    val labels: MutableList<ast.Ident> = []
+    val elems: List<ast.Type> = []
+    val labels: List<ast.Ident> = []
     var missing: Span? = null
     var trailingComma = false
     loop (!this.atAny(Kind.RParen, Kind.EOF)) {
@@ -74,7 +74,7 @@ extend Parser {
       if (!trailingComma) break
     }
     this.expect(Kind.RParen)
-    val tuple = ast.TupleType(elems: elems.toList(), labels: this.tupleLabels(labels.toList(), missing), pos: this.spanFrom(start))
+    val tuple = ast.TupleType(elems, labels: this.tupleLabels(labels, missing), pos: this.spanFrom(start))
     if (!labels.isEmpty()) return tuple
     val [only] = elems else return tuple
     if (trailingComma) tuple else only
@@ -124,7 +124,7 @@ extend Parser {
   // `<T, U>` where a type goes, the cursor on the `<`
   fun parseTypeArgs(): List<ast.Type> {
     val lt = this.next()
-    val args: MutableList<ast.Type> = []
+    val args: List<ast.Type> = []
     if (this.atTypeClose()) this.errorAt(lt.span, "empty type argument list; drop the '<>'")
     loop (!this.atTypeClose()) {
       args.push(this.parseTypeArg())
@@ -202,7 +202,7 @@ extend Parser {
     val start = this.span()
     val first = this.parseType()
     if (!this.at(Kind.Pipe)) return first
-    val members: MutableList<ast.Type> = [first]
+    val members: List<ast.Type> = [first]
     loop (this.accept(Kind.Pipe)) members.push(this.parseType())
     ast.ErrorUnionType(members, pos: this.spanFrom(start))
   }
@@ -216,7 +216,7 @@ extend Parser {
       ft.on = &this.parseType()
     }
     if (this.expect(Kind.LParen)) {
-      val params: MutableList<ast.Type> = []
+      val params: List<ast.Type> = []
       loop (!this.atAny(Kind.RParen, Kind.EOF)) {
         params.push(this.parseType())
         if (!this.accept(Kind.Comma)) break

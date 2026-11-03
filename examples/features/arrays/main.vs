@@ -41,10 +41,10 @@ fun main() {
 
   // `at` is a T? — a T where the index is known to be in range
   val far = 9
-  println("${a.at(1)} ${a.at(far)} ${SQUARES.at(3)} ${SQUARES.len()}")
+  println("${a.get(1)} ${a.get(far)} ${SQUARES.get(3)} ${SQUARES.len()}")
   var squares = 0
   loop (i in SQUARES.indices()) {
-    squares += SQUARES.at(i)
+    squares += SQUARES.get(i)
   }
   loop (&x in a) {
     *x = *x * 2

@@ -62,20 +62,11 @@ implement<T> Default for T? {
 implement<T> Default for List<T> {
   static fun default(): List<T> => []
 }
-implement<T> Default for MutableList<T> {
-  static fun default(): MutableList<T> => []
-}
 implement<K, V> Default for Map<K, V> {
   static fun default(): Map<K, V> => [:]
 }
-implement<K, V> Default for MutableMap<K, V> {
-  static fun default(): MutableMap<K, V> => [:]
-}
 implement<T> Default for Set<T> {
   static fun default(): Set<T> => Set<T>()
-}
-implement<T> Default for MutableSet<T> {
-  static fun default(): MutableSet<T> => MutableSet<T>()
 }
 
 implement<A: Default, B: Default> Default for (A, B) {

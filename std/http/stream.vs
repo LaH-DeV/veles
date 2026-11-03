@@ -10,7 +10,7 @@ public struct BodyWriter {
   // framed as chunks, or as the bare bytes of an HTTP/1.0 response
   chunked: bool
   // `http.call` has no socket: the bytes are collected here
-  memory: Mutex<MutableList<u8>> = newMemory()
+  memory: Mutex<List<u8>> = newMemory()
   // bytes still owed when the body has a declared length, else -1
   left: Atomic<i64> = Atomic(value: -1)
   // set by `http.compress()`: what is written is compressed on its way out
@@ -75,11 +75,11 @@ public struct BodyWriter {
     try this.write(text.bytes())
   }
 
-  fun collected(): List<u8> => this.memory.withLock(m => m.toList())
+  fun collected(): List<u8> => this.memory.withLock(m => *m)
 }
 
-fun newMemory(): Mutex<MutableList<u8>> {
-  val empty: MutableList<u8> = []
+fun newMemory(): Mutex<List<u8>> {
+  val empty: List<u8> = []
   Mutex(value: empty)
 }
 

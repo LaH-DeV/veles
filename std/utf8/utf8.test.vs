@@ -14,16 +14,16 @@ test "Unicode table 3-7 scalar boundaries encode and decode" {
     expect(decodeBytes(bytes, 0)?.size == bytes.len())
     val encoded = encode(code)
     expect(encoded.len() == bytes.len())
-    loop (index in 0..<bytes.len()) expect(encoded.at(index) == bytes.at(index))
+    loop (index in 0..<bytes.len()) expect(encoded.get(index) == bytes.get(index))
     val text = char(code)
     expect(text.len() == bytes.len())
     expect(decode(text, 0)?.code == code)
     expect(decodeLast(text, text.len())?.code == code)
-    val output: MutableList<u8> = [0x41]
-    expect(encodeTo(output, code) == bytes.len())
+    val output: List<u8> = [0x41]
+    expect(encodeTo(&output, code) == bytes.len())
     expect(output.len() == bytes.len() + 1)
-    expect(output.at(0) == 0x41)
-    loop (index in 0..<bytes.len()) expect(output.at(index + 1) == bytes.at(index))
+    expect(output.get(0) == 0x41)
+    loop (index in 0..<bytes.len()) expect(output.get(index + 1) == bytes.get(index))
   }
 }
 
@@ -47,9 +47,9 @@ test "RFC 3629 rejects overlong surrogates out of range and malformed sequences"
 test "every truncated multibyte sequence is rejected" {
   loop (code in [0x80, 0x800, 0x10000, 0x10FFFF]) {
     val bytes = encode(code)
-    val prefix: MutableList<u8> = []
+    val prefix: List<u8> = []
     loop (byte in bytes) {
-      val truncated = prefix.toList()
+      val truncated = prefix
       expect(decodeBytes(truncated, 0) == null)
       if (!truncated.isEmpty()) expect(!isValid(truncated))
       prefix.push(byte)
@@ -75,9 +75,9 @@ test "invalid scalar values encode as replacement without appending invalid byte
     expect(char(code) == "\u{FFFD}")
     val bytes = encode(code)
     expect(bytes.len() == 3)
-    expect(bytes.at(0) == 0xEF)
-    expect(bytes.at(1) == 0xBF)
-    expect(bytes.at(2) == 0xBD)
+    expect(bytes.get(0) == 0xEF)
+    expect(bytes.get(1) == 0xBF)
+    expect(bytes.get(2) == 0xBD)
   }
 }
 

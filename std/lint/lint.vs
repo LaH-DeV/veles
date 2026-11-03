@@ -58,14 +58,19 @@ public struct Report {
 /// What a rule is given when it starts on a file, and reports through.
 public struct Context {
   /// The file being looked at.
-  public file:    File
-  public reports: MutableList<Report>
+  public file: File
+  // what the rules reported, behind a pointer so that every copy of the
+  // Context reports into the same list (D231 addendum 4)
+  private reported: *List<Report> = &[]
 
   /// Tell the author about `span`. A `fix` makes `veles check --fix` able to
   /// resolve it.
   public const fun report(span: Span, message: string, fix: Fix? = null) {
-    this.reports.push(Report(span, message, fix))
+    this.reported.push(Report(span, message, fix))
   }
+
+  /// A copy of what was reported so far, in order.
+  public const fun reports(): List<Report> => *this.reported
 
   /// The source text `span` covers.
   public const fun text(span: Span): string =>

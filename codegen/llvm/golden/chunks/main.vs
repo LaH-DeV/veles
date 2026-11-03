@@ -12,7 +12,7 @@ fun sumSquares(n: i64): i64 {
 
 fun firstNegative(xs: List<i64>): i64 {
   loop (i in 0..<xs.len()) {
-    if (xs.at(i) < 0) return i
+    if (xs.get(i) < 0) return i
   }
   -1
 }

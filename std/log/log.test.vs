@@ -74,7 +74,7 @@ test "a field becomes an attribute of its own type" {
 }
 
 struct Seen {
-  bodies: Mutex<MutableList<List<u8>>> = newBodies()
+  bodies: Mutex<List<List<u8>>> = newBodies()
 
   implement otel.Exporter {
     fun export(signal: otel.Signal, body: List<u8>) suspends throws otel.ExportError {
@@ -87,8 +87,8 @@ struct Seen {
   }
 }
 
-test fun newBodies(): Mutex<MutableList<List<u8>>> {
-  val empty: MutableList<List<u8>> = []
+test fun newBodies(): Mutex<List<List<u8>>> {
+  val empty: List<List<u8>> = []
   Mutex(value: empty)
 }
 
@@ -107,9 +107,9 @@ test "with otel running, a log line is exported as a record carrying its fields"
   with tel = try otel.start(service: "logged", exporter: seen, interval: Duration.seconds(3600))
   info("served the request", field("path", "/x"), field("ms", 3))
   expect(tel.flush())
-  val bodies = seen.bodies.withLock(q => q.toList())
+  val bodies = seen.bodies.withLock(q => *q)
   expect(bodies.len() == 1)
-  val body = bodies.at(0) ?: []
+  val body = bodies.get(0) ?: []
   expect(holds(body, "served the request"))
   expect(holds(body, "path"))
   expect(holds(body, "INFO"))

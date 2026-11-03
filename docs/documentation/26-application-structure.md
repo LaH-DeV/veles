@@ -73,7 +73,7 @@ trait Store : Sendable {
 
 /// Notes kept in memory, shared by every task that holds the store.
 struct MemoryStore {
-  notes: Mutex<MutableList<string>> = Mutex(value: [])
+  notes: Mutex<List<string>> = Mutex(value: [])
 
   implement Store {
     fun add(text: string): i64 => notes.withLock(list => {

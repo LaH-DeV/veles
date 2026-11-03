@@ -137,7 +137,7 @@ fun layout(file: File): string {
 // them lexed and parsed, timed; the checksum is the declarations found
 fun benchParse(dir: string) throws IoError {
   val paths = (try fs.walk(dir)).filter(path => path.endsWith(".vs"))
-  val files: MutableList<File> = []
+  val files: List<File> = []
   loop (path in paths) files.push(File.of(path, try fs.readFile(path)))
   val watch = time.Stopwatch.start()
   var decls: i64 = 0

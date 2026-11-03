@@ -27,7 +27,7 @@ const openFrame = "codec: a derived body calls this only between a begin and its
 /// The parts of a path: `a.b[2].c` is `a`, `b`, `2`, `c`; a quoted key
 /// `a["x.y"]` is one part.
 fun splitPath(path: string): List<string> {
-  val parts: MutableList<string> = []
+  val parts: List<string> = []
   val cur = StringBuilder()
   var i = 0
   val n = path.len()

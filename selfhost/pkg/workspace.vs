@@ -1,6 +1,6 @@
 use path as paths
-use toml { Value }
 use settings { Schema, Section, Setting, SettingsError }
+use toml { Value }
 use text { quote }
 
 /// `[workspace]` (D138): the member directories of a monorepo, relative to the
@@ -13,8 +13,8 @@ fun workspaceSchema(): Schema<WorkspaceMembers> => Schema(
   table: "workspace",
   settings: [
     Setting<WorkspaceMembers>.names("members", "the member directories, below the root", "members = [\"app\", \"libs/mathlib\"]", (section, value, listed, workspace) => {
-      val seen: MutableSet<string> = []
-      val cleaned: MutableList<string> = []
+      val seen: Set<string> = []
+      val cleaned: List<string> = []
       loop (member in listed) {
         val clean = try memberDirectory(section, value, member)
         if (seen.contains(clean)) throw section.failAt(value, "[workspace] members: ${quote(member)} is listed twice")

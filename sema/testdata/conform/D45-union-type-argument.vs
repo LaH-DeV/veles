@@ -3,11 +3,9 @@
 // goes (D121) are still the constant expression.
 use io
 
-error Low {
-}
+error Low { }
 
-error High {
-}
+error High { }
 
 const LOW: i64 = 4
 const HIGH: i64 = 8
@@ -19,13 +17,13 @@ fun fails(n: i64): i64 throws Low | High {
 }
 
 fun main() {
-  val results: MutableList<Result<i64, Low | High>> = []
+  val results: List<Result<i64, Low | High>> = []
   results.push(fails(3))
   val gathered = gather {
-    val tasks: MutableList<Task<Result<i64, Low | High>>> = []
+    val tasks: List<Task<Result<i64, Low | High>>> = []
     tasks.push(async fails(4))
   }
-  val one: Result<i64, Low> = fails(5) // error: type mismatch: expected 'Result<i64, Low>', found 'Result<i64, High | Low>'
+  val one: Result<i64, Low> = fails(5)  // error: type mismatch: expected 'Result<i64, Low>', found 'Result<i64, High | Low>'
   val bits: Array<u8, LOW | HIGH> = Array.make(0)
   io.println("${results.len()} ${gathered.ok} ${bits.len()} ${one.ok}")
 }

@@ -40,18 +40,18 @@ fun capabilityNames(): string => Capability.values().map(capability => capabilit
 /// capabilities and the claims named in `require`.
 struct Policy {
   var deny: List<Capability> = []
-  allow:    MutableMap<string, List<string>> = [:]
+  allow:    Map<string, List<string>> = [:]
   /// Reviewer name to `ed25519:<base64 public key>`.
-  trust: MutableMap<string, string> = [:]
+  trust: Map<string, string> = [:]
   /// Claim to the number of distinct trusted keys it needs.
-  require: MutableMap<string, i64> = [:]
+  require: Map<string, i64> = [:]
 }
 
 fun policySchema(): Schema<Policy> => Schema(
   table: "policy",
   settings: [
     Setting<Policy>.names("deny", "capabilities no dependency may use", "deny = [\"net\"]", (section, value, names, policy) => {
-      val capabilities: MutableList<Capability> = []
+      val capabilities: List<Capability> = []
       loop (name in names) {
         capabilities.push(capabilityNamed(name) ?: throw section.failAt(value, "[policy] deny: unknown capability ${quote(name)} (${capabilityNames()})"))
       }
@@ -105,7 +105,7 @@ fun readPolicy(section: Section): Policy throws SettingsError {
 
 fun policyStringList(section: Section, value: Value, what: string, example: string): List<string> throws SettingsError {
   val items = value.asList() ?: throw section.failAt(value, "$what is a list, e.g. $example")
-  val out: MutableList<string> = []
+  val out: List<string> = []
   loop (item in items) {
     out.push(item.asString() ?: throw section.failAt(item, "$what holds strings only"))
   }

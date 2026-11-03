@@ -70,8 +70,8 @@ const fun build(parsed: Parsed): Program {
   c.node(parsed.root)
   c.emit(opSave, 1)
   c.emit(opMatch, 0)
-  val insts = c.insts.toList()
-  val sets = c.sets.toList()
+  val insts = c.insts
+  val sets = c.sets
   if (c.error != "") {
     // refused: nothing runs it, so the tables are not worth building
     return Program(insts, sets, groups: parsed.groups, error: c.error, first: [], skips: false, exact: parsed.exact, slots: c.nextSlot, headIndex: [], headCount: 0, ascii: [], runs: [])
@@ -85,15 +85,15 @@ const fun build(parsed: Parsed): Program {
 /// Assertions are passed through, so the set may be larger than the truth —
 /// never smaller — which is all skipping needs.
 const fun firstBytes(insts: List<Inst>, sets: List<List<i64>>): (List<bool>, bool) {
-  val first: MutableList<bool> = MutableList<bool>.repeat(false, 256)
-  val seen: MutableList<bool> = MutableList<bool>.repeat(false, insts.len())
-  val todo: MutableList<i64> = [0]
+  val first: List<bool> = List<bool>.repeat(false, 256)
+  val seen: List<bool> = List<bool>.repeat(false, insts.len())
+  val todo: List<i64> = [0]
   var useful = true
   loop (todo.len() > 0) {
     val pc = todo.pop() ?: break
-    if (seen.at(pc) ?: true) continue
+    if (seen.get(pc) ?: true) continue
     seen.set(pc, true)
-    val inst = insts.at(pc) ?: break
+    val inst = insts.get(pc) ?: break
     when (inst.op) {
       opJmp            => todo.push(inst.x)
       opSplit          => {
@@ -102,16 +102,16 @@ const fun firstBytes(insts: List<Inst>, sets: List<List<i64>>): (List<bool>, boo
       }
       opSave, opAssert => todo.push(pc + 1)
       opChar           => {
-        val bytes: MutableList<u8> = []
-        utf8.encodeTo(bytes, inst.x)
-        first.set((bytes.at(0) ?: 0).toI64(), true)
+        val bytes: List<u8> = []
+        utf8.encodeTo(&bytes, inst.x)
+        first.set((bytes.get(0) ?: 0).toI64(), true)
       }
       opSet            => {
-        val ranges = sets.at(inst.x) ?: []
+        val ranges = sets.get(inst.x) ?: []
         var i = 0
         loop (i + 1 < ranges.len()) {
-          val lo = ranges.at(i) ?: 0
-          val hi = ranges.at(i + 1) ?: 0
+          val lo = ranges.get(i) ?: 0
+          val hi = ranges.get(i + 1) ?: 0
           var b = lo
           loop (b <= hi.min(127)) {
             first.set(b, true)
@@ -135,8 +135,8 @@ const fun firstBytes(insts: List<Inst>, sets: List<List<i64>>): (List<bool>, boo
 }
 
 struct Builder {
-  insts:     MutableList<Inst> = []
-  sets:      MutableList<List<i64>> = []
+  insts:     List<Inst> = []
+  sets:      List<List<i64>> = []
   var error: string = ""
   /// The tree needs the exhaustive engine (see Program.exact).
   exact: bool
@@ -155,7 +155,7 @@ struct Builder {
 
   const fun patch(at: i64, x: i64, y: i64) {
     if (at < 0) return
-    val old = this.insts.at(at) ?: panic("regex: patching an instruction that was emitted")
+    val old = this.insts.get(at) ?: panic("regex: patching an instruction that was emitted")
     this.insts.set(at, Inst(op: old.op, x, y))
   }
 
@@ -181,8 +181,8 @@ struct Builder {
         }
       }
       is Ranges  => {
-        if (n.ranges.len() == 2 && n.ranges.at(0) == n.ranges.at(1)) {
-          this.emit(opChar, n.ranges.at(0) ?: 0)
+        if (n.ranges.len() == 2 && n.ranges.get(0) == n.ranges.get(1)) {
+          this.emit(opChar, n.ranges.get(0) ?: 0)
         } else {
           this.emit(opSet, this.set(n.ranges))
         }
@@ -221,7 +221,7 @@ struct Builder {
 
   /// `a|b|c`: each in order, the first that leads to a match wins.
   const fun choice(items: List<Node>) {
-    val jumps: MutableList<i64> = []
+    val jumps: List<i64> = []
     loop ((i, item) in items.enumerate()) {
       if (i < items.len() - 1) {
         val split = this.emit(opSplit, 0)
@@ -278,7 +278,7 @@ struct Builder {
       return
     }
     // up to max - min more copies, each one optional and only after the last
-    val splits: MutableList<i64> = []
+    val splits: List<i64> = []
     loop (copies < max && this.error == "") {
       splits.push(this.emit(opSplit, 0))
       this.node(body)
@@ -307,7 +307,7 @@ const fun canBeEmpty(node: Node): bool => when (node) {
 
 /// Where a path through the program can arrive from more than one place.
 const fun headIndexOf(insts: List<Inst>): (List<i64>, i64) {
-  val heads: MutableList<bool> = MutableList<bool>.repeat(false, insts.len())
+  val heads: List<bool> = List<bool>.repeat(false, insts.len())
   if (insts.len() > 0) heads.set(0, true)
   loop (inst in insts) {
     if (inst.op == opJmp || inst.op == opSplit) {
@@ -318,10 +318,10 @@ const fun headIndexOf(insts: List<Inst>): (List<i64>, i64) {
     }
   }
   // number the heads in program order
-  val index: MutableList<i64> = MutableList<i64>.repeat(-1, insts.len())
+  val index: List<i64> = List<i64>.repeat(-1, insts.len())
   var count = 0
   loop (pc in 0..<insts.len()) {
-    if (heads.at(pc) ?: false) {
+    if (heads.get(pc) ?: false) {
       index.set(pc, count)
       count += 1
     }
@@ -331,16 +331,16 @@ const fun headIndexOf(insts: List<Inst>): (List<i64>, i64) {
 
 /// For each set, four 32-bit words of the ASCII code points it holds.
 const fun asciiMasks(sets: List<List<i64>>): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (ranges in sets) {
-    val words: MutableList<i64> = MutableList<i64>.repeat(0, 4)
+    val words: List<i64> = List<i64>.repeat(0, 4)
     var i = 0
     loop (i + 1 < ranges.len()) {
-      val to = (ranges.at(i + 1) ?: 0).min(127)
-      var c = (ranges.at(i) ?: 0).max(0)
+      val to = (ranges.get(i + 1) ?: 0).min(127)
+      var c = (ranges.get(i) ?: 0).max(0)
       loop (c <= to) {
         val w = c >> 5
-        words.set(w, (words.at(w) ?: 0) | (1 << (c & 31)))
+        words.set(w, (words.get(w) ?: 0) | (1 << (c & 31)))
         c += 1
       }
       i += 2
@@ -353,12 +353,12 @@ const fun asciiMasks(sets: List<List<i64>>): List<i64> {
 /// Finds the loops over one character: `split, char, jmp back` as the compiler
 /// writes `x*` (and `x+`, after its first copy) for a single-character `x`.
 const fun runsOf(insts: List<Inst>): List<i64> {
-  val runs: MutableList<i64> = MutableList<i64>.repeat(0, insts.len())
+  val runs: List<i64> = List<i64>.repeat(0, insts.len())
   var pc = 0
   loop (pc + 2 < insts.len()) {
-    val split = insts.at(pc) ?: break
-    val body = insts.at(pc + 1) ?: break
-    val back = insts.at(pc + 2) ?: break
+    val split = insts.get(pc) ?: break
+    val body = insts.get(pc + 1) ?: break
+    val back = insts.get(pc + 2) ?: break
     val single = body.op == opChar || body.op == opSet || body.op == opAny
     if (split.op == opSplit && single && back.op == opJmp && back.x == pc) {
       if (split.x == pc + 1 && split.y == pc + 3) {

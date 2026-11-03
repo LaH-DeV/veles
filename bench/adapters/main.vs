@@ -6,14 +6,14 @@ use time
 
 fun main() {
   var x: u64 = 88172645463325252
-  var xs: MutableList<i64> = []
+  var xs: List<i64> = []
   loop (_ in 0..<200000) {
     x ^= x << 13
     x ^= x >> 7
     x ^= x << 17
     xs.push((x % 1000000).wrapI64())
   }
-  val input = xs.toList()
+  val input = xs
   val (check, elapsed) = time.measure(() => {
     var check: i64 = 0
     loop (round in 0..<20) {

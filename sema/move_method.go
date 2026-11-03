@@ -7,6 +7,23 @@ import (
 	"github.com/LaH-DeV/veles/types"
 )
 
+// moveMethods are the methods that neither keep a reference to their
+// receiver nor hand out a pointer into it. `ref` and `iter`
+// are missing on purpose: a pointer or an iterator would outlive the move.
+var moveMethods = map[string]bool{
+	"push": true, "reserve": true, "pop": true, "set": true,
+	"len": true, "isEmpty": true, "clear": true, "insert": true, "removeAt": true, "addAll": true,
+	"sort": true, "sortWith": true, "sortBy": true, "sortDescending": true, "sortByDescending": true,
+	"reverse": true, "swap": true, "contains": true, "indexOf": true, "first": true, "last": true,
+	"toList": true, "toMutable": true, "toMap": true, "toSet": true, "map": true, "filter": true,
+	"fold": true, "forEach": true, "joinToString": true, "slice": true, "take": true, "drop": true,
+	"sum": true, "min": true, "max": true, "any": true, "all": true, "count": true, "find": true,
+	"sorted": true, "sortedWith": true, "sortedBy": true, "sortedDescending": true, "reversed": true,
+	"distinct": true, "indices": true, "get": true, "remove": true, "add": true, "keys": true,
+	"values": true, "entries": true, "containsKey": true, "getOrDefault": true,
+	"byteAt": true, "byteAtUnchecked": true, "getUnchecked": true, "setUnchecked": true, "decodeUtf8": true, "isNotEmpty": true, "toString": true,
+}
+
 // D201: D188's move of `acc.items` out of a struct local, widened to a local
 // whose methods were called. A method is summarised from its syntax tree
 // (bare member names read as `this.name`, D158), so the answer does not

@@ -105,11 +105,11 @@ struct Parser {
 
   fun parseObject(): Json throws ParseError {
     try this.expect(LBRACE, "'{'")
-    var fields: MutableMap<string, Json> = [:]
+    var fields: Map<string, Json> = [:]
     this.skipSpace()
     if (this.peek() == RBRACE) {
       this.pos += 1
-      return JObj(fields: fields.toMap())
+      return JObj(fields)
     }
     loop {
       this.skipSpace()
@@ -128,11 +128,11 @@ struct Parser {
 
   fun parseArray(): Json throws ParseError {
     try this.expect(LBRACKET, "'['")
-    var items: MutableList<Json> = []
+    var items: List<Json> = []
     this.skipSpace()
     if (this.peek() == RBRACKET) {
       this.pos += 1
-      return JArr(items: items.toList())
+      return JArr(items)
     }
     loop {
       items.push(try this.parseValue())
@@ -176,7 +176,7 @@ struct Parser {
   /// A string literal, with escapes decoded; the cursor is on the opening quote.
   fun parseString(): string throws ParseError {
     this.pos += 1
-    var out: MutableList<u8> = []
+    var out: List<u8> = []
     loop {
       val b = this.peek() ?: throw this.fail("unterminated string")
       this.pos += 1
@@ -198,7 +198,7 @@ struct Parser {
           val hex = this.src.substring(this.pos, this.pos + 4) ?: throw this.fail("short \\u escape")
           val cp = parseHex(hex) ?: throw this.fail("bad \\u escape '$hex'")
           this.pos += 4
-          encodeUtf8(cp, out)
+          encodeUtf8(cp, &out)
         }
         else => throw this.fail("unknown escape")
       }
@@ -222,7 +222,7 @@ fun parseHex(text: string): i64? {
   n
 }
 
-fun encodeUtf8(cp: i64, out: MutableList<u8>) {
+fun encodeUtf8(cp: i64, out: *List<u8>) {
   when {
     cp < 0x80  => out.push(cp.wrapU8())
     cp < 0x800 => {
@@ -298,7 +298,7 @@ extend Json {
 
   /// The element `i` of an array, or null.
   fun item(i: i64): Json? => when (this) {
-    is JArr(items) => items.at(i)
+    is JArr(items) => items.get(i)
     else           => null
   }
 

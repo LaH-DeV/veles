@@ -26,7 +26,7 @@ extern "C" {
 /// whose fields are all Sendable; never a mutable collection, a pointer or a
 /// closure. It is derived from a type's shape and cannot be implemented by
 /// hand. A value crossing a task boundary must be Sendable (D35/D54), and
-/// so must one that a function duplicates, such as `MutableList<T>.fill`.
+/// so must one that a function duplicates, such as `List<T>.fill`.
 public trait Sendable
 
 // A taken lock, given back when the `with` holding it ends — also when the

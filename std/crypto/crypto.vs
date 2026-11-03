@@ -83,7 +83,7 @@ public const struct Digest {
       var h = 0
       var i = 0
       loop (i < 8) {
-        val b = this.data.at(i) ?: break
+        val b = this.data.get(i) ?: break
         h = (h << 8) | (b.toI64())
         i = i + 1
       }
@@ -159,7 +159,7 @@ public fun equalBytes(a: List<u8>, b: List<u8>): bool {
   var i = 0
   val n = a.len()
   loop (i < n) {
-    diff = diff | (a.at(i) ^ (b.at(i) ?: panic("equalBytes: the lengths were compared first")))
+    diff = diff | (a.get(i) ^ (b.get(i) ?: panic("equalBytes: the lengths were compared first")))
     i = i + 1
   }
   diff == 0
@@ -179,7 +179,7 @@ fun rotr64(x: u64, n: i64): u64 => (x >> n) | (x << (64 - n))
 
 /// Byte `i` of a block. The digests read a word only where the block holds
 /// all of its bytes: whole 64- or 128-byte blocks, at offsets inside them.
-fun blockByte(data: List<u8>, i: i64): u8 => data.at(i) ?: panic("crypto: a word is read only where the block holds all of its bytes")
+fun blockByte(data: List<u8>, i: i64): u8 => data.get(i) ?: panic("crypto: a word is read only where the block holds all of its bytes")
 
 /// The big-endian 32-bit word at `at`.
 fun beU32(data: List<u8>, at: i64): u32 =>
@@ -200,7 +200,7 @@ fun beU64(data: List<u8>, at: i64): u64 {
 }
 
 /// Appends `w` as four big-endian bytes.
-fun pushU32(out: MutableList<u8>, w: u32) {
+fun pushU32(out: *List<u8>, w: u32) {
   out.push((w >> 24).wrapU8())
   out.push((w >> 16).wrapU8())
   out.push((w >> 8).wrapU8())
@@ -208,7 +208,7 @@ fun pushU32(out: MutableList<u8>, w: u32) {
 }
 
 /// Appends `w` as eight big-endian bytes.
-fun pushU64(out: MutableList<u8>, w: u64) {
+fun pushU64(out: *List<u8>, w: u64) {
   var s = 56
   loop (s >= 0) {
     out.push((w >> s).wrapU8())
@@ -222,7 +222,7 @@ fun pushU64(out: MutableList<u8>, w: u64) {
 ///
 /// `buffered` is how many bytes of the current block are already held.
 fun padding(buffered: i64, blockSize: i64, lengthBytes: i64, totalBytes: i64): List<u8> {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   out.push(128)
   var len = buffered + 1
   val mark = blockSize - lengthBytes
@@ -237,6 +237,6 @@ fun padding(buffered: i64, blockSize: i64, lengthBytes: i64, totalBytes: i64): L
     out.push(0)
     i = i - 1
   }
-  pushU64(out, (totalBytes * 8).wrapU64())
+  pushU64(&out, (totalBytes * 8).wrapU64())
   out  // a copy: `out` was handed to pushU64 (D63)
 }

@@ -66,6 +66,7 @@ type LintInfo struct {
 // in its value rather than a level (lint_return.go), so it is not listed.
 var Lints = []LintInfo{
 	{"continue_skips_step", "a `continue` that jumps over the step of a hand-written counting loop", LintWarn},
+	{"copy_changed", "a collection copied out of a field and changed, the change never reaching the field (D231)", LintWarn},
 	{"count_loop", "a loop that only counts is written `iter.len()`", LintWarn},
 	{"else_if_ladder", "three or more `else if` branches in a row are a `when { }`", LintWarn},
 	{"inline_implement", "an `implement` beside a type can be written inside its body", LintWarn},
@@ -79,7 +80,7 @@ var Lints = []LintInfo{
 	{"never_closed", "a `Closeable` that is never closed or handed on", LintWarn},
 	{"param_copy", "a parameter changed in a function whose caller never sees the change", LintWarn},
 	{"pattern_form", "a pattern written in a longer form than needed", LintWarn},
-	{"redundant_copy", "a `.toList()` of a collection that is not used afterwards: without it the collection is moved immutable", LintWarn},
+	{"redundant_copy", "retired with D231 (a copy is a binding now, so there is no `.toList()` to drop): never reports; kept so a manifest that names it still loads", LintWarn},
 	{"redundant_discard", "`val _ = f()` for a value a statement may simply ignore", LintWarn},
 	{"redundant_implement", "an `implement Trait { }` around the methods of a variant of that sealed trait", LintWarn},
 	{"redundant_label", "an argument label that repeats the variable passed (`f(x: x)`)", LintWarn},

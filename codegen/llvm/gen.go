@@ -31,7 +31,17 @@ type gen struct {
 	// stackLit: the collection-building expressions of the function being
 	// emitted whose header lives in its frame (sema.StackCollections, D188)
 	stackLit map[sema.Expr]bool
-
+	// ownedVar, freshLit: the local lists and maps nothing else ever holds,
+	// and the empty literals that start them as fresh headers
+	// (sema.OwnedCollections, D231)
+	ownedVar map[*sema.Var]bool
+	freshLit map[sema.Expr]bool
+	// uniquePtr: pointer locals whose collection is made unique once, where
+	// they are bound, and written without a test after (sema.UniquePointers)
+	uniquePtr map[*sema.Var]bool
+	// grown: the locals of the two above that a change grows, whose copy
+	// is made with room (sema.GrownCollections)
+	grown     map[*sema.Var]bool
 	typeDecls map[string]string
 	typeOrder []string
 	strs      map[string]string
@@ -64,7 +74,9 @@ type gen struct {
 	overAlign     map[string]int           // LLVM struct type → alignment above LLVM's own
 	constOut      strings.Builder
 	eqPtrFns      map[string]string
-	pending       []func() // helper bodies to generate after the current function
+	shareFns      map[string]string // per type, the function marking its collections shared (cow.go, D231)
+	shareNeed     map[string]bool   // per type, whether it holds a collection by value
+	pending       []func()          // helper bodies to generate after the current function
 
 	// per-function state
 	fn               *sema.Func
@@ -137,6 +149,8 @@ func Generate(prog *sema.Program) string {
 		closeThunks:   map[*sema.With]string{},
 		descNames:     map[string]bool{},
 		eqPtrFns:      map[string]string{},
+		shareFns:      map[string]string{},
+		shareNeed:     map[string]bool{},
 		consts:        map[sema.ConstVal]string{},
 		emptyShared:   map[string]string{},
 	}
@@ -299,11 +313,15 @@ declare i64 @veles_list_len(ptr)
 declare void @veles_list_push(ptr, ptr)
 declare void @veles_list_reserve(ptr, i64)
 declare ptr @veles_list_ref(ptr, i64)
-declare void @veles_list_expose(ptr)
-declare void @veles_list_write_check(ptr)
-declare ptr @veles_list_freeze(ptr)
-declare void @veles_map_expose(ptr)
-declare ptr @veles_map_freeze(ptr)
+declare ptr @veles_list_share(ptr, ptr)
+declare ptr @veles_list_unique(ptr, ptr)
+declare ptr @veles_list_unique_grow(ptr, ptr)
+declare void @veles_list_share_elems(ptr, ptr)
+declare void @veles_list_own(ptr)
+declare ptr @veles_map_share(ptr, ptr, ptr)
+declare ptr @veles_map_unique(ptr, ptr, ptr)
+declare void @veles_map_share_entries(ptr, ptr, ptr)
+declare void @veles_map_own(ptr)
 declare void @veles_list_index_panic(ptr, i64, ptr, i64)
 declare void @veles_array_index_panic(i64, i64, ptr, i64)
 declare void @veles_unchecked_index_panic(i64, i64, i64, ptr, i64)
@@ -641,6 +659,12 @@ func (g *gen) resetFn(fn *sema.Func) {
 	if os.Getenv("VELES_NO_STACK_COLLECTIONS") == "" { // a switch for bisecting a miscompile
 		g.stackLit = sema.StackCollections(fn)
 	}
+	g.ownedVar, g.freshLit = sema.OwnedCollections(fn)
+	g.uniquePtr = sema.UniquePointers(fn)
+	g.grown = nil
+	if len(g.ownedVar) > 0 || len(g.uniquePtr) > 0 {
+		g.grown = sema.GrownCollections(fn)
+	}
 }
 
 // retLL returns the LLVM return type of a function: void when the result is
@@ -780,7 +804,7 @@ func (g *gen) function(fn *sema.Func) {
 				prologue = append(prologue, fmt.Sprintf("  call void @llvm.memmove.p0.p0.i64(ptr %s, ptr %%p%d, i64 %d, i1 false)", dst, i, size))
 			}
 			switch {
-			case v.AddrTaken:
+			case v.HeapCell():
 				slot := g.varStorage(v, false)
 				prologue = append(prologue, fmt.Sprintf("  %%cell%d = call ptr @veles_gc_alloc(ptr %s, i64 %d)", i, g.descOf(v.Type), size))
 				prologue = append(prologue, fmt.Sprintf("  store ptr %%cell%d, ptr %s", i, slot))
@@ -795,7 +819,7 @@ func (g *gen) function(fn *sema.Func) {
 			}
 			return
 		}
-		if v.AddrTaken {
+		if v.HeapCell() {
 			// captured or address-taken parameter: copy into a heap cell
 			size, _ := g.layout(v.Type)
 			slot := g.varStorage(v, false)
@@ -908,7 +932,7 @@ func (g *gen) varStorage(v *sema.Var, param bool) string {
 		return cell
 	}
 	llt := g.llType(v.Type)
-	if v.AddrTaken && !param {
+	if v.HeapCell() && !param {
 		slot := g.alloca("ptr")
 		g.storage[v] = slot
 		return slot
@@ -921,7 +945,7 @@ func (g *gen) varStorage(v *sema.Var, param bool) string {
 // varPtr returns a pointer to the variable's current storage.
 func (g *gen) varPtr(v *sema.Var) string {
 	st := g.varStorage(v, false)
-	if v.AddrTaken && !v.IsGlobal && !v.Captured {
+	if v.HeapCell() && !v.IsGlobal && !v.Captured {
 		p := g.newTmp()
 		g.emit("%s = load ptr, ptr %s", p, st)
 		return p
@@ -933,7 +957,7 @@ func (g *gen) varPtr(v *sema.Var) string {
 // for address-taken variables on every execution).
 func (g *gen) declareVar(v *sema.Var) string {
 	st := g.varStorage(v, false)
-	if v.AddrTaken && !v.IsGlobal && !v.Captured {
+	if v.HeapCell() && !v.IsGlobal && !v.Captured {
 		cell := g.gcAlloc(v.Type)
 		g.emit("store ptr %s, ptr %s", cell, st)
 		g.debugVar(v, st, 0, true)
@@ -981,6 +1005,12 @@ func (g *gen) stmt(s sema.Stmt) {
 			st := g.declareVar(s.Var)
 			if !types.IsNever(s.Init.Type()) {
 				g.storeVal(s.Var.Type, v, st)
+				if g.uniquePtr[s.Var] {
+					g.uniqueAtFor(s.Var.Type.(*types.Pointer).Elem, v, g.grown[s.Var]) // once, for every write through it
+				}
+				if g.ownedVar[s.Var] && !g.freshLit[s.Init] {
+					g.uniqueAtFor(s.Var.Type, st, g.grown[s.Var]) // once: nothing else holds it from here on
+				}
 			}
 		} else {
 			st := g.declareVar(s.Var)
@@ -1388,7 +1418,7 @@ func suspendingClose(e sema.Expr) *sema.Call {
 // a variable already in a heap cell is that cell.
 func (g *gen) closeMove(s *sema.With) string {
 	v := s.Var
-	if v.AddrTaken && !v.IsGlobal && !v.Captured {
+	if v.HeapCell() && !v.IsGlobal && !v.Captured {
 		return "@cleanup.move.same"
 	}
 	g.thunkSeq++
@@ -1419,7 +1449,7 @@ func (g *gen) closeThunk(s *sema.With) string {
 	v := s.Var
 	g.pending = append(g.pending, func() {
 		g.defineHelperEx(name, "void", []string{"ptr %env"}, "", func() {
-			if v.AddrTaken && !v.IsGlobal && !v.Captured {
+			if v.HeapCell() && !v.IsGlobal && !v.Captured {
 				// varPtr loads the heap cell's address from the slot
 				slot := g.alloca("ptr")
 				g.emit("store ptr %%env, ptr %s", slot)

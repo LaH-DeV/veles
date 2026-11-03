@@ -11,7 +11,7 @@ import (
 
 // Bracket indexing was removed from the language (2026-09-18): `[...]` is
 // collection-literal syntax only, and reads and writes are methods —
-// `xs.at(i)` / `xs.set(i, v)` on lists, `m.get(k)` / `m.set(k, v)` on
+// `xs.get(i)` / `xs.set(i, v)` on lists, `m.get(k)` / `m.set(k, v)` on
 // maps. The parser still accepts the
 // old forms so that they can be reported with a mechanical fix.
 
@@ -34,8 +34,8 @@ func (f *fnCtx) indexRead(e *ast.IndexExpr, isMap bool) {
 	} else {
 		// `x[i]` never answered null, so the fix keeps that: a panic whose
 		// reason the author writes (D62)
-		repl = "(" + x + ".at(" + i + ") ?: panic(\"" + panicReasonTODO + "\"))"
-		alt = "'" + x + ".at(" + i + ")' for a nullable read"
+		repl = "(" + x + ".get(" + i + ") ?: panic(\"" + panicReasonTODO + "\"))"
+		alt = "'" + x + ".get(" + i + ")' for a nullable read"
 	}
 	if x == "" || i == "" {
 		f.errorf(e.Pos, "'[...]' after a value is not indexing; brackets are for collection literals only (D25)")
@@ -57,11 +57,7 @@ func (f *fnCtx) indexWrite(s *ast.AssignStmt, ix *ast.IndexExpr, isMap bool) {
 		repl = x + ".set(" + i + ", " + v + ")"
 	} else {
 		op := strings.TrimSuffix(s.Op.String(), "=")
-		get := ".at("
-		if isMap {
-			get = ".get("
-		}
-		read := "(" + x + get + i + ") ?: panic(\"" + panicReasonTODO + "\"))"
+		read := "(" + x + ".get(" + i + ") ?: panic(\"" + panicReasonTODO + "\"))"
 		repl = x + ".set(" + i + ", " + read + " " + op + " " + v + ")"
 	}
 	f.c.errorFix(s.Pos, fixReplace("Replace with '"+repl+"'", s.Pos, repl),
@@ -73,9 +69,6 @@ func (f *fnCtx) indexWrite(s *ast.AssignStmt, ix *ast.IndexExpr, isMap bool) {
 // `loop (&x in xs)`. A negative index counts from the end, as in the value
 // form; the list is read a second time for the length.
 func (f *fnCtx) listElemPlace(x Expr, lt *types.List, index ast.Expr, span source.Span, mutate bool) Expr {
-	if mutate && !lt.Mutable {
-		f.errorf(span, "cannot assign into an immutable List; use MutableList (D25)")
-	}
 	idx := f.newTemp(types.TI64)
 	n := &Builtin{exprBase{types.TI64}, "list.len", []Expr{x}, span}
 	fromEnd := &Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), n, span}}
@@ -109,12 +102,12 @@ func isPlaceExpr(x Expr) bool {
 	return false
 }
 
-// Element reads are values (D25, v0.27): `xs.at(i)`, `m.get(k)`,
+// Element reads are values (D25, v0.27): `xs.get(i)`, `m.get(k)`,
 // `first()`, `last()` and `find(p)` all copy
 // a value struct out of the collection, exactly like binding it to a name
-// would. Writing into the collection goes through a reference — `ref` /
-// (a pointer to the element, only on MutableList/MutableMap)
-// or `loop (&x in xs)` — so that a read and a write never look alike.
+// would. Writing into the collection goes through a reference — `at`
+// (a pointer to the element) or `loop (&x in xs)` — so that a read and a
+// write never look alike (D231 addendum 2).
 
 // elemReadCall recognises a call that reads an element by value and
 // returns the reference form that reaches the same element, for the hint
@@ -130,10 +123,10 @@ func elemReadCall(x ast.Expr) (fixed string, ok bool) {
 	}
 	var name string
 	switch m.Name.Name {
-	case "at", "get":
-		name = "ref"
+	case "get":
+		name = "at"
 	case "atOrPanic", "getOrPanic": // removed (D62), reported on their own
-		name = "ref"
+		name = "at"
 	default:
 		return "", false
 	}

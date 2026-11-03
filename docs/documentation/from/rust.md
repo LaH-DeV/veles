@@ -24,7 +24,7 @@ into a task rather than by unique ownership.
 | `impl Trait for T` | `implement Trait` in `T`'s body, or `implement Trait for T` |
 | `fn largest<T: PartialOrd>(…)` | `fun largest<T: Comparable>(…)` |
 | `Box<dyn Trait>` | a trait object: `val s: Shape = Circle(r: 1.0)` |
-| `Vec<T>`, `&[T]` | `MutableList<T>`, `List<T>` (immutable) |
+| `Vec<T>`, `&[T]`, `&mut Vec<T>` | `List<T>` (a value, copied on its first change, D231), `*List<T>` |
 | `impl Drop` | `implement Closeable` + `with x = …` |
 | `move \|\| …`, `FnMut` | `() => …`: captures by reference, no annotations |
 | `tokio::spawn`, `.await` | `async f()` in a scope; calls that wait need no `.await` |
@@ -104,16 +104,18 @@ Output:
 5
 ```
 
-A struct is a value, copied when assigned; a `MutableList`, a `Mutex` and
-a pointer `*T` are references, and several names may hold one. Aliasing is
-allowed — what is refused is sharing mutable data between tasks.
+A struct is a value, copied when assigned, and so is a `List`: `let b =
+a.clone()` is just `val b = a`, and the clone costs nothing until one of
+the two is changed (D231). A `Mutex` and a pointer `*T` are references,
+and several names may hold one. Aliasing through those is allowed — what
+is refused is sharing mutable data between tasks.
 
 ## Data races: `Sendable` instead of `&mut`
 
 Rust prevents data races by allowing one `&mut` at a time. Veles allows
-many names for a `MutableList` within one task and refuses it at the
+many pointers to a value within one task and refuses them at the
 task boundary: what an `async` captures or a channel carries must be
-`Sendable` — immutable values, channels, `Mutex`, `Atomic` — which is
+`Sendable` — values (lists included), channels, `Mutex`, `Atomic` — which is
 checked like `Send`. A module-level `var` is an error for the same reason
 (D35, D66). Within a task, the order of your statements is the only
 order there is.

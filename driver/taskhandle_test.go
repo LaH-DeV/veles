@@ -36,7 +36,7 @@ fun work(n: i64, ms: i64): i64 throws Boom {
 fun pool(): i64 throws Boom {
   var total: i64 = 0
   scope {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     loop (i in 1..4) tasks.push(async work(i, 4 - i))
     loop (t in tasks) total += await t
   }

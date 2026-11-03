@@ -24,7 +24,7 @@ struct CountdownIter {
 }
 
 fun summarize<I: Iterable>(xs: I): string {
-  var parts: MutableList<string> = []
+  var parts: List<string> = []
   loop (x in xs) {
     parts.push("$x")
   }

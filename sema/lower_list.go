@@ -94,6 +94,11 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		all = append(all, stmts...)
 		return &BlockExpr{exprBase{value.Type()}, &Block{Stmts: all, Value: value, Type: value.Type()}}
 	}
+	asked := name
+	name = f.accessName(e, name)
+	if asked == "atOrDefault" {
+		name = asked
+	}
 	switch name {
 	case "indexOf":
 		if !need(1) {
@@ -129,9 +134,10 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			return inner
 		}
 		return finish(nil, &Unary{exprBase{types.TBool}, OpNot, &IsNull{exprBase{types.TBool}, inner}, span})
-	case "at":
-		// `xs.at(i)` is the checked read: `T?`, null when out of range. A
-		// negative index counts from the end: `xs.at(-1)` is the last element.
+	case "get":
+		// `xs.get(i)` is the checked read, a copy: `T?`, null when out of
+		// range. A negative index counts from the end: `xs.get(-1)` is the
+		// last element. (`at` gives a pointer to the element, D231.)
 		if !need(1) {
 			return bad()
 		}
@@ -147,7 +153,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 					i += int64(len(elems))
 				}
 				if !k.V.IsInt64() || i < 0 || i >= int64(len(elems)) {
-					f.errorf(e.Args[0].Value.Span(), "index %s is out of range for a constant list of length %d, so 'at' is always null (D113)", k.V, len(elems))
+					f.errorf(e.Args[0].Value.Span(), "index %s is out of range for a constant list of length %d, so 'get' is always null (D113)", k.V, len(elems))
 					return bad()
 				}
 				return constExpr(elems[i])
@@ -182,28 +188,29 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 			return bad()
 		}
 		return finish(f.uncheckedGet(list, lt, e.Args[0].Value, span))
-	case "ref", "refOrPanic":
-		// `xs.ref(i)`: `(*T)?`, null when out of range; `xs.refOrPanic(i)`:
+	case "at", "refAt", "ref", "refOrPanic":
+		// `xs.at(i)`: `(*T)?`, null when out of range; `xs.refOrPanic(i)`:
 		// `*T`, a panic when out of range. A pointer to the element itself,
-		// so a value struct is changed where it lives (D25, v0.27); only on
-		// a MutableList, since writing through it would change the list.
-		if !lt.Mutable {
-			f.errorf(span, "'%s' needs a MutableList: a pointer into an immutable List could change it (D25)", name)
-			f.checkArgsLoosely(e.Args)
-			return bad()
+		// so a value struct is changed where it lives (D25, v0.27): reached
+		// through the list's own place, which a write makes unique (D231).
+		// A read through it right away (`xs.at(i).n`) copies nothing.
+		if name == "ref" || name == "refAt" {
+			f.removedRename(e, name, "at", "'at' gives a pointer to change the element in place; 'get' gives a copy")
+			name = "at"
 		}
 		if !need(1) {
 			return bad()
 		}
+		f.writeReceiver(recv, e, false)
 		pt := &types.Pointer{Elem: lt.Elem}
 		if name == "refOrPanic" {
 			f.removedOrPanic(e, name) // D62 C
 		}
 		if name == "refOrPanic" || f.receiverIndexProven(e, e.Args[0].Value) {
-			if name == "ref" {
+			if name == "at" {
 				f.markProven(e)
 			}
-			place := f.listElemPlace(ref(list), lt, e.Args[0].Value, span, true)
+			place := f.listElemPlace(recv, lt, e.Args[0].Value, span, true)
 			return finish(nil, &AddrOf{exprBase{pt}, place})
 		}
 		idx := f.newTemp(types.TI64)
@@ -217,40 +224,33 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		inRange := &Binary{exprBase{types.TBool}, OpAnd,
 			&Binary{exprBase{types.TBool}, OpGe, ref(idx), i64c(0), span},
 			&Binary{exprBase{types.TBool}, OpLt, ref(idx), n, span}, span}
-		elem := &Builtin{exprBase{lt.Elem}, "list.ref", []Expr{ref(list), ref(idx)}, span}
+		elem := &Builtin{exprBase{lt.Elem}, "list.ref", []Expr{recv, ref(idx)}, span}
 		some := &SomeWrap{exprBase{rt}, &AddrOf{exprBase{pt}, elem}}
 		return finish(nil, &If{exprBase{rt}, inRange, &Block{Value: some, Type: rt}, &Block{Value: &NullConst{exprBase{rt}}, Type: rt}})
 	case "set":
-		// `xs.set(i, v)` replaces the element at `i`; a panic when out of range.
-		if !lt.Mutable {
-			f.errorf(span, "cannot set an element of an immutable List; use MutableList (D25)")
-			f.checkArgsLoosely(e.Args)
-			return bad()
-		}
+		// `xs.set(i, v)` replaces the element at `i`; a panic when out of
+		// range. Written through the list's own place (D231).
 		if !need(2) {
 			return bad()
 		}
-		place := f.listElemPlace(ref(list), lt, e.Args[0].Value, span, true)
+		f.writeReceiver(recv, e, true)
+		place := f.listElemPlace(recv, lt, e.Args[0].Value, span, true)
 		v := f.checkExprTo(e.Args[1].Value, lt.Elem)
 		return finish([]Stmt{&Assign{Target: place, Value: v}}, &UnitConst{exprBase{types.TUnit}})
-	case "atUnchecked", "setUnchecked":
+	case "getUnchecked", "setUnchecked":
 		// D114: the local escape from the bounds check. Only in `unsafe`;
 		// a debug build still checks (and panics), a release build does not.
 		// No negative-from-end index: `i` is the plain offset.
-		if name == "setUnchecked" && !lt.Mutable {
-			f.errorf(span, "cannot set an element of an immutable List; use MutableList (D25)")
-			f.checkArgsLoosely(e.Args)
-			return bad()
-		}
 		f.requireUnsafeIndex(span, name)
-		if !need(map[string]int{"atUnchecked": 1, "setUnchecked": 2}[name]) {
+		if !need(map[string]int{"getUnchecked": 1, "setUnchecked": 2}[name]) {
 			return bad()
 		}
 		idx := f.checkExprTo(e.Args[0].Value, types.TI64)
-		elem := &Builtin{exprBase{lt.Elem}, "list.refUnchecked", []Expr{ref(list), idx}, span}
-		if name == "atUnchecked" {
-			return finish(nil, elem)
+		if name == "getUnchecked" {
+			return finish(nil, &Builtin{exprBase{lt.Elem}, "list.refUnchecked", []Expr{ref(list), idx}, span})
 		}
+		f.writeReceiver(recv, e, true)
+		elem := &Builtin{exprBase{lt.Elem}, "list.refUnchecked", []Expr{recv, idx}, span}
 		v := f.checkExprTo(e.Args[1].Value, lt.Elem)
 		return finish([]Stmt{&Assign{Target: elem, Value: v}}, &UnitConst{exprBase{types.TUnit}})
 	case "first", "last":
@@ -275,7 +275,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		if !need(0) {
 			return bad()
 		}
-		outT := &types.List{Elem: lt.Elem, Mutable: true}
+		outT := &types.List{Elem: lt.Elem}
 		out := f.newTemp(outT)
 		stmts := []Stmt{&VarDecl{Var: out, Init: &ListLit{exprBase{outT}, nil}}}
 		idx := f.newTemp(types.TI64)
@@ -288,7 +288,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		get := &Builtin{exprBase{lt.Elem}, "list.get", []Expr{ref(list), ref(idx)}, span}
 		lp.Body = &Block{Stmts: []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "list.push", []Expr{ref(out), get}, span}}}, Type: types.TUnit}
 		stmts = append(stmts, lp)
-		return finish(stmts, &Cast{exprBase{&types.List{Elem: lt.Elem, Mutable: false}}, ref(out)})
+		return finish(stmts, &Cast{exprBase{&types.List{Elem: lt.Elem}}, ref(out)})
 	case "sortedBy", "sorted":
 		var keyFn *Var
 		var keyT types.Type = lt.Elem
@@ -342,6 +342,12 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(list, span), Name: ast.Ident{Name: "iterator", Pos: span}, Pos: span}, Pos: span}
 		f.scope.Insert(&Symbol{Name: list.Name, Kind: SymLocal, Var: list})
 		return finish(nil, f.checkExpr(call, nil))
+	case "atOrDefault":
+		// removed (accessName reported it): the prelude method under its
+		// new name
+		call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(list, span), Name: ast.Ident{Name: "getOrDefault", Pos: span}, Pos: span}, Args: e.Args, Pos: span}
+		f.scope.Insert(&Symbol{Name: list.Name, Kind: SymLocal, Var: list})
+		return finish(nil, f.checkExpr(call, nil))
 	case "join":
 		if !need(1) {
 			return bad()
@@ -355,7 +361,7 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		if types.Identical(lt.Elem, types.TString) {
 			return finish(nil, &Builtin{exprBase{types.TString}, "list.joinText", []Expr{ref(list), ref(sepV)}, span})
 		}
-		textsT := &types.List{Elem: types.TString, Mutable: true}
+		textsT := &types.List{Elem: types.TString}
 		texts := f.newTemp(textsT)
 		stmts := []Stmt{&VarDecl{Var: texts, Init: &ListLit{exprBase{textsT}, nil}}}
 		stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
@@ -392,7 +398,7 @@ func (f *fnCtx) listFilterIs(recv Expr, lt *types.List, typeArgs []types.Type, e
 		return bad()
 	}
 	list := f.listTemp(recv, lt)
-	outT := &types.List{Elem: variant, Mutable: true}
+	outT := &types.List{Elem: variant}
 	out := f.newTemp(outT)
 	stmts := []Stmt{&VarDecl{Var: list, Init: recv}, &VarDecl{Var: out, Init: &ListLit{exprBase{outT}, nil}}}
 	stmts = append(stmts, f.listLoop(list, lt.Elem, span, func(x *Var, lp *Loop) []Stmt {
@@ -413,7 +419,7 @@ func (f *fnCtx) requireUnsafeIndex(span source.Span, name string) {
 	if f.unsafe > 0 {
 		return
 	}
-	checked := map[string]string{"atUnchecked": "at(i)", "setUnchecked": "set(i, v)", "byteAtUnchecked": "byteAt(i)"}[name]
+	checked := map[string]string{"getUnchecked": "get(i)", "setUnchecked": "set(i, v)", "byteAtUnchecked": "byteAt(i)"}[name]
 	f.errorf(span, "'%s' skips the bounds check in a release build, so it needs an 'unsafe' block (D114); write '%s', or wrap the call in 'unsafe { }' with a '// SAFETY:' comment saying why the index is in range", name, checked)
 }
 

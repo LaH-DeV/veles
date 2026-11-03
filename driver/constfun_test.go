@@ -35,7 +35,7 @@ struct P {
 enum Color { Red, Green, Blue }
 
 const fun ints(): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   val big: i64 = 9223372036854775807
   out.push(big +% 1)
   out.push(-7 / 2)
@@ -109,7 +109,7 @@ const fun fnv(n: i64): u32 {
 const FNV: u32 = fnv(1000)
 
 const fun floats(): List<f64> {
-  val out: MutableList<f64> = []
+  val out: List<f64> = []
   var s: f32 = 0.0
   var d: f64 = 0.0
   loop (_ in 0..<10) {
@@ -126,7 +126,7 @@ const FLOATS: List<f64> = floats()
 
 const fun texts(): List<string> {
   val s = "héllo, wörld"
-  val out: MutableList<string> = []
+  val out: List<string> = []
   out.push("${s.len()} ${s.charCount()}")
   out.push(s.substring(0, 2) ?: "null")
   out.push(s.substring(0, 3) ?: "null")
@@ -158,49 +158,49 @@ const fun texts(): List<string> {
 const TEXTS: List<string> = texts()
 
 const fun lists(): List<i64> {
-  val m: MutableList<i64> = [1, 2, 3]
-  m.addAll(m.toList())
+  val m: List<i64> = [1, 2, 3]
+  m.addAll(m)
   val popped = m.pop() ?: -1
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   out.push(popped)
   out.push(m.len().toI64())
   out.addAll([1, 2, 3, 4, 5].slice(-5, 10))
   out.addAll([1, 2, 3, 4, 5].slice(3, 1))
   out.addAll([1, 2, 3, 4, 5].slice(1, 3))
-  out.push(m.at(-1) ?: -9)
-  out.push(m.at(99) ?: -9)
+  out.push(m.get(-1) ?: -9)
+  out.push(m.get(99) ?: -9)
   out
 }
 const LISTS: List<i64> = lists()
 
 const fun incremented(): i64 {
-  val counts: MutableList<i64> = [3]
+  val counts: List<i64> = [3]
   counts.incrementAt(0)
-  counts.at(0) ?: -1
+  counts.get(0) ?: -1
 }
 const INCREMENTED: i64 = incremented()
 
 const fun updatedAt(): string {
-  val values: MutableList<i64> = [3, 5]
+  val values: List<i64> = [3, 5]
   val updated = values.updateAt(-1, value => value * 2)
   "$updated $values"
 }
 const UPDATED_AT: string = updatedAt()
 
 const fun maps(): List<string> {
-  val m: MutableMap<string, i64> = [:]
+  val m: Map<string, i64> = [:]
   m.set("a", 1)
   m.set("b", 2)
   m.set("a", 3)
   m.set("c", 4)
   m.remove("b")
   m.set("b", 5)
-  val out: MutableList<string> = []
+  val out: List<string> = []
   loop (k in m.keys()) {
     out.push("$k=${m.get(k) ?: -1}")
   }
   out.push("${m.len()} ${m.containsKey("c")} ${m.containsKey("z")}")
-  val s: MutableSet<i64> = []
+  val s: Set<i64> = []
   out.push("${s.add(3)} ${s.add(3)} ${s.add(4)} ${s.len()}")
   out
 }
@@ -210,8 +210,8 @@ const fun structs(): List<i64> {
   val a = P(x: 1, y: 2)
   var b = a
   b.x = 10
-  val xs: MutableList<P> = [a, b]
-  var c = xs.at(0) ?: a
+  val xs: List<P> = [a, b]
+  var c = xs.get(0) ?: a
   c.x = 99
   loop (&p in xs) {
     p.y += 100
@@ -219,7 +219,7 @@ const fun structs(): List<i64> {
   val t = (a, b)
   var u = t
   u.0.x = 7
-  [a.x.toI64(), b.x.toI64(), c.x.toI64(), (xs.at(0) ?: a).y.toI64(), (xs.at(1) ?: a).y.toI64(), t.0.x.toI64(), u.0.x.toI64()].toList()
+  [a.x.toI64(), b.x.toI64(), c.x.toI64(), (xs.get(0) ?: a).y.toI64(), (xs.get(1) ?: a).y.toI64(), t.0.x.toI64(), u.0.x.toI64()]
 }
 const STRUCTS: List<i64> = structs()
 
@@ -253,7 +253,7 @@ const fun labelled(): string {
 const LABELLED: string = labelled()
 
 const fun flow(): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop :outer (i in 0..<6) {
     loop (j in 0..<6) {
       if (j == 3) continue outer
@@ -319,12 +319,12 @@ const fun arrays(): List<i64> {
   val a: Array<i64, 4> = [1, 2, 3, 4]
   var b = a
   b.set(0, 100)
-  [a.at(0), b.at(0), a.len().toI64()]
+  [a.get(0), b.get(0), a.len().toI64()]
 }
 const ARRAYS: List<i64> = arrays()
 
 
-const fun firstOr<T>(xs: List<T>, d: T): T => xs.at(0) ?: d
+const fun firstOr<T>(xs: List<T>, d: T): T => xs.get(0) ?: d
 const G1: i64 = firstOr([7, 8], 0)
 const G2: string = firstOr([], "none")
 
@@ -351,7 +351,7 @@ const fun nested(): List<string> {
   copy.bump(10)
   o.bump(1)
   copy.inner.x += 5
-  val out: MutableList<string> = [o.summary(), copy.summary()]
+  val out: List<string> = [o.summary(), copy.summary()]
   out
 }
 const NESTED: List<string> = nested()
@@ -359,7 +359,7 @@ const NESTED: List<string> = nested()
 const fun sorting(): List<string> {
   val nums = [5, 3, 9, 1, 3].sorted()
   val words = ["pear", "apple", "fig"].sorted()
-  val out: MutableList<string> = []
+  val out: List<string> = []
   loop (n in nums) {
     out.push("$n")
   }
@@ -374,8 +374,8 @@ const fun withDefault(a: i64, b: i64 = 10): i64 => a * b
 const DEF: List<i64> = [withDefault(2), withDefault(2, 3)]
 
 const fun mapLoop(): List<string> {
-  val m: MutableMap<string, i64> = ["x": 1, "y": 2]
-  val out: MutableList<string> = []
+  val m: Map<string, i64> = ["x": 1, "y": 2]
+  val out: List<string> = []
   loop ((k, v) in m) {
     out.push("$k$v")
   }
@@ -383,7 +383,7 @@ const fun mapLoop(): List<string> {
 }
 
 const fun intOps(): List<string> {
-  val out: MutableList<string> = []
+  val out: List<string> = []
   val a: i8 = -128
   val b: i8 = 100
   out.push("${b.abs()} ${(-5).abs()} ${(-5).sign()} ${0.sign()} ${5.sign()} ${b.min(a)} ${b.max(a)}")
@@ -407,7 +407,7 @@ const fun intOps(): List<string> {
 const INTOPS: List<string> = intOps()
 
 const fun floatOps(): List<string> {
-  val out: MutableList<string> = []
+  val out: List<string> = []
   val x: f64 = -2.5
   out.push("${x.abs()} ${x.floor()} ${x.ceil()} ${x.round()} ${x.trunc()} ${x.sign()} ${(2.0).sqrt()} ${x.min(1.0)} ${x.max(1.0)}")
   out.push("${x.mod(2.0)} ${(5.5).mod(-2.0)} ${x.clamp(-1.0, 1.0)} ${x.copySign(1.0)} ${x.isSignNegative()} ${x.isNaN()} ${x.isFinite()}")
@@ -429,16 +429,16 @@ const fun stdLists(): string {
   val xs: List<i64> = [5, 3, 9, 3, 1]
   val words: List<string> = ["b", "a", "b"]
   val b = StringBuilder()
-  b.append("${xs.atOrDefault(9, -1)} ${xs.take(2)} ${xs.drop(3)} ${xs.concat([7])} ${xs.indices()}")
+  b.append("${xs.getOrDefault(9, -1)} ${xs.take(2)} ${xs.drop(3)} ${xs.concat([7])} ${xs.indices()}")
   b.append(" ${words.enumerate()} ${xs.zip(words)} ${xs.distinct()} ${words.distinct()}")
-  b.append(" ${xs.chunked(2)} ${xs.windowed(3)} ${xs.lastIndex()} ${xs.toSet()} ${words.toMutableSet()}")
+  b.append(" ${xs.chunked(2)} ${xs.windowed(3)} ${xs.lastIndex()} ${xs.toSet()} ${words.toSet()}")
   b.append(" ${xs.sortedDescending()} ${xs.min() ?: 0} ${words.max() ?: "-"} ${xs.sum()} ${[1.5, 2.25].sum()}")
-  val m = MutableList<i64>.repeat(0, 4)
+  val m = List<i64>.repeat(0, 4)
   m.fill(2)
   m.swap(0, 3)
   m.insert(1, 8)
   val r = m.removeAt(0)
-  val s: MutableList<i64> = [4, 1, 3]
+  val s: List<i64> = [4, 1, 3]
   s.sort()
   b.append(" $m $r $s")
   b.append(" ${(1..10).len()} ${(3..<3).isEmpty()} ${(1..10).contains(10)} ${(1..<10).contains(10)}")
@@ -480,8 +480,8 @@ const fun codecs(): string {
   val last = utf8.decodeLast("é€", 5)
   val rb = utf8.decodeBytes(bytes, 1)
   sb.append(" ${r?.code ?: -1}/${r?.size ?: -1} ${last?.code ?: -1} ${rb?.code ?: -1} ${utf8.encode(0x20AC)} ${utf8.char(0x1D11E)}")
-  val out: MutableList<u8> = []
-  val n = utf8.encodeTo(out, 0xE9)
+  val out: List<u8> = []
+  val n = utf8.encodeTo(&out, 0xE9)
   sb.append(" $n $out")
   sb.toString()
 }
@@ -510,25 +510,25 @@ const fun higher(): string {
   sb.append(" ${sorted.partitionPoint(x => x < 5)} ${sorted.binarySearch(8)} ${sorted.lowerBound(3)} ${sorted.upperBound(3)}")
   val kws = [Kw(word: "fun", id: 1), Kw(word: "loop", id: 2), Kw(word: "val", id: 3)]
   sb.append(" ${kws.binarySearchBy(k => k.word, "loop")} ${kws.binarySearchWith(k => k.id.compareTo(3))}")
-  val m: MutableList<i64> = [4, 2, 7]
+  val m: List<i64> = [4, 2, 7]
   m.sortWith((a, b) => b.compareTo(a))
-  sb.append(" $m ${MutableList<i64>.make(4, i => i * i)}")
+  sb.append(" $m ${List<i64>.make(4, i => i * i)}")
   val table: Map<string, i64> = ["a": 1, "b": 2, "c": 3]
   sb.append(" ${table.mapValues(v => v * 100)} ${table.filter((k, v) => v != 2)}")
   var total: i64 = 0
   table.forEach((k, v) => {
     total += v
   })
-  val cache: MutableMap<string, i64> = [:]
-  val got = cache.getOrPut("x", () => 42)
-  val again = cache.getOrPut("x", () => 7)
+  val cache: Map<string, i64> = [:]
+  val got = *cache.atOrPut("x", () => 42)
+  val again = *cache.atOrPut("x", () => 7)
   sb.append(" $total $got $again")
   sb.toString()
 }
 const HIGHER: string = higher()
 
 const fun mapAll<T, U>(xs: List<T>, f: fun(T): U): List<U> {
-  val out: MutableList<U> = []
+  val out: List<U> = []
   loop (x in xs) out.push(f(x))
   out
 }
@@ -597,11 +597,11 @@ test "text" {
 test "lists" {
   expect(LISTS == lists())
 }
-test "MutableList.incrementAt is const" {
+test "List.incrementAt is const" {
   expect(INCREMENTED == 4)
   expect(INCREMENTED == incremented())
 }
-test "MutableList.updateAt is const and returns the stored value" {
+test "List.updateAt is const and returns the stored value" {
   expect(UPDATED_AT == "10 [3, 10]")
   expect(UPDATED_AT == updatedAt())
 }

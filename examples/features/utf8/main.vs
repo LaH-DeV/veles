@@ -72,7 +72,7 @@ fun main() {
   val text = "aé€𐍈"
   println("  bytes ${text.len()}, characters ${text.charCount()}")
   var i = 0
-  val forwards: MutableList<string> = []
+  val forwards: List<string> = []
   loop (i < text.len()) {
     val r = utf8.decode(text, i) ?: panic("a string is valid UTF-8")
     forwards.push("${u(r.code)}/${r.size}")
@@ -80,7 +80,7 @@ fun main() {
   }
   println("  forwards  ${forwards.join(" ")}")
   var j = text.len()
-  val backwards: MutableList<string> = []
+  val backwards: List<string> = []
   loop (j > 0) {
     val r = utf8.decodeLast(text, j) ?: panic("a string is valid UTF-8")
     backwards.push("${u(r.code)}/${r.size}")

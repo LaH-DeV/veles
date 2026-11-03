@@ -1,6 +1,6 @@
+use settings { Section, SettingsError }
 use toml { Table, Value }
 use version { Version }
-use settings { Section, SettingsError }
 use text { quote }
 
 /// Where a dependency comes from. Exactly one, by construction: a table that
@@ -99,7 +99,7 @@ fun sourceOf(keys: DependencyKeys): Source throws DependencyProblem {
 
 /// Reads a `[dependencies]` or `[dev-dependencies]` table.
 fun readDependencies(section: Section): List<Dependency> throws SettingsError {
-  val out: MutableList<Dependency> = []
+  val out: List<Dependency> = []
   loop (entry in section.entries()) {
     val name = entry.key
     val value = entry.value

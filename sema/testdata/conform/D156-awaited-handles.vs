@@ -4,7 +4,9 @@
 // Part 1b: an `await` right after its `async` runs nothing alongside it.
 use io
 
-error Boom { n: i64 }
+error Boom {
+  n: i64
+}
 
 fun work(n: i64): i64 throws Boom {
   await sleep(Duration.millis(1))
@@ -44,41 +46,41 @@ fun branches(c: bool): i64 throws Boom {
 fun inWhen(n: i64): i64 throws Boom {
   val a = async work(1)
   when (n) {
-    0 => return plain(0) + await a
+    0    => return plain(0) + await a
     else => return plain(n) + await a
   }
 }
 
 fun skipped(c: bool): i64 throws Boom {
   val a = async work(1)
-  if (c) return 0 // error: 'a' is not awaited on this path
+  if (c) return 0  // error: 'a' is not awaited on this path
   plain(1) + await a
 }
 
 fun oneBranch(c: bool): i64 throws Boom {
-  val a = async work(1) // error: 'a' is not awaited on every path to the end of its block
+  val a = async work(1)  // error: 'a' is not awaited on every path to the end of its block
   var n: i64 = plain(0)
   if (c) n = await a
   n
 }
 
 fun last() throws Boom {
-  val a = async work(1) // error: 'a' is not awaited on every path to the end of its block
+  val a = async work(1)  // error: 'a' is not awaited on every path to the end of its block
 }
 
 fun looped(xs: List<i64>): i64 throws Boom {
   var total: i64 = 0
   loop (x in xs) {
     val t = async work(x)
-    if (x == 0) continue // error: 't' is not awaited on this path
-    if (x > 9) break // error: 't' is not awaited on this path
+    if (x == 0) continue  // error: 't' is not awaited on this path
+    if (x > 9) break      // error: 't' is not awaited on this path
     total += plain(x) + await t
   }
   total
 }
 
 fun outside(xs: List<i64>): i64 throws Boom {
-  val t = async work(1) // error: 't' is not awaited on every path to the end of its block
+  val t = async work(1)  // error: 't' is not awaited on every path to the end of its block
   var total: i64 = plain(0)
   loop (x in xs) total += await t + x
   total
@@ -97,15 +99,15 @@ fun innerBreak(xs: List<i64>): i64 throws Boom {
 fun raced(): i64 throws Boom {
   val t = async work(1)
   select {
-    val v = t => v
+    val v = t                   => v
     sleep(Duration.millis(100)) => throw Boom(n: 0)
   }
 }
 
 fun racedCached(): i64 throws Boom {
-  val t = async work(1) // error: 't' is not awaited on every path to the end of its block
+  val t = async work(1)  // error: 't' is not awaited on every path to the end of its block
   select {
-    val v = t => v
+    val v = t                   => v
     sleep(Duration.millis(100)) => 0
   }
 }
@@ -132,39 +134,39 @@ fun twice(): i64 throws Boom {
 fun passed(): i64 throws Boom {
   val t = async work(1)
   val x = plain(1)
-  x + helper(t) + await t // error: 't' must be awaited by this block, so it cannot be
+  x + helper(t) + await t  // error: 't' must be awaited by this block, so it cannot be
 }
 
 fun stored(): i64 throws Boom {
   val t = async work(1)
-  val keep: MutableList<Task<i64>> = []
-  keep.push(t) // error: 't' must be awaited by this block, so it cannot be
+  val keep: List<Task<i64>> = []
+  keep.push(t)  // error: 't' must be awaited by this block, so it cannot be
   plain(1) + await t
 }
 
 fun captured(): i64 throws Boom {
   val t = async work(1)
-  val get = () => await t // error: 't' must be awaited by this block, so it cannot be
+  val get = () => await t  // error: 't' must be awaited by this block, so it cannot be
   plain(1) + get() + await t
 }
 
 fun cancelled(): i64 throws Boom {
   val t = async work(1)
-  t.cancel() // error: 't' must be awaited by this block, so it cannot be
-  plain(1) + await t // error: 't' was cancelled at line
+  t.cancel()          // error: 't' must be awaited by this block, so it cannot be
+  plain(1) + await t  // error: 't' was cancelled at line
 }
 
 fun mutable(): i64 throws Boom {
-  var t = async work(1) // error: a task is bound with 'val'
+  var t = async work(1)  // error: a task is bound with 'val'
   plain(1) + await t
 }
 
 fun bare() {
-  async plain(1) // error: 'async' must be
+  async plain(1)  // error: 'async' must be
 }
 
 fun quiet(): i64 {
-  val t = async work(1) // error: but the function is not declared 'throws'
+  val t = async work(1)  // error: but the function is not declared 'throws'
   plain(1) + await t
 }
 
@@ -188,24 +190,24 @@ fun inLambda(): i64 {
 // 1b: nothing runs alongside the task
 fun immediate(): i64 throws Boom {
   val t = async work(1)
-  val v = await t // warning: 'work' runs with nothing alongside it; call 'work(1)' directly
+  val v = await t  // warning: 'work' runs with nothing alongside it; call 'work(1)' directly
   v + 1
 }
 
 fun immediateWith(): i64 throws Boom {
   with t = async work(2)
-  return await t // warning: 'work' runs with nothing alongside it
+  return await t  // warning: 'work' runs with nothing alongside it
 }
 
 fun immediateArg(): i64 throws Boom {
   val t = async work(3)
-  plain(await t) // warning: 'work' runs with nothing alongside it
+  plain(await t)  // warning: 'work' runs with nothing alongside it
 }
 
 fun original(): i64 throws Boom {
   scope {
     val handle = async work(4)
-    io.println("${await handle}") // warning: 'work' runs with nothing alongside it
+    io.println("${await handle}")  // warning: 'work' runs with nothing alongside it
   }
   0
 }

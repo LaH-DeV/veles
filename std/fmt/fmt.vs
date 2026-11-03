@@ -81,7 +81,7 @@ public fun bytes(n: i64): string {
     value /= kibibyte
     unit += 1
   }
-  val name = units.at(unit) ?: panic("fmt.bytes: the unit index stays inside the list")
+  val name = units.get(unit) ?: panic("fmt.bytes: the unit index stays inside the list")
   val sign = if (negative) "-" else ""
   if (unit == 0) "$sign${value.toFixed(0)} $name" else "$sign${value.toFixed(1)} $name"
 }
@@ -114,7 +114,7 @@ public fun duration(d: Duration): string {
   if (rest < 1000) return "$sign${rest}ns"
   if (rest < 1000000) return "$sign${rest / 1000}us"
   if (rest < 1000000000) return "$sign${rest / 1000000}ms"
-  val parts: MutableList<string> = []
+  val parts: List<string> = []
   val units = [(86400000000000, "d"), (3600000000000, "h"), (60000000000, "m"), (1000000000, "s")]
   loop ((size, name) in units) {
     if (rest >= size && parts.len() < 3) {
@@ -136,20 +136,20 @@ public fun duration(d: Duration): string {
 /// println(fmt.table([["tea", "3.50"], ["coffee", "12.00"]], right: [1]))
 /// ```
 public fun table(rows: List<List<string>>, right: List<i64> = [], header: bool = false): string {
-  val widths: MutableList<i64> = []
+  val widths: List<i64> = []
   loop (row in rows) {
     loop (i in 0..<row.len()) {
-      val cell = row.at(i).chars().len()
-      if (i >= widths.len()) widths.push(cell) else if (cell > widths.at(i)) widths.set(i, cell)
+      val cell = row.get(i).chars().len()
+      if (i >= widths.len()) widths.push(cell) else if (cell > widths.get(i)) widths.set(i, cell)
     }
   }
-  val lines: MutableList<string> = []
+  val lines: List<string> = []
   loop (r in 0..<rows.len()) {
-    val row = rows.at(r)
-    val cells: MutableList<string> = []
+    val row = rows.get(r)
+    val cells: List<string> = []
     loop (i in 0..<widths.len()) {
-      val width = widths.at(i) ?: 0
-      val cell = row.at(i) ?: ""
+      val width = widths.get(i)
+      val cell = row.get(i) ?: ""
       val gap = " ".repeat(width - cell.chars().len())
       cells.push(if (right.contains(i)) gap + cell else cell + gap)
     }

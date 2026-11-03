@@ -74,7 +74,7 @@ test "a check that panics fails, and the probe still answers" {
   val health = Health()
   health.check("odd", () => {
     val xs: List<i64> = []
-    xs.at(3) ?: panic("no such element")
+    xs.get(3) ?: panic("no such element")
   })
   health.check("fine", () => { })
   val r = call(app(health), Method.get, "/readyz")

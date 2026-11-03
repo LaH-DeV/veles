@@ -6,7 +6,7 @@ import "testing"
 // iteration and ends the loop on null.
 func TestLoopHeadBinding(t *testing.T) {
 	expectClean(t, prelude+`
-fun first(xs: List<i64>, i: i64): i64? => xs.at(i)
+fun first(xs: List<i64>, i: i64): i64? => xs.get(i)
 fun main() {
   val xs = [1, 2, 3]
   var i = 0

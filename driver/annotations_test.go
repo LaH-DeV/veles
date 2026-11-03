@@ -34,7 +34,7 @@ public annotation Skip on field for Validate
 
 public trait Validate {
   fun problems(): List<string> {
-    val out: MutableList<string> = []
+    val out: List<string> = []
     inline loop (f in This.fields) {
       if (!f.has<Skip>()) {
         if (val min = f.attr<Min>()) {
@@ -46,7 +46,7 @@ public trait Validate {
   }
 
   static const fun labels(): List<string> {
-    val out: MutableList<string> = []
+    val out: List<string> = []
     loop (f in This.fields) {
       out.push(f.name + "=" + (f.attr<Label>()?.text ?: "-"))
     }
@@ -108,7 +108,7 @@ struct O {
 }
 
 const fun letters<T>(): List<string> {
-  val out: MutableList<string> = []
+  val out: List<string> = []
   loop (f in T.fields) {
     out.push(f.attr<Short>()?.letter ?: "")
   }

@@ -84,7 +84,7 @@ fun scenario(kind: string, workers: i64, rounds: i64, late: Lateness): i64 {
     if (kind == "idle") {
       await sleep(Duration.millis(300))
     } else {
-      val tasks: MutableList<Task<i64>> = []
+      val tasks: List<Task<i64>> = []
       loop (_ in 0..<workers) tasks.push(async busy(kind, rounds))
       loop (t in tasks) sum += await t
     }

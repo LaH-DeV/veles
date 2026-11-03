@@ -4,7 +4,7 @@ use regex
 use time
 
 fun main() throws regex.RegexError {
-  val operations = os.args().at(0)?.toInt() ?: 50000
+  val operations = os.args().get(0)?.toInt() ?: 50000
   if (operations < 1) panic("regex benchmark: operations must be positive")
   val compiled = try regex.Regex.compile("(a*)*b")
   val (sum, elapsed) = time.measure(() => {

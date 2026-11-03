@@ -36,17 +36,17 @@ const IV512: List<u64> = [
 /// SHA-512, fed in pieces: `var h = crypto.Sha512.start()`, `h.update(…)`,
 /// `h.finish()`. `crypto.sha512(data)` is the one-shot form.
 public struct Sha512 {
-  private state:      MutableList<u64>
-  private buffer:     MutableList<u8>
-  private scratch:    MutableList<u64>
+  private state:      List<u64>
+  private buffer:     List<u8>
+  private scratch:    List<u64>
   private var total:  i64 = 0
   private var result: Digest? = null
 
   implement Hasher {
     static fun start(): Sha512 => Sha512(
-      state: IV512.toMutable(),
+      state: IV512,
       buffer: [],
-      scratch: MutableList<u64>.repeat(0, 80),
+      scratch: List<u64>.repeat(0, 80),
     )
 
     static fun algorithm(): string => "SHA-512"
@@ -63,9 +63,9 @@ public struct Sha512 {
       val done = this.result
       if (done != null) return done
       this.absorb(padding(this.buffer.len(), 128, 16, this.total))
-      val out: MutableList<u8> = []
+      val out: List<u8> = []
       loop (w in this.state) {
-        pushU64(out, w)
+        pushU64(&out, w)
       }
       val d = Digest.of(out)
       this.result = d
@@ -78,19 +78,19 @@ public struct Sha512 {
     var i = 0
     if (this.buffer.len() > 0) {
       loop (this.buffer.len() < 128 && i < n) {
-        this.buffer.push(data.at(i))
+        this.buffer.push(data.get(i))
         i = i + 1
       }
       if (this.buffer.len() < 128) return
-      compress512(this.state, this.buffer.toList(), 0, this.scratch)
+      compress512(&this.state, this.buffer, 0, &this.scratch)
       this.buffer.clear()
     }
     loop (i + 128 <= n) {
-      compress512(this.state, data, i, this.scratch)
+      compress512(&this.state, data, i, &this.scratch)
       i = i + 128
     }
     loop (i < n) {
-      this.buffer.push(data.at(i))
+      this.buffer.push(data.get(i))
       i = i + 1
     }
   }
@@ -98,7 +98,7 @@ public struct Sha512 {
 
 /// One 128-byte block into the eight-word state; `w` is the caller's
 /// scratch space.
-fun compress512(state: MutableList<u64>, block: List<u8>, at: i64, w: MutableList<u64>) {
+fun compress512(state: *List<u64>, block: List<u8>, at: i64, w: *List<u64>) {
   var i = 0
   loop (i < 16) {
     w.set(i, beU64(block, at + i * 8))
@@ -126,7 +126,7 @@ fun compress512(state: MutableList<u64>, block: List<u8>, at: i64, w: MutableLis
   loop (r in 0..<80) {
     val sum1 = rotr64(e, 14) ^ rotr64(e, 18) ^ rotr64(e, 41)
     val choose = (e & f) ^ ((~e) & g)
-    val t1 = h +% sum1 +% choose +% (K512.at(r) ?: panic("sha512: one constant per round")) +% schedule512(w, r)
+    val t1 = h +% sum1 +% choose +% (K512.get(r) ?: panic("sha512: one constant per round")) +% schedule512(w, r)
     val sum0 = rotr64(a, 28) ^ rotr64(a, 34) ^ rotr64(a, 39)
     val major = (a & b) ^ (a & c) ^ (b & c)
     val t2 = sum0 +% major
@@ -162,17 +162,17 @@ const IV384: List<u64> = [
 /// be extended into the 512-bit one; a different IV makes the two
 /// unrelated. `crypto.sha384(data)` is the one-shot form.
 public struct Sha384 {
-  private state:      MutableList<u64>
-  private buffer:     MutableList<u8>
-  private scratch:    MutableList<u64>
+  private state:      List<u64>
+  private buffer:     List<u8>
+  private scratch:    List<u64>
   private var total:  i64 = 0
   private var result: Digest? = null
 
   implement Hasher {
     static fun start(): Sha384 => Sha384(
-      state: IV384.toMutable(),
+      state: IV384,
       buffer: [],
-      scratch: MutableList<u64>.repeat(0, 80),
+      scratch: List<u64>.repeat(0, 80),
     )
 
     static fun algorithm(): string => "SHA-384"
@@ -189,9 +189,9 @@ public struct Sha384 {
       val done = this.result
       if (done != null) return done
       this.absorb(padding(this.buffer.len(), 128, 16, this.total))
-      val out: MutableList<u8> = []
+      val out: List<u8> = []
       loop (w in this.state) {
-        pushU64(out, w)
+        pushU64(&out, w)
       }
       val d = Digest.of(out.take(48))
       this.result = d
@@ -204,19 +204,19 @@ public struct Sha384 {
     var i = 0
     if (this.buffer.len() > 0) {
       loop (this.buffer.len() < 128 && i < n) {
-        this.buffer.push(data.at(i))
+        this.buffer.push(data.get(i))
         i = i + 1
       }
       if (this.buffer.len() < 128) return
-      compress512(this.state, this.buffer.toList(), 0, this.scratch)
+      compress512(&this.state, this.buffer, 0, &this.scratch)
       this.buffer.clear()
     }
     loop (i + 128 <= n) {
-      compress512(this.state, data, i, this.scratch)
+      compress512(&this.state, data, i, &this.scratch)
       i = i + 128
     }
     loop (i < n) {
-      this.buffer.push(data.at(i))
+      this.buffer.push(data.get(i))
       i = i + 1
     }
   }
@@ -224,4 +224,4 @@ public struct Sha384 {
 
 /// Word `i` of the message schedule. The rounds read only 0..<80, and
 /// `w` has 80 words, so this cannot fail.
-fun schedule512(w: MutableList<u64>, i: i64): u64 => w.at(i) ?: panic("sha512: the rounds read the 80-word schedule inside 0..<80")
+fun schedule512(w: *List<u64>, i: i64): u64 => w.get(i) ?: panic("sha512: the rounds read the 80-word schedule inside 0..<80")

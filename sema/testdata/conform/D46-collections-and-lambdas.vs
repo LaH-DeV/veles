@@ -2,61 +2,57 @@
 use io
 
 fun emptyMap() {
-  val _ = [:] // error: cannot infer the types of an empty map; annotate it, e.g. 'val _: Map<string, i64> = [:]'
-  io.println("${[].len()} ${[:].len()}") // error: e.g. 'val xs: List<i64> = []' // error: e.g. 'val m: Map<string, i64> = [:]'
+  val _ = [:]  // error: cannot infer the types of an empty map; annotate it, e.g. 'val _: Map<string, i64> = [:]'
+  io.println("${[].len()} ${[:].len()}")  // error: e.g. 'val xs: List<i64> = []' // error: e.g. 'val m: Map<string, i64> = [:]'
 }
 fun emptyMutable() {
-  var xs = mut [] // error: annotate it, e.g. 'var xs: MutableList<i64> = mut []'
-  var m = mut [:] // error: annotate it, e.g. 'var m: MutableMap<string, i64> = mut [:]'
-  io.println("${(mut []).len()} ${(mut [:]).len()}") // error: e.g. 'var xs: MutableList<i64> = []' // error: e.g. 'var m: MutableMap<string, i64> = [:]'
+  var xs = []  // error: annotate it, e.g. 'var xs: List<i64> = []'
+  var m = [:]  // error: annotate it, e.g. 'var m: Map<string, i64> = [:]'
   io.println("$xs $m")
 }
 fun ctorWithArgs() {
-  val _ = MutableMap<string, i64>(4) // error: 'MutableMap()' takes no arguments; use a literal to construct with contents
+  val _ = Map<string, i64>(4)  // error: 'Map()' takes no arguments; use a literal to construct with contents
 }
 fun ctorUninferred() {
-  val _ = MutableMap() // error: cannot infer the type arguments of 'MutableMap'
-}
-fun addToSet(s: Set<i64>) {
-  s.add(1) // error: cannot call 'add' on an immutable Set; use MutableSet
+  val _ = Map()  // error: cannot infer the type arguments of 'Map'
 }
 fun mapValuesToUnit(m: Map<string, i64>) {
-  m.mapValues(v => io.println("$v")) // error: 'mapValues' needs a function that returns a value
+  m.mapValues(v => io.println("$v"))  // error: 'mapValues' needs a function that returns a value
 }
 fun mapWithNumber(xs: List<i64>) {
-  val _ = xs.map(5) // error: expected a function of type
+  val _ = xs.map(5)  // error: expected a function of type
 }
 fun mapWithTwo(xs: List<i64>) {
-  val _ = xs.map((a: i64, b: i64) => a) // error: lambda takes 2 parameters but a function of 1 is expected here
+  val _ = xs.map((a: i64, b: i64) => a)  // error: lambda takes 2 parameters but a function of 1 is expected here
 }
 fun mapToUnit(xs: List<i64>) {
-  xs.map(x => io.println("$x")) // error: 'map' needs a function that returns a value
+  xs.map(x => io.println("$x"))  // error: 'map' needs a function that returns a value
 }
-fun containsFunctions(fs: List<fun(): i64>, f: fun(): i64): bool => fs.contains(f) // error: elements of type 'fun(): i64' cannot be compared
+fun containsFunctions(fs: List<fun(): i64>, f: fun(): i64): bool => fs.contains(f)  // error: elements of type 'fun(): i64' cannot be compared
 fun declaredParam(xs: List<i64>) {
-  xs.map((x: string) => x) // error: parameter 'x' is declared 'string' but 'i64' is expected here
-  val f: fun(i64): i64 = (x: string) => 1 // error: parameter 'x' is declared 'string' but 'i64' is expected here
+  xs.map((x: string) => x)                 // error: parameter 'x' is declared 'string' but 'i64' is expected here
+  val f: fun(i64): i64 = (x: string) => 1  // error: parameter 'x' is declared 'string' but 'i64' is expected here
   io.println("${f(1)}")
 }
 fun tupleParam(ps: List<(i64, i64)>) {
-  ps.map((a: string, b) => b) // error: parameter 'a' is declared 'string' but the tuple element is 'i64'
+  ps.map((a: string, b) => b)  // error: parameter 'a' is declared 'string' but the tuple element is 'i64'
 }
 fun lambdaNoValue() {
-  val f: fun(): i64 = () => { // error: lambda must return a value of type 'i64'
+  val f: fun(): i64 = () => {  // error: lambda must return a value of type 'i64'
     io.println("none")
   }
   io.println("${f()}")
 }
 
 fun mapAll<T, U>(xs: List<T>, f: fun(T): U): List<U> {
-  val out: MutableList<U> = []
+  val out: List<U> = []
   loop (x in xs) out.push(f(x))
   out.toList()
 }
 
 // the list is the one mistake: the lambda, typed from it, is not a second
 fun builtFromAMistake(): List<i64> {
-  val xs = List.generate(3, i => i) // error: no static function 'generate' on type 'List'; did you mean 'MutableList<T>.make(...)'?
+  val xs = List.generate(3, i => i)  // error: no static function 'generate' on type 'List'; did you mean 'List<T>.make(...)'?
   mapAll(xs, x => x * 3)
 }
 

@@ -279,8 +279,9 @@ struct S { }
 implement A for S { fun f(): i32 => 1 }
 implement B for S { fun f(): i32 => 2 }
 fun main() { val s = S(); s.f() }`, "ambiguous method"},
-		{"D25 push into List", prelude + `
-fun main() { val xs = [1, 2]; xs.push(3) }`, "immutable List"},
+		{"D231 push into a global val", prelude + `
+val xs = [1, 2]
+fun main() { xs.push(3) }`, "is a global 'val', a constant every task shares"},
 		{"D25 empty list needs a type", prelude + `
 fun main() { val xs = [] }`, "cannot infer the element type"},
 		{"D30 elvis needs nullable", prelude + `
@@ -332,7 +333,7 @@ implement Show for A { fun show(): string => "a" }
 fun p<T: Show>(x: T): string => x.twice()
 fun main() { io.println(p(A())) }`,
 		"struct methods on generic": prelude + `
-struct Stack<T> { items: MutableList<T> = []; fun push(x: T) { this.items.push(x) }; fun len(): i64 => this.items.len() }
+struct Stack<T> { items: List<T> = []; fun push(x: T) { this.items.push(x) }; fun len(): i64 => this.items.len() }
 fun main() { val s = Stack<i32>(); s.push(1); io.println("${s.len()}") }`,
 		"mutation through pointer on val": prelude + `
 struct C { var n: i32 }
@@ -372,8 +373,8 @@ func TestConcurrencyRules(t *testing.T) {
 fun work() { }
 fun main() { async work() }`, "lexically inside a 'scope'"},
 		{"D35 non-Sendable argument", prelude + `
-fun work(xs: MutableList<i32>) { }
-fun main() { var xs: MutableList<i32> = []; scope { async work(xs) } }`, "not Sendable"},
+fun work(xs: *List<i32>) { }
+fun main() { var xs: List<i32> = []; scope { async work(&xs) } }`, "not Sendable"},
 		{"D16 recv must be awaited", prelude + `
 fun main() { val ch = Channel<i32>(); val x = ch.recv() }`, "must be awaited"},
 		{"D35 no await inside a lock", prelude + `
@@ -390,27 +391,24 @@ fun main() { hits += 1 }`, "'val hits = Atomic(value: ...)'"},
 struct P { var n: i32 }
 var p = P(n: 1)
 fun main() { }`, "'val p = Mutex(value: ...)'"},
-		// a module `val` is reached by every task as a `var` is: a mutable
-		// collection in it changes through its methods (found 2026-10-26)
-		{"D66 module-level val of a MutableMap", prelude + `
-val cache = MutableMap<i64, i64>()
-fun main() { cache.set(1, 1) }`, "module-level 'val cache' has type 'MutableMap<i64, i64>', which is not Sendable"},
-		{"D66 module-level val of a MutableList suggests an immutable list", prelude + `
-val seen = MutableList<string>.make(0, _ => "")
-fun main() { }`, "make it immutable"},
+		// a module `val` is reached by every task: a collection in it is a
+		// constant, and a change to it is refused (D231)
+		{"D66 module-level val of a Map", prelude + `
+val cache = Map<i64, i64>()
+fun main() { cache.set(1, 1) }`, "'cache' is a global 'val', a constant every task shares"},
 		{"D66 module-level val of a StringBuilder", prelude + `
 val out = StringBuilder()
-fun main() { }`, "'val out = Mutex(value: ...)'"},
+fun main() { out.append("x") }`, "cannot call 'append' on 'out': the method changes its receiver and a global 'val' is a constant"},
 		{"D66 module-level val of a non-Sendable trait object", prelude + `
 trait Clock { fun now(): i64 }
 struct Fixed { at: i64 }
 implement Clock for Fixed { fun now(): i64 => at }
 val clock: Clock = Fixed(at: 1)
 fun main() { }`, "'trait Clock : Sendable'"},
-		{"D66 static val of a struct holding a MutableList", prelude + `
+		{"D66 static val of a struct holding a pointer", prelude + `
 struct Registry {
-  names: MutableList<string>
-  static val shared = Registry(names: MutableList<string>.make(0, _ => ""))
+  names: *List<string>
+  static val shared = Registry(names: &List<string>())
 }
 fun main() { }`, "'static val Registry.shared' has type 'Registry'"},
 		// a lock guards what it holds, not the global's slot: reassigning a
@@ -435,8 +433,8 @@ executor gl {
 }
 fun main() { }`, "it is a 'val' of its executor's state; declare it 'var' (D150)"},
 		{"D66 Lazy of a non-Sendable value", prelude + `
-val table = Lazy(init: () => MutableList<i64>.make(0, i => i))
-fun main() { }`, "'val table' has type 'Lazy<MutableList<i64>>', which is not Sendable"},
+val table = Lazy(init: () => &List<i64>())
+fun main() { }`, "'val table' has type 'Lazy<*List<i64>>', which is not Sendable"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) { expectError(t, c.src, c.want) })
@@ -472,7 +470,7 @@ fun main() throws {
 	// D66: shared module state behind a lock
 	expectClean(t, prelude+`
 val hits = Atomic(value: 0)
-val names = Mutex(value: MutableList<string>.make(0, _ => ""))
+val names = Mutex(value: List<string>.make(0, _ => ""))
 fun main() {
   val _ = hits.update(n => n + 1)
   names.withLock(xs => xs.push("a"))
@@ -493,7 +491,7 @@ val ports = ["http": 80]
 val table = Lazy(init: () => [1, 2, 3])
 val inc = (x: i64) => x + 1
 executor gl {
-  var names: MutableList<string> = []
+  var names: List<string> = []
   fun add(n: string) { names.push(n) }
 }
 fun main() {
@@ -820,13 +818,13 @@ fun main() {
   val e: i64? = n.checkedMul(2)
   val f: i64 = n.countOnes() + n.leadingZeros() + n.trailingZeros()
   val g: u8 = (3).wrapU8().pow((2).wrapU8()).saturatingAdd((1).wrapU8())
-  val m: MutableMap<string, i64> = [:]
-  val got: i64 = m.getOrPut("k", () => 1)
+  val m: Map<string, i64> = [:]
+  val got: i64 = *m.atOrPut("k", () => 1)
   val ages = ["ann": 41]
   ages.forEach((k, v) => io.println("$k $v"))
   val next: Map<string, i64> = ages.mapValues(v => v + 1)
   val adults: Map<string, i64> = ages.filter((k, v) => v >= 18)
-  val s = MutableSet<i64>()
+  val s = Set<i64>()
   val u: Set<i64> = s.union(s)
   val i: Set<i64> = s.intersect(s)
   val df: Set<i64> = s.difference(s)
@@ -834,7 +832,8 @@ fun main() {
   io.println("$a $b $c $d $e $f $g $got ${next.len()} ${adults.len()} ${u.len()} ${i.len()} ${df.len()} $sub")
 }`)
 	expectError(t, prelude+`
-fun main() { val m = ["a": 1]; m.getOrPut("b", () => 2) }`, "changes the map")
+val m = ["a": 1]
+fun main() { m.atOrPut("b", () => 2) }`, "cannot call 'atOrPut' on 'm': the method changes its receiver and a global 'val' is a constant")
 	expectError(t, prelude+`
 fun main() { val s = Set<i64>(); val t = Set<string>(); s.union(t) }`, "needs a set of 'i64'")
 }
@@ -859,13 +858,13 @@ fun main() {
   io.println("${p.sum()} ${q.sum()} ${b.get().x} ${b.label()}")
   // the prelude's extend blocks
   val words: List<string> = " a b ".trim().split(" ")
-  val xs = mut [3, 1, 2]
+  val xs = [3, 1, 2]
   xs.insert(0, 9)
-  io.println("${words.len()} ${xs.take(2)} ${xs.sum()} ${xs.at(-1)} ${(1..4).len()} ${"abc".toUpper()}")
-  val bad: MutableList<u8> = [255]
+  io.println("${words.len()} ${xs.take(2)} ${xs.sum()} ${xs.get(-1)} ${(1..4).len()} ${"abc".toUpper()}")
+  val bad: List<u8> = [255]
   val text: string? = bad.decodeUtf8()
   io.println("$text ${"hi".byteAt(0)} ${"hi".bytes()}")
-  val v: i64 = xs.at(-1) ?: panic("empty")
+  val v: i64 = xs.get(-1) ?: panic("empty")
   io.println("$v")
 }`)
 	cases := []struct{ name, src, want string }{
@@ -1020,7 +1019,7 @@ fun main() {
   val a = Version(major: 1, minor: 10)
   val b = Version(major: 1, minor: 9)
   io.println("$a ${a > b} ${a <= b} ${a == b} ${[a, b].sorted()} ${[a, b].min()} ${[a, b].sortedBy(v => v)}")
-  var m = mut [Name(text: "Ann"): 1]
+  var m = [Name(text: "Ann"): 1]
   m.set(Name(text: "ANN"), 2)
   io.println("${m.len()} ${Name(text: "a") == Name(text: "A")} ${[Name(text: "x")].contains(Name(text: "X"))}")
   val shapes: List<Shape> = [Square(side: 2.0), Circle(r: 1.0)]
@@ -1060,39 +1059,24 @@ fun main() { val h = H(f: x => x); io.println("${h == h}") }`, ""},
 // untyped literals, and a list literal where a Set is expected builds one.
 func TestLiteralMutabilityInference(t *testing.T) {
 	expectClean(t, prelude+`
-fun fill(xs: MutableList<i64>) { xs.push(4) }
-struct Bag { items: MutableList<string> = [], tags: MutableMap<string, i64> = [:] }
-fun make(): MutableList<i64> => [1, 2]
+fun fill(xs: List<i64>) { xs.push(4) }
+struct Bag { items: List<string> = [], tags: Map<string, i64> = [:] }
+fun make(): List<i64> => [1, 2]
 fun main() {
-  val a: MutableList<i64> = [1, 2, 3]
+  val a: List<i64> = [1, 2, 3]
   a.push(9)
-  val m: MutableMap<string, i64> = [:]
+  val m: Map<string, i64> = [:]
   m.set("y", 2)
   val s: Set<i64> = [1, 2, 2]
-  val ms: MutableSet<string> = ["a"]
+  val ms: Set<string> = ["a"]
   ms.add("b")
   fill([1, 2])
   val b = Bag()
   b.items.push("t")
-  val untyped = mut [1]
+  val untyped = [1]
   untyped.push(2)
   io.println("$a $m ${s.len()} ${ms.len()} ${b.items} ${make()} $untyped")
 }`)
-	for _, src := range []string{
-		`fun main() { var r: MutableList<i64> = mut []; r.push(1); io.println("$r") }`,
-		`fun main() { var r: MutableMap<string, i64> = mut [:]; r.set("a", 1); io.println("$r") }`,
-	} {
-		diags := checkSource(t, prelude+src)
-		found := false
-		for _, d := range diags.Items {
-			if d.Severity == source.Warning && strings.Contains(d.Message, "redundant 'mut'") {
-				found = true
-			}
-		}
-		if !found || diags.HasErrors() {
-			t.Errorf("expected a redundant-mut warning and no errors for %q, got:\n%s", src, diags.Render())
-		}
-	}
 	expectError(t, prelude+`fun main() { val xs = []; io.println("$xs") }`, "val xs: List<i64> = []")
 	expectError(t, prelude+`struct P { f: fun(): i64 }
 fun main() { val s: Set<P> = [P(f: () => 1)]; io.println("${s.len()}") }`, "cannot be a map key or set element")
@@ -1120,7 +1104,7 @@ extend Point {
   static fun unit(): Point => Point(x: 1, y: 1)
 }
 struct Stack<T> {
-  items: MutableList<T> = []
+  items: List<T> = []
   static fun of(x: T): Stack<T> {
     val s = Stack<T>()
     s.items.push(x)
@@ -1302,8 +1286,8 @@ fun main() throws IoError | io.TooLong {
   val x: f64 = random.float()
   val b: bool = random.boolean()
   val p: string? = random.pick(["a", "b"])
-  val xs = mut [1, 2, 3]
-  random.shuffle(xs)
+  val xs = [1, 2, 3]
+  random.shuffle(&xs)
   var rng = random.Rng.seeded(7)
   io.println("$n $x $b $p $xs ${rng.range(0, 10)} ${rng.nextU64()} ${random.nextU64()}")
   val bytes: List<u8> = try fs.readBytes("a.bin")
@@ -1326,16 +1310,15 @@ fun main() throws IoError | io.TooLong {
 			expectError(t, prelude+c.src, c.want)
 		})
 	}
-	// D63: a mutable collection becomes its immutable form by a copy, or by a
-	// move at the last use of a fresh local
+	// D231: binding or passing a collection copies it
 	expectClean(t, prelude+`
 fun total(xs: List<i64>): i64 => xs.fold(0, (a, b) => a + b)
 fun first<T>(xs: List<T>): T? => xs.first()
 fun main() {
-  val xs = mut [1, 2]
-  val m: MutableMap<string, i64> = [:]
+  val xs = [1, 2]
+  val m: Map<string, i64> = [:]
   val ro: Map<string, i64> = m
-  io.println("${total(xs.toList())} ${first(xs)} ${ro.len()}")
+  io.println("${total(xs)} ${first(xs)} ${ro.len()}")
 }`)
 }
 
@@ -1344,11 +1327,11 @@ fun main() {
 // type as documented; reads are copies and `ref` is the pointer.
 func TestIndexingIsMethodsOnly(t *testing.T) {
 	cases := []struct{ src, msg, fix string }{
-		{`fun main() { val xs = [1]; io.println("${xs[0]}") }`, "'xs[0]' is not indexing", `(xs.at(0) ?: panic("TODO: say why this cannot fail"))`},
+		{`fun main() { val xs = [1]; io.println("${xs[0]}") }`, "'xs[0]' is not indexing", `(xs.get(0) ?: panic("TODO: say why this cannot fail"))`},
 		{`fun main() { val m = ["a": 1]; io.println("${m["a"]}") }`, "'m[\"a\"]' is not indexing", `m.get("a")`},
-		{`fun main() { var xs: MutableList<i64> = [1]; xs[0] = 2; io.println("$xs") }`, "is not index assignment", "xs.set(0, 2)"},
-		{`fun main() { var xs: MutableList<i64> = [1]; xs[0] += 2; io.println("$xs") }`, "is not index assignment", `xs.set(0, (xs.at(0) ?: panic("TODO: say why this cannot fail")) + 2)`},
-		{`fun main() { var m: MutableMap<string, i64> = [:]; m["k"] = 2; io.println("$m") }`, "is not index assignment", `m.set("k", 2)`},
+		{`fun main() { var xs: List<i64> = [1]; xs[0] = 2; io.println("$xs") }`, "is not index assignment", "xs.set(0, 2)"},
+		{`fun main() { var xs: List<i64> = [1]; xs[0] += 2; io.println("$xs") }`, "is not index assignment", `xs.set(0, (xs.get(0) ?: panic("TODO: say why this cannot fail")) + 2)`},
+		{`fun main() { var m: Map<string, i64> = [:]; m["k"] = 2; io.println("$m") }`, "is not index assignment", `m.set("k", 2)`},
 	}
 	for _, c := range cases {
 		diags := checkSource(t, prelude+c.src)
@@ -1370,29 +1353,29 @@ struct C { var n: i64 = 0
   fun bump() { this.n += 1 } }
 fun main() {
   val xs = [1, 2]
-  val a: i64? = xs.at(5)
-  val b: i64 = xs.at(-1) ?: panic("xs has two elements")
-  val c: i64 = xs.atOrDefault(9, 0)
-  var ys: MutableList<i64> = [1]
+  val a: i64? = xs.get(5)
+  val b: i64 = xs.get(-1) ?: panic("xs has two elements")
+  val c: i64 = xs.getOrDefault(9, 0)
+  var ys: List<i64> = [1]
   ys.set(0, 3)
-  val cs: MutableList<C> = [C()]
-  cs.ref(0)?.bump()
-  cs.ref(0)?.n = 4
-  val p = cs.ref(0) ?: panic("one counter")
+  val cs: List<C> = [C()]
+  cs.at(0)?.bump()
+  cs.at(0)?.n = 4
+  val p = cs.at(0) ?: panic("one counter")
   p.n += 1
-  var copy = cs.at(0) ?: panic("one counter")
+  var copy = cs.get(0) ?: panic("one counter")
   copy.n = 9
   val m = ["k": 1]
   val d: i64? = m.get("k")
   val e: i64 = m.get("k") ?: panic("k is in the map")
   val f: i64 = m.getOrDefault("z", 0)
-  var mm: MutableMap<string, i64> = [:]
+  var mm: Map<string, i64> = [:]
   mm.set("k", 1)
-  io.println("$a $b $c $ys ${cs.at(0)?.n} $d $e $f $mm")
+  io.println("$a $b $c $ys ${cs.get(0)?.n} $d $e $f $mm")
 }`)
-	expectError(t, prelude+`fun main() { val xs = [1]; xs.set(0, 2) }`, "immutable List")
-	expectError(t, prelude+`fun main() { val m = ["a": 1]; m.set("a", 2) }`, "immutable Map")
-	expectError(t, prelude+`fun main() { val xs = [1]; val n: i64 = xs.at(0); io.println("$n") }`, "supply a fallback with '?:'")
+	expectError(t, prelude+"val xs = [1]\nfun main() { xs.set(0, 2) }", "a global 'val', a constant every task shares")
+	expectError(t, prelude+"val m = [\"a\": 1]\nfun main() { m.set(\"a\", 2) }", "a global 'val', a constant every task shares")
+	expectError(t, prelude+`fun main() { val xs = [1]; val n: i64 = xs.get(0); io.println("$n") }`, "supply a fallback with '?:'")
 	expectError(t, prelude+`fun main() { val s = "abc"; io.println("${s[0]}") }`, "strings are not indexable")
 }
 
@@ -1439,10 +1422,10 @@ fun main() { io.println("${f(A())} ${g(B())} ${h(C())}") }`
 // needs no `mut` and the element type still infers the type parameter.
 func TestLiteralMutabilityFromGenericParam(t *testing.T) {
 	expectClean(t, prelude+`
-struct Stack<T> { items: MutableList<T>
+struct Stack<T> { items: List<T>
   fun push(x: T) { this.items.push(x) } }
-fun fill<T>(xs: MutableList<T>, x: T): i64 { xs.push(x); xs.len() }
-fun keyed<K, V>(m: MutableMap<K, V>, k: K, v: V): i64 { m.set(k, v); m.len() }
+fun fill<T>(xs: List<T>, x: T): i64 { xs.push(x); xs.len() }
+fun keyed<K, V>(m: Map<K, V>, k: K, v: V): i64 { m.set(k, v); m.len() }
 fun main() {
   var s = Stack(items: [1, 2])
   s.push(3)
@@ -1450,7 +1433,7 @@ fun main() {
 }`)
 }
 
-// `xs.ref(i)?.m()` reaches the element in place through the nullable
+// `xs.at(i)?.m()` reaches the element in place through the nullable
 // pointer, so a `fun` sticks; `at`/`first`/`last` return copies, on
 // which a value-returning method is fine and a unit `fun` an error.
 func TestSafeCallThroughRef(t *testing.T) {
@@ -1460,29 +1443,29 @@ struct C { var n: i64 = 0
   fun show(): string => "${this.n}" }
 fun make(f: fun(i64): i64): List<C> => [C(n: f(1))]
 fun main() {
-  val cs: MutableList<C> = [C()]
-  cs.ref(0)?.bump()
-  cs.ref(-1)?.bump()
-  cs.ref(9)?.bump()
-  val s: string? = cs.at(0)?.show()
+  val cs: List<C> = [C()]
+  cs.at(0)?.bump()
+  cs.at(-1)?.bump()
+  cs.at(9)?.bump()
+  val s: string? = cs.get(0)?.show()
   val m = ["k": C()]
   val t: string? = m.get("k")?.show()
-  val u: string? = make(x => x + 1).at(0)?.show()
-  io.println("${cs.at(0)?.n} $s $t $u")
+  val u: string? = make(x => x + 1).get(0)?.show()
+  io.println("${cs.get(0)?.n} $s $t $u")
 }`)
-	expectError(t, prelude+`fun main() { val xs = [1]; xs.at(0).abs() }`, "may be null; use '?.'")
+	expectError(t, prelude+`fun main() { val xs = [1]; xs.get(0).abs() }`, "may be null; use '?.'")
 	for _, c := range []struct{ src, want string }{
-		{`fun main() { val cs: MutableList<C> = [C()]; cs.at(0)?.bump() }`, "reach the element itself with 'cs.ref(0)'"},
-		{`fun main() { val cs: MutableList<C> = [C()]; cs.first()?.bump() }`, "changes a temporary copy"},
+		{`fun main() { val cs: List<C> = [C()]; cs.get(0)?.bump() }`, "reach the element itself with 'cs.at(0)'"},
+		{`fun main() { val cs: List<C> = [C()]; cs.first()?.bump() }`, "changes a temporary copy"},
 		{"fun make(): C => C()\nfun main() { make().bump() }", "changes a temporary copy of 'C' that is then discarded"},
-		{`fun main() { val cs = [C()]; cs.ref(0)?.bump() }`, "'ref' needs a MutableList"},
-		{`fun main() { val cs: MutableList<C> = [C()]; val p = &cs.at(0); p.n = 1 }`, "address of a copy of the element"},
+		{"val cs = [C()]\nfun main() { cs.at(0)?.bump() }", "a global 'val', a constant every task shares"},
+		{`fun main() { val cs: List<C> = [C()]; val p = &cs.get(0); p.n = 1 }`, "address of a copy of the element"},
 	} {
 		expectError(t, prelude+"struct C { var n: i64 = 0\n  fun bump() { this.n += 1 } }\n"+c.src, c.want)
 	}
 }
 
-// D5/D25 (v0.27): `?.` reaches places. `m.ref(k)` and `m.ref(k)?.`
+// D5/D25 (v0.27): `?.` reaches places. `m.at(k)` and `m.at(k)?.`
 // point at the map entry itself (reads are copies); a nullable variable or
 // field is written through after its null test (`if (p != null) p.n = 5`);
 // and assignment through `?.` (`x?.f = v`, `x?.f op= v`) writes only when
@@ -1494,18 +1477,18 @@ struct C { var n: i64 = 0
   fun bump() { this.n += 1 } }
 struct Box { var c: C? = null }
 fun main() {
-  val m: MutableMap<string, C> = ["a": C()]
-  m.ref("a")?.bump()
-  m.ref("a")?.n += 1
-  m.ref("zz")?.n = 9
-  m.ref("a")?.bump()
-  m.ref("a")?.n = 3
-  val p = m.ref("a") ?: panic("a is in the map")
+  val m: Map<string, C> = ["a": C()]
+  m.at("a")?.bump()
+  m.at("a")?.n += 1
+  m.at("zz")?.n = 9
+  m.at("a")?.bump()
+  m.at("a")?.n = 3
+  val p = m.at("a") ?: panic("a is in the map")
   p.n += 1
-  val xs: MutableList<C> = [C()]
-  xs.ref(0)?.n = 7
-  xs.ref(0)?.n *= 2
-  xs.ref(-1)?.bump()
+  val xs: List<C> = [C()]
+  xs.at(0)?.n = 7
+  xs.at(0)?.n *= 2
+  xs.at(-1)?.bump()
   loop (&c in xs) c.bump()
   loop ((_, &c) in m) c.n += 1
   var q: C? = C()
@@ -1517,21 +1500,19 @@ fun main() {
   var b = Box(c: C())
   b.c?.n = 8
   b.c?.bump()
-  var r: (*C)? = xs.ref(0)
+  var r: (*C)? = xs.at(0)
   r?.n = 1
-  val q2 = xs.ref(0)
+  val q2 = xs.at(0)
   q2?.n = 2
   io.println("$m $xs $q ${b.c}")
 }`)
 	for _, c := range []struct{ src, want string }{
-		{`fun main() { val f = ["b": C()]; f.ref("b")?.bump() }`, "'ref' needs a MutableMap"},
-		{`fun main() { val f: MutableMap<string, C> = ["b": C()]; f.get("b")?.n = 1 }`, "reach the element itself with 'f.ref(\"b\")'"},
-		{`fun main() { val xs = [C()]; loop (&c in xs) c.bump() }`, "needs a MutableList"},
-		{`fun main() { val m = ["a": C()]; loop ((k, &v) in m) v.bump() }`, "needs a MutableMap"},
-		{`fun main() { val m: MutableMap<string, C> = ["a": C()]; loop ((&k, v) in m) v.bump() }`, "'&' goes on the value"},
-		{`fun main() { val xs: MutableList<C> = [C()]; xs.at(0)?.n = 1 }`, "reach the element itself with 'xs.ref(0)'"},
-		{`fun main() { val ns: MutableList<i64> = [1]; loop (&n in ns) n += 1 }`, "write '*n' to change the value it points to"},
-		{`fun main() { val ns: MutableList<i64> = [1]; ns.at(0) += 1 }`, `assign through '*(ns.ref(0) ?: panic(`},
+		{"val f = [\"b\": C()]\nfun main() { f.at(\"b\")?.bump() }", "a global 'val', a constant every task shares"},
+		{`fun main() { val f: Map<string, C> = ["b": C()]; f.get("b")?.n = 1 }`, "reach the element itself with 'f.at(\"b\")'"},
+		{`fun main() { val m: Map<string, C> = ["a": C()]; loop ((&k, v) in m) v.bump() }`, "'&' goes on the value"},
+		{`fun main() { val xs: List<C> = [C()]; xs.get(0)?.n = 1 }`, "reach the element itself with 'xs.at(0)'"},
+		{`fun main() { val ns: List<i64> = [1]; loop (&n in ns) n += 1 }`, "write '*n' to change the value it points to"},
+		{`fun main() { val ns: List<i64> = [1]; ns.get(0) += 1 }`, `assign through '*(ns.at(0) ?: panic(`},
 		{`fun make(): C? => C()
 fun main() { make()?.n = 1 }`, "into a temporary value of type 'C' has no effect"},
 		{`fun main() { val p: C? = C(); p?.n = 1 }`, "it is a 'val'"},
@@ -1665,8 +1646,8 @@ fun main() {
   var b = 2
   (a, b) = (b, a)
   (a, b) = pair()
-  var xs = mut [1, 2, 3]
-  if (xs.len() >= 3) (*xs.ref(0), *xs.ref(2)) = (xs.at(2), xs.at(0))
+  var xs = [1, 2, 3]
+  if (xs.len() >= 3) (*xs.at(0), *xs.at(2)) = (xs.get(2), xs.get(0))
   var p = P(x: 1, y: 2)
   (p.x, p.y) = (p.y, p.x)
   var s: string? = null
@@ -1682,34 +1663,34 @@ fun main() {
 }
 
 // Statics the prelude adds to a built-in generic type (`extend<T>
-// MutableList<T> { static fun repeat ... }`) are called with the type
+// List<T> { static fun repeat ... }`) are called with the type
 // arguments written or, like a generic struct's statics, inferred from the
 // call (D137).
 func TestBuiltinStatics(t *testing.T) {
 	expectClean(t, prelude+`
 fun main() {
-  val flags = MutableList<bool>.repeat(false, 3)
+  val flags = List<bool>.repeat(false, 3)
   flags.fill(true)
-  val slots = MutableList<i64?>.repeat(null, 2)
-  val rows = MutableList<MutableList<i64>>.make(2, _ => [])
-  (rows.at(0) ?: panic("two rows")).push(1)
+  val slots = List<i64?>.repeat(null, 2)
+  val rows = List<List<i64>>.make(2, _ => [])
+  rows.at(0)?.push(1)
   flags.swap(0, 2)
   io.println("$flags $slots $rows")
 }`)
-	expectClean(t, prelude+`fun main() { val xs = MutableList.repeat(0, 3); io.println("$xs") }`)
-	expectError(t, prelude+`fun main() { val xs = MutableList<i64>.nope(3); io.println("$xs") }`, "no static function 'nope'")
+	expectClean(t, prelude+`fun main() { val xs = List.repeat(0, 3); io.println("$xs") }`)
+	expectError(t, prelude+`fun main() { val xs = List<i64>.nope(3); io.println("$xs") }`, "no static function 'nope'")
 	// a builder another language has leads to the one Veles has, not to a
 	// type argument that would not help (`List<T>.generate` does not exist)
-	expectError(t, prelude+`fun main() { val xs = List.generate(3, i => i); io.println("$xs") }`, "no static function 'generate' on type 'List'; did you mean 'MutableList<T>.make(...)'?")
-	expectError(t, prelude+`fun main() { val xs = List<i64>.generate(3, i => i); io.println("$xs") }`, "no static function 'generate' on type 'List<i64>'; did you mean 'MutableList<T>.make(...)'?")
-	expectError(t, prelude+`fun main() { val xs = MutableList<i64>.mak(3, i => i); io.println("$xs") }`, "did you mean 'MutableList<T>.make(...)'?")
+	expectError(t, prelude+`fun main() { val xs = List.generate(3, i => i); io.println("$xs") }`, "no static function 'generate' on type 'List'; did you mean 'List<T>.make(...)'?")
+	expectError(t, prelude+`fun main() { val xs = List<i64>.generate(3, i => i); io.println("$xs") }`, "no static function 'generate' on type 'List<i64>'; did you mean 'List<T>.make(...)'?")
+	expectError(t, prelude+`fun main() { val xs = List<i64>.mak(3, i => i); io.println("$xs") }`, "did you mean 'List<T>.make(...)'?")
 	// `repeat` duplicates its value, so the element type must be Sendable (D35):
-	// a mutable collection, a pointer or a closure would be shared by every slot
-	expectError(t, prelude+`fun main() { val xs = MutableList<MutableList<i64>>.repeat(mut [1], 2); io.println("$xs") }`, "requires 'MutableList<i64>' to implement 'Sendable'")
+	// a pointer or a closure would be shared by every slot
+	expectError(t, prelude+`fun main() { val n: List<i64> = [1]; val xs = List<*List<i64>>.repeat(&n, 2); io.println("${xs.len()}") }`, "requires '*List<i64>' to implement 'Sendable'")
 	expectError(t, prelude+`struct N { v: i64 }
-fun main() { val xs = MutableList<*N>.repeat(&N(v: 1), 2); io.println("$xs") }`, "to implement 'Sendable'")
+fun main() { val xs = List<*N>.repeat(&N(v: 1), 2); io.println("$xs") }`, "to implement 'Sendable'")
 	expectClean(t, prelude+`struct P { x: i64; y: i64 }
-fun main() { val xs = MutableList<P>.repeat(P(x: 1, y: 2), 2); val ys = MutableList<List<i64>>.repeat([1], 2); io.println("$xs $ys") }`)
+fun main() { val xs = List<P>.repeat(P(x: 1, y: 2), 2); val ys = List<List<i64>>.repeat([1], 2); io.println("$xs $ys") }`)
 	expectError(t, prelude+`struct N { v: i64 }
 implement Sendable for N { }
 fun main() { io.println("x") }`, "cannot be implemented by hand")
@@ -1740,7 +1721,7 @@ fun main() {
   val typed = Deque<string>()
   typed.addLast("x")
   loop (x in q) io.println("$x")
-  io.println("$q ${q.first()} ${q.last()} ${q.at(-1)} ${q.len()} ${drain(q)} ${q.isEmpty()} $typed")
+  io.println("$q ${q.first()} ${q.last()} ${q.get(-1)} ${q.len()} ${drain(q)} ${q.isEmpty()} $typed")
   val jobs = PriorityQueue<Job>.natural()
   jobs.push(Job(cost: 3))
   val words = PriorityQueue<string>(compare: (a, b) => b.compareTo(a))
@@ -1782,10 +1763,10 @@ val calls = Atomic(value: 0)
 fun idx(): i64 { val _ = calls.update(n => n + 1); 0 }
 fun key(): string { val _ = calls.update(n => n + 1); "a" }
 fun main() {
-  var xs = mut [1, 2]
-  *(xs.ref(idx()) ?: panic("idx() is 0")) += 1
-  var m: MutableMap<string, i64> = ["a": 1]
-  *(m.ref(key()) ?: panic("key() is \"a\"")) *= 2
+  var xs = [1, 2]
+  *(xs.at(idx()) ?: panic("idx() is 0")) += 1
+  var m: Map<string, i64> = ["a": 1]
+  *(m.at(key()) ?: panic("key() is \"a\"")) *= 2
   io.println("${calls.load()} $xs $m")
 }`)
 	stmts := prog.Main.Body.Stmts
@@ -1869,19 +1850,14 @@ func TestCollectionEquality(t *testing.T) {
 	expectClean(t, prelude+`
 struct P { tags: List<string> }
 fun main() {
-  val xs: MutableList<i64> = [1]
+  val xs: List<i64> = [1]
   val ys = [1]
-  val m: MutableMap<string, List<i64>> = [:]
-  var keyed: MutableMap<List<i64>, string> = [:]
+  val m: Map<string, List<i64>> = [:]
+  var keyed: Map<List<i64>, string> = [:]
   keyed.set([1], "one")
   val s: Set<Set<i64>> = [[1]]
   io.println("${xs == ys} ${ys == xs} ${m == ["a": [1]]} ${P(tags: []) == P(tags: ["a"])} ${keyed.get([1])} ${s.contains([1])}")
 }`)
-	expectError(t, prelude+`
-fun main() {
-  var m: MutableMap<MutableList<i64>, i64> = [:]
-  io.println("${m.len()}")
-}`, "MutableList can change after it is stored")
 	expectError(t, prelude+`
 fun main() {
   val a = [() => 1]
@@ -1889,7 +1865,7 @@ fun main() {
 }`, "cannot be compared")
 }
 
-// `?.` on a value that is nullable twice (`xs.at(i)` on a `List<T?>`)
+// `?.` on a value that is nullable twice (`xs.get(i)` on a `List<T?>`)
 // flattens the levels: null at either level is null (D30).
 func TestSafeAccessOnNestedNullable(t *testing.T) {
 	expectClean(t, prelude+`
@@ -1898,7 +1874,7 @@ fun main() {
   val ws: List<W?> = [null, W(inner: 3)]
   val m: Map<string, W?> = ["a": null]
   val deep: ((i64?)?)? = 4
-  io.println("${ws.at(1)?.inner} ${ws.at(0)?.show()} ${m.get("a")?.inner} ${deep?.abs()}")
+  io.println("${ws.get(1)?.inner} ${ws.get(0)?.show()} ${m.get("a")?.inner} ${deep?.abs()}")
 }`)
 }
 
@@ -1910,22 +1886,22 @@ func TestStaleReferenceLint(t *testing.T) {
 struct C { var n: i64 = 0
   fun bump() { this.n += 1 } }
 fun main() {
-  val xs: MutableList<C> = [C()]
-  val p = xs.ref(0) ?: panic("one element")
+  val xs: List<C> = [C()]
+  val p = xs.at(0) ?: panic("one element")
   xs.push(C())
   p.n = 1
-  val q = xs.ref(0) ?: panic("one element")
+  val q = xs.at(0) ?: panic("one element")
   q.n = 2
   xs.push(C())
-  val s = xs.ref(0) ?: panic("one element")
+  val s = xs.at(0) ?: panic("one element")
   xs.fill(C())
   s.n = 4
   loop (&c in xs) { if (c.n > 100) xs.push(C()) }
   loop (&c in xs) c.bump()
-  val m: MutableMap<string, C> = ["a": C()]
+  val m: Map<string, C> = ["a": C()]
   loop ((k, &c) in m) { if (k == "a") m.remove("b"); c.bump() }
-  val ys: MutableList<C> = [C()]
-  val u = xs.ref(0) ?: panic("one element")
+  val ys: List<C> = [C()]
+  val u = xs.at(0) ?: panic("one element")
   ys.push(C())
   u.n = 9
   io.println("${xs.len()} ${ys.len()}")
@@ -1950,11 +1926,11 @@ fun main() {
 func TestUserTypeShadowsBuiltinGeneric(t *testing.T) {
 	expectClean(t, prelude+`
 struct Task { text: string }
-struct List { n: i64 }
-fun first(xs: MutableList<Task>): Task? => xs.first()
+struct Set { n: i64 }
+fun first(xs: List<Task>): Task? => xs.first()
 fun main() {
-  val xs: MutableList<Task> = [Task(text: "a")]
-  val l = List(n: 1)
+  val xs: List<Task> = [Task(text: "a")]
+  val l = Set(n: 1)
   io.println("${first(xs)?.text} ${l.n} ${xs.len()}")
 }`)
 	expectError(t, prelude+`
@@ -2044,7 +2020,7 @@ fun run(f: sendable fun(i64): i64, x: i64): i64 => f(x)
 fun main() { var m = 1; io.println("${run(n => n * m, 1)}") }`, "captures 'm', a 'var'")
 	expectError(t, prelude+`
 fun run(f: sendable fun(i64): i64, x: i64): i64 => f(x)
-fun main() { val xs: MutableList<i64> = []; io.println("${run(n => { xs.push(n); n }, 1)}") }`, "captures 'xs', of type 'MutableList<i64>'")
+fun main() { val xs: List<i64> = []; io.println("${run(n => { xs.push(n); n }, 1)}") }`, "it captures 'xs', a collection the lambda changes")
 	expectError(t, prelude+`
 fun run(f: sendable fun(i64): i64, x: i64): i64 => f(x)
 fun main() { val h: fun(i64): i64 = n => n; io.println("${run(h, 1)}") }`, "expected 'sendable fun(i64): i64', found 'fun(i64): i64'")
@@ -2151,7 +2127,7 @@ fun main() {
   val oks: List<i64> = rs.oks()
   val errs: List<Odd> = rs.errors()
   val (small, big) = [1, 5].partition(n => n < 3)
-  io.println("$oks $errs ${rs.at(0)?.getOrNull()} ${rs.at(1)?.getOrDefault(0)} $small $big ${["1", "x"].mapNotNull(s => s.toInt())}")
+  io.println("$oks $errs ${rs.get(0)?.getOrNull()} ${rs.get(1)?.getOrDefault(0)} $small $big ${["1", "x"].mapNotNull(s => s.toInt())}")
 }`)
 }
 
@@ -2495,8 +2471,8 @@ func TestPrivateMembers(t *testing.T) {
 struct Note { id: i64; text: string }
 struct Notes {
   private var next: i64 = 1
-  private items:    MutableList<Note> = []
-  static fun seeded(): Notes => Notes(next: 100)   // a 'static val' would share its MutableList (D66)
+  private items:    List<Note> = []
+  static fun seeded(): Notes => Notes(next: 100)   // a 'static val' would share its List (D66)
   fun add(text: string): Note {
     val n = Note(id: this.next, text)
     this.items.push(n)
@@ -2504,7 +2480,7 @@ struct Notes {
     n
   }
   private fun bump() { this.next += 1 }
-  fun all(): List<Note> => this.items.toList()
+  fun all(): List<Note> => this.items
 }
 extend Notes {
   fun count(): i64 => this.items.len()
@@ -2528,7 +2504,7 @@ struct Secret { private key: string }
 fun main() { val s = Secret(); io.println("$s") }`, "missing field 'key'")
 	expectClean(t, prelude+`
 struct Parser { private toks: List<string>; private var pos: i64 = 0
-  fun next(): string? { val t = this.toks.at(this.pos); this.pos += 1; t } }
+  fun next(): string? { val t = this.toks.get(this.pos); this.pos += 1; t } }
 fun main() { val p = Parser(toks: ["a"]); io.println("${p.next()}") }`)
 	expectError(t, prelude+`
 struct Parser { private toks: List<string>; private var pos: i64 = 0 }
@@ -2586,7 +2562,7 @@ fun main() { var p = P(x: 1); p.x = 2 }`, "the field is immutable"},
 		{"bare field through a pointer", `struct P { x: i64 }
 fun main() { var p = P(x: 1); val q = &p; q.x = 2 }`, "the field is immutable"},
 		{"bare field through a loop reference", `struct P { x: i64 }
-fun main() { val ps: MutableList<P> = [P(x: 1)]; loop (&p in ps) p.x = 2 }`, "the field is immutable"},
+fun main() { val ps: List<P> = [P(x: 1)]; loop (&p in ps) p.x = 2 }`, "the field is immutable"},
 		{"only the last field decides", `struct In { x: i64 }
 struct Out { var inner: In }
 fun main() { var o = Out(inner: In(x: 1)); o.inner.x = 2 }`, "'In.x': the field is immutable"},
@@ -2603,7 +2579,7 @@ fun main() { g.bump() }`, "changes its receiver and a global 'val' is a constant
 fun make(): Counter => Counter(label: "m")
 fun main() { make().bump() }`, "'bump' changes a temporary copy of 'Counter' that is then discarded"},
 		{"an element read is a copy", counter + `
-fun main() { val cs: MutableList<Counter> = [Counter(label: "e")]; cs.at(0)?.bump() }`, "reach the element itself with 'cs.ref(0)'"},
+fun main() { val cs: List<Counter> = [Counter(label: "e")]; cs.get(0)?.bump() }`, "reach the element itself with 'cs.at(0)'"},
 		{"mut fun is gone", `struct P { var x: i64; mut fun move() { this.x += 1 } }
 fun main() { }`, "'mut fun' no longer exists"},
 		{"tuple elements are not assignable", `fun main() { var t = (1, 2); t.0 = 3 }`, "cannot assign to a tuple element"},
@@ -3125,7 +3101,7 @@ func TestStaticCallOnQualifiedGeneric(t *testing.T) {
 	const uses = "use io, crypto\n"
 	expectClean(t, uses+`
 fun main() {
-  val xs = MutableList<i64>.repeat(0, 3)
+  val xs = List<i64>.repeat(0, 3)
   io.println("${xs.len()} ${crypto.Hmac<crypto.Sha256>.digestSize()} ${crypto.Hmac<crypto.Sha256>.algorithm()}")
 }`)
 	expectClean(t, uses+`
@@ -3386,12 +3362,12 @@ fun main() {
 func TestParamCopyLint(t *testing.T) {
 	diags := checkSource(t, prelude+`
 struct Counter { var n: i64 = 0; fun bump() { this.n += 1 } }
-struct Box { var c: Counter = Counter(); items: MutableList<i64> = [] }
+struct Box { var c: Counter = Counter(); items: List<i64> = [] }
 fun lostCall(b: Box) { b.c.bump() }
 fun lostAssign(c: Counter) { c.n = 5 }
 fun visible(b: Box) { b.items.push(1) }
 fun returned(c: Counter): Counter { c.n += 1; return c }
-fun stored(c: Counter, into: MutableList<Counter>) { c.bump(); into.push(c) }
+fun stored(c: Counter, into: List<Counter>) { c.bump(); into.push(c) }
 fun reads(c: Counter): i64 => c.n * 2
 fun pointer(b: *Box) { b.c.bump() }
 fun main() {
@@ -3399,7 +3375,7 @@ fun main() {
   lostCall(b)
   lostAssign(Counter())
   visible(b)
-  val xs: MutableList<Counter> = []
+  val xs: List<Counter> = []
   stored(returned(Counter()), xs)
   pointer(&b)
   io.println("${reads(Counter())} ${b.items.len()} ${xs.len()}")
@@ -3410,8 +3386,11 @@ fun main() {
 			got = append(got, d.Message[:strings.Index(d.Message, ":")])
 		}
 	}
-	if diags.HasErrors() || strings.Join(got, "|") != "'b' is a copy of the caller's 'Box'|'c' is a copy of the caller's 'Counter'" {
-		t.Errorf("expected warnings for lostCall and lostAssign only, got %q:\n%s", got, diags.Render())
+	// since D231 a collection inside a copied struct, or a list parameter,
+	// is a copy too: visible and stored lose their changes as well
+	want := "'b' is a copy of the caller's 'Box'|'c' is a copy of the caller's 'Counter'|'b' is a copy of the caller's 'Box'|'into' is a copy of the caller's 'List<Counter>' (D231)"
+	if diags.HasErrors() || strings.Join(got, "|") != want {
+		t.Errorf("expected warnings for lostCall, lostAssign, visible and stored, got %q:\n%s", got, diags.Render())
 	}
 }
 
@@ -3533,19 +3512,19 @@ func TestBoundsFacts(t *testing.T) {
 	expectClean(t, prelude+`
 fun sum(xs: List<i64>): i64 {
   var total: i64 = 0
-  loop (i in 0..<xs.len()) { total += xs.at(i) }
-  loop (i in xs.indices()) { total += xs.at(i) }
+  loop (i in 0..<xs.len()) { total += xs.get(i) }
+  loop (i in xs.indices()) { total += xs.get(i) }
   total
 }
 fun ends(xs: List<i64>): i64 {
   if (xs.len() < 2) return -1
-  xs.at(0) + xs.at(1) + xs.at(-1) + xs.at(-2)
+  xs.get(0) + xs.get(1) + xs.get(-1) + xs.get(-2)
 }
 fun guard(xs: List<i64>, i: i64): i64 {
   if (i < 0 || i >= xs.len()) return 0
-  xs.at(i)
+  xs.get(i)
 }
-fun both(xs: List<i64>, i: i64): i64 => if (i >= 0 && i < xs.len()) xs.at(i) else 0
+fun both(xs: List<i64>, i: i64): i64 => if (i >= 0 && i < xs.len()) xs.get(i) else 0
 fun foo() {}
 fun immutable(xs: List<i64>): i64 {
   if (xs.isEmpty()) return 0
@@ -3556,31 +3535,34 @@ fun main() { io.println("${sum([1])} ${ends([1, 2])} ${guard([1], 0)} ${both([1]
 
 	lost := []string{
 		// a call may shrink a MutableList through an alias
-		`fun foo() {}
-fun f(xs: MutableList<i64>) {
-  if (xs.len() > 0) { foo(); val v: i64 = xs.at(0) }
+		`fun f(xs: List<i64>) {
+  var ys = xs
+  if (ys.len() > 0) { ys.pop(); val v: i64 = ys.get(0) }
 }`,
 		// the pop runs before the next iteration's read
-		`fun f(xs: MutableList<i64>) {
-  loop (i in 0..<xs.len()) { val v: i64 = xs.at(i); xs.pop() }
+		`fun f(xs: List<i64>) {
+  var ys = xs
+  loop (i in 0..<ys.len()) { val v: i64 = ys.get(i); ys.removeAt(0) }
 }`,
 		// a negative i is not in range
 		`fun f(xs: List<i64>, i: i64) {
-  if (i < xs.len()) { val v: i64 = xs.at(i) }
+  if (i < xs.len()) { val v: i64 = xs.get(i) }
 }`,
 		// the list was replaced
 		`fun f(xs: List<i64>, ys: List<i64>) {
   var l = xs
-  if (l.len() > 2) { l = ys; val v: i64 = l.at(0) }
+  if (l.len() > 2) { l = ys; val v: i64 = l.get(0) }
 }`,
 		// a lambda runs later
-		`fun f(xs: MutableList<i64>) {
-  if (xs.len() > 0) { val g = () => { val v: i64 = xs.at(0) } }
+		`fun f(xs: List<i64>) {
+  if (xs.len() > 0) { val g = () => { val v: i64 = xs.get(0) } }
 }`,
-		// the call on the right of && ran after the length check
-		`fun g(xs: MutableList<i64>): bool => true
-fun f(xs: MutableList<i64>) {
-  if (xs.len() > 0 && g(xs)) { val v: i64 = xs.at(0) }
+		// the call on the right of && ran after the length check, and was
+		// handed the list to change
+		`fun g(xs: *List<i64>): bool => xs.pop() != null
+fun f(xs: List<i64>) {
+  var ys = xs
+  if (ys.len() > 0 && g(&ys)) { val v: i64 = ys.get(0) }
 }`,
 	}
 	for _, src := range lost {
@@ -3589,7 +3571,7 @@ fun f(xs: MutableList<i64>) {
 
 	// a fallback after a proven read is a warning with a fix, not an error
 	diags := checkSource(t, prelude+`
-fun f(xs: List<i64>): i64 => if (xs.len() > 0) xs.at(0) ?: 7 else 0
+fun f(xs: List<i64>): i64 => if (xs.len() > 0) xs.get(0) ?: 7 else 0
 fun main() { io.println("${f([1])}") }`)
 	found := false
 	for _, d := range diags.Items {
@@ -3602,24 +3584,24 @@ fun main() { io.println("${f([1])}") }`)
 	}
 }
 
-// D63: a MutableList becomes a List by a move (a fresh local that never
-// escaped, at its last use) or by an explicit copy.
-func TestMutableToImmutableMove(t *testing.T) {
+// D231: building, filling and passing lists that are values checks clean
+// (what was D63's move into a frozen list).
+func TestListValuesCheckClean(t *testing.T) {
 	expectClean(t, prelude+`
 fun build(n: i64): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (i in 0..<n) { out.push(i) }
   out
 }
 fun early(n: i64): List<i64> {
-  var out: MutableList<i64> = []
+  var out: List<i64> = []
   if (n == 0) return out
   out.push(n)
   out
 }
 fun sum(xs: List<i64>): i64 => xs.fold(0, (a, b) => a + b)
 fun last(): i64 {
-  val tmp: MutableList<i64> = [1, 2]
+  val tmp: List<i64> = [1, 2]
   tmp.push(3)
   sum(tmp)
 }
@@ -3628,31 +3610,31 @@ fun main() { io.println("${build(2)} ${early(1)} ${last()}") }`)
 	// D188: a function that never keeps its parameter leaves the argument
 	// unshared, and a field of a struct built here is a local of its own
 	expectClean(t, prelude+`
-fun fill(xs: MutableList<i64>, n: i64) { loop (i in 0..<n) xs.push(i) }
-fun fillTwice(xs: MutableList<i64>) {
+fun fill(xs: List<i64>, n: i64) { loop (i in 0..<n) xs.push(i) }
+fun fillTwice(xs: List<i64>) {
   fill(xs, 2)
   fill(xs: xs, n: 1)
 }
-fun total(xs: MutableList<i64>): i64 {
+fun total(xs: List<i64>): i64 {
   var s = 0
   loop (x in xs) s += x
   s
 }
 fun filled(n: i64): List<i64> {
-  val a: MutableList<i64> = []
+  val a: List<i64> = []
   fill(a, n)
   a
 }
 fun filledTwice(): List<i64> {
-  val a: MutableList<i64> = []
+  val a: List<i64> = []
   fillTwice(a)
   val t = total(a)
   a.push(t)
   a
 }
 struct Acc {
-  items: MutableList<i64> = []
-  names: MutableList<string> = []
+  items: List<i64> = []
+  names: List<string> = []
 }
 fun collected(): List<i64> {
   val acc = Acc()
@@ -3668,17 +3650,17 @@ fun fromLiteral(): List<i64> {
 }
 // a collection built by a constructor or a static factory is as fresh as a literal
 fun constructed(): Set<i64> {
-  val s = MutableSet<i64>()
+  val s = Set<i64>()
   loop (i in 0..<3) { val _ = s.add(i) }
   s
 }
 fun repeated(n: i64): List<bool> {
-  val xs = MutableList<bool>.repeat(false, n)
+  val xs = List<bool>.repeat(false, n)
   xs.set(0, true)
   xs
 }
 fun mapped(): Map<string, i64> {
-  val m = MutableMap<string, i64>()
+  val m = Map<string, i64>()
   m.set("a", 1)
   m
 }
@@ -3687,8 +3669,8 @@ fun mapped(): Map<string, i64> {
 struct Lexer {
   src:          string
   var pos:      i64 = 0
-  tokens:       MutableList<string> = []
-  comments:     MutableList<string> = []
+  tokens:       List<string> = []
+  comments:     List<string> = []
   fun run() {
     loop (this.pos < this.src.len()) this.step()
   }
@@ -3698,7 +3680,7 @@ struct Lexer {
     this.pos += 1
     if (this.pos < this.src.len() && this.src.byteAt(this.pos) == ' ') this.step()
   }
-  fun first(): string => this.tokens.at(0) ?: ""
+  fun first(): string => this.tokens.get(0) ?: ""
 }
 fun scan(src: string): (List<string>, string, List<string>) {
   var lexer = Lexer(src)
@@ -3707,203 +3689,15 @@ fun scan(src: string): (List<string>, string, List<string>) {
   (lexer.tokens, head, lexer.comments)
 }
 fun main() { io.println("${filled(2)} ${filledTwice()} ${collected()} ${fromLiteral()} ${constructed()} ${repeated(2)} ${mapped()} ${scan("a #b")}") }`)
-
-	for _, c := range []struct{ name, src string }{
-		{"parameter", `fun f(xs: MutableList<i64>): List<i64> => xs`},
-		{"alias", `fun f(): List<i64> {
-  val a: MutableList<i64> = []
-  val b = a
-  a
-}`},
-		{"passed to a function that returns it", `fun same(xs: MutableList<i64>): MutableList<i64> => xs
-fun f(): List<i64> {
-  val a: MutableList<i64> = []
-  val b = same(a)
-  a
-}`},
-		{"passed to a function that stores it", `struct Holder { items: MutableList<i64> }
-fun wrap(xs: MutableList<i64>): Holder => Holder(items: xs)
-fun f(): List<i64> {
-  val a: MutableList<i64> = []
-  val h = wrap(a)
-  a
-}`},
-		{"passed to a function that captures it", `fun later(xs: MutableList<i64>): fun() { () => xs.push(1) }
-fun f(): List<i64> {
-  val a: MutableList<i64> = []
-  val g = later(a)
-  a
-}`},
-		{"passed through a function that stores it", `struct Holder { items: MutableList<i64> }
-fun wrap(xs: MutableList<i64>): Holder => Holder(items: xs)
-fun relay(xs: MutableList<i64>): Holder => wrap(xs)
-fun f(): List<i64> {
-  val a: MutableList<i64> = []
-  val h = relay(a)
-  a
-}`},
-		{"passed to a recursive function", `fun walk(xs: MutableList<i64>, n: i64) { if (n > 0) walk(xs, n - 1) }
-fun f(): List<i64> {
-  val a: MutableList<i64> = []
-  walk(a, 2)
-  a
-}`},
-		{"passed where an iterator is made", `fun first(xs: MutableList<i64>): i64 => xs.iter().first() ?: 0
-fun f(): List<i64> {
-  val a: MutableList<i64> = []
-  val n = first(a)
-  a
-}`},
-		{"passed to a closure", `fun f(): List<i64> {
-  val a: MutableList<i64> = []
-  val add = (xs: MutableList<i64>) => xs.push(1)
-  add(a)
-  a
-}`},
-		{"field passed to a function that stores it", `struct Holder { items: MutableList<i64> }
-struct Acc { items: MutableList<i64> = [] }
-fun wrap(xs: MutableList<i64>): Holder => Holder(items: xs)
-fun f(): List<i64> {
-  val acc = Acc()
-  val h = wrap(acc.items)
-  acc.items
-}`},
-		{"field of a struct that is passed on", `struct Acc { items: MutableList<i64> = [] }
-fun keep(a: Acc) {}
-fun f(): List<i64> {
-  val acc = Acc()
-  keep(acc)
-  acc.items
-}`},
-		{"field of a struct that is aliased", `struct Acc { items: MutableList<i64> = [] }
-fun f(): List<i64> {
-  val acc = Acc()
-  val other = acc
-  acc.items
-}`},
-		{"field built from a list someone else holds", `struct Acc { items: MutableList<i64> = [] }
-fun f(shared: MutableList<i64>): List<i64> {
-  val acc = Acc(items: shared)
-  acc.items
-}`},
-		// D201: a method may be called when its summary keeps nothing
-		{"field read by a method called after the move", `struct Acc {
-  items: MutableList<i64> = []
-  fun add(x: i64) { this.items.push(x) }
-  fun count(): i64 => this.items.len()
-}
-fun f(): (List<i64>, i64) {
-  var acc = Acc()
-  acc.add(1)
-  val xs: List<i64> = acc.items
-  (xs, acc.count())
-}`},
-		{"field handed out by a method", `struct Acc {
-  items: MutableList<i64> = []
-  fun storage(): MutableList<i64> => this.items
-}
-fun f(): List<i64> {
-  val acc = Acc()
-  val other = acc.storage()
-  acc.items
-}`},
-		{"field handed out by a method it calls", `struct Acc {
-  items: MutableList<i64> = []
-  fun storage(): MutableList<i64> => items
-  fun touch() { val _ = this.storage() }
-}
-fun f(): List<i64> {
-  val acc = Acc()
-  acc.touch()
-  acc.items
-}`},
-		{"field replaced by a method", `struct Acc {
-  var items: MutableList<i64> = []
-  fun adopt(xs: MutableList<i64>) { this.items = xs }
-}
-fun f(other: MutableList<i64>): List<i64> {
-  var acc = Acc()
-  acc.adopt(other)
-  acc.items
-}`},
-		{"a method that keeps this in a lambda", `struct Acc {
-  items: MutableList<i64> = []
-  fun later(): fun(): i64 => () => this.items.len()
-}
-fun f(): List<i64> {
-  val acc = Acc()
-  val g = acc.later()
-  acc.items
-}`},
-		{"a method that passes this on", `struct Acc { items: MutableList<i64> = []
-  fun register(all: MutableList<*Acc>) { all.push(&this) }
-}
-fun f(all: MutableList<*Acc>): List<i64> {
-  var acc = Acc()
-  acc.register(all)
-  acc.items
-}`},
-		{"a method taken as a value", `struct Acc {
-  items: MutableList<i64> = []
-  fun add(x: i64) { this.items.push(x) }
-}
-fun f(): List<i64> {
-  var acc = Acc()
-  val add = acc.add
-  add(1)
-  acc.items
-}`},
-		{"a trait's default method", `trait Counted { fun size(): i64; fun twice(): i64 => this.size() * 2 }
-struct Acc { items: MutableList<i64> = [] }
-implement Counted for Acc { fun size(): i64 => this.items.len() }
-fun f(): List<i64> {
-  val acc = Acc()
-  val n = acc.twice()
-  acc.items
-}`},
-		{"field used after", `struct Acc { items: MutableList<i64> = [] }
-fun g(xs: List<i64>) {}
-fun f() {
-  val acc = Acc()
-  g(acc.items)
-  acc.items.push(1)
-}`},
-		{"field reassigned", `struct Acc { var items: MutableList<i64> = [] }
-fun f(other: MutableList<i64>): List<i64> {
-  val acc = Acc()
-  acc.items = other
-  acc.items
-}`},
-		{"used after", `fun g(xs: List<i64>) {}
-fun f() {
-  val a: MutableList<i64> = []
-  g(a)
-  a.push(1)
-}`},
-		{"in a loop", `fun g(xs: List<i64>) {}
-fun f() {
-  val a: MutableList<i64> = []
-  loop (i in 0..<3) { g(a) }
-}`},
-		{"captured", `fun f(): List<i64> {
-  val a: MutableList<i64> = []
-  val add = () => a.push(1)
-  a
-}`},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			expectError(t, prelude+c.src+"\nfun main() {}", "(D63)")
-		})
-	}
 }
 
 // D62 C: the `…OrPanic` methods are gone; the error's fix writes the
 // checked read with a panic whose reason the author fills in.
 func TestOrPanicRemoved(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
-		{`fun f(xs: List<i64>): i64 => xs.atOrPanic(0)`, `(xs.at(0) ?: panic("TODO: say why this cannot fail"))`},
+		{`fun f(xs: List<i64>): i64 => xs.atOrPanic(0)`, `(xs.get(0) ?: panic("TODO: say why this cannot fail"))`},
 		{`fun f(m: Map<string, i64>): i64 => m.getOrPanic("a")`, `(m.get("a") ?: panic("TODO: say why this cannot fail"))`},
-		{`fun f(xs: MutableList<i64>) { *xs.refOrPanic(0) += 1 }`, `(xs.ref(0) ?: panic("TODO: say why this cannot fail"))`},
+		{`fun f(xs: List<i64>) { *xs.refOrPanic(0) += 1 }`, `(xs.at(0) ?: panic("TODO: say why this cannot fail"))`},
 	} {
 		diags := checkSource(t, prelude+c.src+"\nfun main() {}")
 		found := false
@@ -3929,7 +3723,7 @@ func TestSafeChain(t *testing.T) {
 struct Address { city: string
   var visits: i64 = 0
   fun visit() { this.visits += 1 } }
-struct User { name: string; address: Address; tags: MutableList<string> = [] }
+struct User { name: string; address: Address; tags: List<string> = [] }
 `
 	expectClean(t, base+`
 fun main() {
@@ -3937,8 +3731,8 @@ fun main() {
   val n: i64? = u?.address.city.len()
   var m: User? = u
   m?.address.visit()
-  val xs: MutableList<User> = [User(name: "y", address: Address(city: "z"))]
-  xs.ref(0)?.tags.push("t")
+  val xs: List<User> = [User(name: "y", address: Address(city: "z"))]
+  xs.at(0)?.tags.push("t")
   io.println("${n ?: 0} ${m?.address.visits ?: 0}")
 }`)
 	expectError(t, base+`
@@ -3987,7 +3781,7 @@ func TestFFIBoundary(t *testing.T) {
 extern "C" { fun qsort(base: *raw u8, n: u64, size: u64, cmp: extern fun(*raw u8, *raw u8): i32) }
 extern "C" fun cmp(a: *raw u8, b: *raw u8): i32 => 0
 fun main() {
-  val xs: MutableList<i64> = [2, 1]
+  val xs: List<i64> = [2, 1]
   xs.withRaw(p => unsafe { qsort(p.cast<*raw u8>(), 2, 8, &cmp) })
   val f = &cmp
   val x: i64 = 1
@@ -4043,7 +3837,7 @@ fun main() {
   val xs = [1, 2]
   io.println("${xs.mapConcurrent(n => requestId.get().len() + n)}")
 }`)
-	expectError(t, prelude+`val cache = TaskLocal(fallback: MutableList<i64>())
+	expectError(t, prelude+`val cache = TaskLocal(fallback: &List<i64>())
 fun main() { }`, "does not implement trait 'Sendable'")
 }
 
@@ -4410,73 +4204,4 @@ fun main() {
   val n = 3
   val m = await n
 }`, "applies to channels, timers and task handles, not 'i64'")
-}
-
-// D188: a `.toList()` of a collection that is not used afterwards is a copy
-// the move would have saved; the lint says so and its fix drops the call —
-// only where the expected type is the immutable collection.
-func TestRedundantCopyLint(t *testing.T) {
-	expectWarning(t, prelude+`
-fun build(n: i64): List<i64> {
-  val out: MutableList<i64> = []
-  loop (i in 0..<n) { out.push(i) }
-  out.toList()
-}
-fun main() { io.println("${build(2)}") }`, "which is not used after this")
-
-	expectWarning(t, prelude+`
-struct Acc { items: MutableList<i64> = [] }
-fun fill(xs: MutableList<i64>) { xs.push(1) }
-fun collect(): List<i64> {
-  val acc = Acc()
-  fill(acc.items)
-  acc.items.toList()
-}
-fun main() { io.println("${collect()}") }`, "which is not used after this")
-
-	// maps and sets have the same lint (it was missing for them at first)
-	expectWarning(t, prelude+`
-fun count(words: List<string>): Map<string, i64> {
-  val counts: MutableMap<string, i64> = [:]
-  loop (w in words) counts.set(w, (counts.get(w) ?: 0) + 1)
-  counts.toMap()
-}
-fun main() { io.println("${count(["a"])}") }`, "which is not used after this")
-	expectWarning(t, prelude+`
-fun seen(words: List<string>): Set<string> {
-  val out: MutableSet<string> = MutableSet<string>()
-  loop (w in words) { val _ = out.add(w) }
-  out.toSet()
-}
-fun main() { io.println("${seen(["a"])}") }`, "which is not used after this")
-
-	for _, c := range []struct{ name, src string }{
-		{"used after", `fun f(): List<i64> {
-  val out: MutableList<i64> = []
-  val copy = out.toList()
-  out.push(1)
-  copy
-}`},
-		{"no expected type", `fun f(): i64 {
-  val out: MutableList<i64> = [1]
-  val frozen = out.toList()
-  frozen.len()
-}`},
-		{"a parameter", `fun f(out: MutableList<i64>): List<i64> => out.toList()`},
-		{"kept by a function", `fun keep(xs: MutableList<i64>): MutableList<i64> => xs
-fun f(): List<i64> {
-  val out: MutableList<i64> = []
-  val b = keep(out)
-  out.toList()
-}`},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			diags := checkSource(t, prelude+c.src+"\nfun main() {}")
-			for _, d := range diags.Items {
-				if strings.Contains(d.Message, "which is not used after this") {
-					t.Errorf("unexpected lint: %s", d.Message)
-				}
-			}
-		})
-	}
 }

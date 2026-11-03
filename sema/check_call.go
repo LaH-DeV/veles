@@ -79,16 +79,23 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 		if (callee.Name == "compilerTarget" || callee.Name == "compilerProgram") && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
 			return f.compilerFact(callee.Name, e) // std/build's constants (D160, D204)
 		}
-		if callee.Name == "listRawData" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
+		if (callee.Name == "listRawData" || callee.Name == "listReadData") && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
 			// std-only (D69): the storage of a list, for `withRaw` to lend C
-			// for the length of a closure — never a pointer user code holds
+			// for the length of a closure — never a pointer user code holds.
+			// listRawData's may be written through, so it is the list's own
+			// storage made unique (D231); listReadData's is only read
 			xs := f.checkExpr(e.Args[0].Value, nil)
 			lt, ok := xs.Type().(*types.List)
 			if !ok {
-				f.errorf(e.Pos, "listRawData takes a list")
+				f.errorf(e.Pos, "%s takes a list", callee.Name)
 				return bad()
 			}
-			return &Builtin{exprBase{&types.Pointer{Elem: lt.Elem, Raw: true}}, "list.rawData", []Expr{xs}, e.Pos}
+			op := "list.readData"
+			if callee.Name == "listRawData" {
+				op = "list.rawData"
+				f.writeReceiver(xs, e, false)
+			}
+			return &Builtin{exprBase{&types.Pointer{Elem: lt.Elem, Raw: true}}, op, []Expr{xs}, e.Pos}
 		}
 		if callee.Name == "arrayRawData" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
 			// std-only (D121): the storage of an array, for `withRaw` to lend C
@@ -108,20 +115,22 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			// std-only: an order change made element by element (sort, swap)
 			// counts as a change of the list for a loop walking it (D102)
 			xs := f.checkExpr(e.Args[0].Value, nil)
-			if lt, ok := xs.Type().(*types.List); !ok || !lt.Mutable {
-				f.errorf(e.Pos, "listTouched takes a MutableList")
+			if _, ok := xs.Type().(*types.List); !ok {
+				f.errorf(e.Pos, "listTouched takes a List")
 				return bad()
 			}
+			f.writeReceiver(xs, e, true)
 			return &Builtin{exprBase{types.TUnit}, "list.touch", []Expr{xs}, e.Pos}
 		}
 		if callee.Name == "listMove" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 4 {
 			// std-only: count elements moved within a list in one memmove
 			// (insert, removeAt) — the caller checks both ranges are inside
 			xs := f.checkExpr(e.Args[0].Value, nil)
-			if lt, ok := xs.Type().(*types.List); !ok || !lt.Mutable {
-				f.errorf(e.Pos, "listMove takes a MutableList")
+			if _, ok := xs.Type().(*types.List); !ok {
+				f.errorf(e.Pos, "listMove takes a List")
 				return bad()
 			}
+			f.writeReceiver(xs, e, true)
 			args := []Expr{xs}
 			for _, a := range e.Args[1:] {
 				args = append(args, f.checkExprTo(a.Value, types.TI64))
@@ -133,24 +142,50 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			// (StringBuilder.append), not a list of them pushed one by one
 			xs := f.checkExpr(e.Args[0].Value, nil)
 			s := f.checkExprTo(e.Args[1].Value, types.TString)
-			if lt, ok := xs.Type().(*types.List); !ok || !lt.Mutable || !types.Identical(lt.Elem, types.TU8) {
-				f.errorf(e.Pos, "listAppendText takes a MutableList<u8> and a string")
+			if lt, ok := xs.Type().(*types.List); !ok || !types.Identical(lt.Elem, types.TU8) {
+				f.errorf(e.Pos, "listAppendText takes a List<u8> and a string")
 				return bad()
 			}
+			f.writeReceiver(xs, e, true)
 			return &Builtin{exprBase{types.TUnit}, "list.appendText", []Expr{xs, s}, e.Pos}
 		}
 		if op, ok := textListOps[callee.Name]; ok && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == len(op.args)+1 {
 			// std-only: StringBuilder's in-place text edits (D207)
 			xs := f.checkExpr(e.Args[0].Value, nil)
-			if lt, ok := xs.Type().(*types.List); !ok || !lt.Mutable || !types.Identical(lt.Elem, types.TU8) {
-				f.errorf(e.Pos, "%s takes a MutableList<u8>", callee.Name)
+			if lt, ok := xs.Type().(*types.List); !ok || !types.Identical(lt.Elem, types.TU8) {
+				f.errorf(e.Pos, "%s takes a List<u8>", callee.Name)
 				return bad()
+			}
+			if collectionWrites[op.op] {
+				f.writeReceiver(xs, e, true) // not takeText, which marks the storage shared (D231)
 			}
 			args := []Expr{xs}
 			for i, t := range op.args {
 				args = append(args, f.checkExprTo(e.Args[i+1].Value, t))
 			}
 			return &Builtin{exprBase{op.ret}, op.op, args, e.Pos}
+		}
+		if callee.Name == "slotPayload" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 1 {
+			// std-only: a pointer to the value a nullable slot holds, or null
+			// when it is empty — Deque.at reaches into its `T?` ring (D231)
+			p := f.checkExpr(e.Args[0].Value, nil)
+			pt, ok := p.Type().(*types.Pointer)
+			var nt *types.Nullable
+			if ok && !pt.Raw {
+				nt, _ = pt.Elem.(*types.Nullable)
+			}
+			if nt == nil {
+				f.errorf(e.Pos, "slotPayload takes a pointer to a nullable slot")
+				return bad()
+			}
+			inner := nt.Elem
+			rt := &types.Nullable{Elem: &types.Pointer{Elem: inner}}
+			tmp := f.newTemp(pt)
+			slot := func() Expr { return &Deref{exprBase{pt.Elem}, ref(tmp)} }
+			reach := &SomeWrap{exprBase{rt}, &AddrOf{exprBase{rt.Elem}, &Unwrap{exprBase{inner}, slot()}}}
+			empty := &IsNull{exprBase{types.TBool}, slot()}
+			value := &If{exprBase{rt}, empty, &Block{Value: &NullConst{exprBase{rt}}, Type: rt}, &Block{Value: reach, Type: rt}}
+			return &BlockExpr{exprBase{rt}, &Block{Stmts: []Stmt{&VarDecl{Var: tmp, Init: p}}, Value: value, Type: rt}}
 		}
 		if callee.Name == "stringAsciiCase" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
 			// std-only: toLower/toUpper in one pass and one copy
@@ -1418,9 +1453,7 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	if isMutexLock(rt, name) {
 		f.lockUse(callee, e)
 	}
-	f.callWant = want
 	b := f.builtinMethod(recv, rt, name, e)
-	f.callWant = nil
 	if b != nil {
 		f.c.refBuiltin(callee.Name.Pos, rt, name)
 		return b
@@ -1457,17 +1490,13 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			return &Builtin{exprBase{types.TUnit}, "task.cancel", []Expr{recv}, e.Pos}
 		}
 	case *types.Map:
-		f.callWant = want
 		x := f.mapMethod(recv, ct, name, e)
-		f.callWant = nil
 		if x != nil {
 			f.c.refBuiltin(callee.Name.Pos, rt, name)
 			return x
 		}
 	case *types.Set:
-		f.callWant = want
 		x := f.setMethod(recv, ct, name, e)
-		f.callWant = nil
 		if x != nil {
 			f.c.refBuiltin(callee.Name.Pos, rt, name)
 			return x
@@ -1638,16 +1667,18 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 			f.checkArgsLoosely(e.Args)
 			return bad()
 		}
+		if name == "at" && tt.Template == nil && tt.Name == "Value" && tt.Module == "std.prelude" {
+			// D231 addendum 4: `at` reaches on collections; this read copies
+			f.removedRename(e, "at", "elementAt", "a document's element read by index is a copy, and 'at' gives a pointer on collections")
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
 		f.errorf(callee.Name.Pos, "no method '%s' on sealed trait '%s'; match on its variants with 'when' (D13)", name, tt)
 	case *types.Enum:
 		f.errorf(callee.Name.Pos, "no method '%s' on enum '%s'; an enum value has 'toString()', 'compareTo(other)', 'encode(to)' and '.value' (D57)", name, tt.Name)
 	case *types.Trait:
 		f.errorf(callee.Pos, "trait objects (boxed '%s') are not supported yet in the bootstrap compiler; use a generic bound instead (D9)", tt)
 	default:
-		if kind, mutable := f.mutableOnly(rt, name); kind != "" {
-			f.errorf(callee.Name.Pos, "'%s' changes the %s; use %s (D25)", name, kind, mutable)
-			break
-		}
 		hint, hit := f.noMethodHint(rt, name)
 		if hint == "" {
 			hint = f.unimportedExtensionHint(rt, name)
@@ -1658,64 +1689,16 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 	return bad()
 }
 
-// mutableOnly: a method an extend block gives only the mutable form of an
-// immutable collection (`getOrPut` on a Map) — the collection's kind and
-// the mutable type's name, or "".
-func (f *fnCtx) mutableOnly(rt types.Type, name string) (kind, mutable string) {
-	var mt types.Type
-	switch t := rt.(type) {
-	case *types.List:
-		if !t.Mutable {
-			mt, kind, mutable = &types.List{Elem: t.Elem, Mutable: true}, "list", "MutableList"
-		}
-	case *types.Map:
-		if !t.Mutable {
-			mt, kind, mutable = &types.Map{Key: t.Key, Value: t.Value, Mutable: true}, "map", "MutableMap"
-		}
-	case *types.Set:
-		if !t.Mutable {
-			mt, kind, mutable = &types.Set{Elem: t.Elem, Mutable: true}, "set", "MutableSet"
-		}
-	}
-	if mt == nil {
-		return "", ""
-	}
-	for _, ext := range f.c.extends {
-		if _, ok := ext.Methods[name]; ok && unify(ext.Target, mt, map[*types.TypeParam]types.Type{}) {
-			return kind, mutable
-		}
-	}
-	return "", ""
-}
-
 // isReferenceType reports whether values of t are handles to shared
-// storage (D25 collections, channels), so that copying one does not copy
-// what it refers to.
+// storage (channels), so that copying one does not copy what it refers to.
+// Lists, maps and sets are values (D231): a method changes the place.
 func isReferenceType(t types.Type) bool {
-	switch t.(type) {
-	case *types.List, *types.Map, *types.Set, *types.Channel:
-		return true
-	}
-	return false
+	_, ok := t.(*types.Channel)
+	return ok
 }
 
-// receiverViews lists the types an extend target may match for a receiver:
-// the type itself, then — for a mutable collection — its immutable form.
+// receiverViews lists the types an extend target may match for a receiver.
 func receiverViews(rt types.Type) []types.Type {
-	switch t := rt.(type) {
-	case *types.List:
-		if t.Mutable {
-			return []types.Type{rt, &types.List{Elem: t.Elem}}
-		}
-	case *types.Map:
-		if t.Mutable {
-			return []types.Type{rt, &types.Map{Key: t.Key, Value: t.Value}}
-		}
-	case *types.Set:
-		if t.Mutable {
-			return []types.Type{rt, &types.Set{Elem: t.Elem}}
-		}
-	}
 	return []types.Type{rt}
 }
 
@@ -2006,39 +1989,25 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 				return bad()
 			}
 			return &Binary{exprBase{types.TBool}, OpEq, &Builtin{exprBase{types.TI64}, "list.len", []Expr{recv}, e.Pos}, &IntConst{exprBase{types.TI64}, 0, false}, e.Pos}
-		case "toList":
-			if !nargs(0) {
-				return bad()
-			}
-			if t.Mutable {
-				f.lintRedundantCopy(e, recv, name)
-			}
-			return &Builtin{exprBase{&types.List{Elem: t.Elem}}, "list.copy", []Expr{recv}, e.Pos}
-		case "toMutable":
-			if !nargs(0) {
-				return bad()
-			}
-			return &Builtin{exprBase{&types.List{Elem: t.Elem, Mutable: true}}, "list.copy", []Expr{recv}, e.Pos}
-		case "isFrozen":
-			if !t.Mutable {
-				f.errorf(e.Pos, "'isFrozen' needs a MutableList: a List is immutable by its type (D188)")
-				f.checkArgsLoosely(e.Args)
-				return bad()
+		case "toList", "toMutable":
+			// removed: the value is the copy (D231); lowered as a copy so
+			// nothing else cascades
+			if name == "toMutable" {
+				f.removedToMutable(e, "")
+			} else {
+				f.removedSelfCopy(e, recv, name, "List")
 			}
 			if !nargs(0) {
 				return bad()
 			}
-			return &Builtin{exprBase{types.TBool}, "list.isFrozen", []Expr{recv}, e.Pos}
-		case "freeze":
-			if !t.Mutable {
-				f.errorf(e.Pos, "'freeze' needs a MutableList: a List is already immutable (D188)")
-				f.checkArgsLoosely(e.Args)
-				return bad()
+			return &Share{exprBase{recv.Type()}, recv}
+		case "isFrozen", "freeze":
+			f.removedFreeze(e, name)
+			f.checkArgsLoosely(e.Args)
+			if name == "freeze" {
+				return recv
 			}
-			if !nargs(0) {
-				return bad()
-			}
-			return &Builtin{exprBase{&types.List{Elem: t.Elem}}, "list.freeze", []Expr{recv}, e.Pos}
+			return bad()
 		case "decodeUtf8":
 			if !types.Identical(t.Elem, types.TU8) {
 				break // only List<u8>
@@ -2048,14 +2017,10 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 			}
 			return &Builtin{exprBase{&types.Nullable{Elem: types.TString}}, "list.decodeUtf8", []Expr{recv}, e.Pos}
 		case "push":
-			if !t.Mutable {
-				f.errorf(e.Pos, "cannot push into an immutable List; use MutableList (D25)")
-				f.checkArgsLoosely(e.Args)
-				return bad()
-			}
 			if !nargs(1) {
 				return bad()
 			}
+			f.writeReceiver(recv, e, true)
 			x := f.checkExprTo(e.Args[0].Value, t.Elem)
 			return &Builtin{exprBase{types.TUnit}, "list.push", []Expr{recv, x}, e.Pos}
 		case "slice":
@@ -2066,44 +2031,30 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 			to := f.checkExprTo(e.Args[1].Value, types.TI64)
 			return &Builtin{exprBase{&types.List{Elem: t.Elem}}, "list.slice", []Expr{recv, from, to}, e.Pos}
 		case "addAll":
-			if !t.Mutable {
-				f.errorf(e.Pos, "cannot add to an immutable List; use MutableList (D25)")
-				f.checkArgsLoosely(e.Args)
-				return bad()
-			}
 			if !nargs(1) {
 				return bad()
 			}
+			f.writeReceiver(recv, e, true)
 			xs := f.checkExprTo(e.Args[0].Value, &types.List{Elem: t.Elem})
 			return &Builtin{exprBase{types.TUnit}, "list.addAll", []Expr{recv, xs}, e.Pos}
 		case "reserve":
-			if !t.Mutable {
-				f.errorf(e.Pos, "cannot reserve room in an immutable List; use MutableList (D25)")
-				f.checkArgsLoosely(e.Args)
-				return bad()
-			}
 			if !nargs(1) {
 				return bad()
 			}
+			f.writeReceiver(recv, e, true)
 			n := f.checkExprTo(e.Args[0].Value, types.TI64)
 			return &Builtin{exprBase{types.TUnit}, "list.reserve", []Expr{recv, n}, e.Pos}
 		case "pop":
-			if !t.Mutable {
-				f.errorf(e.Pos, "cannot pop from an immutable List; use MutableList (D25)")
-				return bad()
-			}
 			if !nargs(0) {
 				return bad()
 			}
+			f.writeReceiver(recv, e, false)
 			return &Builtin{exprBase{&types.Nullable{Elem: t.Elem}}, "list.pop", []Expr{recv}, e.Pos}
 		case "clear":
-			if !t.Mutable {
-				f.errorf(e.Pos, "cannot clear an immutable List; use MutableList (D25)")
-				return bad()
-			}
 			if !nargs(0) {
 				return bad()
 			}
+			f.writeReceiver(recv, e, true)
 			return &Builtin{exprBase{types.TUnit}, "list.clear", []Expr{recv}, e.Pos}
 		default:
 			return f.listAdapter(recv, t, name, e)
@@ -2201,6 +2152,7 @@ func (f *fnCtx) funcValue(t *FuncTemplate, span source.Span) Expr {
 	}
 	t.ValueUsed = true
 	fn := f.c.instantiate(t, nil, nil, span)
+	f.c.funcValues = append(f.c.funcValues, funcValueUse{fn, span})
 	sig := *fn.Sig
 	sig.Sendable = true
 	return &FuncRef{exprBase{&sig}, fn}
@@ -2334,9 +2286,14 @@ func (f *fnCtx) refuseUnitMap(t *FuncTemplate, x Expr, span source.Span) {
 	}
 }
 
-// boxValue builds the trait object for a concrete value.
+// boxValue builds the trait object for a concrete value — or, for a
+// pointer `&x` to one, the object that holds the pointer (D232).
 func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 	t := x.Type()
+	ref := false
+	if p, ok := t.(*types.Pointer); ok && !p.Raw {
+		t, ref = p.Elem, true
+	}
 	if reason, ok := f.objectSafe(trait); !ok {
 		f.errorf(span, "'%s' cannot be a trait object: %s (D9)", trait.Name, reason)
 		return bad()
@@ -2348,6 +2305,10 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 		return bad()
 	}
 	for _, s := range allSupers(trait) {
+		if isSendableTrait(s) && ref {
+			f.errorf(span, "a pointer cannot be a '%s': the trait requires Sendable, and another task would change '%s' through it; box the value itself (D232, D35)", trait.Name, srcTextSpan(span, "the value"))
+			return bad()
+		}
 		if isSendableTrait(s) && !sendable(t) {
 			f.errorf(span, "'%s' cannot be a '%s': the trait requires Sendable, and '%s' holds shared mutable state or a closure (D35)", t, trait.Name, t)
 			return bad()
@@ -2371,7 +2332,18 @@ func (f *fnCtx) boxValue(x Expr, trait *types.Trait, span source.Span) Expr {
 		return bad()
 	}
 	f.c.noteBoxed(t)
-	return f.c.noteAlloc(&Box{exprBase{trait}, x, trait, methods}, span)
+	box := &Box{exprBase{trait}, x, trait, methods, ref}
+	if ref {
+		return box // the object holds the pointer: nothing is copied
+	}
+	if isPlaceExpr(x) {
+		if root := rootVar(x); root == nil || !strings.HasPrefix(root.Name, "$tmp") {
+			// a copy of a named place: refused once the receiver pass knows
+			// whether a method changes it (checkBoxedPlaces)
+			f.c.boxedPlaces = append(f.c.boxedPlaces, boxedPlace{box, span})
+		}
+	}
+	return f.c.noteAlloc(box, span)
 }
 
 // objectMethods instantiates the methods of t's table as a trait's object,

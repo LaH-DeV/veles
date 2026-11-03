@@ -11,8 +11,8 @@ fun isPalindrome(s: string): bool {
   var i = 0
   var j = chars.len() - 1
   loop (i < j) {
-    val front = chars.at(i) ?: panic("isPalindrome: 0 <= i < j < len")
-    val back = chars.at(j) ?: panic("isPalindrome: 0 <= i < j < len")
+    val front = chars.get(i) ?: panic("isPalindrome: 0 <= i < j < len")
+    val back = chars.get(j) ?: panic("isPalindrome: 0 <= i < j < len")
     if (front != back) return false
     i += 1
     j -= 1
@@ -26,7 +26,7 @@ fun isAnagram(a: string, b: string): bool =>
 
 /// Word frequencies, insertion-ordered (D25: maps keep insertion order).
 fun wordCounts(text: string): Map<string, i64> {
-  val counts: MutableMap<string, i64> = [:]
+  val counts: Map<string, i64> = [:]
   loop (word in text.toLower().split(" ")) {
     if (word == "") continue
     counts.set(word, counts.getOrDefault(word, 0) + 1)
@@ -88,10 +88,10 @@ fun findKmp(haystack: string, needle: string): i64? {
   if (m == 0) return 0
   // fail[i] = length of the longest proper prefix of needle[0..i] that is
   // also a suffix of it
-  val fail = MutableList<i64>.repeat(0, m)
+  val fail = List<i64>.repeat(0, m)
   var matched = 0
   loop (i in 1..<m) {
-    loop (matched > 0 && needle.byteAt(i) != needle.byteAt(matched)) matched = fail.at(matched - 1) ?: panic("findKmp: 0 < matched < m")
+    loop (matched > 0 && needle.byteAt(i) != needle.byteAt(matched)) matched = fail.get(matched - 1) ?: panic("findKmp: 0 < matched < m")
     if (needle.byteAt(i) == needle.byteAt(matched)) matched += 1
     fail.set(i, matched)
   }
@@ -99,7 +99,7 @@ fun findKmp(haystack: string, needle: string): i64? {
   // mismatch instead of restarting
   matched = 0
   loop (i in 0..<haystack.len()) {
-    loop (matched > 0 && haystack.byteAt(i) != needle.byteAt(matched)) matched = fail.at(matched - 1) ?: panic("findKmp: 0 < matched < m")
+    loop (matched > 0 && haystack.byteAt(i) != needle.byteAt(matched)) matched = fail.get(matched - 1) ?: panic("findKmp: 0 < matched < m")
     if (haystack.byteAt(i) == needle.byteAt(matched)) matched += 1
     if (matched == m) return i - m + 1
   }

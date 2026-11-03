@@ -55,7 +55,7 @@ fun acceptsGzip(header: string?): bool {
 }
 
 // the media type's essence: `text/html; charset=utf-8` is `text/html`
-fun essenceOf(contentType: string): string => (contentType.split(";").at(0) ?: "").trim().toLower()
+fun essenceOf(contentType: string): string => (contentType.split(";").get(0) ?: "").trim().toLower()
 
 fun isTextual(contentType: string): bool {
   val essence = essenceOf(contentType)
@@ -82,7 +82,7 @@ fun varyAcceptEncoding(headers: Map<string, string>): string {
 }
 
 fun gzipped(resp: Response, level: i64): Response {
-  val headers = resp.headers.toMutable()
+  val headers = resp.headers
   headers.set(Header.contentEncoding, "gzip")
   headers.set("vary", varyAcceptEncoding(resp.headers))
   if (val tag = resp.headers.get(Header.etag)) {
@@ -95,7 +95,7 @@ fun gzipped(resp: Response, level: i64): Response {
       try inner(packed)
       try packed.finishGzip()
     }
-    return Response(status: resp.status, headers: headers.toMap(), cookies: resp.cookies, stream: producer, quiet: resp.quiet)
+    return Response(status: resp.status, headers, cookies: resp.cookies, stream: producer, quiet: resp.quiet)
   }
   Response(status: resp.status, headers, body: gz.gzip(resp.body, level), cookies: resp.cookies, quiet: resp.quiet)
 }
@@ -140,7 +140,7 @@ fun inflateRequest(req: Request, max: i64): Request suspends throws Fail | IoErr
     is Ok(bytes) => bytes
     is Err(e)    => throw (if (e.kind == gz.CompressKind.TooLarge) tooLarge() else badRequest("the request body is not valid gzip: ${e.message}"))
   }
-  val headers = req.headers.toMutable()
+  val headers = req.headers
   headers.remove(Header.contentEncoding)
   headers.set(Header.contentLength, "${plain.len()}")
   Request(method: req.method, path: req.path, query: req.query, headers, body: Body.hold(plain, Limits(bodyBytes: max)), peer: req.peer, params: req.params, rawQuery: req.rawQuery)

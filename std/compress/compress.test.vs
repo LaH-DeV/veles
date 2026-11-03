@@ -8,7 +8,7 @@ use io
 
 // text with structure, so every block type has something to do
 test fun sample(lines: i64): List<u8> {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   loop (i in 0..<lines) {
     out.addAll("line $i: the value is ${i * 7 % 13} and the name is item-${i % 50}\n".bytes())
   }
@@ -17,7 +17,7 @@ test fun sample(lines: i64): List<u8> {
 
 // bytes with no structure: xorshift
 test fun noise(n: i64): List<u8> {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   var x: u64 = 88172645463325252
   loop (_ in 0..<n) {
     x ^= x << 13
@@ -78,13 +78,13 @@ test "noise is stored, not expanded" {
 }
 
 test "a long run and a far match both come back" {
-  val far: MutableList<u8> = []
+  val far: List<u8> = []
   val key = noise(300)
   far.addAll(key)
   far.addAll(noise(30000))
   far.addAll(key)
-  far.addAll(MutableList<u8>.repeat(65, 5000).toList())
-  expect(try gunzip(gzip(far.toList(), 9)) == far)
+  far.addAll(List<u8>.repeat(65, 5000))
+  expect(try gunzip(gzip(far, 9)) == far)
 }
 
 test "a damaged stream is Corrupt, a short one Truncated, never a panic" {
@@ -103,11 +103,11 @@ test "a damaged stream is Corrupt, a short one Truncated, never a panic" {
     }
   }
   // a flipped bit in the data or in the checksum is caught
-  val flipped = packed.toMutable()
-  flipped.set(30, (packed.at(30) ?: 0) ^ 4)
+  val flipped = packed
+  flipped.set(30, (packed.get(30) ?: 0) ^ 4)
   expect(gunzip(flipped) is Err)
-  val badCrc = packed.toMutable()
-  badCrc.set(packed.len() - 8, (packed.at(packed.len() - 8) ?: 0) ^ 1)
+  val badCrc = packed
+  badCrc.set(packed.len() - 8, (packed.get(packed.len() - 8) ?: 0) ^ 1)
   when (gunzip(badCrc)) {
     is Err(e) => expect(e.kind == CompressKind.Corrupt)
     is Ok(_)  => expect(false)
@@ -124,7 +124,7 @@ test "no input makes the decoder panic" {
 }
 
 test "output past max is TooLarge, whatever the ratio" {
-  val bomb = gzip(MutableList<u8>.repeat(0, 3000000).toList(), 9)
+  val bomb = gzip(List<u8>.repeat(0, 3000000), 9)
   expect(bomb.len() < 5000)
   when (gunzip(bomb, 100000)) {
     is Err(e) => expect(e.kind == CompressKind.TooLarge)
@@ -145,17 +145,17 @@ test "members one after another read as one" {
 // A stream over memory that gives out at most `step` bytes per read, so a
 // decoder is cut off in the middle of everything.
 struct Pipe {
-  incoming: Mutex<MutableList<u8>>
-  outgoing: Mutex<MutableList<u8>>
+  incoming: Mutex<List<u8>>
+  outgoing: Mutex<List<u8>>
   step:     i64
 
   static fun of(data: List<u8>, step: i64): Pipe {
-    val inbound = data.toMutable()
-    val outbound: MutableList<u8> = []
+    val inbound = data
+    val outbound: List<u8> = []
     Pipe(incoming: Mutex(value: inbound), outgoing: Mutex(value: outbound), step)
   }
 
-  fun written(): List<u8> => this.outgoing.withLock(out => out.toList())
+  fun written(): List<u8> => this.outgoing.withLock(out => *out)
 
   implement io.Stream {
     fun read(max: i64 = bytes.KiB * 64): List<u8> {
@@ -190,14 +190,14 @@ test "the streaming reader decodes input that arrives a few bytes at a time" {
     loop (level in [0, 1, 6, 9]) {
       val pipe = Pipe.of(gzip(data, level), step)
       var reader = GzipReader(from: pipe)
-      val out: MutableList<u8> = []
+      val out: List<u8> = []
       loop {
         val chunk = try reader.read(500)
         if (chunk.isEmpty()) break
         expect(chunk.len() <= 500)
         out.addAll(chunk)
       }
-      expect(out.toList() == data)
+      expect(out == data)
     }
   }
 }

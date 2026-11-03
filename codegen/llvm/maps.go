@@ -52,8 +52,8 @@ func (g *gen) keyArgs(kt types.Type, key string) (string, string, string) {
 
 func (g *gen) mapLit(e *sema.MapLit) string {
 	mt := e.Type().(*types.Map)
-	if len(e.Entries) == 0 && !mt.Mutable {
-		return g.emptyMap(mt.Key, mt.Value) // shared, as an empty immutable list (D187)
+	if len(e.Entries) == 0 && !g.stackLit[e] && !g.freshLit[e] {
+		return g.emptyMap(mt.Key, mt.Value) // shared, as the empty list (D187, D231)
 	}
 	var m string
 	if g.stackLit[e] {
@@ -76,15 +76,10 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 	switch e.Op {
 	case "set.new":
 		st := e.Type().(*types.Set)
-		if !st.Mutable {
-			return g.emptyMap(st.Elem, nil), true
-		}
 		if g.stackLit[e] {
 			return g.stackMapHeader(st.Elem, nil), true
 		}
-		m := g.newTmp()
-		g.emit("%s = call ptr @veles_map_new(ptr %s, ptr null)", m, g.arrayDescOf(st.Elem))
-		return m, true
+		return g.emptyMap(st.Elem, nil), true // copied on its first change (D231)
 	case "map.len":
 		m := g.expr(e.Args[0])
 		v := g.newTmp()
@@ -122,9 +117,8 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		// stays valid until the map grows; the collector keeps the old
 		// storage alive while a pointer into it exists (D10).
 		kt, _ := keyValTypes(e.Args[0].Type())
-		m := g.expr(e.Args[0])
+		m := g.writableColl(e.Args[0], placeExpose) // a pointer into the entries is made (D188, D231)
 		k := g.expr(e.Args[1])
-		g.emit("call void @veles_map_expose(ptr %s)", m) // a pointer into the entries is made (D188)
 		h, kp, eq := g.keyArgs(kt, k)
 		idx := g.newTmp()
 		g.emit("%s = call i64 @veles_map_find(ptr %s, i64 %s, ptr %s, ptr %s)", idx, m, h, kp, eq)
@@ -166,7 +160,7 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		return v, true
 	case "map.set":
 		kt, vt := keyValTypes(e.Args[0].Type())
-		m := g.expr(e.Args[0])
+		m := g.writableColl(e.Args[0], placeWrite)
 		k := g.expr(e.Args[1])
 		v := g.expr(e.Args[2])
 		h, kp, eq := g.keyArgs(kt, k)
@@ -175,7 +169,7 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		return "zeroinitializer", true
 	case "set.add":
 		kt, _ := keyValTypes(e.Args[0].Type())
-		m := g.expr(e.Args[0])
+		m := g.writableColl(e.Args[0], placeWrite)
 		k := g.expr(e.Args[1])
 		h, kp, eq := g.keyArgs(kt, k)
 		before := g.newTmp()
@@ -188,32 +182,31 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		return v, true
 	case "map.remove":
 		kt, _ := keyValTypes(e.Args[0].Type())
-		m := g.expr(e.Args[0])
+		m := g.writableColl(e.Args[0], placeWrite)
 		k := g.expr(e.Args[1])
 		h, kp, eq := g.keyArgs(kt, k)
 		v := g.newTmp()
 		g.emit("%s = call i1 @veles_map_remove(ptr %s, i64 %s, ptr %s, ptr %s)", v, m, h, kp, eq)
 		return v, true
 	case "map.clear":
-		m := g.expr(e.Args[0])
-		g.emit("call void @veles_map_clear(ptr %s)", m)
+		g.clearColl(e.Args[0])
 		return "zeroinitializer", true
-	case "map.isFrozen":
-		return g.isFrozen(g.expr(e.Args[0]), mapHeader, 13), true
-	case "map.freeze":
-		// the map, now immutable, in place (D188)
-		m := g.expr(e.Args[0])
-		r := g.newTmp()
-		g.emit("%s = call ptr @veles_map_freeze(ptr %s)", r, m)
-		return r, true
 	case "map.reserve":
-		m, n := g.expr(e.Args[0]), g.expr(e.Args[1])
+		m, n := g.writableColl(e.Args[0], placeWrite), g.expr(e.Args[1])
 		g.emit("call void @veles_map_reserve(ptr %s, i64 %s)", m, n)
 		return "zeroinitializer", true
 	case "map.copy":
 		m := g.expr(e.Args[0])
 		v := g.newTmp()
 		g.emit("%s = call ptr @veles_map_copy(ptr %s)", v, m)
+		kt, vt := keyValTypes(e.Args[0].Type())
+		kf, vf := g.shareFn(kt), "null"
+		if vt != nil {
+			vf = g.shareFn(vt)
+		}
+		if kf != "null" || vf != "null" {
+			g.emit("call void @veles_map_share_entries(ptr %s, ptr %s, ptr %s)", v, kf, vf) // held twice (D231)
+		}
 		return v, true
 	case "map.keys", "map.values":
 		m := g.expr(e.Args[0])
@@ -223,6 +216,7 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 			fn = "veles_map_values"
 		}
 		g.emit("%s = call ptr @%s(ptr %s)", v, fn, m)
+		g.shareElems(v, listElem(e.Type())) // the keys or values are held twice (D231)
 		return v, true
 	case "map.entries":
 		kt, vt := keyValTypes(e.Args[0].Type())
@@ -232,6 +226,7 @@ func (g *gen) mapBuiltin(e *sema.Builtin) (string, bool) {
 		m := g.expr(e.Args[0])
 		v := g.newTmp()
 		g.emit("%s = call ptr @veles_map_entries(ptr %s, ptr %s, i64 %d, i64 %d)", v, m, g.arrayDescOf(tt), valOffset, g.sizeOf(tt))
+		g.shareElems(v, tt)
 		return v, true
 	}
 	return "", false

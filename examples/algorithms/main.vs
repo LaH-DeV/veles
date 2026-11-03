@@ -35,8 +35,8 @@ fun main() {
   println("gcd(84, 36) = ${gcd(84, 36)}, lcm(4, 6) = ${lcm(4, 6)}")
   println("primes to 50: ${sieve(50)}")
   println("isPrime 97 ${isPrime(97)}, 91 ${isPrime(91)}")
-  val memo: MutableMap<i64, i64> = [:]
-  println("fib(30) = ${fib(30)} memo ${fibMemo(30, memo)} (table ${memo.len()} entries)")
+  val memo: Map<i64, i64> = [:]
+  println("fib(30) = ${fib(30)} memo ${fibMemo(30, &memo)} (table ${memo.len()} entries)")
   println("2^10 = ${power(2, 10)}, 3^13 mod 7 = ${powMod(3, 13, 7)}, 10! = ${factorial(10)}")
   println("digits(90210) = ${digits(90210)}, isqrt(99) = ${isqrt(99)}")
   println("360 = ${factorize(360)}")
@@ -109,9 +109,9 @@ fun main() {
   var seed: u64 = 12345
   var agree = 0
   loop (n in [0, 1, 2, 31, 32, 33, 64, 65, 1000, 4097]) {
-    val ints: MutableList<i64> = []
-    val bytes: MutableList<u8> = []
-    val texts: MutableList<string> = []
+    val ints: List<i64> = []
+    val bytes: List<u8> = []
+    val texts: List<string> = []
     loop (_ in 0..<n) {
       seed ^= seed << 13
       seed ^= seed >> 7

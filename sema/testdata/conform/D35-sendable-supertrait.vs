@@ -8,9 +8,9 @@ trait Sink : Sendable {
 }
 
 struct Shared {
-  items: MutableList<i64>
+  items: *List<i64>
 
-  implement Sink { // error: 'Shared' requires Sendable through 'Sink'
+  implement Sink {  // error: 'Shared' requires Sendable through 'Sink'
     fun put(n: i64) {
       this.items.push(n)
     }
@@ -21,7 +21,7 @@ struct Plain {
   total: i64
 
   implement Sink {
-    fun put(n: i64) {}
+    fun put(n: i64) { }
   }
 }
 
@@ -29,7 +29,7 @@ struct Wrap<T> {
   value: T
 
   implement Sink {
-    fun put(n: i64) {}
+    fun put(n: i64) { }
   }
 }
 

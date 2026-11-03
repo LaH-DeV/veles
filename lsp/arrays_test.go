@@ -15,7 +15,7 @@ fun sum<const N: i64>(a: Array<i64, N>): i64 => a.fold(0, (s, x) => s + x)
 fun main() {
   var a: Array<i64, 3> = [1, 2, 3]
   a.set(0, 9)
-  io.println("${sum(a)} ${a.at(1)} ${a.len()}")
+  io.println("${sum(a)} ${a.get(1)} ${a.len()}")
 }
 `
 
@@ -43,7 +43,7 @@ func TestArraysInTheEditor(t *testing.T) {
 	if h := hover("set(0", 0); !strings.Contains(h, "Array<i64, 3>.set(i: i64, x: i64)") {
 		t.Errorf("hover on set: %s", h)
 	}
-	if h := hover("at(1", 0); !strings.Contains(h, "Array<i64, 3>.at(i: i64): i64?") {
+	if h := hover("get(1", 0); !strings.Contains(h, "Array<i64, 3>.get(i: i64): i64?") {
 		t.Errorf("hover on at: %s", h)
 	}
 	if h := hover("sum(a)", 0); !strings.Contains(h, "fun sum<const N: i64>") {

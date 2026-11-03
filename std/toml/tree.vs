@@ -38,7 +38,7 @@ struct Tree {
     var current = this.root
     val parents = path.take(path.len() - 1)
     loop (depth in 0..<parents.len()) {
-      val key = parents.at(depth)
+      val key = parents.get(depth)
       val here = path.take(depth + 1).join(".")
       val existing = current.get(key)
       if (existing == null) {

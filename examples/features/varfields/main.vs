@@ -80,8 +80,8 @@ fun main() {
   cache.last?.bump()  // through `?.` into the field itself
   println(cache.peek())
 
-  val counters: MutableList<Counter> = [Counter(label: "x")]
-  val first = counters.ref(0) ?: panic("one counter was added above")
+  val counters: List<Counter> = [Counter(label: "x")]
+  val first = counters.at(0) ?: panic("one counter was added above")
   first.bump()
   loop (&k in counters) k.n *= 10
   println("${counters.map(k => k.n)}")

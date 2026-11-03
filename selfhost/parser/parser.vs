@@ -31,7 +31,7 @@ fun parseFileLayout(file: File, diags: *Diagnostics): Layout {
   var parser = Parser(file, toks: scan.tokens, diags)
   var parsed = parser.parseFile()
   parsed.doc = scan.moduleDoc
-  Layout(file: parsed, comments: scan.comments, parens: parser.parens.toList())
+  Layout(file: parsed, comments: scan.comments, parens: parser.parens)
 }
 
 // where a function is declared, which decides what it may be
@@ -67,7 +67,7 @@ struct TestHead {
 
 struct Parser {
   file:      File
-  toks:      MutableList<Token>
+  toks:      List<Token>
   var diags: *Diagnostics
   var pos:   i64 = 0
   // one error per token position: a cascade is suppressed
@@ -90,15 +90,15 @@ struct Parser {
   // msg =>`, D168), not the removed conversion; outside brackets only
   var raceHead: bool = false
   // what the author wrote in parentheses, by the span inside them (Layout)
-  parens: MutableList<Span> = []
+  parens: List<Span> = []
 
   // ---- tokens
 
-  fun cur(): Token => this.toks.at(this.pos) ?: panic("parser: the cursor is always on a token")
+  fun cur(): Token => this.toks.get(this.pos) ?: panic("parser: the cursor is always on a token")
 
   fun peek(n: i64): Token {
     val at = (this.pos + n).min(this.toks.len() - 1)
-    this.toks.at(at) ?: panic("parser: a token list ends with EOF")
+    this.toks.get(at) ?: panic("parser: a token list ends with EOF")
   }
 
   fun at(kind: Kind): bool => this.cur().kind == kind
@@ -124,7 +124,7 @@ struct Parser {
 
   fun span(): Span => this.cur().span
 
-  fun prevSpan(): Span => (this.toks.at(this.pos - 1) ?: this.cur()).span
+  fun prevSpan(): Span => (this.toks.get(this.pos - 1) ?: this.cur()).span
 
   // from start to the end of the previous token
   fun spanFrom(start: Span): Span => start.to(this.prevSpan())
@@ -227,7 +227,7 @@ struct Parser {
   // ---- the file
 
   fun parseFile(): ast.SourceFile {
-    val decls: MutableList<ast.Decl> = []
+    val decls: List<ast.Decl> = []
     loop {
       this.skipSemis()
       if (this.at(Kind.EOF)) break
@@ -272,7 +272,7 @@ struct Parser {
     )
 
   fun parseAttributes(): List<ast.Attribute> {
-    val attrs: MutableList<ast.Attribute> = []
+    val attrs: List<ast.Attribute> = []
     if (this.at(Kind.At)) this.leadDoc = this.cur().doc
     loop (this.at(Kind.At)) {
       val start = this.span()
@@ -475,7 +475,7 @@ struct Parser {
   fun parseUse(): ast.UseDecl {
     val start = this.span()
     this.next()  // use
-    val specs: MutableList<ast.UseSpec> = []
+    val specs: List<ast.UseSpec> = []
     loop {
       specs.push(this.parseUseSpec() ?: break)
       if (!this.accept(Kind.Comma)) break
@@ -487,7 +487,7 @@ struct Parser {
 
   fun parseUseSpec(): ast.UseSpec? {
     val start = this.span()
-    val path: MutableList<ast.Ident> = [this.expectIdent() ?: return null]
+    val path: List<ast.Ident> = [this.expectIdent() ?: return null]
     loop (this.accept(Kind.Dot)) path.push(this.expectIdent() ?: break)
     var s = ast.UseSpec(path)
     if (this.accept(Kind.KwAs)) s.alias = this.ident()
@@ -503,7 +503,7 @@ struct Parser {
   fun parseUseNames(path: List<ast.Ident>): List<ast.UseName> {
     val open = this.next()  // {
     this.skipSemis()
-    val names: MutableList<ast.UseName> = []
+    val names: List<ast.UseName> = []
     var starred = false
     loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
       val start = this.span()
@@ -539,7 +539,7 @@ struct Parser {
     if (!this.at(Kind.LBrace)) return (true, null)
     val open = this.next()
     this.skipSemis()
-    val names: MutableList<ast.UseName> = []
+    val names: List<ast.UseName> = []
     loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
       val start = this.span()
       var n = ast.UseName(name: this.expectIdent() ?: break)
@@ -568,7 +568,7 @@ struct Parser {
   fun parseTypeParams(): List<ast.TypeParam> {
     if (!this.at(Kind.Lt)) return []
     val lt = this.next()
-    val tps: MutableList<ast.TypeParam> = []
+    val tps: List<ast.TypeParam> = []
     if (this.atTypeClose()) this.errorAt(lt.span, "empty type parameter list; drop the '<>'")
     loop (!this.atTypeClose()) {
       val isConst = this.at(Kind.KwConst)
@@ -592,14 +592,14 @@ struct Parser {
 
   // `A + B`: the bounds of a type parameter, the supertraits of a trait
   fun parseBounds(): List<ast.Type> {
-    val bounds: MutableList<ast.Type> = [this.parseType()]
+    val bounds: List<ast.Type> = [this.parseType()]
     loop (this.accept(Kind.Plus)) bounds.push(this.parseType())
     bounds
   }
 
   fun parseParams(): List<ast.Param> {
     if (!this.expect(Kind.LParen)) return []
-    val params: MutableList<ast.Param> = []
+    val params: List<ast.Param> = []
     loop (!this.atAny(Kind.RParen, Kind.EOF)) {
       val start = this.span()
       if (this.at(Kind.Ellipsis)) {

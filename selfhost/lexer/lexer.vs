@@ -36,7 +36,7 @@ fun tokenize(file: File, diags: *Diagnostics): Scan {
 
 /// `tokenize` for a parser, which owns the token list it is handed (it splits
 /// a `>>` that closes two type lists in place): no copy either way.
-fun tokenizeForParser(file: File, diags: *Diagnostics): (tokens: MutableList<Token>, moduleDoc: string, comments: List<Comment>) {
+fun tokenizeForParser(file: File, diags: *Diagnostics): (tokens: List<Token>, moduleDoc: string, comments: List<Comment>) {
   var lexer = Lexer(file: &file, src: file.content, diags)
   lexer.run()
   lexer.attachDocs()
@@ -45,7 +45,7 @@ fun tokenizeForParser(file: File, diags: *Diagnostics): (tokens: MutableList<Tok
 
 /// Scans `file.content[start, end)` with the file's own offsets, for the
 /// parser of the expression inside an interpolated string, `${…}`.
-fun tokenizeRange(file: File, start: i64, end: i64, diags: *Diagnostics): MutableList<Token> {
+fun tokenizeRange(file: File, start: i64, end: i64, diags: *Diagnostics): List<Token> {
   // the cut is where a `${` or a `}` is, so not inside a character
   val src = file.content.substring(0, end) ?: panic("tokenizeRange: $end is not at a character's edge")
   var lexer = Lexer(file: &file, src, diags, pos: start)
@@ -120,10 +120,10 @@ struct Lexer {
   src:      string
   diags:    *Diagnostics
   var pos:  i64 = 0
-  tokens:   MutableList<Token> = []
-  nesting:  MutableList<u8> = []  // the open `(`, `[` and `{`
-  docs:     MutableList<DocComment> = []
-  comments: MutableList<Comment> = []
+  tokens:   List<Token> = []
+  nesting:  List<u8> = []  // the open `(`, `[` and `{`
+  docs:     List<DocComment> = []
+  comments: List<Comment> = []
 
   fun span(start: i64, end: i64): Span => Span(file: this.file, start, end)
 
@@ -637,7 +637,7 @@ struct Lexer {
     val marginLen = closeAt - lineStart
     var bodyEnd = lineStart - 1
     if (bodyEnd < bodyStart) bodyEnd = bodyStart
-    val parts: MutableList<StringPart> = []
+    val parts: List<StringPart> = []
     val text = StringBuilder()
     this.pos = bodyStart
     var atLine = true
@@ -736,7 +736,7 @@ struct Lexer {
     }
     val start = this.pos
     this.pos += 1  // the opening quote
-    val parts: MutableList<StringPart> = []
+    val parts: List<StringPart> = []
     val text = StringBuilder()
     loop {
       if (this.pos >= this.src.len()) {
@@ -905,12 +905,12 @@ struct Lexer {
     // without the blank first and last lines of `/**\n … \n */`
     var first: i64 = 0
     var end = lines.len()
-    loop (first < end && (lines.at(first) ?: "x").isEmpty()) first += 1
-    loop (end > first && (lines.at(end - 1) ?: "x").isEmpty()) end -= 1
+    loop (first < end && (lines.get(first) ?: "x").isEmpty()) first += 1
+    loop (end > first && (lines.get(end - 1) ?: "x").isEmpty()) end -= 1
     val text = StringBuilder()
     loop (i in first..<end) {
       if (i > first) text.append("\n")
-      text.append(lines.at(i) ?: "")
+      text.append(lines.get(i) ?: "")
     }
     this.docs.push(DocComment(start, end: this.pos, text: text.toString()))
   }
@@ -922,11 +922,11 @@ struct Lexer {
     var t: i64 = 0
     loop (doc in this.docs) {
       loop {
-        val token = this.tokens.at(t) ?: return
+        val token = this.tokens.get(t) ?: return
         if (token.span.start >= doc.end && !(token.kind == Kind.Semi && token.autoSemi)) break
         t += 1
       }
-      var token = this.tokens.at(t) ?: return
+      var token = this.tokens.get(t) ?: return
       val gap = this.cut(doc.end, token.span.start)
       if (onlyWhitespace(gap) && countNewlines(gap) <= 1) {
         token.doc = doc.text

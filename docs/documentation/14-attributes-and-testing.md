@@ -111,7 +111,7 @@ annotation MaxLen(value: i64) on field for Validate
 
 trait Validate {
   fun problems(): List<string> {
-    val out: MutableList<string> = []
+    val out: List<string> = []
     inline loop ((f, min) in This.annotated<Min>()) {
       if (f.get(this) < min.value) out.push("${f.name} must be at least ${min.value}")
     }
@@ -122,7 +122,7 @@ trait Validate {
   }
 
   static const fun rules(): List<string> {
-    val out: MutableList<string> = []
+    val out: List<string> = []
     loop ((f, min) in This.annotated<Min>()) out.push("${f.name} >= ${min.value}")
     loop ((f, most) in This.annotated<MaxLen>()) out.push("${f.name} <= ${most.value} bytes")
     out
@@ -499,8 +499,8 @@ only test code can call it, and a build leaves it out.
 // fragment
 test fun expectSorted(xs: List<i64>) {
   loop (i in 1..<xs.len()) {
-    val before = xs.at(i - 1) ?: 0
-    expect(before <= xs.at(i))
+    val before = xs.get(i - 1) ?: 0
+    expect(before <= xs.get(i))
   }
 }
 
@@ -516,7 +516,7 @@ as well as for a failed `expect`:
 
 ```text
 test sorts ... FAILED
-  main.vs:4:5: expect(before <= xs.at(i))
+  main.vs:4:5: expect(before <= xs.get(i))
       called from main.vs:9:3
 ```
 
@@ -691,7 +691,7 @@ say is already a compile error in Veles:
 
 - an unused `Result` (chapter 7), a `when` missing a variant (9), a
   `val` that is assigned (2), a bare field assigned (5);
-- a `T?` used as a `T` (6), a `MutableList` handed to another task (12),
+- a `T?` used as a `T` (6), a `List` handed to another task (12),
   a C call outside `unsafe` (13);
 - an import cycle (11), a private name used from another module (11);
 - test code called from a program, and a test's vocabulary used outside

@@ -10,7 +10,7 @@ extend<T> List<T> {
   /// What `f` returns for each element, in order: `[1, 2].map(x => x * 10)`
   /// is `[10, 20]`. Eager; `xs.iter().map(f)` is the lazy form (D46).
   public const fun map<U, E>(f: fun(T): U suspends throws E): List<U> throws E {
-    val out: MutableList<U> = []
+    val out: List<U> = []
     out.reserve(this.len())
     loop (x in this) {
       out.push(try f(x))
@@ -20,7 +20,7 @@ extend<T> List<T> {
 
   /// The elements `pred` accepts, in order.
   public const fun filter<E>(pred: fun(T): bool suspends throws E): List<T> throws E {
-    val out: MutableList<T> = []
+    val out: List<T> = []
     loop (x in this) {
       if (try pred(x)) out.push(x)
     }
@@ -83,7 +83,7 @@ extend<K, V> Map<K, V> {
 
   /// The same keys, each with what `f` returns for its value.
   public const fun mapValues<U, E>(f: fun(V): U suspends throws E): Map<K, U> throws E {
-    val out: MutableMap<K, U> = [:]
+    val out: Map<K, U> = [:]
     out.reserve(this.len())
     loop ((k, v) in this.entries()) {
       out.set(k, try f(v))
@@ -93,7 +93,7 @@ extend<K, V> Map<K, V> {
 
   /// The entries `pred` accepts.
   public const fun filter<E>(pred: fun(K, V): bool suspends throws E): Map<K, V> throws E {
-    val out: MutableMap<K, V> = [:]
+    val out: Map<K, V> = [:]
     loop ((k, v) in this.entries()) {
       if (try pred(k, v)) out.set(k, v)
     }
@@ -101,13 +101,14 @@ extend<K, V> Map<K, V> {
   }
 }
 
-extend<K, V> MutableMap<K, V> {
-  /// The value under `key`; when there is none, what `make` returns, stored
-  /// under `key` first.
-  public const fun getOrPut<E>(key: K, make: fun(): V suspends throws E): V throws E {
-    if (val found = this.get(key)) return found
+extend<K, V> Map<K, V> {
+  /// The value stored under `key`, as a pointer to change it in place;
+  /// when there is none, what `make` returns is stored first:
+  /// `groups.atOrPut(key, () => []).push(file)`.
+  public const fun atOrPut<E>(key: K, make: fun(): V suspends throws E): *V throws E {
+    if (val found = this.at(key)) return found
     val made = try make()
     this.set(key, made)
-    made
+    this.at(key) ?: panic("atOrPut: the value was stored just above")
   }
 }

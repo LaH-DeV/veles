@@ -80,7 +80,7 @@ fun main() {
     async racingConsumer(c, out)
   }
   out.close()
-  val seen: MutableSet<i64> = MutableSet<i64>()
+  val seen: Set<i64> = Set<i64>()
   var dup = 0
   loop {
     val v = out.tryRecv() ?: break

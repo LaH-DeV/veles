@@ -24,10 +24,10 @@ public const struct Uuid {
   /// take the other six, so two v4 ids collide about as often as two
   /// 122-bit random numbers do — never, in practice.
   public static fun v4(): Uuid {
-    val b = randomBytes(16).toMutable()
+    val b = randomBytes(16)
     if (b.len() != 16) panic("Uuid.v4: randomBytes(16) returned ${b.len()} bytes")
-    b.set(6, (b.at(6) & 0x0f) | 0x40)  // version 4
-    b.set(8, (b.at(8) & 0x3f) | 0x80)  // variant 10
+    b.set(6, (b.get(6) & 0x0f) | 0x40)  // version 4
+    b.set(8, (b.get(8) & 0x3f) | 0x80)  // variant 10
     Uuid(data: b)
   }
 
@@ -48,7 +48,7 @@ public const struct Uuid {
     val (ms, counter) = nextTick()
     val r = randomBytes(8)
     if (r.len() != 8) panic("Uuid.v7: randomBytes(8) returned ${r.len()} bytes")
-    val b: MutableList<u8> = []
+    val b: List<u8> = []
     var s = 40
     loop (s >= 0) {
       b.push(((ms >> s) & 255).wrapU8())
@@ -56,14 +56,14 @@ public const struct Uuid {
     }
     b.push(0x70 | ((counter >> 8) & 0x0f).wrapU8())  // version 7 + counter high
     b.push((counter & 255).wrapU8())                 // counter low
-    b.push((r.at(0) & 0x3f) | 0x80)                  // variant 10
-    loop (i in 1..<r.len()) b.push(r.at(i))
+    b.push((r.get(0) & 0x3f) | 0x80)                 // variant 10
+    loop (i in 1..<r.len()) b.push(r.get(i))
     Uuid(data: b)
   }
 
   /// The all-zero UUID, `00000000-0000-0000-0000-000000000000`: the RFC's
   /// "nil" value, for a column that must hold a UUID and means "none".
-  public static fun zero(): Uuid => Uuid(data: MutableList<u8>.repeat(0, 16).toList())
+  public static fun zero(): Uuid => Uuid(data: List<u8>.repeat(0, 16))
 
   /// Sixteen bytes as a UUID, whatever they say about their version — for
   /// reading an id out of a binary column. Panics unless there are exactly
@@ -88,7 +88,7 @@ public const struct Uuid {
       return null
     }
     if (digits.len() != 32) return null
-    val out: MutableList<u8> = []
+    val out: List<u8> = []
     var i = 0
     loop (i < 32) {
       val hi = nibble(digits.byteAt(i)) ?: return null
@@ -101,7 +101,7 @@ public const struct Uuid {
 
   /// Byte `i` of the id. Every constructor makes sixteen bytes, and the
   /// readers ask for `i` in `0..<16`.
-  fun byte(i: i64): u8 => this.data.at(i) ?: panic("Uuid: the data is always sixteen bytes")
+  fun byte(i: i64): u8 => this.data.get(i) ?: panic("Uuid: the data is always sixteen bytes")
 
   /// The sixteen bytes, big-endian as the RFC lays them out.
   public fun bytes(): List<u8> => this.data

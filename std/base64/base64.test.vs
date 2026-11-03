@@ -21,9 +21,9 @@ test "binary vectors distinguish standard and URL alphabets" {
 }
 
 test "encodedLen agrees with both encoders across tail lengths" {
-  val bytes: MutableList<u8> = []
+  val bytes: List<u8> = []
   loop (length in 0..256) {
-    val snapshot = bytes.toList()
+    val snapshot = bytes
     expect(encodedLen(length) == encode(snapshot).len())
     expect(encodedLen(length, pad: false) == encodeUrl(snapshot).len())
     if (length < 256) bytes.push(length.wrapU8())
@@ -31,16 +31,16 @@ test "encodedLen agrees with both encoders across tail lengths" {
 }
 
 test "all byte values survive both base64 alphabets" {
-  val bytes: MutableList<u8> = []
+  val bytes: List<u8> = []
   loop (value in 0..<256) bytes.push(value.wrapU8())
-  val snapshot = bytes.toList()
+  val snapshot = bytes
   val standard = try decode(encode(snapshot))
   val url = try decodeUrl(encodeUrl(snapshot))
   expect(standard.len() == bytes.len())
   expect(url.len() == bytes.len())
   loop (index in 0..<bytes.len()) {
-    expect(standard.at(index) == bytes.at(index))
-    expect(url.at(index) == bytes.at(index))
+    expect(standard.get(index) == bytes.get(index))
+    expect(url.get(index) == bytes.get(index))
   }
 }
 

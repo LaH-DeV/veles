@@ -1,12 +1,12 @@
 // Creating empty collections (D187): two million small records, each with an
-// empty MutableList, an empty MutableMap and an empty List field; one in
+// empty List, an empty Map and an empty List field; one in
 // eight is used. The cost is what a value that stays empty takes.
 use io { println }
 use time
 
 struct Record {
-  items: MutableList<i64> = []
-  index: MutableMap<i64, i64> = [:]
+  items: List<i64> = []
+  index: Map<i64, i64> = [:]
   tags:  List<i64> = []
 }
 

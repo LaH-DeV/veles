@@ -224,6 +224,14 @@ fun v_main.main: fun()
         VarDecl
           Var: $tmp5#2
           Init:
+            Builtin: i64
+              Op: "list.lend"
+              Args:
+                VarRef: List<Shape>
+                  Var: $tmp4#1
+        VarDecl
+          Var: $tmp6#3
+          Init:
             IntConst: i64
               Value: 0
         Loop
@@ -232,7 +240,7 @@ fun v_main.main: fun()
               Op: <
               L:
                 VarRef: i64
-                  Var: $tmp5#2
+                  Var: $tmp6#3
               R:
                 Builtin: i64
                   Op: "list.len"
@@ -243,7 +251,7 @@ fun v_main.main: fun()
             Block
               Stmts:
                 VarDecl
-                  Var: s#3
+                  Var: s#4
                   Init:
                     Builtin: Shape
                       Op: "list.get"
@@ -251,7 +259,7 @@ fun v_main.main: fun()
                         VarRef: List<Shape>
                           Var: $tmp4#1
                         VarRef: i64
-                          Var: $tmp5#2
+                          Var: $tmp6#3
                 ExprStmt
                   X:
                     Call: ()
@@ -265,7 +273,7 @@ fun v_main.main: fun()
                                   Fn: @v_main.area
                                   Args:
                                     VarRef: Shape
-                                      Var: s#3
+                                      Var: s#4
                                   Recv: 0
                       Recv: 0
               Type: ()
@@ -273,17 +281,26 @@ fun v_main.main: fun()
             Assign
               Target:
                 VarRef: i64
-                  Var: $tmp5#2
+                  Var: $tmp6#3
               Value:
                 Binary: i64
                   Op: +%
                   L:
                     VarRef: i64
-                      Var: $tmp5#2
+                      Var: $tmp6#3
                   R:
                     IntConst: i64
                       Value: 1
           ID: 1
+        ExprStmt
+          X:
+            Builtin: ()
+              Op: "list.unlend"
+              Args:
+                VarRef: List<Shape>
+                  Var: $tmp4#1
+                VarRef: i64
+                  Var: $tmp5#2
         ExprStmt
           X:
             Call: ()

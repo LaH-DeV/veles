@@ -2,48 +2,48 @@
 use io
 
 struct Handle {
-  items: MutableList<i64>
+  items: *List<i64>
 }
 
 fun work(): i64 => 1
 
-val sleeper = await sleep(Duration.millis(1)) // error: 'sleep' suspends; a global initializer cannot suspend // error: a global cannot have type '()'
+val sleeper = await sleep(Duration.millis(1))  // error: 'sleep' suspends; a global initializer cannot suspend // error: a global cannot have type '()'
 
 fun untypedChannel() {
-  val _ = Channel() // error: cannot infer the element type of the channel; write 'Channel<T>(...)'
+  val _ = Channel()  // error: cannot infer the element type of the channel; write 'Channel<T>(...)'
 }
 fun unsendableChannel() {
-  val _ = Channel<Handle>() // error: 'Handle' is not Sendable and cannot cross a task boundary through a channel
+  val _ = Channel<Handle>()  // error: 'Handle' is not Sendable and cannot cross a task boundary through a channel
 }
 fun twoArguments() {
-  val _ = Channel<i64>(1, 2) // error: Channel takes at most one argument, 'capacity'
+  val _ = Channel<i64>(1, 2)  // error: Channel takes at most one argument, 'capacity'
 }
 fun wrongName() {
-  val _ = Channel<i64>(size: 1) // error: Channel has no parameter 'size'; use 'capacity'
+  val _ = Channel<i64>(size: 1)  // error: Channel has no parameter 'size'; use 'capacity'
 }
 fun noSuchChannelMethod(ch: Channel<i64>) {
-  ch.peek() // error: no method 'peek' on type 'Channel<i64>'
+  ch.peek()  // error: no method 'peek' on type 'Channel<i64>'
 }
 fun sleepTwo() {
-  await sleep(Duration.millis(1), Duration.millis(2)) // error: 'sleep' takes one argument: a 'Duration'
+  await sleep(Duration.millis(1), Duration.millis(2))  // error: 'sleep' takes one argument: a 'Duration'
 }
 fun sleepMillis() {
-  await sleep(100) // error: 'sleep' takes a 'Duration', not a number of milliseconds
+  await sleep(100)  // error: 'sleep' takes a 'Duration', not a number of milliseconds
 }
 fun sleepText() {
-  await sleep("1s") // error: 'sleep' takes a 'Duration', found 'string'
+  await sleep("1s")  // error: 'sleep' takes a 'Duration', found 'string'
 }
 fun sleepNotAwaited() {
-  sleep(Duration.millis(1)) // error: 'sleep()' always suspends and must be awaited
+  sleep(Duration.millis(1))  // error: 'sleep()' always suspends and must be awaited
 }
 fun asyncValue(f: fun(): i64) {
   scope {
-    async f() // error: 'f' is not a sendable function
+    async f()  // error: 'f' is not a sendable function
   }
 }
 fun raceOnNumber() {
   val _ = select {
-    work() => 1 // error: a select arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)', a task ('async f()' or a handle), or an Event's 'wait()', a Watch's 'changed()' or a Subscription's 'recv()' (D146, D168), not 'i64'
+    work() => 1  // error: a select arm waits on 'ch.recv()', 'ch.send(v)', 'sleep(d)', a task ('async f()' or a handle), or an Event's 'wait()', a Watch's 'changed()' or a Subscription's 'recv()' (D146, D168), not 'i64'
   }
 }
 

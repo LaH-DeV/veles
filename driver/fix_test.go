@@ -81,8 +81,8 @@ implement Show for A {
 }
 
 fun main() {
-  var xs: MutableList<i64> = mut [1]
-  var m: MutableMap<string, i64> = mut  [:]
+  var xs: List<i64> = [1]
+  var m: Map<string, i64> = mut  [:]
   val unused = xs.len()
   val s: S = A()
   val n = when (s) {
@@ -112,8 +112,8 @@ trait Show {
 }
 
 fun main() {
-  var xs: MutableList<i64> = [1]
-  var m: MutableMap<string, i64> = [:]
+  var xs: List<i64> = [1]
+  var m: Map<string, i64> = [:]
   xs.len()
   val s: S = A()
   val n = when (s) {
@@ -147,8 +147,8 @@ func TestCheckFixIndexing(t *testing.T) {
 
 fun main() {
   val xs = [1, 2, 3]
-  var ys: MutableList<i64> = [0, 0]
-  var m: MutableMap<string, i64> = [:]
+  var ys: List<i64> = [0, 0]
+  var m: Map<string, i64> = [:]
   val grid = [[1, 2], [3, 4]]
   ys[0] = xs[1]
   ys[1] += 2
@@ -165,12 +165,12 @@ fun main() {
 
 fun main() {
   val xs = [1, 2, 3]
-  var ys: MutableList<i64> = [0, 0]
-  var m: MutableMap<string, i64> = [:]
+  var ys: List<i64> = [0, 0]
+  var m: Map<string, i64> = [:]
   val grid = [[1, 2], [3, 4]]
-  ys.set(0, xs.at(1) ?: panic("TODO: say why this cannot fail"))
-  ys.set(1, (ys.at(1) ?: panic("TODO: say why this cannot fail")) + 2)
-  m.set("k", (grid.at(1) ?: panic("TODO: say why this cannot fail")).at(0) ?: panic("TODO: say why this cannot fail"))
+  ys.set(0, xs.get(1) ?: panic("TODO: say why this cannot fail"))
+  ys.set(1, (ys.get(1) ?: panic("TODO: say why this cannot fail")) + 2)
+  m.set("k", (grid.get(1) ?: panic("TODO: say why this cannot fail")).get(0) ?: panic("TODO: say why this cannot fail"))
   io.println("$ys ${m.get("k") ?: 0}")
 }
 `

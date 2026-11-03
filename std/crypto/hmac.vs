@@ -20,11 +20,11 @@ public struct Hmac<H: Hasher> {
     val block = H.blockSize()
     // RFC 2104: a key longer than one block is replaced by its own digest
     val k = if (key.len() > block) digest<H>(key).bytes() else key
-    val ipad: MutableList<u8> = []
-    val opad: MutableList<u8> = []
+    val ipad: List<u8> = []
+    val opad: List<u8> = []
     var i = 0
     loop (i < block) {
-      val b: u8 = if (i < k.len()) k.at(i) else 0
+      val b: u8 = if (i < k.len()) k.get(i) else 0
       ipad.push(b ^ 0x36)
       opad.push(b ^ 0x5c)
       i = i + 1

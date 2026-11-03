@@ -28,7 +28,7 @@ struct Stats {
 
 struct Fuzzer {
   var rng:   random.Rng
-  var stats: MutableMap<string, Stats> = [:]
+  var stats: Map<string, Stats> = [:]
 
   fun record(target: string, accepted: bool, failure: string?) {
     var s = this.stats.get(target) ?: Stats()
@@ -51,7 +51,7 @@ struct Fuzzer {
 
   fun bytes(max: i64): List<u8> {
     val n = this.rng.range(0, max + 1)
-    var out: MutableList<u8> = []
+    var out: List<u8> = []
     loop (_ in 0..<n) out.push((this.rng.range(0, 256)).wrapU8())
     out
   }
@@ -175,12 +175,12 @@ fun randomValue(f: *Fuzzer, depth: i64): codec.Value {
       return codec.VString(value: sb.toString())
     }
     5    => {
-      var items: MutableList<codec.Value> = []
+      var items: List<codec.Value> = []
       loop (_ in 0..<f.rng.range(0, 4)) items.push(randomValue(f, depth - 1))
       return codec.VList(items)
     }
     else => {
-      var fields: MutableMap<string, codec.Value> = [:]
+      var fields: Map<string, codec.Value> = [:]
       loop (_ in 0..<f.rng.range(0, 4)) fields.set(f.rng.pick(strs) ?: "", randomValue(f, depth - 1))
       return codec.VObject(fields)
     }
@@ -201,11 +201,11 @@ fun fuzzPercent(f: *Fuzzer) {
 fun fuzzUtf8(f: *Fuzzer) {
   // bias towards the interesting bytes: continuation, lead, and the edges
   val special: List<u8> = [0x7F, 0x80, 0xBF, 0xC0, 0xC1, 0xC2, 0xDF, 0xE0, 0xED, 0xEF, 0xF0, 0xF4, 0xF5, 0xFF, 0x9F, 0xA0, 0x8F, 0x90]
-  var data: MutableList<u8> = []
+  var data: List<u8> = []
   loop (_ in 0..<f.rng.range(0, 12)) {
     data.push(if (f.rng.range(0, 3) == 0) (f.rng.range(0, 256)).wrapU8() else f.rng.pick(special) ?: 0)
   }
-  val bytes = data.toList()
+  val bytes = data
   val std = utf8.isValid(bytes)
   val runtime = bytes.decodeUtf8() != null
   f.record("utf8 validators agree", std, if (std != runtime) "${hex.encode(bytes)}: std/utf8 says $std, decodeUtf8 says $runtime" else null)
@@ -234,7 +234,7 @@ fun echo(req: http.Request): http.Response suspends throws http.Fail | IoError =
 /// `data` as a chunked body: pieces of random size, some with a chunk
 /// extension, then the last chunk and sometimes a trailer field.
 fun chunked(f: *Fuzzer, data: List<u8>): List<u8> {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   var at: i64 = 0
   loop (at < data.len()) {
     val n = f.rng.range(1, data.len() - at + 1)
@@ -268,7 +268,7 @@ struct Draft {
   var target:  string
   var version: string = "HTTP/1.1"
   var line:    string? = null  // the whole request line, when a fault wrote it
-  var headers: MutableList<string> = []
+  var headers: List<string> = []
   var body:    List<u8> = []
   var eol:     string = "\r\n"
 
@@ -434,7 +434,7 @@ fun faulty(f: *Fuzzer): (List<u8>, i64, string) {
     }
     18   => {
       // a byte that is not UTF-8 in the target
-      var w = d.wire().toMutable()
+      var w = d.wire()
       w.insert(d.method.len() + 2, 0xFF)
       return (w, 400, "target not UTF-8")
     }
@@ -477,7 +477,7 @@ fun faulty(f: *Fuzzer): (List<u8>, i64, string) {
 /// the parser splits on.
 fun mutate(f: *Fuzzer, wire: List<u8>): List<u8> {
   val special: List<u8> = [' ', ':', '\r', '\n', '\t', '%', '0', '9', '-', 0x00, 0x7F, 0xC3, 0xFF]
-  var out = wire.toMutable()
+  var out = wire
   loop (_ in 0..<f.rng.range(1, 4)) {
     if (out.isEmpty()) break
     val at = f.rng.range(0, out.len())
@@ -496,8 +496,8 @@ fun mutate(f: *Fuzzer, wire: List<u8>): List<u8> {
 fun fuzzHttp(f: *Fuzzer, port: i64) {
   val n = f.rng.range(1, 4)
   val mode = f.rng.range(0, 4)  // 0: the last request is faulty, 1: all of it mutated
-  var wire: MutableList<u8> = []
-  var wants: MutableList<Want> = []
+  var wire: List<u8> = []
+  var wants: List<Want> = []
   var fault = ""
   loop (i in 0..<n) {
     if (i == n - 1 && mode == 0) {
@@ -511,7 +511,7 @@ fun fuzzHttp(f: *Fuzzer, port: i64) {
       wants.push(want)
     }
   }
-  val sent = if (mode == 1) mutate(f, wire.toList()) else wire.toList()
+  val sent = if (mode == 1) mutate(f, wire) else wire
   val target = if (mode == 1) "http mutated" else "http requests"
   when (val r = exchange(port, sent)) {
     is Ok     => {
@@ -569,7 +569,7 @@ fun exchange(port: i64, wire: List<u8>): List<u8> suspends throws IoError | Time
 }
 
 fun readAll(c: net.Conn): List<u8> suspends throws IoError {
-  var out: MutableList<u8> = []
+  var out: List<u8> = []
   loop (out.len() <= 1048576) {
     val chunk = try c.read()
     if (chunk.isEmpty()) break
@@ -589,7 +589,7 @@ struct Got {
 fun crlf(data: List<u8>, from: i64): i64 {
   var i = from
   loop (i + 1 < data.len()) {
-    if (data.at(i) == '\r' && data.at(i + 1) == '\n') return i
+    if (data.get(i) == '\r' && data.get(i + 1) == '\n') return i
     i += 1
   }
   -1
@@ -598,21 +598,21 @@ fun crlf(data: List<u8>, from: i64): i64 {
 /// Everything the server sent, as responses; the text says what is not a
 /// well-formed HTTP/1.1 response, and is empty when all of it is.
 fun parseResponses(data: List<u8>): (List<Got>, string) {
-  var out: MutableList<Got> = []
+  var out: List<Got> = []
   var at: i64 = 0
   loop (at < data.len()) {
     val end = crlf(data, at)
-    if (end < 0) return (out.toList(), "response ${out.len() + 1} has no status line")
+    if (end < 0) return (out, "response ${out.len() + 1} has no status line")
     val statusLine = data.slice(at, end).decodeUtf8() ?: ""
     val (proto, rest) = statusLine.splitOnce(" ") ?: ("", "")
     val (code, _) = rest.splitOnce(" ") ?: ("", "")
     val status = code.toInt() ?: 0
-    if (proto != "HTTP/1.1" || code.len() != 3 || status < 100) return (out.toList(), "status line \"$statusLine\"")
+    if (proto != "HTTP/1.1" || code.len() != 3 || status < 100) return (out, "status line \"$statusLine\"")
     at = end + 2
-    val headers: MutableMap<string, string> = [:]
+    val headers: Map<string, string> = [:]
     loop {
       val e = crlf(data, at)
-      if (e < 0) return (out.toList(), "response ${out.len() + 1}: headers without an end")
+      if (e < 0) return (out, "response ${out.len() + 1}: headers without an end")
       if (e == at) {
         at += 2
         break
@@ -620,13 +620,13 @@ fun parseResponses(data: List<u8>): (List<Got>, string) {
       val line = data.slice(at, e).decodeUtf8() ?: ""
       val (name, value) = line.splitOnce(": ") ?: ("", "")
       if (name.isEmpty() || name != name.toLower() || name.contains(" ") || value.contains("\r") || value.contains("\n")) {
-        return (out.toList(), "response ${out.len() + 1}: header line \"$line\"")
+        return (out, "response ${out.len() + 1}: header line \"$line\"")
       }
       headers.set(name, value)
       at = e + 2
     }
-    val length = headers.get("content-length")?.toInt() ?: return (out.toList(), "response ${out.len() + 1} has no content-length")
-    if (at + length > data.len()) return (out.toList(), "response ${out.len() + 1}: body shorter than its content-length")
+    val length = headers.get("content-length")?.toInt() ?: return (out, "response ${out.len() + 1} has no content-length")
+    if (at + length > data.len()) return (out, "response ${out.len() + 1}: body shorter than its content-length")
     out.push(Got(status, headers, body: data.slice(at, at + length)))
     at += length
   }
@@ -681,8 +681,8 @@ fun showBytes(b: List<u8>): string {
 
 fun main() {
   val args = os.args()
-  val iterations = args.at(0)?.toInt() ?: 500
-  val seed = args.at(1)?.toInt() ?: 1
+  val iterations = args.get(0)?.toInt() ?: 500
+  val seed = args.get(1)?.toInt() ?: 1
   var f = Fuzzer(rng: random.Rng.seeded(seed))
   // inputs that once broke a decoder, checked on every run before the
   // generated ones: each was found by this program

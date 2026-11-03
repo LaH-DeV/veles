@@ -11,7 +11,8 @@ fun v_main.main: fun()
   local shapes#0: List<Shape>
   local $tmp4#1: List<Shape>
   local $tmp5#2: i64
-  local s#3: Shape
+  local $tmp6#3: i64
+  local s#4: Shape
 struct Circle
   r: f64
 struct Rect

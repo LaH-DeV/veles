@@ -91,7 +91,7 @@ fun main() {
   io.println("upload ${size(kept)} ${size(up)}")
 
   val total = scope {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     loop (k in 0..<8) tasks.push(async treeValue(2000 + k))
     awaitAll(tasks).fold(0, (acc, v) => acc + v)
   }

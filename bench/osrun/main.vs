@@ -3,7 +3,7 @@ use os
 use time
 
 fun main() throws IoError {
-  if (os.args().at(0) == "--osrun-child") {
+  if (os.args().get(0) == "--osrun-child") {
     io.print("h\u{E9}llo\n".repeat(16384))
     io.eprintln("error".repeat(8192))
     return

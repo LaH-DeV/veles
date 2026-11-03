@@ -49,7 +49,7 @@ fun serveOne(conn: tls.Conn) suspends {
 
 fun main() suspends throws IoError {
   val args = os.args()
-  with certs = try tls.reloading(args.at(0) ?: "", args.at(1) ?: "", every: Duration.millis(100), alpn: ["h2", "http/1.1"])
+  with certs = try tls.reloading(args.get(0) ?: "", args.get(1) ?: "", every: Duration.millis(100), alpn: ["h2", "http/1.1"])
   with listener = try tls.listen(cert: certs.certificate())
   io.println("port ${listener.port()}")
   scope {
@@ -307,7 +307,7 @@ const httpsServerProgram = `use http, io, net, os, tls
 
 fun main() suspends throws IoError {
   val args = os.args()
-  with certs = try tls.reloading(args.at(0) ?: "", args.at(1) ?: "", every: Duration.seconds(60))
+  with certs = try tls.reloading(args.get(0) ?: "", args.get(1) ?: "", every: Duration.seconds(60))
   with listener = try net.listen()
   io.println("port ${listener.port()}")
   val router = http.Router()

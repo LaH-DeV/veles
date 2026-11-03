@@ -1,5 +1,5 @@
 // Prelude — Deque and PriorityQueue. Both are reference types like
-// MutableList (D25): a `val` binding can grow them, and passing one to a
+// List (D25): a `val` binding can grow them, and passing one to a
 // function shares it. The state lives behind a GC pointer (D31) so that the
 // bookkeeping fields move with the buffer.
 
@@ -11,14 +11,14 @@ struct DequeState<T> {
   /// wrapping at `buf.len()`, which is the capacity. A free slot holds
   /// `null` — `T?` keeps that apart from a stored `null` when `T` is itself
   /// nullable — so a removed element is released at once.
-  var buf:  MutableList<T?> = []
+  var buf:  List<T?> = []
   var head: i64 = 0
   var size: i64 = 0
 }
 
 /// A double-ended queue over a ring buffer: O(1) at both ends, so it serves
 /// as a FIFO queue (`addLast` / `removeFirst`), a stack, or a sliding
-/// window. Amortised O(1) growth; `at(i)` is O(1). `Deque<i64>()` makes
+/// window. Amortised O(1) growth; `get(i)` and `at(i)` are O(1). `Deque<i64>()` makes
 /// an empty one.
 public struct Deque<T> {
   private state: *DequeState<T> = &DequeState<T>()
@@ -69,18 +69,30 @@ public struct Deque<T> {
   }
 
   /// The front element, or `null` when empty.
-  public fun first(): T? => this.at(0)
+  public fun first(): T? => this.get(0)
 
   /// The back element, or `null` when empty.
-  public fun last(): T? => this.at(-1)
+  public fun last(): T? => this.get(-1)
 
-  /// The element `i` places from the front, or `null` when `i` is out of
-  /// range; a negative `i` counts from the back, so `at(-1)` is the last.
-  public fun at(i: i64): T? {
+  /// A copy of the element `i` places from the front, or `null` when `i`
+  /// is out of range; a negative `i` counts from the back, so `get(-1)` is
+  /// the last.
+  public fun get(i: i64): T? {
     val s = this.state
     val k = if (i < 0) i + s.size else i
     if (k < 0 || k >= s.size) return null
     this.slot(k)
+  }
+
+  /// A pointer to the element `i` places from the front, or `null` when `i`
+  /// is out of range; a negative `i` counts from the back. `d.at(0)?.n += 1`
+  /// changes the element in place; `get` gives a copy (D231).
+  public fun at(i: i64): (*T)? {
+    val s = this.state
+    val k = if (i < 0) i + s.size else i
+    if (k < 0 || k >= s.size) return null
+    val slot = s.buf.at((s.head + k) % s.buf.len()) ?: panic("deque: a position taken mod the capacity is inside the buffer")
+    slotPayload(slot)
   }
 
   /// The slot `k` places from the front. Every position is taken mod the
@@ -88,7 +100,7 @@ public struct Deque<T> {
   /// element when `k` is in `0..<size`.
   fun slot(k: i64): T? {
     val s = this.state
-    s.buf.at((s.head + k) % s.buf.len()) ?: panic("deque: a position taken mod the capacity is inside the buffer")
+    s.buf.get((s.head + k) % s.buf.len()) ?: panic("deque: a position taken mod the capacity is inside the buffer")
   }
 
   /// Removes every element.
@@ -102,7 +114,7 @@ public struct Deque<T> {
   /// The elements front to back.
   public fun toList(): List<T> {
     val s = this.state
-    var out: MutableList<T> = []
+    var out: List<T> = []
     loop (i in 0..<s.size) {
       out.push(this.slot(i) ?: panic("deque: a live slot is empty"))
     }
@@ -126,7 +138,7 @@ public struct Deque<T> {
   // the live elements, in order, at the start of a buffer of `cap` slots
   fun moveTo(cap: i64) {
     val s = this.state
-    val fresh: MutableList<T?> = []
+    val fresh: List<T?> = []
     loop (_ in 0..<cap) fresh.push(null)
     loop (i in 0..<s.size) fresh.set(i, this.slot(i))
     s.buf = fresh
@@ -149,7 +161,7 @@ public struct Deque<T> {
 struct PriorityQueueState<T> {
   /// A binary heap: the smallest element (by `compare`) is at index 0 and
   /// the children of `i` are at `2i + 1` and `2i + 2`.
-  items:   MutableList<T> = []
+  items:   List<T> = []
   compare: fun(T, T): Ordering
 }
 
@@ -179,7 +191,7 @@ public struct PriorityQueue<T> {
 
   /// Adds `x`.
   public fun push(x: T) {
-    val items = this.state.items
+    val items = &this.state.items
     items.push(x)
     this.siftUp(items.len() - 1)
   }
@@ -187,7 +199,7 @@ public struct PriorityQueue<T> {
   /// Removes and returns the first element in the queue's order, or `null`
   /// when empty.
   public fun pop(): T? {
-    val items = this.state.items
+    val items = &this.state.items
     val top = items.first() ?: return null
     val last = items.pop() ?: return null
     if (items.len() > 0) {
@@ -204,11 +216,11 @@ public struct PriorityQueue<T> {
 
   /// The elements in heap order — the first is the smallest, the rest are
   /// not sorted.
-  public fun toList(): List<T> => this.state.items.toList()
+  public fun toList(): List<T> => this.state.items
 
   /// The element at heap position `i`; the sifts only ask for positions
   /// below the heap's size.
-  fun item(i: i64): T => this.state.items.at(i) ?: panic("heap: a sift reads only positions below the size")
+  fun item(i: i64): T => this.state.items.get(i) ?: panic("heap: a sift reads only positions below the size")
 
   fun siftUp(from: i64) {
     val s = this.state

@@ -34,9 +34,9 @@ extend Value {
     else       => null
   }
 
-  /// Element `i` of a list, or `null`.
-  public fun at(i: i64): Value? => when (this) {
-    is VList => this.items.at(i)
+  /// A copy of element `i` of a list, or `null`.
+  public fun elementAt(i: i64): Value? => when (this) {
+    is VList => this.items.get(i)
     else     => null
   }
 
@@ -110,10 +110,17 @@ struct Frame {
 /// A `Decoder` over a `Value`: what a derived decoder uses to read a
 /// variant out of an object it buffered, and what `json.decodeValue<T>`
 /// uses to type a tree after the fact.
+// What a ValueDecoder has open and what went wrong. A decoder is a value
+// that trait objects copy (D9), and so are its lists (D231): this lives
+// behind a pointer every copy shares.
+struct ValueDecoderState {
+  stack:    List<Frame> = []
+  recorded: Problems = Problems()
+}
+
 public struct ValueDecoder {
   private root:          Value
-  private stack:         MutableList<Frame> = []
-  private recorded:      Problems = Problems()
+  private state:         *ValueDecoderState = &ValueDecoderState()
   private started:       bool = false
   private name:          string = "json"
   private style:         EnumStyle = EnumStyle.Name
@@ -126,26 +133,26 @@ public struct ValueDecoder {
 
   /// The value about to be read.
   private fun current(): Value {
-    val top = this.stack.ref(-1) ?: return this.root
-    if (top.isList) return top.values.at(top.next) ?: VNull()
+    val top = this.state.stack.at(-1) ?: return this.root
+    if (top.isList) return top.values.get(top.next) ?: VNull()
     top.pending ?: VNull()
   }
 
   /// A read consumed the current value.
   private fun advance() {
-    val top = this.stack.ref(-1) ?: return
+    val top = this.state.stack.at(-1) ?: return
     if (top.isList) top.next += 1 else top.pending = null
   }
 
   private fun here(): string {
-    val top = this.stack.ref(-1) ?: return ""
+    val top = this.state.stack.at(-1) ?: return ""
     if (top.isList) return indexPath(top.path, top.next)
-    childPath(top.path, top.keys.at(top.next - 1) ?: "")
+    childPath(top.path, top.keys.get(top.next - 1) ?: "")
   }
 
   private fun wrong(expected: string): Value {
     val v = this.current()
-    this.recorded.record(this.here(), "expected $expected, found ${kindName(v)}")
+    this.state.recorded.record(this.here(), "expected $expected, found ${kindName(v)}")
     this.advance()
     v
   }
@@ -155,8 +162,8 @@ public struct ValueDecoder {
   /// else produced (§2). Unlike a wrong type, this is not a problem to
   /// record and carry on from: the frames are already on the stack.
   private fun checkDepth() throws DecodeError {
-    if (this.stack.len() < this.maxDepth) return
-    throw DecodeError(problems: this.recorded.list().concat([Problem(path: this.here(), message: tooDeepMessage(this.maxDepth))]))
+    if (this.state.stack.len() < this.maxDepth) return
+    throw DecodeError(problems: this.state.recorded.list().concat([Problem(path: this.here(), message: tooDeepMessage(this.maxDepth))]))
   }
 
   implement Decoder {
@@ -180,25 +187,25 @@ public struct ValueDecoder {
       val v = this.current()
       when (v) {
         is VObject => {
-          this.stack.push(Frame(path: this.here(), keys: v.fields.keys(), values: v.fields.values(), isList: false))
+          this.state.stack.push(Frame(path: this.here(), keys: v.fields.keys(), values: v.fields.values(), isList: false))
         }
         else       => {
           val _ = this.wrong("an object")
-          this.stack.push(Frame(path: this.here(), isList: false))
+          this.state.stack.push(Frame(path: this.here(), isList: false))
         }
       }
     }
 
     fun nextKey(): string? throws DecodeError {
-      val top = this.stack.ref(-1) ?: panic(openFrame)
-      val k = top.keys.at(top.next) ?: return null
-      top.pending = top.values.at(top.next)
+      val top = this.state.stack.at(-1) ?: panic(openFrame)
+      val k = top.keys.get(top.next) ?: return null
+      top.pending = top.values.get(top.next)
       top.next += 1
       k
     }
 
     fun endObject() throws DecodeError {
-      val _ = this.stack.removeAt(this.stack.lastIndex())
+      val _ = this.state.stack.removeAt(this.state.stack.lastIndex())
       this.advance()
     }
 
@@ -206,21 +213,21 @@ public struct ValueDecoder {
       try this.checkDepth()
       val v = this.current()
       when (v) {
-        is VList => this.stack.push(Frame(path: this.here(), values: v.items, isList: true))
+        is VList => this.state.stack.push(Frame(path: this.here(), values: v.items, isList: true))
         else     => {
           val _ = this.wrong("a list")
-          this.stack.push(Frame(path: this.here(), isList: true))
+          this.state.stack.push(Frame(path: this.here(), isList: true))
         }
       }
     }
 
     fun hasNext(): bool throws DecodeError {
-      val top = this.stack.ref(-1) ?: panic(openFrame)
+      val top = this.state.stack.at(-1) ?: panic(openFrame)
       top.next < top.values.len()
     }
 
     fun endList() throws DecodeError {
-      val _ = this.stack.removeAt(this.stack.lastIndex())
+      val _ = this.state.stack.removeAt(this.state.stack.lastIndex())
       this.advance()
     }
 
@@ -238,7 +245,7 @@ public struct ValueDecoder {
     fun readU64(): u64 throws DecodeError {
       val n = try this.readI64()
       if (n < 0) {
-        this.recorded.record(this.here(), "$n is negative")
+        this.state.recorded.record(this.here(), "$n is negative")
         return 0
       }
       n.wrapU64()
@@ -289,9 +296,9 @@ public struct ValueDecoder {
 
     fun path(): string => this.here()
 
-    fun problemAt(path: string, message: string) => this.recorded.record(path, message)
+    fun problemAt(path: string, message: string) => this.state.recorded.record(path, message)
 
-    fun problems(): List<Problem> => this.recorded.list()
+    fun problems(): List<Problem> => this.state.recorded.list()
   }
 }
 
@@ -310,8 +317,8 @@ fun kindName(v: Value): string => when (v) {
 
 /// An open container being built.
 struct Building {
-  var keys:   MutableList<string> = []
-  var values: MutableList<Value> = []
+  var keys:   List<string> = []
+  var values: List<Value> = []
   var key:    string = ""
   isList:     bool
 }
@@ -319,15 +326,17 @@ struct Building {
 /// The state of a ValueEncoder, behind a pointer: an encoder is handed
 /// around as a trait object, which boxes a copy of the struct (D9), so
 /// what it builds must live where every copy can reach it.
+// What a ValueEncoder has built, behind a pointer every copy shares (D9,
+// D231).
 struct ValueEncoderState {
   var result: Value? = null
+  stack:      List<Building> = []
 }
 
 /// An `Encoder` that builds a `Value`: `json.toValue(x)`, and the way a
 /// value is re-encoded through another format without a document in
 /// between.
 public struct ValueEncoder {
-  private stack:         MutableList<Building> = []
   private state:         *ValueEncoderState
   private name:          string = "json"
   private style:         EnumStyle = EnumStyle.Name
@@ -344,11 +353,11 @@ public struct ValueEncoder {
   /// The same bound the text encoders keep (§2): a value nested deeper than
   /// this is refused rather than walked, whichever direction it is going.
   private fun checkDepth() throws EncodeError {
-    if (this.stack.len() >= this.maxDepth) throw EncodeError(message: tooDeepMessage(this.maxDepth))
+    if (this.state.stack.len() >= this.maxDepth) throw EncodeError(message: tooDeepMessage(this.maxDepth))
   }
 
   private fun put(v: Value) {
-    val top = this.stack.ref(-1)
+    val top = this.state.stack.at(-1)
     if (top == null) {
       this.state.result = v
       return
@@ -365,20 +374,20 @@ public struct ValueEncoder {
 
     fun beginObject() throws EncodeError {
       try this.checkDepth()
-      this.stack.push(Building(isList: false))
+      this.state.stack.push(Building(isList: false))
     }
 
     fun key(name: string) throws EncodeError {
-      val top = this.stack.ref(-1) ?: panic(openFrame)
+      val top = this.state.stack.at(-1) ?: panic(openFrame)
       top.key = name
     }
 
     fun endObject() throws EncodeError {
-      val top = this.stack.removeAt(this.stack.lastIndex())
-      val fields: MutableMap<string, Value> = [:]
+      val top = this.state.stack.removeAt(this.state.stack.lastIndex())
+      val fields: Map<string, Value> = [:]
       var i: i64 = 0
       loop (k in top.keys) {
-        fields.set(k, top.values.at(i) ?: panic("codec: an object's keys and values are pushed in pairs"))
+        fields.set(k, top.values.get(i) ?: panic("codec: an object's keys and values are pushed in pairs"))
         i += 1
       }
       this.put(VObject(fields))
@@ -386,12 +395,12 @@ public struct ValueEncoder {
 
     fun beginList() throws EncodeError {
       try this.checkDepth()
-      this.stack.push(Building(isList: true))
+      this.state.stack.push(Building(isList: true))
     }
 
     fun endList() throws EncodeError {
-      val top = this.stack.removeAt(this.stack.lastIndex())
-      this.put(VList(items: top.values.toList()))
+      val top = this.state.stack.removeAt(this.state.stack.lastIndex())
+      this.put(VList(items: top.values))
     }
 
     fun writeI64(v: i64) throws EncodeError => this.put(VInt(value: v))

@@ -3,7 +3,9 @@
 // the block's. In `gather` the handle keeps the Result.
 use io
 
-error Boom { n: i64 }
+error Boom {
+  n: i64
+}
 
 fun work(n: i64): i64 throws Boom {
   if (n < 0) throw Boom(n)
@@ -18,7 +20,7 @@ fun outcome(n: i64): Result<i64, Boom> {
 fun pool(): i64 throws Boom {
   var total: i64 = 0
   scope {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     loop (i in 0..<4) tasks.push(async work(i))
     loop (t in tasks) total += await t
   }
@@ -27,8 +29,8 @@ fun pool(): i64 throws Boom {
 
 fun annotated(): i64 throws Boom {
   scope {
-    val tasks: MutableList<Task<Result<i64, Boom>>> = []
-    tasks.push(async work(1)) // error: a task of this 'scope' is 'Task<i64>', not 'Task<Result<i64, Boom>>'
+    val tasks: List<Task<Result<i64, Boom>>> = []
+    tasks.push(async work(1))  // error: a task of this 'scope' is 'Task<i64>', not 'Task<Result<i64, Boom>>'
     return 0
   }
 }
@@ -36,24 +38,24 @@ fun annotated(): i64 throws Boom {
 fun stray(): i64 throws Boom {
   scope {
     val t = async work(1)
-    return try await t // error: 'await' gives the task's value, a 'i64'
+    return try await t  // error: 'await' gives the task's value, a 'i64'
   }
 }
 
 fun kept(): i64 throws Boom {
-  val tasks: MutableList<Task<i64>> = []
+  val tasks: List<Task<i64>> = []
   var last: Task<i64>? = null
   scope {
-    tasks.push(async work(1)) // error: this task cannot be stored in 'tasks', which outlives the block
+    tasks.push(async work(1))  // error: this task cannot be stored in 'tasks', which outlives the block
     val t = async work(2)
-    last = t // error: 't' cannot be stored in 'last', which outlives the block
+    last = t  // error: 't' cannot be stored in 'last', which outlives the block
   }
   if (last == null) 0 else 1
 }
 
 fun returned(): Task<i64> throws Boom {
   scope {
-    return async work(1) // error: this task cannot be returned: a task belongs to the 'scope'
+    return async work(1)  // error: this task cannot be returned: a task belongs to the 'scope'
   }
 }
 
@@ -61,7 +63,7 @@ fun captured(): i64 throws Boom {
   var later: fun(): i64 = () => 0
   scope {
     val t = async work(1)
-    later = () => await t // error: this lambda captures a task, so it cannot be stored in 'later'
+    later = () => await t  // error: this lambda captures a task, so it cannot be stored in 'later'
   }
   later()
 }
@@ -71,7 +73,7 @@ fun inGather(): i64 {
     async work(1)
     val t = async outcome(-1)
     when (val r = await t) {
-      is Ok => io.println("ok $r")
+      is Ok  => io.println("ok $r")
       is Err => io.println("handled ${r.message()}")
     }
   }
@@ -81,7 +83,7 @@ fun inGather(): i64 {
 // a failing child fails the scope, whose error is the function's: it throws
 fun quiet(): i64 {
   scope {
-    async work(1) // error: this child can fail with 'Boom', which fails the 'scope' and leaves it as the function's error, but the function is not declared 'throws'
+    async work(1)  // error: this child can fail with 'Boom', which fails the 'scope' and leaves it as the function's error, but the function is not declared 'throws'
   }
   0
 }
@@ -93,7 +95,7 @@ fun returnedErr(): bool {
     async outcome(-1)
   }
   when (b) {
-    is Ok => return a.ok && b is Err
+    is Ok  => return a.ok && b is Err
     is Err => return false
   }
 }

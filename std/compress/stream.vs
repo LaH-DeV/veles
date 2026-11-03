@@ -102,7 +102,7 @@ public struct GzipEncoder {
     if (this.done) return []
     this.deflater.finish()
     this.done = true
-    val out: MutableList<u8> = []
+    val out: List<u8> = []
     out.addAll(this.ready())
     out.addAll(gzipTrailer(this.crc, this.size))
     out
@@ -110,7 +110,7 @@ public struct GzipEncoder {
 
   // the compressed bytes taken out, the header in front the first time
   private fun ready(): List<u8> {
-    val out: MutableList<u8> = []
+    val out: List<u8> = []
     if (!this.started) {
       this.started = true
       out.addAll(gzipHeader(this.level))
@@ -173,7 +173,7 @@ public struct GzipReader {
 
   /// The rest of the data, in one list (within the reader's `max`).
   public fun readAll(): List<u8> suspends throws IoError | CompressError {
-    val out: MutableList<u8> = []
+    val out: List<u8> = []
     loop {
       val chunk = try this.inner.read(bytes.KiB * 64)
       if (chunk.isEmpty()) break
@@ -192,7 +192,7 @@ struct Gunzipper {
   max:          i64
   var decoder:  Inflater = Inflater(limit: 0)
   var state:    i64 = 0
-  var head:     MutableList<u8> = []
+  var head:     List<u8> = []
   var crc:      i64 = 0
   var size:     i64 = 0
   var produced: i64 = 0
@@ -204,7 +204,7 @@ struct Gunzipper {
       if (this.decoder.pending() > 0) return this.handOut(this.decoder.takeUpTo(max))
       if (this.eof) return []
       if (this.state == AT_MEMBER) {
-        val length = try gzipHeaderLength(this.head.toList(), 0)
+        val length = try gzipHeaderLength(this.head, 0)
         if (length < 0) {
           val chunk = try this.pull()
           if (chunk.isEmpty()) {
@@ -244,14 +244,14 @@ struct Gunzipper {
 
   // the checksum and the length after the last block, then on to the next member
   fun trailer() suspends throws IoError | CompressError {
-    val tail: MutableList<u8> = []
+    val tail: List<u8> = []
     tail.addAll(this.decoder.unread())
     loop (tail.len() < 8) {
       val chunk = try this.pull()
       if (chunk.isEmpty()) throw truncated("the trailer")
       tail.addAll(chunk)
     }
-    val fixed = tail.toList()
+    val fixed = tail
     val crc = try le32(fixed, 0)
     val size = try le32(fixed, 4)
     if (crc != this.crc) throw corrupt("the checksum does not match")

@@ -44,7 +44,7 @@ struct Core {
   integer:     bool
   bounds:      List<f64>
   startNanos:  i64
-  series:      Mutex<MutableMap<string, Series>>
+  series:      Mutex<Map<string, Series>>
 
   fun update(attrs: List<Attr>, change: fun(Series): Series) {
     if (!enabled.load()) return
@@ -91,14 +91,14 @@ struct Core {
 }
 
 fun zeros(n: i64): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (_ in 0..<n) {
     out.push(0)
   }
   out
 }
 
-val registry: Mutex<MutableList<Core>> = newQueue<Core>()
+val registry: Mutex<List<Core>> = newQueue<Core>()
 
 // the instrument already made under this name, or a new one: asking twice
 // for "requests" is one counter, not two
@@ -109,7 +109,7 @@ fun instrument(meter: string, name: string, description: string, unit: string, k
       if (existing.kind != kind) panic("otel: '$name' is already a ${kindName(existing.kind)}; it cannot also be a ${kindName(kind)}")
       existing
     } else {
-      val empty: MutableMap<string, Series> = [:]
+      val empty: Map<string, Series> = [:]
       val core = Core(meter, name, description, unit, kind, integer, bounds, startNanos: unixNanos(), series: Mutex(value: empty))
       all.push(core)
       core
@@ -126,8 +126,8 @@ fun kindName(k: MetricKind): string => when (k) {
 
 // every instrument that has recorded something
 fun collectMetrics(): List<MetricData> {
-  val cores = registry.withLock(all => all.toList())
-  val out: MutableList<MetricData> = []
+  val cores = registry.withLock(all => *all)
+  val out: List<MetricData> = []
   loop (c in cores) {
     val m = c.snapshot()
     if (m != null) out.push(m)
@@ -170,7 +170,7 @@ public struct Meter {
   /// one more bucket past it. Panics when the bounds are not ascending.
   public fun histogram(name: string, unit: string = "", description: string = "", buckets: List<f64> = defaultBuckets): Histogram {
     loop (i in 1..<buckets.len()) {
-      if (buckets.at(i) <= (buckets.at(i - 1) ?: 0.0)) panic("otel: histogram '$name' needs ascending bucket bounds")
+      if (buckets.get(i) <= (buckets.get(i - 1) ?: 0.0)) panic("otel: histogram '$name' needs ascending bucket bounds")
     }
     Histogram(core: instrument(this.name, name, description, unit, MetricKind.Histogram, false, buckets))
   }
@@ -225,14 +225,14 @@ public struct Histogram {
       // the first bucket whose bound holds the value, else the one past the last
       var at = bounds.len()
       loop (i in 0..<bounds.len()) {
-        if (x <= (bounds.at(i) ?: 0.0)) {
+        if (x <= (bounds.get(i) ?: 0.0)) {
           at = i
           break
         }
       }
-      val counts: MutableList<i64> = []
+      val counts: List<i64> = []
       loop (i in 0..<s.buckets.len()) {
-        val n = s.buckets.at(i) ?: 0
+        val n = s.buckets.get(i) ?: 0
         counts.push(if (i == at) n + 1 else n)
       }
       Series(

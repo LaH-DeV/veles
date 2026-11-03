@@ -91,6 +91,46 @@ performance and self-hosting run beside them where they share the work.
 Steps marked **(ask)** wait for a decision through `veles-decide`; everything
 else is decision-free.
 
+0. [ ] **V1 — D231: lists, maps and sets as values** (branch
+   `lists-maps-and-sets-as-values`, started 2026-10-31 at the user's
+   request, ahead of N1 (c)–(e), which wait for CI).
+   - (a) Runtime: a shared mark on list/map/set headers; a change through a
+     shared header copies it and writes it back; copying a header marks its
+     elements; an exposed header is copied when shared.
+   - (b) Codegen: marks where a handle is copied out of a live place (struct,
+     tuple, nullable, sealed, `Array` copies mark what they hold); lent
+     arguments and last uses do not; `*List<T>` places.
+   - (c) Checker: one `List`/`Map`/`Set`; the removed spellings error with
+     fixes; D63/D188 rules retired; D7's lost-change warning covers
+     collections.
+   - (d) std, `selfhost/`, examples, docs and Go test programs migrated;
+     self-host gate byte-identical.
+   - (e) The copy inlay hint (on by default, a setting turns it off) and a
+     documentation section on where copies happen.
+   - (f) Measured against the base (03424e3): `bench/` suite and the
+     build-time table; no regression past noise, or the cause found.
+   Acceptance: full gate green on Windows and Linux; benchmark table before
+   and after in `bench/results.md`; no copy in a hot loop of std that the
+   base did not have.
+   _2026-11-01, in progress (stopped at a usage limit):_ (a)–(c) built:
+   `runtime/c/veles_rt.c` share/unique/own, `codegen/llvm/cow.go`,
+   `sema/share.go` (share pass), `sema/values.go` (write places, removed
+   spellings, lints `param_copy` for collections, `copy_changed`), D63/D188
+   paths retired. std migrated, every std module's tests pass; examples
+   pass. Left: (d) `selfhost/` — `veles check selfhost` lists ~100
+   lost-change warnings (`selfhost/ast/spans.vs` takes `out: List<string>`,
+   needs `*List<string>`; `dump_toml.vs` `dumpValue(out: StringBuilder)`),
+   then `go test ./selfhost`; docs and Go test programs migrated mechanically
+   but not run (`go test ./...` not run since); regenerate goldens and
+   `std/testdata/const-functions.txt`. (e) copy hints and docs not started.
+   (f) base benchmarks recorded in the session scratchpad
+   (`bench-base-{1,2,3}.txt`), new run not done. To ask the user: `getOrPut`
+   returning a pointer (dedup example rewritten with `ref` meanwhile);
+   `ffi.Handle.from` now `*raw T` plus `h.value()` (provisional); a
+   read-only `withRaw`; D102's guard firing only when the list is unshared;
+   the trait-object-holds-a-copy hazard (std codecs moved state behind
+   pointers).
+
 1. [ ] **N1 — Every platform green, and kept so.** Everything built on macOS
    since 2026-10-21 is unverified on Windows and Linux (checklist §11: F8,
    F9/F39, F10/F11/F13, F31, F35, F40–F44, D229/D230, the test tooling).
@@ -829,6 +869,313 @@ on Linux).
 ---
 
 ## Progress log
+
+### 2026-11-03 — V1 (D231): the last open items closed
+
+- `bench/emit`'s Windows memory (+33 MB, after the lent-address pass):
+  found by printing every stack word that reached a round's list header
+  — one slot inside `emitFunction`'s frame, the unwritten tail of a
+  21-byte interpolation buffer, held a header an earlier call had left
+  there. `veles_u64_format` now writes all 20 bytes (digits, then zeros)
+  in fixed-size moves; a variable `memset` first tried cost 5 ms (two
+  CRT calls a number). `emit`: 45 MB again, time equal to the pass off.
+- `Inflater.codes` +10% instructions: every `out.push` re-tested the
+  copy-on-write flags because the unique-once pointer `&this.out` was
+  dropped at any call. `exitCalls` (sema/uniqueptr.go): a call after
+  which the function only leaves (a `throw`, a `return`, nothing that
+  loops back or holds a resource) and does not use the pointer again no
+  longer drops it; the limit check inside the loop throws directly.
+  `TestExitCallsKeepCopiesApart` (fails with the loop-back check off).
+  gunzip −2% on Windows.
+- D233: a local `val` struct built around the lent pointer is followed
+  like an alias (`stash` in the conformance case is accepted now).
+- The copy hint across functions (`copyCross`, rounds to a fixpoint): a
+  field shared through `this` or a pointer in one function is shared on
+  entry to every method of that struct; a pointer parameter or receiver a
+  caller handed a shared value is shared on entry. Markers name the
+  function (`copies this.items (shared in Shelf.all)`, `copies into
+  (shared by the caller, main)`); `TestCopySites`,
+  `TestCrossFunctionCopyHints`; chapter 4 updated.
+
+### 2026-11-03 — V1: D232 (`&x` boxes), D233 (lent callback pointers), D231 addendum 4
+
+- Decided with the user (checklist §10, four rows): D231 addendum 4 —
+  `std/lint`'s report list private with `ctx.reports()` a copy, and
+  `Value.at(i)` → `Value.elementAt(i)` (`at` an error with a fix); D232 —
+  `&x` converts to a trait the type implements, the object holding the
+  pointer (`Box.Ref`, no copy, the vtable of `T`), and boxing a copy of a
+  named place whose implementation changes `this` is an error with the
+  fix `&x` or `x.copy()` (checked after the receiver pass, from
+  WritesSelf); a pointer cannot box as a Sendable trait. D233 — a pointer
+  parameter of a function value is lent: `checkLentParams` refuses a
+  lambda whose pointer parameter is kept (PtrKept) and a named function
+  used as a value that keeps one; a call through a function value lends
+  its pointer arguments (so `&local` there stays in the frame); a lambda
+  written for a function parameter the callee does not keep
+  (`Var.FnKept`, a new fixpoint beside PtrKept) may capture the pointer.
+- Measured before deciding D233: 128 pointer parameters of lambdas in
+  examples, benchmarks and selfhost, none returned, stored or captured.
+  `go test ./docs` then found the one shape the first cut refused wrongly
+  (`withLock(t => eachTwice(xs, x => *t += x))`), which is why FnKept
+  exists.
+- Tests: conformance `D232-box-pointer.vs`, `D232-box-sendable.vs`,
+  `D233-lent-params.vs`, `D231-values.vs` (the `at` rename);
+  `TestBoxedPointerChangesThePlace` (driver, both profiles); docs chapter
+  8 (objects that change the value), chapter 12 (the fourth lock rule),
+  the cheat sheet, the stdlib reference, errors.md (references family).
+- Then `Deque.at(i): (*T)?` (D231 addendum 5, user: "Yes, add
+  Deque.at"): a std-only intrinsic `slotPayload(p: *T?): (*T)?` lowers to
+  a null test and `&` of the unwrapped slot, existing HIR only; tests in
+  `std/prelude/collections.test.vs` (the ring's wrap, a stored `null`).
+
+### 2026-11-03 — V1 (D231 item 5): a lent `&local` stays in the frame
+
+- `lentAddrPass` (sema/receivers.go, after the receiver pass): a local
+  whose every `&` pointer is read at once (`(*&x).f`, a bit cast's
+  `*(&v).cast<*raw u64>()`) or lent to a parameter or receiver the callee
+  keeps no pointer to gets `Var.AddrLent`; codegen's storage decisions
+  read `Var.HeapCell()` (AddrTaken and not AddrLent), while every
+  analysis still sees AddrTaken. Captures, escaping receivers,
+  by-reference loops and `on` blocks promote through `heapPromote` and
+  are never lent; a call to a function with no body (C) is never lending.
+- 328 address-taken locals in examples/bench (std's per program
+  included) leave the heap; 3453 stay, mostly `&x` handed to C as a raw
+  pointer (`veles_read_line(…, &line, &code)`, `Thread.start`), which C
+  may keep, and `TaskLocal`'s cell, which relies on it.
+- Tests: `TestLentAddressStaysInFrame` (sema, which locals are cells),
+  `TestLentAddressKeepsValues` (driver, both profiles); the `unchecked`
+  golden lost its cell.
+- Benchmarks, interleaved on Windows, the eight whose IR changed: within
+  noise but `emit`, which is +6% and +33 MB peak there from a stale
+  shadow-space word the conservative scan keeps (Linux identical; §11
+  collector (8)).
+
+### 2026-11-03 — V1 (D231): three copy shortcuts were unsound, fixed
+
+- Probed checklist §11 D231 (7) and found it real, plus two more of the
+  regex shortcuts (2026-11-02) with the same assumption — that a callee
+  reaches a pointer-held object only through its arguments:
+  1. a value read through a pointer (`p.items`) lent to a read-only
+     parameter while no other argument was a pointer: the callee changed
+     it through a global, a struct or closure argument, its receiver, or
+     another field — its own parameter changed under it;
+  2. a lent alias of a `this` field (`val items = this.items`) saw a
+     callee's change made through a global;
+  3. a pointer made unique once (`val items = &bag.items`) wrote into a
+     list a callee had copied out in between (the copy changed too).
+- Fixed: `lendable` lends only locals; `lentAlias` and `UniquePointers`
+  are ruled out by any call or suspension when the place is reached
+  through a pointer (`this`, a pointer local or parameter, a dereference,
+  or a local whose address is taken elsewhere).
+- `TestPointerReachedValuesStayValues` (seven cases, both profiles; the
+  old compiler failed all seven). Benchmarks, interleaved on Windows,
+  before/after: all within noise (regex 14.2 → 13.6 ms over 30 runs).
+
+### 2026-11-02 — V1 (D231 addendum 3): the copy hint in two places, copies with room
+
+- Decided (user, recommended placement of 3; "no warning, maybe we can
+  optimize it behind the scenes?"): the statement that shared a value ends
+  with `list2 copied at its first change, line 247` (several lines or
+  names joined; `copied as empty` for a `clear()`; a loop's first line when
+  the loop walks it as it was); the change gets `copies list2`, `once` when
+  a loop repeats the change but not the share (`CopySite.Once`, from the
+  loop depth at the share and at the change), and none on the share's line
+  or the next. A parameter keeps the whole hint at its change.
+- Copies made for a change that grows a list get room: `veles_list_unique_grow`
+  (copy with capacity 2×len) for `push`, `addAll`, `appendText`,
+  `insertText`, and at the binding of an owned local or a unique pointer the
+  function grows (`sema.GrownCollections`). Probe (1M-element list copied,
+  then pushed, 50 rounds, Windows): 158.7 → 96.9 ms, peak 49 → 41 MB.
+  Goldens `collections`, `gcmaps` regenerated (the push sites).
+- Tests: `TestCopySites` (once / not once, the user's pattern),
+  `TestCopyHints` (both hint kinds, the markers left out, `once`). Docs:
+  chapter 4 "Seeing where it copies".
+
+### 2026-11-02 — V1 (D231): cleanup, and the two copies the hint found
+
+- `clear()` on a shared or loop-lent list, map or set stores the type's
+  empty constant in the place (`clearColl`, codegen/llvm/cow.go): nothing
+  copied, nothing allocated, the other holder keeps its elements; a header
+  of its own, or a place known unique, is emptied in place. The hint says
+  `copies xs as empty (…)` (user: "copy empty list (no alloc) BUT THE HINT
+  SHOULD say it does copy empty"). `TestClearSharedTakesEmpty` (shared,
+  own, map, set, through a pointer, a field, an element, inside a loop
+  over it, twice), both profiles.
+- Destructuring a fresh tuple moves its parts: `partsMoved`
+  (sema/lentalias.go) — a tuple local read only as distinct parts by the
+  bindings right after it. `TestCopyShortcutsKeepValues` gained the cases
+  where it must not apply (the tuple read again, a destructure in a loop).
+- Removed: D188's freeze half from the runtime (`LIST_FROZEN`, its test
+  on every list and map write, `veles_list_freeze` and four more
+  functions nothing called); `sema/move.go` (D63's proof; `moveMethods`
+  and two helpers moved out), the `redundant_copy` lint's body (the name
+  stays valid in `[lint]`, described as retired), the "moved immutable"
+  hint, `Index.Moved`, `callWant`; the `VELES_MIGRATE_ACCESS` switch.
+  Conformance: two dead messages left `uncovered.txt`; the third (a const
+  struct's generic field, D212) was reachable and got a case.
+- Docs: chapter 13 says collections are values (and its rule of thumb no
+  longer suggests pointers for large data); chapters 18 and 26 read, no
+  change; chapter 4 says what `clear()` on a shared list does.
+
+### 2026-11-02 — V1 (D231): the copy hint (choice 3)
+
+- `sema/copyhint.go` (`CopySites`, `Index.Copies`): after the share pass,
+  each function is followed in the order it runs — a Share of a place (a
+  variable, its fields, any element) marks it and what it holds shared, a
+  binding from a shared value is shared, a parameter the function changes
+  is shared from entry; a change through a shared place (the
+  `collectionWrites` ops, a write or `&` through `at`) is a site, and the
+  place is its own after it. Branches join, loop bodies run twice, paths
+  that return/break/throw end; lent temporaries and pointers bound from
+  `at` stand for their place. `walkExpr`'s child enumeration became
+  `eachChild` (sema/walk.go) so the flow reuses it.
+- `lsp/inlay.go`: `copies squares (shared at line 10)`, `(the loop at line
+  13 walks it)`, `(a parameter)`, with a tooltip; on by default, off by the
+  `copyHints` initialization option or `veles.inlayHints.copies`
+  (`editors/vscode`). Docs: chapter 4 "Seeing where it copies", chapter 1.
+- Tests: `TestCopySites` (shares, loops, branches, early return, fields,
+  elements, maps, parameters), `TestCopyHints` (LSP, the setting both
+  ways). Over the tree: 22 sites in the examples, 30 in std and selfhost;
+  the ones read (sorting, fuzz, mutate, sha1, regex vm) are real copies;
+  two needless costs found (checklist §11, D231 item 3).
+
+### 2026-11-02 — GC: large spans reused instead of faulted in again
+
+- The "~1.5 ms per collection" on Windows was page faults: a dead large
+  object's span was decommitted when swept and its pieces freed only at
+  the next collection, so every big list buffer was fresh memory (20k
+  faults in `adapters` with the GC on or off). `runtime/c/veles_gc.c`: a
+  swept large span keeps its memory committed while the kept total fits
+  in the goal (the rest is decommitted, outside the pause); its pieces
+  are free for the next span at once (`take_released`, a lock-free stack
+  drained under `heap_lock`; the span struct stays listed until
+  `sweep_compact`); `arena_take` prefers kept pieces; `new_span` clears
+  them.
+- Windows, interleaved against the branch before: adapters -25%, maps
+  -15%, gunzip -14%, lexer -12%, strings and json -8%, sort and intern
+  -7%; the rest within noise; peak memory up by what the goal allows
+  (maps +7.6 MB). Pauses unchanged.
+- `TestLargeSpansReused` (large lists of numbers and pointers made and
+  dropped by 8 tasks, every marking mode, poisoned sweeps);
+  `TestReleasedMemoryReadsAsZeros` catches a missing clear (checked by
+  removing it). Full suite green on Windows and Linux (Go 1.27.1); macOS
+  not run, Linux not timed.
+- Left (checklist §11): kept memory is never returned while the program
+  idles (no scavenger); small spans that empty are never released.
+
+### 2026-11-02 — V1 (D231): the Windows `adapters` residue explained
+
+- Not D231's code: the adapter loops are the same instructions as the
+  base's, and with `VELES_GC_OFF=1` the two run alike (43.0 / 43.1 ms).
+  The branch keeps 5.45 MB live where the base kept 7.08 MB (`val input =
+  xs` no longer copies), the GC's goal follows the live size, so it
+  collects 7 times instead of 5; on Windows a collection costs ~1.5 ms of
+  wall time beyond its 0.02–0.2 ms pause. With equal collections
+  (`VELES_GC_GOAL=400`: 3 each) the branch is 4% faster than the base.
+  The per-collection cost turned out to be page faults; fixed in the
+  entry above.
+
+### 2026-11-02 — V1 (D231): `regex` back to the base
+
+- The regex gap (+7–20%) was mostly copies of `Program`, not writes:
+  lent aliases (`sema/lentalias.go`), kept parameters used once as moves
+  (`ownedOnceParams`), an inline test before marking a header shared, and
+  "unique once" for written pointer locals and locals
+  (`sema.UniquePointers`, `OwnedCollections`). Linux instructions 218.0M →
+  200.4M against the base's 202.0M; Windows median -1.6%. A `gunzip`
+  regression the first version caused (read-only locals made unique,
+  copying shared tables) found by the full run and fixed.
+- `TestCopyShortcutsKeepValues` (ten must-not-apply cases, both profiles).
+  Full suite green on Windows and Linux (Go 1.27.1); macOS not run.
+- Left: `adapters` +3–7% on Windows only (Linux instruction-equal);
+  `Inflater.codes` +10% instructions, no wall-time cost (bench/results.md).
+
+### 2026-11-02 — V1 (D231): value loops lend their list (D102 addendum)
+
+- Decided (user, recommended of 3): a value loop walks a list as it was
+  however the list is reached. The loop lends the header — a `lent` bit in
+  the flags word (runtime `LIST_LENT`, codegen `flagLent`), set at the
+  loop's start when nothing else holds it, cleared at its end; the
+  copy-on-write test treats it as `shared`, so a change made meanwhile
+  (through a pointer a called function holds) copies the list and lands in
+  the variable. HIR `list.lend` / `list.unlend` replace the guard on value
+  list loops (`sema/check_fn.go`); `loop (&x in xs)`, `Deque` loops and
+  iterators keep the guard.
+- `TestLoopOverListReachedThroughAPointer` (snapshot through a pointer,
+  element replacement from elsewhere unseen, the by-reference loop still
+  panics); edge cases probed: nested loops, `break`, `return` out of the
+  loop, maps, compile time vs run time.
+- `adapters`: callgrind 310.7M against the base's 310.4M (was 349.9M);
+  Linux wall time +1%; Windows +3–7%, noisy, unexplained (bench/results.md).
+- `go build`, `go vet`, `go test ./...` pass on Windows and Linux (Go
+  1.27.1); macOS not run.
+
+### 2026-11-02 — V1 (D231): `at`/`get`, and the whole suite green
+
+- Addendum 2 (user): on `List`, `Array` and `Map`, `at` gives a pointer to
+  the element and `get` a copy; `refOrPut` → `atOrPut` (now a `const fun`:
+  the evaluator learned `map.ref`), `atOrDefault` → `getOrDefault`,
+  `atUnchecked` → `getUnchecked`, `Deque.at` → `get`. Old names are errors
+  with fixes. The old copying `at` cannot be told from the new one, so the
+  tree was migrated by the compiler: `VELES_MIGRATE_ACCESS=1 veles check
+  --fix` reads it as `get` and rewrites it (std, selfhost, examples, bench,
+  docs blocks, goldens, conformance files; Go test programs by the
+  diagnostics' positions, so a test expecting an error keeps it).
+- Bugs found on the way: a by-reference loop (`loop (&x in xs)`) may change
+  its list's length again silently since the snapshot rule — refused at
+  compile time now; `loop (&x in b.items)` from outside a type changed a
+  `protected var` collection — refused (D87); bounds facts survived
+  `ys.pop()` / `removeAt` on a local list, typing a later `ys.get(0)` as
+  `T` (unsound since D231 made local lists values) — the facts end at a
+  shrinking call on the list, or a call handed its address; the
+  compile-time evaluator copied a by-reference loop's lent list, so
+  `loop (&p in xs)` in a `const fun` changed nothing (the compiler and the
+  program disagreed); `std/lint`'s `Context.report` pushed into a copy
+  (`reports` is a `*List<Report>` now); the empty-literal fix still wrote
+  `MutableList`; `StringBuilder` parameters in `selfhost/dump_toml.vs` lost
+  their appends.
+- Tests of removed behaviour replaced (`freeze`, D63's moves, the
+  `redundant_copy` lint, the "moved immutable" hint, immutable-list
+  errors); conformance `D231-values.vs` covers the new diagnostics.
+- `go build`, `go vet`, `go test ./...` pass on Windows and on Linux (WSL,
+  `internal/wsl-test.sh`, clang 18), Go 1.27.1; macOS not run.
+- Benchmarks rerun interleaved (bench/results.md): `regex` +7–13% (was
+  +18%), `adapters` ~+8.5%, the rest within ±5%; memory unchanged.
+- `adapters` explained by callgrind (bench/results.md): the whole gap is
+  the D102 change guard on loops over a pointer-reached list (every
+  prelude adapter's `this`), 3 instructions per step; off, the count
+  equals the base's. Fixed on the way: a lambda capturing a list made its
+  caller lose D116's plain instance (`sema.LambdaOf`); a local list nothing
+  else holds starts as a fresh header and its writes skip the
+  copy-on-write test (`sema.OwnedCollections`). Whether loops over a
+  pointer-reached list keep the guard is a decision (checklist §11).
+
+### 2026-11-02 — V1 (D231): the experiment measured, the follow-ups built
+
+- The four addendum decisions are built: `toList()`/`toMap()`/`toSet()` on
+  their own type removed (fix drops the call; the fix writes `*p` when the
+  receiver is a pointer — a dropped call on a pointer had aliased lists in
+  `db/pool`, `otel`, `http/health`, `regex/vm`, found and fixed); loops walk
+  a snapshot when the body may change their list (`Var.LentFor`,
+  `loopChangesSubject`), map/set loops lost D102's guard; `ref` → `refAt`,
+  `getOrPut` → `refOrPut: *V`; `withRaw` reads (`listReadData`),
+  `withRawMut` writes; `ffi.Handle.from` gives `*raw T`, `h.value()`.
+- A change to a collection inside a `const struct` is refused (D212's
+  promise under D231). Executor state that changes is declared `var`, as
+  any changing global.
+- Escape analysis: `&this.f` lent to a parameter that keeps no pointer is
+  not an escape (`Var.PtrKept`, fixpoint in the receiver pass); `&this.f`
+  no longer marks `this` address-taken. Found by the regex benchmark (two
+  allocations per search).
+- Docs: chapter 4 rewritten around values (cost model, pointers, loops,
+  `refOrPut`), chapters 5, 10, 12, 13, the "coming from" pages, the
+  cheat sheet, the stdlib and error references updated. `go test ./docs`,
+  `./examples` and every std module's tests pass on Windows.
+- Measured (bench/results.md, 2026-11-02): memory unchanged; interleaved
+  runs within ±5% except `regex` +18% (pointer-reached lists reload their
+  header on every write) and `adapters` +8.5% (not explained yet).
+- Left: checklist §11 "D231 … what is left" (selfhost, full Go suite,
+  goldens, copy hints, the per-write cost in pointer loops, Linux/macOS).
 
 ### 2026-10-31 — N1 (c), (d): the known flakes fixed at their cause
 

@@ -6,23 +6,18 @@ import (
 	"github.com/LaH-DeV/veles/types"
 )
 
-// Maps and sets (D25) are runtime-backed reference types with an
-// immutable/mutable split. Their operations lower to Builtin nodes.
+// Maps and sets (D25) are runtime-backed values copied on their first
+// change (D231). Their operations lower to Builtin nodes.
 
 func (f *fnCtx) mapLit(e *ast.MapLit, want types.Type) Expr {
 	var kt, vt types.Type
-	mutable := false
 	if mt, ok := numericHint(want).(*types.Map); ok {
-		mutable = mt.Mutable
 		if !types.ContainsTypeParam(mt.Key) && !types.ContainsTypeParam(mt.Value) {
 			kt, vt = mt.Key, mt.Value
 		}
-		if e.Mut && mutable {
-			f.warnLint("redundant_mut", e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", mt)
-		}
 	}
 	if e.Mut {
-		mutable = true
+		f.removedMut(e.Pos)
 	}
 	lit := &MapLit{}
 	for _, en := range e.Entries {
@@ -43,44 +38,44 @@ func (f *fnCtx) mapLit(e *ast.MapLit, want types.Type) Expr {
 		lit.Entries = append(lit.Entries, [2]Expr{k, v})
 	}
 	if kt == nil {
-		if e.Mut {
-			f.errorf(e.Pos, "cannot infer the type of an empty map; annotate it, e.g. 'var m: MutableMap<string, i64> = [:]' (D25)")
-		} else {
-			f.errorf(e.Pos, "cannot infer the type of an empty map; annotate it, e.g. 'val m: Map<string, i64> = [:]' (D25)")
-		}
+		f.errorf(e.Pos, "cannot infer the type of an empty map; annotate it, e.g. 'val m: Map<string, i64> = [:]' (D25)")
 		return bad()
 	}
-	lit.T = &types.Map{Key: kt, Value: vt, Mutable: mutable}
+	lit.T = &types.Map{Key: kt, Value: vt}
 	return f.c.noteAlloc(lit, e.Pos)
 }
 
-// collectionCtor handles `MutableMap<K, V>()`, `Set<T>()`, `MutableList<T>()`.
+// collectionCtor handles `Map<K, V>()`, `Set<T>()`, `List<T>()`.
 func (f *fnCtx) collectionCtor(name string, typeArgs []types.Type, e *ast.CallExpr, want types.Type) Expr {
 	if len(e.Args) != 0 {
 		f.errorf(e.Pos, "'%s()' takes no arguments; use a literal to construct with contents", name)
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
+	if plain, ok := removedMutable[name]; ok {
+		f.errorf(e.Pos, "'%s' was removed (D231): a '%s' can be changed in place; write '%s()'", name, plain, plain)
+		name = plain
+	}
 	var t types.Type
 	hint := numericHint(want)
 	switch name {
-	case "Map", "MutableMap":
+	case "Map":
 		if len(typeArgs) == 2 {
-			t = &types.Map{Key: typeArgs[0], Value: typeArgs[1], Mutable: name == "MutableMap"}
+			t = &types.Map{Key: typeArgs[0], Value: typeArgs[1]}
 		} else if mt, ok := hint.(*types.Map); ok && len(typeArgs) == 0 {
-			t = &types.Map{Key: mt.Key, Value: mt.Value, Mutable: name == "MutableMap"}
+			t = &types.Map{Key: mt.Key, Value: mt.Value}
 		}
-	case "Set", "MutableSet":
+	case "Set":
 		if len(typeArgs) == 1 {
-			t = &types.Set{Elem: typeArgs[0], Mutable: name == "MutableSet"}
+			t = &types.Set{Elem: typeArgs[0]}
 		} else if st, ok := hint.(*types.Set); ok && len(typeArgs) == 0 {
-			t = &types.Set{Elem: st.Elem, Mutable: name == "MutableSet"}
+			t = &types.Set{Elem: st.Elem}
 		}
-	case "List", "MutableList":
+	case "List":
 		if len(typeArgs) == 1 {
-			t = &types.List{Elem: typeArgs[0], Mutable: name == "MutableList"}
+			t = &types.List{Elem: typeArgs[0]}
 		} else if lt, ok := hint.(*types.List); ok && len(typeArgs) == 0 {
-			t = &types.List{Elem: lt.Elem, Mutable: name == "MutableList"}
+			t = &types.List{Elem: lt.Elem}
 		}
 	}
 	if t == nil {
@@ -100,8 +95,8 @@ func (f *fnCtx) collectionCtor(name string, typeArgs []types.Type, e *ast.CallEx
 
 func isCollectionCtor(name string) bool {
 	switch name {
-	case "Map", "MutableMap", "Set", "MutableSet", "List", "MutableList":
-		return true
+	case "Map", "Set", "List", "MutableMap", "MutableSet", "MutableList":
+		return true // the last three to report their removal (D231)
 	}
 	return false
 }
@@ -117,11 +112,7 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 		return true
 	}
 	mutating := func() bool {
-		if !mt.Mutable {
-			f.errorf(span, "cannot call '%s' on an immutable Map; use MutableMap (D25)", name)
-			f.checkArgsLoosely(e.Args)
-			return false
-		}
+		f.writeReceiver(recv, e, name != "remove")
 		return true
 	}
 	switch name {
@@ -151,15 +142,16 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 		k := f.checkExprTo(e.Args[0].Value, mt.Key)
 		ptr := &Builtin{exprBase{&types.Pointer{Elem: mt.Value}}, "map.refOrPanic", []Expr{recv, k}, span}
 		return &Builtin{exprBase{mt.Value}, "deref", []Expr{ptr}, span}
-	case "ref", "refOrPanic":
-		// `m.ref(k)`: `(*V)?`, null when absent; `m.refOrPanic(k)`: `*V`, a
+	case "at", "refAt", "ref", "refOrPanic":
+		// `m.at(k)`: `(*V)?`, null when absent; `m.refOrPanic(k)`: `*V`, a
 		// panic when absent. The pointer reaches the stored value, so a
-		// value-struct entry is changed where it lives (D25, v0.27).
-		if !mt.Mutable {
-			f.errorf(span, "'%s' needs a MutableMap: a pointer into an immutable Map could change it (D25)", name)
-			f.checkArgsLoosely(e.Args)
-			return bad()
+		// value-struct entry is changed where it lives (D25, v0.27); `get`
+		// gives a copy (D231).
+		if name == "ref" || name == "refAt" {
+			f.removedRename(e, name, "at", "'at' gives a pointer to change the stored value in place; 'get' gives a copy")
+			name = "at"
 		}
+		f.writeReceiver(recv, e, false)
 		if !need(1) {
 			return bad()
 		}
@@ -167,10 +159,16 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 			f.removedOrPanic(e, name) // D62 C
 		}
 		k := f.checkExprTo(e.Args[0].Value, mt.Key)
-		if name == "ref" {
+		if name == "at" {
 			return &Builtin{exprBase{&types.Nullable{Elem: &types.Pointer{Elem: mt.Value}}}, "map.ref", []Expr{recv, k}, span}
 		}
 		return &Builtin{exprBase{&types.Pointer{Elem: mt.Value}}, "map.refOrPanic", []Expr{recv, k}, span}
+	case "getOrPut", "refOrPut":
+		// renamed (D231 addendum): it gives the stored value to change, a
+		// pointer, as `at` does; the prelude's atOrPut is checked after
+		f.removedRename(e, name, "atOrPut", "it gives a pointer to the stored value, so `m.atOrPut(k, () => []).push(x)` changes the map")
+		f.checkArgsLoosely(e.Args)
+		return bad()
 	case "getOrDefault":
 		// `m.getOrDefault(k, d)` is `m.get(k) ?: d`.
 		if !need(2) {
@@ -201,34 +199,23 @@ func (f *fnCtx) mapMethod(recv Expr, mt *types.Map, name string, e *ast.CallExpr
 			return bad()
 		}
 		return &Builtin{exprBase{&types.List{Elem: &types.Tuple{Elems: []types.Type{mt.Key, mt.Value}, Labels: []string{"key", "value"}}}}, "map.entries", []Expr{recv}, span}
-	case "isFrozen":
-		if !mt.Mutable {
-			f.errorf(span, "'isFrozen' needs a MutableMap: a Map is immutable by its type (D188)")
-			f.checkArgsLoosely(e.Args)
-			return bad()
+	case "isFrozen", "freeze":
+		f.removedFreeze(e, name)
+		f.checkArgsLoosely(e.Args)
+		if name == "freeze" {
+			return recv
 		}
-		if !need(0) {
-			return bad()
-		}
-		return &Builtin{exprBase{types.TBool}, "map.isFrozen", []Expr{recv}, span}
-	case "freeze":
-		if !mt.Mutable {
-			f.errorf(span, "'freeze' needs a MutableMap: a Map is already immutable (D188)")
-			f.checkArgsLoosely(e.Args)
-			return bad()
-		}
-		if !need(0) {
-			return bad()
-		}
-		return &Builtin{exprBase{&types.Map{Key: mt.Key, Value: mt.Value}}, "map.freeze", []Expr{recv}, span}
+		return bad()
 	case "toMap", "toMutable":
+		if name == "toMutable" {
+			f.removedToMutable(e, "")
+		} else {
+			f.removedSelfCopy(e, recv, name, "Map")
+		}
 		if !need(0) {
 			return bad()
 		}
-		if name == "toMap" && mt.Mutable {
-			f.lintRedundantCopy(e, recv, name)
-		}
-		return &Builtin{exprBase{&types.Map{Key: mt.Key, Value: mt.Value, Mutable: name == "toMutable"}}, "map.copy", []Expr{recv}, span}
+		return &Share{exprBase{recv.Type()}, recv} // a copy (D231)
 	case "set":
 		if !mutating() || !need(2) {
 			return bad()
@@ -268,11 +255,7 @@ func (f *fnCtx) setMethod(recv Expr, st *types.Set, name string, e *ast.CallExpr
 		return true
 	}
 	mutating := func() bool {
-		if !st.Mutable {
-			f.errorf(span, "cannot call '%s' on an immutable Set; use MutableSet (D25)", name)
-			f.checkArgsLoosely(e.Args)
-			return false
-		}
+		f.writeReceiver(recv, e, name == "clear" || name == "reserve")
 		return true
 	}
 	switch name {
@@ -297,34 +280,23 @@ func (f *fnCtx) setMethod(recv Expr, st *types.Set, name string, e *ast.CallExpr
 			return bad()
 		}
 		return &Builtin{exprBase{&types.List{Elem: st.Elem}}, "map.keys", []Expr{recv}, span}
-	case "isFrozen":
-		if !st.Mutable {
-			f.errorf(span, "'isFrozen' needs a MutableSet: a Set is immutable by its type (D188)")
-			f.checkArgsLoosely(e.Args)
-			return bad()
+	case "isFrozen", "freeze":
+		f.removedFreeze(e, name)
+		f.checkArgsLoosely(e.Args)
+		if name == "freeze" {
+			return recv
 		}
-		if !need(0) {
-			return bad()
-		}
-		return &Builtin{exprBase{types.TBool}, "map.isFrozen", []Expr{recv}, span}
-	case "freeze":
-		if !st.Mutable {
-			f.errorf(span, "'freeze' needs a MutableSet: a Set is already immutable (D188)")
-			f.checkArgsLoosely(e.Args)
-			return bad()
-		}
-		if !need(0) {
-			return bad()
-		}
-		return &Builtin{exprBase{&types.Set{Elem: st.Elem}}, "map.freeze", []Expr{recv}, span}
+		return bad()
 	case "toSet", "toMutable":
+		if name == "toMutable" {
+			f.removedToMutable(e, "")
+		} else {
+			f.removedSelfCopy(e, recv, name, "Set")
+		}
 		if !need(0) {
 			return bad()
 		}
-		if name == "toSet" && st.Mutable {
-			f.lintRedundantCopy(e, recv, name)
-		}
-		return &Builtin{exprBase{&types.Set{Elem: st.Elem, Mutable: name == "toMutable"}}, "map.copy", []Expr{recv}, span}
+		return &Share{exprBase{recv.Type()}, recv} // a copy (D231)
 	case "add":
 		if !mutating() || !need(1) {
 			return bad()
@@ -389,7 +361,7 @@ func (f *fnCtx) setAdapter(recv Expr, st *types.Set, name string, e *ast.CallExp
 	inSet := func(s *Var, x *Var) Expr {
 		return &Builtin{exprBase{types.TBool}, "map.contains", []Expr{ref(s), ref(x)}, span}
 	}
-	outT := &types.Set{Elem: st.Elem, Mutable: true}
+	outT := &types.Set{Elem: st.Elem}
 	resultT := &types.Set{Elem: st.Elem}
 	add := func(out *Var, x *Var) Stmt {
 		return &ExprStmt{X: &Builtin{exprBase{types.TBool}, "set.add", []Expr{ref(out), ref(x)}, span}}
@@ -428,9 +400,6 @@ func (f *fnCtx) setAdapter(recv Expr, st *types.Set, name string, e *ast.CallExp
 // mapIndexAssign lowers the removed `m[k] = v` form after it is reported
 // (lint_index.go), so nothing cascades.
 func (f *fnCtx) mapIndexAssign(target *ast.IndexExpr, m Expr, mt *types.Map, value ast.Expr, span source.Span) []Stmt {
-	if !mt.Mutable {
-		f.errorf(span, "cannot assign into an immutable Map; use MutableMap (D25)")
-	}
 	k := f.checkExprTo(target.Index, mt.Key)
 	v := f.checkExprTo(value, mt.Value)
 	return []Stmt{&ExprStmt{X: &Builtin{exprBase{types.TUnit}, "map.set", []Expr{m, k, v}, span}}}

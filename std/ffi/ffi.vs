@@ -119,27 +119,36 @@ public unsafe fun free(p: *raw u8) {
 /// ```veles
 /// with (h = ffi.handle(counter)) {
 ///   unsafe { visit(tree, &onNode, h.ptr()) }
+///   println(h.value().count)
 /// }
 /// extern "C" fun onNode(node: *raw u8, data: *raw u8): i32 {
-///   val counter = unsafe { ffi.Handle<Counter>.from(data) }
+///   // SAFETY: visit passes on the pointer `h` gave it, of a Handle<Counter>
+///   unsafe { ffi.Handle<Counter>.from(data).count += 1 }
 ///   ...
 /// }
 /// ```
+///
+/// The handle holds a copy of the value it was given (a value is copied,
+/// D7, D231): a callback changes that copy through `from`, and `value()`
+/// reads it back.
 public struct Handle<T> {
   private state: *CState
+  private box:   *T
 
   /// The `void *` to give C.
   public fun ptr(): *raw u8 => this.state.ptr ?: panic("a Handle was used after close")
 
-  /// The value behind a pointer a `Handle<T>` gave C. It trusts that the
+  /// The value as the callbacks have left it: a copy.
+  public fun value(): T => *this.box
+
+  /// The value behind a pointer a `Handle<T>` gave C, as a pointer a
+  /// callback reads and changes it through, in `unsafe`. It trusts that the
   /// pointer came from a `Handle` of this `T`; one that was closed panics.
-  public static unsafe fun from(p: *raw u8): T {
+  public static unsafe fun from(p: *raw u8): *raw T {
     val box = unsafe {
       veles_ffi_handle_get(p)
     }
-    unsafe {
-      *(box.cast<*raw T>())
-    }
+    box.cast<*raw T>()
   }
 
   implement Closeable {
@@ -169,5 +178,5 @@ public fun handle<T>(value: T): Handle<T> {
     veles_ffi_handle_new(box.cast<*raw u8>())
   }
   val state = CState(ptr: h)
-  Handle(state: &state)
+  Handle(state: &state, box: &held)
 }

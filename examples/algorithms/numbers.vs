@@ -24,12 +24,12 @@ fun isPrime(n: i64): bool {
 /// Sieve of Eratosthenes: all primes up to and including limit.
 fun sieve(limit: i64): List<i64> {
   if (limit < 2) return []
-  val composite = MutableList<bool>.repeat(false, limit + 1)
+  val composite = List<bool>.repeat(false, limit + 1)
   loop (p in 2..isqrt(limit)) {
-    if (composite.at(p) ?: panic("sieve: p <= isqrt(limit) <= limit")) continue
+    if (composite.get(p) ?: panic("sieve: p <= isqrt(limit) <= limit")) continue
     loop (multiple in (p * p..limit).step(p)) composite.set(multiple, true)
   }
-  (2..limit).iter().filter(n => !(composite.at(n) ?: panic("sieve: n <= limit"))).toList()
+  (2..limit).iter().filter(n => !(composite.get(n) ?: panic("sieve: n <= limit"))).toList()
 }
 
 /// Iterative Fibonacci: O(n), no recursion, no memo table needed.
@@ -42,7 +42,7 @@ fun fib(n: i64): i64 {
 
 /// Memoised recursive Fibonacci — the shape to use when the recursion is
 /// not a simple loop; the table is threaded through explicitly.
-fun fibMemo(n: i64, memo: MutableMap<i64, i64>): i64 {
+fun fibMemo(n: i64, memo: *Map<i64, i64>): i64 {
   if (n < 2) return n
   val known = memo.get(n)
   if (known != null) return known
@@ -82,13 +82,13 @@ fun factorial(n: i64): i64 => if (n <= 1) 1 else n * factorial(n - 1)
 /// Decimal digits of a non-negative number, most significant first.
 fun digits(n: i64): List<i64> {
   if (n == 0) return [0]
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   var rest = n
   loop (rest > 0) {
     out.push(rest % 10)
     rest /= 10
   }
-  out.toList().reversed()
+  out.reversed()
 }
 
 /// Integer square root: largest r with r * r <= n (Newton's method).
@@ -105,7 +105,7 @@ fun isqrt(n: i64): i64 {
 
 /// Prime factorisation as (prime, exponent) pairs.
 fun factorize(n: i64): List<(i64, i64)> {
-  val out: MutableList<(i64, i64)> = []
+  val out: List<(i64, i64)> = []
   var rest = n
   var p = 2
   loop (p * p <= rest) {

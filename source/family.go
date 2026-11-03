@@ -37,12 +37,12 @@ func fam(name string, patterns ...string) family {
 var families = []family{
 	// compiler-internal checks a program cannot reach, and the std intrinsics
 	fam("internal", `^unsupported (expression|statement|pattern|operator|unary operator|type syntax)$`,
-		`^list(RawData|DecodeUtf8Range|AppendText) takes`, `^%s takes a pointer$`, `^cannot read `),
+		`^list(RawData|DecodeUtf8Range|AppendText) takes`, `^slotPayload takes`,`^%s takes a pointer$`, `^cannot read `),
 	fam("regular-expressions", `\(D182\)`, `regular expression`),
 	fam("removed-syntax", `was removed`, `was replaced by`, `no longer exists`, `is spelled`, `is written '=> expr'`, `has no '=>'`, `there is no 'for'`,
 		`is written 'loop`, `are written as lambdas`, `type parameters follow the function name`,
 		`are not imported one by one`, `brackets are for collection literals only`, `^'=' assigns`,
-		`reads better as`, `can be written '`, `never -1 \(D165\)`),
+		`reads better as`, `can be written '`, `never -1 \(D165\)`, `was renamed '%s' \(D231\)`),
 	// the statement `cede` (D197), whatever form it was mistaken for
 	fam("tasks", `^'cede'`),
 	fam("tests", `\(D78\)`, `says what it checks`, `^a (test|suite)\b`, `^another test`, `\bsuites?\b`,
@@ -98,11 +98,11 @@ var families = []family{
 		`interpolat`, `U\+`),
 	fam("references", `copy of the element`, `reach the element`, `the address of`, `^'&' `, `^a map key cannot`,
 		`'loop \(&x in xs\)' needs`, `'loop \(\(k, &v\) in m\)' needs`, `a pointer into an immutable`,
-		`copy of the caller's`, `while 'loop`, `move or reorder`, `is a pointer to a`),
+		`copy of the caller's`, `while 'loop`, `move or reorder`, `is a pointer to a`, `\(D233\)`, `\(D232\)`),
 	fam("mutability", `^cannot assign`, `while the loop at line`, `not assignable`, `immutable List|immutable Map|immutable Set`,
 		`\bMutable(List|Map|Set)\b`, `'mut'`, `^compound assignment`, `global 'val' is a constant`,
 		`never changes: copy it`, `'getOrPut'`, `' changes the %s; use %s \(D25\)`,
-		`a const struct holds only immutable data`),
+		`a const struct holds only immutable data`, `a constant every task shares; changing it`, `immutable all the way down`, `changes a temporary copy`),
 	fam("traits", `does not implement`, `not a trait`, `supertrait`, `^trait '`, `conflicting impl`,
 		`^implement of`, `in trait '`, `trait '%s' declares`, `'override'`, `ambiguous`, `extend<`, `trait object`,
 		`already implements`, `sealed trait '%s' declares no methods`, `cannot be implemented by hand`,

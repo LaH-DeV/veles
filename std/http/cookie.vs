@@ -102,7 +102,7 @@ fun percentEncode(v: string): string {
 /// (one written by another system as it came stays as it came). When a name
 /// repeats the first counts, as browsers list the most specific path first.
 fun parseCookies(header: string): Map<string, string> {
-  val out: MutableMap<string, string> = [:]
+  val out: Map<string, string> = [:]
   loop (part in header.split(";")) {
     val (rawName, rawValue) = part.trim().splitOnce("=") ?: continue
     val name = rawName.trim()

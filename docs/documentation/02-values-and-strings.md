@@ -78,7 +78,7 @@ fun firstNegative(xs: List<i64>): i64 {
       found = -1
       break
     }
-    if ((xs.at(i) ?: 0) < 0) {
+    if ((xs.get(i) ?: 0) < 0) {
       found = i
       break
     }
@@ -521,7 +521,7 @@ template fun html(parts: List<string>, values: List<Markup>): Html {
   val out = StringBuilder()
   loop ((i, part) in parts.enumerate()) {
     out.append(part)
-    val v = values.at(i)
+    val v = values.get(i)
     if (v != null) out.append(v.markup())
   }
   Html(text: out.toString())
@@ -660,7 +660,7 @@ fun main() {
   var a = 1
   var b = 2
   (a, b) = (b, a)
-  var xs = mut [10, 20, 30]
+  var xs = [10, 20, 30]
   // exchanges two elements; panics if either index is out of range
   xs.swap(0, 2)
   var fibA = 0
@@ -719,7 +719,7 @@ const PORTS: Map<string, i64> = ["http": 80, "https": 443]
 static assert(PAGE == 4096, "a page is four kilobytes")
 
 fun main() {
-  io.println("$LABEL, ${PRIMES.at(2)}, ${PORTS.get("https") ?: 0}")
+  io.println("$LABEL, ${PRIMES.get(2)}, ${PORTS.get("https") ?: 0}")
   when (8192) {
     PAGE => io.println("one page")
     else => io.println("not one page")
@@ -736,8 +736,8 @@ not one page
 
 What would fail at run time fails the build instead, in every profile:
 `const BIG: i64 = 9223372036854775807 + 1` is a compile error (write `+%` to
-wrap on purpose), and so are a division by zero and `PRIMES.at(9)`. With a
-constant index, `PRIMES.at(2)` is an `i64`, not an `i64?`: the compiler has
+wrap on purpose), and so are a division by zero and `PRIMES.get(9)`. With a
+constant index, `PRIMES.get(2)` is an `i64`, not an `i64?`: the compiler has
 read it. A constant cannot read a `val`, and the only functions it can call are
 the ones declared `const fun` (next) — compute anything else with `val`.
 Module-level `val`s are computed before `main`, in the order they need each
@@ -755,7 +755,7 @@ thing.
 use io
 
 const fun crc32Table(): List<u32> {
-  val table: MutableList<u32> = []
+  val table: List<u32> = []
   loop (n in 0..<256) {
     var c = n.wrapU32()
     loop (_ in 0..<8) {
@@ -769,7 +769,7 @@ const fun crc32Table(): List<u32> {
 const CRC: List<u32> = crc32Table()
 
 fun main() {
-  io.println("${CRC.len()} entries; the last is ${CRC.at(255)}")
+  io.println("${CRC.len()} entries; the last is ${CRC.get(255)}")
 }
 ```
 
@@ -780,7 +780,7 @@ Output:
 ```
 
 A `const fun` may use its parameters, locals and loops, `if` and `when`,
-recursion, structs, tuples and arrays as values, a `MutableList`, `MutableMap`
+recursion, structs, tuples and arrays as values, a `List`, `Map`
 or `StringBuilder` it builds and returns as a `List`, `Map` or `string`, its own
 methods, other `const fun`s and the standard library's: the string functions
 (`trim`, `split`, `replace`, `indexOf`, `toUpper`, `padStart`…),
@@ -832,13 +832,13 @@ a raw pointer (`unsafe`), call C, read a file, wait for a task, or read a
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | other `const fun`s, generic or not, and `const fun` methods                                                                                                                                                                                                                                                                | an ordinary `fun` — mark it `const` if it qualifies           |
 | a struct's constructor and its `init` block; lambdas, and `const fun`s passed as values                                                                                                                                                                                                                                    | a call through a trait object (`val s: Shape = …; s.area()`)  |
-| std's helpers that take a function: `map`, `filter`, `fold`, `forEach`, `any`, `all`, `find`, `count`, `flatMap`, `mapNotNull`, `partition`, `sortedBy`, `sortedWith`, `minBy`, `maxBy`, `distinctBy`, `binarySearch`…, `MutableList.make`, `MutableList.updateAt`; a `Map`'s `mapValues`, `filter`, `forEach`, `getOrPut` | a lambda that does any of the things on this side             |
-| `MutableList`, `MutableMap`, `MutableSet`: `push`, `pop`, `set`, `get`, `at`, `remove`, `clear`, `addAll`, `slice`, `reserve`, `toList`…                                                                                                                                                                                   | anything that suspends: `sleep`, channels, `async`, `await`   |
+| std's helpers that take a function: `map`, `filter`, `fold`, `forEach`, `any`, `all`, `find`, `count`, `flatMap`, `mapNotNull`, `partition`, `sortedBy`, `sortedWith`, `minBy`, `maxBy`, `distinctBy`, `binarySearch`…, `List.make`, `List.updateAt`; a `Map`'s `mapValues`, `filter`, `forEach`, `getOrPut` | a lambda that does any of the things on this side             |
+| `List`, `Map`, `Set`: `push`, `pop`, `set`, `get`, `at`, `remove`, `clear`, `addAll`, `slice`, `reserve`, `toList`…                                                                                                                                                                                   | anything that suspends: `sleep`, channels, `async`, `await`   |
 | `string`: `len`, `substring`, `split`, `startsWith`, `contains`, `toInt`, `bytes`, and std's `const fun` string helpers (`trim`, `replace`, `indexOf`, `padStart`, `toUpper`, `repeat`, `lines`…)                                                                                                                          | `io`, `fs`, `os`, `net`, `time`, `random`                     |
 | `StringBuilder`, interpolation, `toString`, `compareTo`                                                                                                                                                                                                                                                                    | `unsafe`, `extern` functions                                  |
 | integer and float arithmetic, conversions (`toI64()`, `wrapU8()`…), `abs`, `min`, `max`, `sqrt`, rounding                                                                                                                                                                                                                  | `sin`, `cos`, `exp`, `log`, `pow` on floats                   |
 | an enum's `values()`, `parse`, `toString`; `panic`                                                                                                                                                                                                                                                                         | `throw` (a failure in the compiler is a `panic`)              |
-| `List` helpers that take no function: `take`, `drop`, `concat`, `distinct`, `chunked`, `windowed`, `enumerate`, `zip`, `min`, `max`, `sum`, `sortedDescending`, `toSet`; `MutableList`'s `insert`, `removeAt`, `swap`, `fill`, `sort`, `repeat`                                                                            | a `Result` (`Ok`, `Err`) or another sealed variant as a value |
+| `List` helpers that take no function: `take`, `drop`, `concat`, `distinct`, `chunked`, `windowed`, `enumerate`, `zip`, `min`, `max`, `sum`, `sortedDescending`, `toSet`; `List`'s `insert`, `removeAt`, `swap`, `fill`, `sort`, `repeat`                                                                            | a `Result` (`Ok`, `Err`) or another sealed variant as a value |
 | ranges: `len`, `contains`, `step`, `reversed`, and looping over them                                                                                                                                                                                                                                                       | the decoders that throw: `hex.decode`, `base64.decode`        |
 | `Duration`: its constructors, operators, accessors, `toString` and `parse`; `hex.encode`, `base64.encode`, `base64.encodeUrl`; `std/utf8`                                                                                                                                                                                  |                                                               |
 

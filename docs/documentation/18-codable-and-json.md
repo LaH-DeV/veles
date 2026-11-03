@@ -349,7 +349,7 @@ use json
 
 fun main() throws EncodeError | DecodeError {
   val v = try json.parse("{\"a\": [1, 2.5, \"x\"], \"b\": {\"c\": true}}")
-  io.println("${v.get("a")?.at(1)?.asF64()} ${v.get("b")?.get("c")?.asBool()} ${v.get("zzz") == null}")
+  io.println("${v.get("a")?.elementAt(1)?.asF64()} ${v.get("b")?.get("c")?.asBool()} ${v.get("zzz") == null}")
   io.println(try json.encode(v))
 }
 ```

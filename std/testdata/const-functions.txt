@@ -9,19 +9,20 @@ hex/hex.vs: const fun write(bytes: List<u8>, upper: bool): string
 hex/hex.vs: public const fun encode(bytes: List<u8>): string
 hex/hex.vs: public const fun encodeUpper(bytes: List<u8>): string
 lint/lint.vs: public const fun report(span: Span, message: string, fix: Fix? = null)
+lint/lint.vs: public const fun reports(): List<Report>
 lint/lint.vs: public const fun text(span: Span): string
 lint/lint.vs: public static const fun insertBefore(span: Span, text: string): Fix
 lint/lint.vs: public static const fun remove(span: Span): Fix
 lint/lint.vs: public static const fun replace(span: Span, text: string): Fix
 prelude/adapters.vs: public const fun all<E>(pred: fun(T): bool suspends throws E): bool throws E
 prelude/adapters.vs: public const fun any<E>(pred: fun(T): bool suspends throws E): bool throws E
+prelude/adapters.vs: public const fun atOrPut<E>(key: K, make: fun(): V suspends throws E): *V throws E
 prelude/adapters.vs: public const fun filter<E>(pred: fun(K, V): bool suspends throws E): Map<K, V> throws E
 prelude/adapters.vs: public const fun filter<E>(pred: fun(T): bool suspends throws E): List<T> throws E
 prelude/adapters.vs: public const fun find<E>(pred: fun(T): bool suspends throws E): T? throws E
 prelude/adapters.vs: public const fun fold<A, E>(initial: A, f: fun(A, T): A suspends throws E): A throws E
 prelude/adapters.vs: public const fun forEach<E>(f: fun(K, V): () suspends throws E) throws E
 prelude/adapters.vs: public const fun forEach<E>(f: fun(T): () suspends throws E) throws E
-prelude/adapters.vs: public const fun getOrPut<E>(key: K, make: fun(): V suspends throws E): V throws E
 prelude/adapters.vs: public const fun map<U, E>(f: fun(T): U suspends throws E): List<U> throws E
 prelude/adapters.vs: public const fun mapValues<U, E>(f: fun(V): U suspends throws E): Map<K, U> throws E
 prelude/ascii.vs: public const fun digitValue(radix: i64 = 10): i64?
@@ -91,11 +92,9 @@ prelude/duration.vs: public static const fun ofSeconds(v: f64): Duration
 prelude/duration.vs: public static const fun seconds(n: i64): Duration
 prelude/duration.vs: static const fun parse(s: string): Duration?
 prelude/list.vs: const fun next(): T?
-prelude/list.vs: public const fun atOrDefault(i: i64, d: T): T
 prelude/list.vs: public const fun binarySearch(x: T): i64?
 prelude/list.vs: public const fun binarySearchBy<K: Comparable>(key: fun(T): K, target: K): i64?
 prelude/list.vs: public const fun binarySearchWith(compare: fun(T): Ordering): i64?
-prelude/list.vs: public const fun chunked(n: i64): List<List<T>>
 prelude/list.vs: public const fun chunked(n: i64): List<List<T>>
 prelude/list.vs: public const fun concat(other: List<T>): List<T>
 prelude/list.vs: public const fun contains(x: T): bool
@@ -103,10 +102,10 @@ prelude/list.vs: public const fun count<E>(pred: fun(T): bool suspends throws E)
 prelude/list.vs: public const fun distinct(): List<T>
 prelude/list.vs: public const fun distinctBy<K>(key: fun(T): K): List<T>
 prelude/list.vs: public const fun drop(n: i64): List<T>
-prelude/list.vs: public const fun drop(n: i64): List<T>
 prelude/list.vs: public const fun enumerate(): List<(index: i64, value: T)>
 prelude/list.vs: public const fun fill(x: T)
 prelude/list.vs: public const fun flatMap<U, E>(f: fun(T): List<U> suspends throws E): List<U> throws E
+prelude/list.vs: public const fun getOrDefault(i: i64, d: T): T
 prelude/list.vs: public const fun incrementAt(i: i64)
 prelude/list.vs: public const fun indexOfFirst<E>(pred: fun(T): bool suspends throws E): i64? throws E
 prelude/list.vs: public const fun indices(): Range<i64>
@@ -138,16 +137,13 @@ prelude/list.vs: public const fun sum(): f64
 prelude/list.vs: public const fun sum(): i64
 prelude/list.vs: public const fun swap(i: i64, j: i64)
 prelude/list.vs: public const fun take(n: i64): List<T>
-prelude/list.vs: public const fun take(n: i64): List<T>
-prelude/list.vs: public const fun toMutableSet(): MutableSet<T>
 prelude/list.vs: public const fun toSet(): Set<T>
 prelude/list.vs: public const fun updateAt(i: i64, transform: fun(T): T): T
 prelude/list.vs: public const fun upperBound(x: T): i64
 prelude/list.vs: public const fun windowed(n: i64): List<List<T>>
-prelude/list.vs: public const fun windowed(n: i64): List<List<T>>
 prelude/list.vs: public const fun zip<U>(other: List<U>): List<(T, U)>
-prelude/list.vs: public static const fun make(n: i64, init: fun(i64): T): MutableList<T>
-prelude/list.vs: public static const fun repeat(x: T, count: i64): MutableList<T>
+prelude/list.vs: public static const fun make(n: i64, init: fun(i64): T): List<T>
+prelude/list.vs: public static const fun repeat(x: T, count: i64): List<T>
 prelude/number.vs: const fun checkRadix(radix: i64)
 prelude/number.vs: const fun unsignedToRadix(v: u64, radix: i64): string
 prelude/number.vs: public const fun isClose(other: f32, relative: f32 = 1.0e-6, absolute: f32 = 0.0): bool
@@ -205,7 +201,7 @@ regex/parse.vs: const fun assertion(kind: i64): Node
 regex/parse.vs: const fun atom(depth: i64): Node?
 regex/parse.vs: const fun braces(): (i64, i64)?
 regex/parse.vs: const fun bracket(): Node
-regex/parse.vs: const fun classAtom(pairs: MutableList<i64>): i64?
+regex/parse.vs: const fun classAtom(pairs: *List<i64>): i64?
 regex/parse.vs: const fun classEscape(set: List<i64>, negated: bool): Node
 regex/parse.vs: const fun close()
 regex/parse.vs: const fun digitRanges(): List<i64>
@@ -237,7 +233,7 @@ regex/parse.vs: const fun parse(pattern: string, flags: Flags): Parsed
 regex/parse.vs: const fun peek(): i64
 regex/parse.vs: const fun peekAt(ahead: i64): i64
 regex/parse.vs: const fun posix(name: string): List<i64>?
-regex/parse.vs: const fun posixClass(pairs: MutableList<i64>): bool
+regex/parse.vs: const fun posixClass(pairs: *List<i64>): bool
 regex/parse.vs: const fun property(negated: bool): List<i64>?
 regex/parse.vs: const fun quantified(atom: Node): Node
 regex/parse.vs: const fun sequence(depth: i64): Node
@@ -261,7 +257,7 @@ utf8/utf8.vs: public const fun decode(s: string, at: i64): Rune?
 utf8/utf8.vs: public const fun decodeBytes(bytes: List<u8>, at: i64): Rune?
 utf8/utf8.vs: public const fun decodeLast(s: string, before: i64): Rune?
 utf8/utf8.vs: public const fun encode(code: i64): List<u8>
-utf8/utf8.vs: public const fun encodeTo(out: MutableList<u8>, code: i64): i64
+utf8/utf8.vs: public const fun encodeTo(out: *List<u8>, code: i64): i64
 utf8/utf8.vs: public const fun isContinuation(b: u8): bool
 utf8/utf8.vs: public const fun isScalar(code: i64): bool
 utf8/utf8.vs: public const fun isStart(b: u8): bool

@@ -201,7 +201,7 @@ func TestPrivateFieldsAndTheConstructorAcrossModules(t *testing.T) {
 		}
 	}
 	write("veles.toml", "[package]\nname = \"app\"\nversion = \"0.1.0\"\n")
-	write("geo/lib.vs", "public struct Acc {\n  public name: string\n  private items: MutableList<i64> = []\n  private seed: i64\n  public fun count(): i64 => this.items.len() + this.seed\n}\npublic struct Tied {\n  public name: string\n  internal hidden: i64 = 3\n}\n")
+	write("geo/lib.vs", "public struct Acc {\n  public name: string\n  private items: List<i64> = []\n  private seed: i64\n  public fun count(): i64 => this.items.len() + this.seed\n}\npublic struct Tied {\n  public name: string\n  internal hidden: i64 = 3\n}\n")
 	check := func(main string) string {
 		write("main.vs", main)
 		diags := &source.Diagnostics{}

@@ -46,7 +46,7 @@ public trait Enumerated {
 
 // the words of a name, lower case
 const fun caseWords(name: string): List<string> {
-  val words: MutableList<string> = []
+  val words: List<string> = []
   var start: i64 = -1  // where the word being read began; -1 between words
   loop (i in 0..<name.len()) {
     val b = name.byteAt(i)
@@ -117,5 +117,5 @@ const fun caseIndex(names: List<string>, text: string, case: Case): i64? {
 // the member of an enum `text` names in `case` (E.parse with a case, D205)
 const fun enumPick<E>(values: List<E>, names: List<string>, text: string, case: Case): E? {
   val i = caseIndex(names, text, case) ?: return null
-  values.at(i)
+  values.get(i)
 }

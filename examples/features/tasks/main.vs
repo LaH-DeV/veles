@@ -43,7 +43,7 @@ fun main() throws {
       jobs.send(Job(id: i))
     }
     jobs.close()
-    var got: MutableList<i64> = []
+    var got: List<i64> = []
     loop (_ in 1..4) {
       val d = await results.recv()
       if (d != null) got.push(d.id)

@@ -165,18 +165,18 @@ fun portOf(url: string, text: string): i64 throws FetchError {
 fun encodeTarget(target: string): string {
   if (target.bytes().all(b => b < 128)) return target
   val digits = "0123456789ABCDEF".bytes()
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   loop (b in target.bytes()) {
     if (b < 128) {
       out.push(b)
     } else {
       val n = b.toI64()
       out.push('%')
-      out.push(digits.at(n / 16) ?: '0')
-      out.push(digits.at(n % 16) ?: '0')
+      out.push(digits.get(n / 16) ?: '0')
+      out.push(digits.get(n % 16) ?: '0')
     }
   }
-  out.toList().decodeUtf8() ?: target
+  out.decodeUtf8() ?: target
 }
 
 // `location` as a redirect means it, resolved against the URL that sent it
@@ -217,7 +217,7 @@ fun removeDots(target: string): string {
   val path = pathOf(target)
   val query = target.slice(path.len(), target.len())
   val parts = path.split("/")
-  val out: MutableList<string> = []
+  val out: List<string> = []
   loop ((i, part) in parts.enumerate()) {
     if (i == 0) continue
     val last = i == parts.len() - 1
@@ -356,7 +356,7 @@ public struct ClientBody {
       this.abandon()
       throw FetchError(url: this.url, detail: "the body is $declared bytes, more than the $max allowed", kind: FetchKind.TooLarge)
     }
-    val out: MutableList<u8> = []
+    val out: List<u8> = []
     loop {
       val chunk = try this.read(byteUnits.KiB * 64)
       if (chunk.isEmpty()) break
@@ -540,8 +540,8 @@ struct Idle {
   expires: time.Deadline
 }
 
-fun newIdle(): Mutex<MutableMap<string, MutableList<Idle>>> {
-  val empty: MutableMap<string, MutableList<Idle>> = [:]
+fun newIdle(): Mutex<Map<string, List<Idle>>> {
+  val empty: Map<string, List<Idle>> = [:]
   Mutex(value: empty)
 }
 
@@ -549,14 +549,14 @@ fun newIdle(): Mutex<MutableMap<string, MutableList<Idle>>> {
 // connection that sat too long is found out, and closed, when the next
 // request asks for one.
 struct Pool {
-  idle: Mutex<MutableMap<string, MutableList<Idle>>> = newIdle()
+  idle: Mutex<Map<string, List<Idle>>> = newIdle()
 
   // the most recently used live connection to `key`, or null
   fun take(key: string): io.Stream? {
-    val expired: MutableList<io.Stream> = []
+    val expired: List<io.Stream> = []
     val found = this.idle.withLock(m => {
       var out: io.Stream? = null
-      val list = m.get(key)
+      val list = m.at(key)  // the pool's own list: taking from it removes the entry (D231)
       if (list != null) {
         loop (val item = list.pop()) {
           if (item.expires.expired()) {
@@ -579,7 +579,7 @@ struct Pool {
   fun put(key: string, c: io.Stream, max: i64, ttl: Duration) {
     val kept = this.idle.withLock(m => {
       val entry = Idle(conn: c, expires: time.Deadline.after(ttl))
-      val existing = m.get(key)
+      val existing = m.at(key)
       if (existing != null) {
         if (existing.len() < max) {
           existing.push(entry)
@@ -588,7 +588,7 @@ struct Pool {
           false
         }
       } else if (max > 0) {
-        val list: MutableList<Idle> = [entry]
+        val list: List<Idle> = [entry]
         m.set(key, list)
         true
       } else {
@@ -599,7 +599,7 @@ struct Pool {
   }
 
   fun closeAll() {
-    val all: MutableList<io.Stream> = []
+    val all: List<io.Stream> = []
     this.idle.withLock(m => {
       loop (list in m.values()) {
         loop (item in list) {
@@ -798,7 +798,7 @@ public struct Client {
 // A client span for a call (OpenTelemetry's HTTP conventions): the query string
 // is left out of url.full, since it is where tokens and personal data go.
 fun clientSpan(url: string, method: Method): otel.Span {
-  val attrs: MutableList<otel.Attr> = [otel.attr("http.request.method", method.name)]
+  val attrs: List<otel.Attr> = [otel.attr("http.request.method", method.name)]
   when (parseUrl(url)) {
     is Ok(u)  => {
       attrs.push(otel.attr("url.full", u.origin() + pathOf(u.target)))
@@ -816,7 +816,7 @@ fun withTraceparent(headers: Map<string, string>): Map<string, string> {
   loop ((name, _) in headers.entries()) {
     if (name.toLower() == "traceparent") return headers
   }
-  val out = headers.toMutable()
+  val out = headers
   out.set("traceparent", header)
   out
 }
@@ -839,7 +839,7 @@ fun backoff(attempt: i64): Duration {
 }
 
 fun merged(base: Map<string, string>, extra: Map<string, string>): Map<string, string> {
-  val out: MutableMap<string, string> = [:]
+  val out: Map<string, string> = [:]
   loop ((k, v) in base.entries()) {
     out.set(k.toLower(), v)
   }
@@ -852,7 +852,7 @@ fun merged(base: Map<string, string>, extra: Map<string, string>): Map<string, s
 const credentialHeaders = ["authorization", "cookie", "proxy-authorization"]
 
 fun withoutCredentials(headers: Map<string, string>): Map<string, string> {
-  val out: MutableMap<string, string> = [:]
+  val out: Map<string, string> = [:]
   loop ((k, v) in headers.entries()) {
     if (!credentialHeaders.contains(k)) out.set(k, v)
   }
@@ -973,8 +973,8 @@ fun readOneHead(c: io.Stream, url: string, deadline: time.Deadline): Head suspen
   if (codeText.len() != 3 || !isDigits(codeText)) throw protocolError(url, "malformed status code")
   val code = try codeText.toInt() ?! protocolError(url, "malformed status code")
   if (code < 100) throw protocolError(url, "malformed status code")
-  val headers: MutableMap<string, string> = [:]
-  val cookies: MutableList<string> = []
+  val headers: Map<string, string> = [:]
+  val cookies: List<string> = []
   var lines: i64 = 0
   var bytes: i64 = 0
   loop {

@@ -16,9 +16,9 @@ use utf8
 
 /// Threads alive at one position, in priority order.
 struct Threads {
-  pcs: MutableList<i64> = []
+  pcs: List<i64> = []
   /// `width` capture positions per thread, back to back; -1 is unset.
-  slots: MutableList<i64> = []
+  slots: List<i64> = []
 
   fun clear() {
     this.pcs.clear()
@@ -32,9 +32,9 @@ const explore: i64 = -2
 
 /// The stacks and the working captures `addThread` uses; one per search.
 struct Scratch {
-  stackA: MutableList<i64> = []
-  stackB: MutableList<i64> = []
-  cur:    MutableList<i64>
+  stackA: List<i64> = []
+  stackB: List<i64> = []
+  cur:    List<i64>
 }
 
 /// Everything a search needs, allocated once: a machine runs any number of
@@ -43,9 +43,9 @@ struct Scratch {
 struct Machine {
   prog:      Program
   scratch:   Scratch
-  marks:     MutableList<i64>
-  var a:     Threads? = null
-  var b:     Threads? = null
+  marks:     List<i64>
+  a:         Threads = Threads()
+  b:         Threads = Threads()
   var stamp: i64 = 0
   /// Run on threads even when the backtracker would do (tests compare the two).
   var threadsOnly: bool = false
@@ -54,7 +54,7 @@ struct Machine {
     val width = 2 * (prog.groups + 1)
     Machine(
       prog,
-      scratch: Scratch(cur: MutableList<i64>.repeat(-1, width)),
+      scratch: Scratch(cur: List<i64>.repeat(-1, width)),
       marks: [],
     )
   }
@@ -68,26 +68,21 @@ struct Machine {
     // a small enough job is done by the backtracker, which is several times
     // faster than the threads and just as bounded
     if (!this.threadsOnly && prog.headCount * (text.len() - from + 1) <= maxVisited) {
-      return backtrack(prog, text, from, anchored, full, this.scratch)
+      return backtrack(prog, text, from, anchored, full, &this.scratch)
     }
     // the threads' memory is made when they are first needed
-    val marks = this.marks
-    if (marks.len() == 0) {
-      marks.addAll(MutableList<i64>.repeat(0, prog.insts.len()).toList())
+    if (this.marks.len() == 0) {
+      this.marks.addAll(List<i64>.repeat(0, prog.insts.len()))
     }
-    val a = this.a ?: Threads()
-    val b = this.b ?: Threads()
-    this.a = a
-    this.b = b
     // a search uses one stamp per character it steps over, plus two; the next
     // search starts past all of them
     val first = this.stamp + 1
     this.stamp += text.len() + 3
-    return run(prog, this.scratch, marks, a, b, first, text, from, anchored, full)
+    return run(prog, &this.scratch, &this.marks, &this.a, &this.b, first, text, from, anchored, full)
   }
 }
 
-fun run(prog: Program, scratch: Scratch, marks: MutableList<i64>, a: Threads, b: Threads, first: i64, text: string, from: i64, anchored: bool, full: bool): List<i64>? {
+fun run(prog: Program, scratch: *Scratch, marks: *List<i64>, a: *Threads, b: *Threads, first: i64, text: string, from: i64, anchored: bool, full: bool): List<i64>? {
   val n = text.len()
   val width = 2 * (prog.groups + 1)
   var clist = a
@@ -101,7 +96,7 @@ fun run(prog: Program, scratch: Scratch, marks: MutableList<i64>, a: Threads, b:
     if (found == null && (!anchored || pos == from)) {
       // nothing is alive: skip to a byte a match could start with
       if (clist.pcs.len() == 0 && !anchored && prog.skips) {
-        loop (pos < n && !(prog.first.at(text.byteAt(pos).toI64()) ?: true)) pos += 1
+        loop (pos < n && !(prog.first.get(text.byteAt(pos).toI64()) ?: true)) pos += 1
         if (pos >= n) break
       }
       loop (k in 0..<width) scratch.cur.set(k, -1)
@@ -124,28 +119,28 @@ fun run(prog: Program, scratch: Scratch, marks: MutableList<i64>, a: Threads, b:
     val next = stamp + 1
     var i = 0
     loop (i < clist.pcs.len()) {
-      val pc = clist.pcs.at(i) ?: panic("regex: thread in range")
-      val inst = prog.insts.at(pc) ?: panic("regex: pc in range")
+      val pc = clist.pcs.get(i) ?: panic("regex: thread in range")
+      val inst = prog.insts.get(pc) ?: panic("regex: pc in range")
       val base = i * width
       i += 1
       var takes = false
       when (inst.op) {
         opChar => takes = c == inst.x
-        opSet  => takes = c >= 0 && inSet(prog.sets.at(inst.x) ?: panic("regex: set in range"), c)
+        opSet  => takes = c >= 0 && inSet(prog.sets.get(inst.x) ?: panic("regex: set in range"), c)
         opAny  => takes = c >= 0
         else   => {
           // opMatch: the highest-priority thread to get here wins, unless it
           // had to end at the end of the text and has not
           if (!full || pos == n) {
-            val result: MutableList<i64> = []
-            loop (k in 0..<width) result.push(clist.slots.at(base + k) ?: -1)
+            val result: List<i64> = []
+            loop (k in 0..<width) result.push(clist.slots.get(base + k) ?: -1)
             found = result
             break
           }
         }
       }
       if (takes) {
-        loop (k in 0..<width) scratch.cur.set(k, clist.slots.at(base + k) ?: -1)
+        loop (k in 0..<width) scratch.cur.set(k, clist.slots.get(base + k) ?: -1)
         addThread(prog, text, nlist, marks, next, pc + 1, scratch, width, pos + size)
       }
     }
@@ -165,10 +160,10 @@ fun run(prog: Program, scratch: Scratch, marks: MutableList<i64>, a: Threads, b:
 /// `list`, in priority order, with the captures as they stand on that path
 /// (`scratch.cur` holds the ones the thread arrived with). A stack of its own,
 /// not recursion: a pattern is untrusted input.
-fun addThread(prog: Program, text: string, list: Threads, marks: MutableList<i64>, stamp: i64, start: i64, scratch: Scratch, width: i64, pos: i64) {
-  val stackA = scratch.stackA
-  val stackB = scratch.stackB
-  val cur = scratch.cur
+fun addThread(prog: Program, text: string, list: *Threads, marks: *List<i64>, stamp: i64, start: i64, scratch: *Scratch, width: i64, pos: i64) {
+  val stackA = &scratch.stackA
+  val stackB = &scratch.stackB
+  val cur = &scratch.cur
   stackA.push(start)
   stackB.push(explore)
   loop (stackA.len() > 0) {
@@ -179,9 +174,9 @@ fun addThread(prog: Program, text: string, list: Threads, marks: MutableList<i64
       continue
     }
     val pc = a
-    if ((marks.at(pc) ?: 0) == stamp) continue
+    if ((marks.get(pc) ?: 0) == stamp) continue
     marks.set(pc, stamp)
-    val inst = prog.insts.at(pc) ?: panic("regex: pc in range")
+    val inst = prog.insts.get(pc) ?: panic("regex: pc in range")
     when (inst.op) {
       opJmp    => {
         stackA.push(inst.x)
@@ -196,7 +191,7 @@ fun addThread(prog: Program, text: string, list: Threads, marks: MutableList<i64
       }
       opSave   => {
         stackA.push(inst.x)
-        stackB.push(cur.at(inst.x) ?: -1)
+        stackB.push(cur.get(inst.x) ?: -1)
         cur.set(inst.x, pos)
         stackA.push(pc + 1)
         stackB.push(explore)
@@ -209,7 +204,7 @@ fun addThread(prog: Program, text: string, list: Threads, marks: MutableList<i64
       }
       else     => {
         list.pcs.push(pc)
-        loop (k in 0..<width) list.slots.push(cur.at(k) ?: -1)
+        loop (k in 0..<width) list.slots.push(cur.get(k) ?: -1)
       }
     }
   }
@@ -246,8 +241,8 @@ const fun inSet(ranges: List<i64>, c: i64): bool {
   var hi = ranges.len() / 2 - 1
   loop (lo <= hi) {
     val mid = (lo + hi) / 2
-    val from = ranges.at(2 * mid) ?: 0
-    val to = ranges.at(2 * mid + 1) ?: 0
+    val from = ranges.get(2 * mid) ?: 0
+    val to = ranges.get(2 * mid + 1) ?: 0
     if (c < from) {
       hi = mid - 1
     } else if (c > to) {
@@ -283,7 +278,7 @@ fun oneChar(inst: Inst, ascii: List<i64>, sets: List<List<i64>>, text: string, p
   }
   if (inst.op == opChar) return if (c == inst.x) size else 0
   if (inst.op == opSet) {
-    val takes = if (c < 128) ((ascii.at(4 * inst.x + (c >> 5)) ?: 0) >> (c & 31) & 1) == 1 else inSet(sets.at(inst.x) ?: panic("regex: set in range"), c)
+    val takes = if (c < 128) ((ascii.get(4 * inst.x + (c >> 5)) ?: 0) >> (c & 31) & 1) == 1 else inSet(sets.get(inst.x) ?: panic("regex: set in range"), c)
     return if (takes) size else 0
   }
   size
@@ -308,19 +303,19 @@ fun previousStart(text: string, pos: i64): i64 {
 /// entry that gives the characters back one at a time; a lazy one leaves an entry
 /// that takes one more. Same order of attempts, none of the per-character stack
 /// traffic.
-fun backtrack(prog: Program, text: string, from: i64, anchored: bool, full: bool, scratch: Scratch): List<i64>? {
+fun backtrack(prog: Program, text: string, from: i64, anchored: bool, full: bool, scratch: *Scratch): List<i64>? {
   val n = text.len()
   val width = 2 * (prog.groups + 1)
   val headCount = prog.headCount
-  val visited: MutableList<i64> = MutableList<i64>.repeat(0, ((headCount * (n - from + 1)) >> 5) + 1)
+  val visited: List<i64> = List<i64>.repeat(0, ((headCount * (n - from + 1)) >> 5) + 1)
   val insts = prog.insts
   val headIndex = prog.headIndex
   val runs = prog.runs
   val ascii = prog.ascii
   val sets = prog.sets
-  val cur = scratch.cur
-  val stackA = scratch.stackA
-  val stackB = scratch.stackB
+  val cur = &scratch.cur
+  val stackA = &scratch.stackA
+  val stackB = &scratch.stackB
   val initialStack = insts.len().min(32)
   stackA.clear()
   stackB.clear()
@@ -328,7 +323,7 @@ fun backtrack(prog: Program, text: string, from: i64, anchored: bool, full: bool
   var start = from
   loop (start <= n) {
     if (prog.skips && !anchored) {
-      loop (start < n && !(prog.first.at(text.byteAt(start).toI64()) ?: true)) start += 1
+      loop (start < n && !(prog.first.get(text.byteAt(start).toI64()) ?: true)) start += 1
       if (start >= n) return null
     }
     if (!reserved) {
@@ -347,7 +342,7 @@ fun backtrack(prog: Program, text: string, from: i64, anchored: bool, full: bool
       when {
         a0 <= runLazy   => {
           pc = runLazy - a0
-          val body = insts.at(pc - 2) ?: panic("regex: pc in range")
+          val body = insts.get(pc - 2) ?: panic("regex: pc in range")
           val taken = oneChar(body, ascii, sets, text, b0)
           if (taken == 0) continue
           pos = b0 + taken
@@ -374,23 +369,23 @@ fun backtrack(prog: Program, text: string, from: i64, anchored: bool, full: bool
       // split leaves an alternative behind
       loop {
         // only a way into the program that two paths can share needs the check
-        val head = headIndex.at(pc) ?: 0
+        val head = headIndex.get(pc) ?: 0
         if (head >= 0) {
           val bit = (pos - from) * headCount + head
           val word = bit >> 5
           val mask = 1 << (bit & 31)
-          val seen = visited.at(word) ?: 0
+          val seen = visited.get(word) ?: 0
           if ((seen & mask) != 0) break
           visited.set(word, seen | mask)
         }
-        val inst = insts.at(pc) ?: panic("regex: pc in range")
+        val inst = insts.get(pc) ?: panic("regex: pc in range")
         when (inst.op) {
           opJmp    => pc = inst.x
           opSplit  => {
-            val kind = runs.at(pc) ?: 0
+            val kind = runs.get(pc) ?: 0
             if (kind == 1) {
               // greedy loop over the one-character instruction at pc + 1
-              val body = insts.at(pc + 1) ?: panic("regex: pc in range")
+              val body = insts.get(pc + 1) ?: panic("regex: pc in range")
               var end = pos
               loop {
                 val taken = oneChar(body, ascii, sets, text, end)
@@ -416,7 +411,7 @@ fun backtrack(prog: Program, text: string, from: i64, anchored: bool, full: bool
           }
           opSave   => {
             stackA.push(-1 - inst.x)
-            stackB.push(cur.at(inst.x) ?: -1)
+            stackB.push(cur.get(inst.x) ?: -1)
             cur.set(inst.x, pos)
             pc += 1
           }
@@ -426,8 +421,8 @@ fun backtrack(prog: Program, text: string, from: i64, anchored: bool, full: bool
           }
           opMatch  => {
             if (!full || pos == n) {
-              val result: MutableList<i64> = []
-              loop (k in 0..<width) result.push(cur.at(k) ?: -1)
+              val result: List<i64> = []
+              loop (k in 0..<width) result.push(cur.get(k) ?: -1)
               stackA.clear()
               stackB.clear()
               return result
@@ -472,14 +467,14 @@ fun wordAfter(text: string, pos: i64): bool {
 /// for by name.
 fun exhaustive(prog: Program, text: string, from: i64, anchored: bool, full: bool): List<i64>? {
   val n = text.len()
-  val cur: MutableList<i64> = MutableList<i64>.repeat(-1, prog.slots)
+  val cur: List<i64> = List<i64>.repeat(-1, prog.slots)
   var start = from
   loop (start <= n) {
     loop (k in 0..<prog.slots) cur.set(k, -1)
-    if (runFrom(prog, text, 0, start, cur, if (full) n else -1)) {
+    if (runFrom(prog, text, 0, start, &cur, if (full) n else -1)) {
       val width = 2 * (prog.groups + 1)
-      val result: MutableList<i64> = []
-      loop (k in 0..<width) result.push(cur.at(k) ?: -1)
+      val result: List<i64> = []
+      loop (k in 0..<width) result.push(cur.get(k) ?: -1)
       return result
     }
     if (anchored) return null
@@ -492,10 +487,10 @@ fun exhaustive(prog: Program, text: string, from: i64, anchored: bool, full: boo
 /// true when it reaches `opMatch` (or `opLookEnd`, for a lookaround's body)
 /// at `mustEnd`, or anywhere when `mustEnd` is -1. On success `cur` holds the
 /// captures of the path that got there; on failure it is as it was.
-fun runFrom(prog: Program, text: string, startPc: i64, startPos: i64, cur: MutableList<i64>, mustEnd: i64): bool {
+fun runFrom(prog: Program, text: string, startPc: i64, startPos: i64, cur: *List<i64>, mustEnd: i64): bool {
   val n = text.len()
-  val stackA: MutableList<i64> = [startPc]
-  val stackB: MutableList<i64> = [startPos]
+  val stackA: List<i64> = [startPc]
+  val stackB: List<i64> = [startPos]
   loop (stackA.len() > 0) {
     val a = stackA.pop() ?: break
     val b = stackB.pop() ?: break
@@ -505,7 +500,7 @@ fun runFrom(prog: Program, text: string, startPc: i64, startPos: i64, cur: Mutab
       continue
     }
     val pos = b
-    val inst = prog.insts.at(a) ?: panic("regex: pc in range")
+    val inst = prog.insts.get(a) ?: panic("regex: pc in range")
     when (inst.op) {
       opJmp              => {
         stackA.push(inst.x)
@@ -519,14 +514,14 @@ fun runFrom(prog: Program, text: string, startPc: i64, startPos: i64, cur: Mutab
       }
       opSave             => {
         stackA.push(-1 - inst.x)
-        stackB.push(cur.at(inst.x) ?: -1)
+        stackB.push(cur.get(inst.x) ?: -1)
         cur.set(inst.x, pos)
         stackA.push(a + 1)
         stackB.push(pos)
       }
       opAdvance          => {
         // a loop iteration that matched nothing goes no further
-        if ((cur.at(inst.x) ?: -1) != pos) {
+        if ((cur.get(inst.x) ?: -1) != pos) {
           stackA.push(a + 1)
           stackB.push(pos)
         }
@@ -538,15 +533,15 @@ fun runFrom(prog: Program, text: string, startPc: i64, startPos: i64, cur: Mutab
         }
       }
       opBackref          => {
-        val from = cur.at(2 * inst.x) ?: -1
-        val to = cur.at(2 * inst.x + 1) ?: -1
+        val from = cur.get(2 * inst.x) ?: -1
+        val to = cur.get(2 * inst.x + 1) ?: -1
         if (from >= 0 && to >= from && pos + (to - from) <= n && sameText(text, from, pos, to - from, inst.y == 1)) {
           stackA.push(a + 1)
           stackB.push(pos + (to - from))
         }
       }
       opLook             => {
-        val saved = cur.toList()
+        val saved = *cur
         val behind = inst.x >= 2
         val negated = inst.x % 2 == 1
         var held = false
@@ -564,15 +559,15 @@ fun runFrom(prog: Program, text: string, startPc: i64, startPos: i64, cur: Mutab
         }
         if (negated || !held) {
           // a look that must not match, or did not, leaves no captures behind
-          loop (k in 0..<saved.len()) cur.set(k, saved.at(k))
+          loop (k in 0..<saved.len()) cur.set(k, saved.get(k))
         }
         if (held != negated) {
           if (!negated) {
             // captures the body set are undone if the search backs up past here
             loop (k in 0..<saved.len()) {
-              if ((cur.at(k) ?: -1) != saved.at(k)) {
+              if ((cur.get(k) ?: -1) != saved.get(k)) {
                 stackA.push(-1 - k)
-                stackB.push(saved.at(k))
+                stackB.push(saved.get(k))
               }
             }
           }
@@ -592,7 +587,7 @@ fun runFrom(prog: Program, text: string, startPc: i64, startPos: i64, cur: Mutab
             c = r.code
             size = r.size
           }
-          val takes = if (inst.op == opChar) c == inst.x else if (inst.op == opSet) inSet(prog.sets.at(inst.x) ?: panic("regex: set in range"), c) else true
+          val takes = if (inst.op == opChar) c == inst.x else if (inst.op == opSet) inSet(prog.sets.get(inst.x) ?: panic("regex: set in range"), c) else true
           if (takes) {
             stackA.push(a + 1)
             stackB.push(pos + size)

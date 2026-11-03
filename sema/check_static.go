@@ -73,13 +73,18 @@ func (f *fnCtx) collectionStatic(n *ast.NameExpr, callee *ast.MemberExpr, e *ast
 	k := &types.TypeParam{Name: "K"}
 	v := &types.TypeParam{Name: "V"}
 	var open types.Type
-	switch n.Name {
-	case "List", "MutableList":
-		open = &types.List{Elem: v, Mutable: n.Name == "MutableList"}
-	case "Map", "MutableMap":
-		open = &types.Map{Key: k, Value: v, Mutable: n.Name == "MutableMap"}
-	case "Set", "MutableSet":
-		open = &types.Set{Elem: v, Mutable: n.Name == "MutableSet"}
+	coll := n.Name
+	if plain, ok := removedMutable[coll]; ok {
+		f.c.removedMutableType(&ast.NamedType{Path: []ast.Ident{{Name: coll, Pos: n.Pos}}, Pos: n.Pos}, coll)
+		coll = plain
+	}
+	switch coll {
+	case "List":
+		open = &types.List{Elem: v}
+	case "Map":
+		open = &types.Map{Key: k, Value: v}
+	case "Set":
+		open = &types.Set{Elem: v}
 	default:
 		return nil, false
 	}
@@ -166,16 +171,16 @@ func (f *fnCtx) inferFromArgs(params []types.Param, bound []ast.Expr, m map[*typ
 
 // sameCollection: a and b are the same kind of built-in collection.
 func sameCollection(a, b types.Type) bool {
-	switch a := a.(type) {
+	switch a.(type) {
 	case *types.List:
-		bl, ok := b.(*types.List)
-		return ok && a.Mutable == bl.Mutable
+		_, ok := b.(*types.List)
+		return ok
 	case *types.Map:
-		bm, ok := b.(*types.Map)
-		return ok && a.Mutable == bm.Mutable
+		_, ok := b.(*types.Map)
+		return ok
 	case *types.Set:
-		bs, ok := b.(*types.Set)
-		return ok && a.Mutable == bs.Mutable
+		_, ok := b.(*types.Set)
+		return ok
 	}
 	return false
 }

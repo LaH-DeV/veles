@@ -7,18 +7,9 @@ import (
 )
 
 // D106: `var xs = []` and `val m = [:]` stay errors — the type is not
-// visible at the declaration otherwise — but the message names the right
-// kind (`MutableList` when the binding is changed later, `List` otherwise)
-// and, when a later use in the same function decides the element type, the
-// error carries the fix that writes the annotation.
-
-// mutatingMethods change a collection in place; a binding that receives
-// one of these calls wants the mutable kind.
-var mutatingMethods = map[string]bool{
-	"push": true, "pop": true, "insert": true, "removeAt": true, "addAll": true, "clear": true,
-	"set": true, "remove": true, "add": true, "getOrPut": true, "sort": true, "sortWith": true,
-	"swap": true, "fill": true, "reserve": true,
-}
+// visible at the declaration otherwise — but when a later use in the same
+// function decides the element type, the error carries the fix that writes
+// the annotation.
 
 // emptyLiteralBinding reports `val/var name = []` (or `[:]`) written
 // without a type; it returns false when s is not such a binding.
@@ -27,30 +18,25 @@ func (f *fnCtx) emptyLiteralBinding(s *ast.ValStmt) bool {
 	if b.Name == nil || b.Type != nil || s.Value == nil {
 		return false
 	}
-	isMap, mut := false, false
+	isMap := false
 	switch v := s.Value.(type) {
 	case *ast.ListLit:
 		if len(v.Elems) > 0 {
 			return false
 		}
-		mut = v.Mut
 	case *ast.MapLit:
 		if len(v.Entries) > 0 {
 			return false
 		}
-		mut = v.Mut
 		isMap = true
 	default:
 		return false
 	}
 	name := b.Name.Name
-	mutable, decided := f.laterUses(name, s.Pos.End, isMap)
+	decided := f.laterUses(name, s.Pos.End, isMap)
 	kind := "List"
 	if isMap {
 		kind = "Map"
-	}
-	if mutable || mut {
-		kind = "Mutable" + kind
 	}
 	args := decided
 	if args == "" {
@@ -77,13 +63,13 @@ func (f *fnCtx) emptyLiteralBinding(s *ast.ValStmt) bool {
 	return true
 }
 
-// laterUses looks at what the function does with name after offset: whether
-// it changes it in place, and the type arguments the first deciding use
-// gives — a push, add, insert or set of a value whose type is plain to see,
-// or passing it to a named function with a declared parameter type.
-func (f *fnCtx) laterUses(name string, after int, isMap bool) (mutable bool, decided string) {
+// laterUses looks at what the function does with name after offset: the
+// type arguments the first deciding use gives — a push, add, insert or set
+// of a value whose type is plain to see, or passing it to a named function
+// with a declared parameter type.
+func (f *fnCtx) laterUses(name string, after int, isMap bool) (decided string) {
 	if f.bodyAST == nil {
-		return false, ""
+		return ""
 	}
 	walkAST(f.bodyAST, func(n any) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -92,9 +78,6 @@ func (f *fnCtx) laterUses(name string, after int, isMap bool) (mutable bool, dec
 		}
 		if m, isMember := call.Fun.(*ast.MemberExpr); isMember {
 			if x, isName := m.X.(*ast.NameExpr); isName && x.Name == name {
-				if mutatingMethods[m.Name.Name] {
-					mutable = true
-				}
 				if decided == "" {
 					decided = f.decidingCall(m.Name.Name, call.Args, isMap)
 				}
@@ -113,12 +96,10 @@ func (f *fnCtx) laterUses(name string, after int, isMap bool) (mutable bool, dec
 					case *types.List:
 						if !isMap {
 							decided = pt.Elem.String()
-							mutable = mutable || pt.Mutable
 						}
 					case *types.Map:
 						if isMap {
 							decided = pt.Key.String() + ", " + pt.Value.String()
-							mutable = mutable || pt.Mutable
 						}
 					}
 				}
@@ -126,7 +107,7 @@ func (f *fnCtx) laterUses(name string, after int, isMap bool) (mutable bool, dec
 		}
 		return true
 	})
-	return mutable, decided
+	return decided
 }
 
 // decidingCall is the type arguments `xs.push(1)`, `m.set("a", 2.5)` give.

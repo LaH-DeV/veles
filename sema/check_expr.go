@@ -181,13 +181,6 @@ func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 		if st, ok := have.(*types.Struct); ok && st.Sealed == w {
 			return f.c.noteAlloc(&MakeVariant{exprBase{want}, w, st, x}, span)
 		}
-	case *types.List, *types.Map, *types.Set:
-		// D63: a mutable collection becomes its immutable form by a move
-		// (a fresh local nobody else can see, at its last use) or not at
-		// all — the error's fix is the copying `.toList()`
-		if views := receiverViews(have); len(views) > 1 && types.Identical(views[1], want) {
-			return f.convertMutable(x, want, span)
-		}
 	case *types.Trait:
 		// implicit boxing into a trait object (D9)
 		// a combination trait (only its supers, D58) has no impl of its own:
@@ -195,6 +188,13 @@ func (f *fnCtx) convertAt(x Expr, want types.Type, span source.Span) Expr {
 		if _, isTrait := have.(*types.Trait); !isTrait &&
 			(f.findImpl(have, w) != nil || (isCombination(w) && f.implements(have, w))) {
 			return f.boxValue(x, w, span)
+		}
+		// `&x` boxes the pointer: the object's methods change x itself (D232)
+		if p, ok := have.(*types.Pointer); ok && !p.Raw {
+			if _, isTrait := p.Elem.(*types.Trait); !isTrait &&
+				(f.findImpl(p.Elem, w) != nil || (isCombination(w) && f.implements(p.Elem, w))) {
+				return f.boxValue(x, w, span)
+			}
 		}
 	case *types.Pointer:
 		// Inside unsafe a GC pointer may be handed to C as a raw pointer: the
@@ -946,7 +946,7 @@ func (f *fnCtx) fieldAccess(x Expr, e *ast.MemberExpr, want types.Type) Expr {
 }
 
 // flattenNullable turns a value nullable more than once (`T??`, as
-// `xs.at(i)` yields on a `List<T?>`) into a `T?` for a `?.` chain: null at
+// `xs.get(i)` yields on a `List<T?>`) into a `T?` for a `?.` chain: null at
 // any level is null (D30: the chain's type is `T?`).
 func (f *fnCtx) flattenNullable(x Expr) Expr {
 	for {
@@ -1262,8 +1262,8 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 		// The address of a temporary boxes the value.
 		if !isPlaceSyntax(e.X) {
 			if repl, ok := elemReadCall(e.X); ok {
-				// `&xs.at(i)` would box a copy of the element; the pointer to
-				// the element itself is `ref` (D25, v0.27)
+				// `&xs.get(i)` would box a copy of the element; the pointer to
+				// the element itself is `at` (D25, v0.27)
 				f.c.errorFix(e.Pos, fixReplace("Replace with '"+repl+"'", e.Pos, repl),
 					"'&%s' is the address of a copy of the element, not of the element; use '%s' (D25)", srcText(e.X), repl)
 				f.checkExpr(e.X, nil)
@@ -1284,7 +1284,12 @@ func (f *fnCtx) unaryExpr(e *ast.UnaryExpr, want types.Type) Expr {
 			return bad()
 		}
 		if root != nil {
-			root.AddrTaken = true
+			// `&this.f` points into what `this` points at, not at the variable
+			// holding the pointer: the receiver pass decides whether that
+			// escapes (selfUse)
+			if !root.IsSelf {
+				root.AddrTaken = true
+			}
 			f.invalidatePaths(root) // fields may now change through the pointer
 		}
 		return &AddrOf{exprBase{&types.Pointer{Elem: lv.Type()}}, lv}
@@ -1802,9 +1807,9 @@ func (f *fnCtx) rangeExpr(e *ast.RangeExpr, want types.Type) Expr {
 
 func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 	var elem types.Type
-	mutable := false
-	// D25/#8: the expected type decides mutability; `mut` is for literals
-	// with nothing to infer it from.
+	if e.Mut {
+		f.removedMut(e.Pos) // D231: every list can change
+	}
 	if st, ok := numericHint(want).(*types.Set); ok {
 		return f.setLit(e, st)
 	}
@@ -1812,18 +1817,11 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 		return f.arrayLit(e, at)
 	}
 	if lt, ok := numericHint(want).(*types.List); ok {
-		// a still-generic expected type (`items: MutableList<T>` during
-		// inference) settles the mutability; the element type is inferred
+		// a still-generic expected type (`items: List<T>` during
+		// inference): the element type is inferred
 		if !types.ContainsTypeParam(lt.Elem) {
 			elem = lt.Elem
 		}
-		mutable = lt.Mutable
-		if e.Mut && mutable {
-			f.warnLint("redundant_mut", e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", lt)
-		}
-	}
-	if e.Mut {
-		mutable = true
 	}
 	lit := &ListLit{}
 	for _, el := range e.Elems {
@@ -1839,39 +1837,32 @@ func (f *fnCtx) listLit(e *ast.ListLit, want types.Type) Expr {
 		lit.Elems = append(lit.Elems, x)
 	}
 	if elem == nil {
-		if e.Mut {
-			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'var xs: MutableList<i64> = []' (D25)")
-		} else {
-			f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'val xs: List<i64> = []' (D25)")
-		}
+		f.errorf(e.Pos, "cannot infer the element type of an empty list; annotate it, e.g. 'val xs: List<i64> = []' (D25)")
 		return bad()
 	}
-	lit.T = &types.List{Elem: elem, Mutable: mutable}
+	lit.T = &types.List{Elem: elem}
 	return f.c.noteAlloc(lit, e.Pos)
 }
 
 // setLit builds a set from a list literal where a Set is expected:
-// `val s: Set<i64> = [1, 2]` becomes `{ val tmp = MutableSet(); tmp.add(1); ...; tmp }`.
+// `val s: Set<i64> = [1, 2]` becomes `{ val tmp = Set(); tmp.add(1); ...; tmp }`.
 func (f *fnCtx) setLit(e *ast.ListLit, st *types.Set) Expr {
-	if e.Mut && st.Mutable {
-		f.warnLint("redundant_mut", e.Pos, fixDropMut(e.Pos), "redundant 'mut': the expected type '%s' already makes the literal mutable", st)
-	}
 	if !f.c.checkHashable(st.Elem, e.Pos) {
 		return bad()
 	}
-	if len(e.Elems) == 0 && !st.Mutable && !e.Mut {
-		// an empty immutable set: the shared constant, no temporary (D187)
+	if len(e.Elems) == 0 {
+		// an empty set: the shared constant, no temporary (D187); its first
+		// change copies it (D231)
 		return &Builtin{exprBase{&types.Set{Elem: st.Elem}}, "set.new", nil, e.Pos}
 	}
-	outT := &types.Set{Elem: st.Elem, Mutable: true}
+	outT := &types.Set{Elem: st.Elem}
 	out := f.newTemp(outT)
 	stmts := []Stmt{&VarDecl{Var: out, Init: &Builtin{exprBase{outT}, "set.new", nil, e.Pos}}}
 	for _, el := range e.Elems {
 		x := f.checkExprTo(el, st.Elem)
 		stmts = append(stmts, &ExprStmt{X: &Builtin{exprBase{types.TBool}, "set.add", []Expr{ref(out), x}, e.Pos}})
 	}
-	resultT := &types.Set{Elem: st.Elem, Mutable: st.Mutable || e.Mut}
-	return &BlockExpr{exprBase{resultT}, &Block{Stmts: stmts, Value: &Cast{exprBase{resultT}, ref(out)}, Type: resultT}}
+	return &BlockExpr{exprBase{outT}, &Block{Stmts: stmts, Value: ref(out), Type: outT}}
 }
 
 func (f *fnCtx) castExpr(e *ast.CastExpr) Expr {
@@ -2377,7 +2368,7 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 			t1, _ := f.condFacts(c.L, nil)
 			t2, _ := f.condFacts(c.R, nil)
 			if astMayShrink(c.R) {
-				dropMutableBounds(t1) // the right side runs after the left learned them
+				f.dropMutableBounds(t1) // the right side runs after the left learned them
 			}
 			for k, v := range t1 {
 				whenTrue[k] = v
@@ -2389,7 +2380,7 @@ func (f *fnCtx) condFacts(cond ast.Expr, checked Expr) (whenTrue, whenFalse fact
 			_, f1 := f.condFacts(c.L, nil)
 			_, f2 := f.condFacts(c.R, nil)
 			if astMayShrink(c.R) {
-				dropMutableBounds(f1)
+				f.dropMutableBounds(f1)
 			}
 			for k, v := range f1 {
 				whenFalse[k] = v

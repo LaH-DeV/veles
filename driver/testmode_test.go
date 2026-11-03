@@ -113,7 +113,7 @@ test "passes" {
   expect(parsePort("80") ?? 0 == 80)
   expect(require(half(8)) == 4)
   expectThrows<RangeError>(() => parsePort("70000"))
-  expectPanics(() => { val _ = [1].at(5) ?: panic("out of range") })
+  expectPanics(() => { val _ = [1].get(5) ?: panic("out of range") })
 }
 
 test "keeps going" {
@@ -130,7 +130,7 @@ test "stops" {
 
 test "expectations about failing" {
   expectThrows(() => parsePort("1"))
-  expectPanics(() => { val _ = [1].at(0) ?: panic("no") })
+  expectPanics(() => { val _ = [1].get(0) ?: panic("no") })
   fail("the end")
 }
 `
@@ -144,7 +144,7 @@ test "expectations about failing" {
 		"  main.vs:26:11: require(parsePort(\"99999\"))\n      threw: RangeError(value: 99999)\n" +
 		"test expectations about failing ... FAILED\n" +
 		"  main.vs:31:3: expectThrows(() => parsePort(\"1\"))\n      nothing was thrown\n" +
-		"  main.vs:32:3: expectPanics(() => { val _ = [1].at(0) ?: panic(\"no\") })\n      it returned without panicking\n" +
+		"  main.vs:32:3: expectPanics(() => { val _ = [1].get(0) ?: panic(\"no\") })\n      it returned without panicking\n" +
 		"  main.vs:33:3: the end\n" +
 		"\n1 passed, 3 failed: keeps going, stops, expectations about failing\n"
 	if out != want || code != 1 {
@@ -325,7 +325,7 @@ suite "noisy" {
 
   test "panics" {
     io.println("before the panic")
-    val _ = [1].at(3) ?: panic("gone")
+    val _ = [1].get(3) ?: panic("gone")
   }
 }
 `
@@ -339,7 +339,7 @@ suite "noisy" {
 		"      to stderr\n" +
 		"      no newline at the end\n" +
 		"  test panics ... FAILED: panic: gone\n" +
-		"    at main.vs:19:26 in noisy / panics\n" +
+		"    at main.vs:19:27 in noisy / panics\n" +
 		"    output:\n" +
 		"      before the panic\n" +
 		"\n1 passed, 2 failed: noisy / shows what it printed, noisy / panics\n"

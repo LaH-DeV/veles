@@ -86,7 +86,7 @@ fun main() {
 
   val ann = Name(text: "Ann")
   println("${ann == Name(text: "ANN")} ${ann != Name(text: "Bob")} ${[ann].contains(Name(text: "ann"))}")
-  var counts = mut [ann: 1]
+  var counts = [ann: 1]
   counts.set(Name(text: "ANN"), 2)
   println("${counts.len()} entry, value ${counts.get(Name(text: "aNN"))}")
 

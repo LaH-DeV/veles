@@ -102,7 +102,7 @@ test "apply changes the place it is called on" {
   deploy.server.apply { port = 443 }
   deploy.name.apply { trim(); toUpper() }
   expect(deploy.server.port == 443 && deploy.name == "WEB FRONT")
-  val tags: MutableList<string> = ["x"]
+  var tags: List<string> = ["x"]
   tags.apply { push("y") }
   expect(tags.len() == 2)
 }

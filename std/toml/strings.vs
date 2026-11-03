@@ -19,7 +19,7 @@ extend Cursor {
       }
       if (byte == '\\' && quote == '"') {
         this.pos += 1
-        try this.escape(out)
+        try this.escape(&out)
       } else {
         if (this.rules.fullStrings && isControl(byte) && byte != '\t') {
           throw this.fail("a control character in a string must be escaped")
@@ -54,7 +54,7 @@ extend Cursor {
           this.skipWhitespaceAndNewlines()
           continue
         }
-        try this.escape(out)
+        try this.escape(&out)
         this.pos += 1
         continue
       }
@@ -88,7 +88,7 @@ extend Cursor {
 
   /// The escape after a backslash, the position on its letter; leaves it on
   /// the escape's last byte.
-  fun escape(out: StringBuilder) throws ParseError {
+  fun escape(out: *StringBuilder) throws ParseError {
     if (!this.more()) throw this.fail("unfinished escape")
     val letter = this.peek()
     val full = this.rules.fullStrings

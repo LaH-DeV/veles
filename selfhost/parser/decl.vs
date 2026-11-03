@@ -17,10 +17,10 @@ extend Parser {
       return declaration
     }
     this.skipSemis()
-    val fields: MutableList<ast.Field> = []
-    val methods: MutableList<ast.FunDecl> = []
-    val statics: MutableList<ast.ValDecl> = []
-    val impls: MutableList<ast.ImplDecl> = []
+    val fields: List<ast.Field> = []
+    val methods: List<ast.FunDecl> = []
+    val statics: List<ast.ValDecl> = []
+    val impls: List<ast.ImplDecl> = []
     loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
       val memberAttrs = this.parseAttributes()
       // a member may start with a visibility word (M5); what follows says
@@ -167,9 +167,9 @@ extend Parser {
     if (this.accept(Kind.Colon)) d.supers = this.parseBounds()
     if (this.accept(Kind.LBrace)) {
       this.skipSemis()
-      val assocTypes: MutableList<ast.AssocTypeDecl> = []
-      val methods: MutableList<ast.FunDecl> = []
-      val variants: MutableList<ast.StructDecl> = []
+      val assocTypes: List<ast.AssocTypeDecl> = []
+      val methods: List<ast.FunDecl> = []
+      val variants: List<ast.StructDecl> = []
       loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
         val memberAttrs = this.parseAttributes()
         val words = this.variantWords()
@@ -315,7 +315,7 @@ extend Parser {
       d.withFun = true
       val memberAttrs = this.parseAttributes()
       if (this.atAny(Kind.KwFun, Kind.KwOverride, Kind.KwUnsafe, Kind.KwConst, Kind.KwPublic, Kind.KwPrivate, Kind.KwInternal, Kind.KwStatic)) {
-        val methods: MutableList<ast.FunDecl> = []
+        val methods: List<ast.FunDecl> = []
         methods.push(this.parseFun(memberAttrs, FunContext.Method))
         d.methods = methods
       } else {
@@ -362,8 +362,8 @@ extend Parser {
     }
     if (!this.expect(Kind.LBrace)) return d
     this.skipSemis()
-    val assocTypes: MutableList<ast.AssocTypeBinding> = []
-    val methods: MutableList<ast.FunDecl> = []
+    val assocTypes: List<ast.AssocTypeBinding> = []
+    val methods: List<ast.FunDecl> = []
     loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
       val memberAttrs = this.parseAttributes()
       if (this.at(Kind.KwType)) {
@@ -396,7 +396,7 @@ extend Parser {
     var info = ast.AnnotationInfo()
     d.name = this.ident()
     if (this.at(Kind.LParen)) {
-      val fields: MutableList<ast.Field> = []
+      val fields: List<ast.Field> = []
       loop (prm in this.parseParams()) {
         if (prm.typ == null) this.errorAt(prm.name.pos, "an annotation parameter needs a type: '${prm.name.name}: T' (D174)")
         if (prm.variadic || prm.isLazy) this.errorAt(prm.pos, "an annotation parameter is a plain 'name: T' with an optional default (D174)")
@@ -407,7 +407,7 @@ extend Parser {
     info.onPos = this.span()
     if (this.atWord("on")) {
       this.next()
-      val targets: MutableList<ast.Ident> = []
+      val targets: List<ast.Ident> = []
       loop {
         // the words of the source: `field`, `variant`, `enumMember`, and the
         // keywords `fun`, `struct`, `trait`, `enum`
@@ -429,7 +429,7 @@ extend Parser {
       info.readersPos = this.span()
       info.keywordEnd = false
       this.next()
-      val readers: MutableList<ast.Type> = []
+      val readers: List<ast.Type> = []
       loop {
         readers.push(this.parseType())
         if (!this.accept(Kind.Comma)) break
@@ -463,8 +463,8 @@ extend Parser {
       this.next()
       d.hasBody = true
       this.skipSemis()
-      val state: MutableList<ast.ValDecl> = []
-      val funs: MutableList<ast.FunDecl> = []
+      val state: List<ast.ValDecl> = []
+      val funs: List<ast.FunDecl> = []
       loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
         val m = this.parseDecl()
         when (m) {
@@ -516,7 +516,7 @@ extend Parser {
     }
     if (this.expect(Kind.LBrace)) {
       this.skipSemis()
-      val funs: MutableList<ast.FunDecl> = []
+      val funs: List<ast.FunDecl> = []
       loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
         val memberAttrs = this.parseAttributes()
         if (!this.atAny(Kind.KwFun, Kind.KwPublic, Kind.KwUnsafe)) {
@@ -635,7 +635,7 @@ extend Parser {
 
   // a suite's declarations, through its `}`
   fun parseSuiteBody(): List<ast.Decl> {
-    val decls: MutableList<ast.Decl> = []
+    val decls: List<ast.Decl> = []
     loop {
       this.skipSemis()
       if (this.atAny(Kind.RBrace, Kind.EOF)) break
@@ -689,8 +689,8 @@ extend Parser {
     this.errorFields = false
     d.isError = true
     if (d.variant != null) this.errorAt(kw, "an 'error' cannot be a variant of a sealed trait; declare it with 'struct'")
-    val inherent: MutableList<ast.FunDecl> = []
-    val implemented: MutableList<ast.FunDecl> = []
+    val inherent: List<ast.FunDecl> = []
+    val implemented: List<ast.FunDecl> = []
     loop (m in d.methods) {
       if (m.name.name == "message") {
         var message = m
@@ -747,7 +747,7 @@ extend Parser {
       return d
     }
     this.skipSemis()
-    val members: MutableList<ast.EnumMember> = []
+    val members: List<ast.EnumMember> = []
     loop (!this.atAny(Kind.RBrace, Kind.EOF)) {
       val memberStart = this.span()
       val memberAttrs = this.parseAttributes()

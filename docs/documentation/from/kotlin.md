@@ -27,7 +27,7 @@ is no JVM.
 | `runCatching { f() }.getOrElse { d }` | `f() ?? d` |
 | `suspend fun f()` | `fun f()` (suspension is inferred) |
 | `coroutineScope { launch { … } }` | `scope { async … }` |
-| `List<T>` / `MutableList<T>` | `List<T>` (immutable) / `MutableList<T>` |
+| `List<T>` / `MutableList<T>` | `List<T>`: a value (D231); `val` stops rebinding only |
 
 ## What a struct gives you
 
@@ -70,13 +70,17 @@ An extension function reaches other files only when they ask for it
 (`use m extend`), so a module cannot change what `string` offers to code
 that did not import it (D173).
 
-## Immutable means immutable
+## One `List`, and it is a value
 
-Kotlin's `List` is a read-only view: the `MutableList` behind it may still
-change under its reader. A Veles `List` cannot change at all, so it can be
-shared between tasks without a lock, and a `MutableList` becomes one only
-by a move (returning a list you built) or a copy (`toList()`)
-([chapter 4](../04-collections.md)).
+Kotlin has `List` (a read-only view) and `MutableList`, and the
+`MutableList` behind a `List` may still change under its reader. Veles has
+one `List`, and it is a value: `val b = a` copies it (cheaply — the
+elements are copied at the first change), so nothing you hold changes
+because someone else changed theirs, and a list can go to another task
+without a lock. `val` only stops rebinding, so `val xs: List<i64> = []`
+can be pushed to; a function that fills its caller's list takes
+`*List<T>` and is called with `&xs` (D231,
+[chapter 4](../04-collections.md#a-list-is-a-value)).
 
 ## No `!!`, and exceptions are checked
 

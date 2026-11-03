@@ -72,7 +72,7 @@ public fun load<T: Decodable>(files: List<string> = [], prefix: string = ""): T 
 /// The variables `T` reads, in field order — for `--help` and documentation.
 public fun describe<T: Decodable>(prefix: string = ""): List<Variable> {
   val schema = T.schema("env", Case.ScreamingSnake)
-  val out: MutableList<Variable> = []
+  val out: List<Variable> = []
   loop (leaf in leavesOf("config.describe", schema, prefix)) {
     out.push(Variable(name: leaf.name, what: leaf.schema.what, required: leaf.required, secret: leaf.schema.secret, default: leaf.field.fallback))
   }
@@ -102,12 +102,12 @@ fun leavesOf(who: string, schema: codec.Schema, prefix: string): List<Leaf> {
   if (schema.kind != codec.SchemaKind.Object) {
     panic("$who: the type must be a struct whose fields are read from variables, not ${schema.what}; derive it with 'implement Decodable'")
   }
-  val out: MutableList<Leaf> = []
-  collect(who, schema, prefix, [], true, out)
-  out.toList()
+  val out: List<Leaf> = []
+  collect(who, schema, prefix, [], true, &out)
+  out
 }
 
-fun collect(who: string, schema: codec.Schema, varPrefix: string, declared: List<string>, required: bool, out: MutableList<Leaf>) {
+fun collect(who: string, schema: codec.Schema, varPrefix: string, declared: List<string>, required: bool, out: *List<Leaf>) {
   loop (field in schema.fields) {
     val path = declared.concat([field.name])
     val name = varPrefix + field.key
@@ -146,9 +146,9 @@ struct Load {
   lookup:   fun(string): string?
   layers:   List<Layer>
   prefix:   string
-  problems: MutableList<codec.Problem> = []
-  sources:  MutableMap<string, string> = [:]
-  reported: MutableMap<string, bool> = [:]
+  problems: List<codec.Problem> = []
+  sources:  Map<string, string> = [:]
+  reported: Map<string, bool> = [:]
 
   // A problem with a variable, saying where its value came from.
   fun fail(variable: string, message: string) {
@@ -168,7 +168,7 @@ struct Load {
   // has a default or can be null, and is there (so each missing variable is
   // reported) when it must be given.
   fun object(schema: codec.Schema, varPrefix: string, declared: List<string>, required: bool): codec.Value? {
-    val fields: MutableMap<string, codec.Value> = [:]
+    val fields: Map<string, codec.Value> = [:]
     var found = false
     loop (field in schema.fields) {
       val name = varPrefix + field.key
@@ -229,7 +229,7 @@ struct Load {
       }
       schema.kind == codec.SchemaKind.List => {
         val elem = schema.element() ?: return null
-        val items: MutableList<codec.Value> = []
+        val items: List<codec.Value> = []
         var whole = true
         if (!text.trim().isEmpty()) {
           loop (part in text.split(",")) {
@@ -250,7 +250,7 @@ struct Load {
   // knows it: `DB.POOL_SIZE` is `DB_POOL_SIZE`, "missing" says it is not set,
   // and a secret's value never appears.
   fun rewrite(p: codec.Problem, leaves: Map<string, Leaf>) {
-    val variable = this.prefix + (p.path.split("[").at(0) ?: "").replace(".", "_")
+    val variable = this.prefix + (p.path.split("[").get(0) ?: "").replace(".", "_")
     if (this.reported.get(variable) == true) return
     val leaf = leaves.get(variable)
     val what = if (leaf == null) "a value" else leaf.schema.what
@@ -264,8 +264,8 @@ struct Load {
 }
 
 // The files as layers, strongest first; what could not be read is a problem.
-fun readLayers(files: List<string>, problems: MutableList<codec.Problem>): List<Layer> {
-  val layers: MutableList<Layer> = []
+fun readLayers(files: List<string>, problems: *List<codec.Problem>): List<Layer> {
+  val layers: List<Layer> = []
   loop (file in files.reversed()) {
     if (!fs.exists(file)) continue
     val text = fs.readFile(file) catch (e) {
@@ -299,12 +299,12 @@ fun readLayers(files: List<string>, problems: MutableList<codec.Problem>): List<
 // give it variables.
 fun loadWith<T: Decodable>(lookup: fun(string): string?, files: List<string>, prefix: string): T throws Error {
   val schema = T.schema("env", Case.ScreamingSnake)
-  val leaves: MutableMap<string, Leaf> = [:]
+  val leaves: Map<string, Leaf> = [:]
   loop (leaf in leavesOf("config.load", schema, prefix)) {
     leaves.set(leaf.name, leaf)
   }
-  val problems: MutableList<codec.Problem> = []
-  val state = Load(lookup, layers: readLayers(files, problems), prefix)
+  val problems: List<codec.Problem> = []
+  val state = Load(lookup, layers: readLayers(files, &problems), prefix)
   state.problems.addAll(problems)
   val tree = state.object(schema, prefix, [], true) ?: codec.VObject(fields: [:])
   val decoder = codec.ValueDecoder.of(tree, format: "env", enums: codec.EnumStyle.Name, keys: Case.ScreamingSnake, durations: codec.DurationStyle.Text)
@@ -313,11 +313,11 @@ fun loadWith<T: Decodable>(lookup: fun(string): string?, files: List<string>, pr
     is Err(e) => e.problems
     is Ok(_)  => decoder.problems()
   }
-  val table = leaves.toMap()
+  val table = leaves
   loop (p in found) {
     state.rewrite(p, table)
   }
-  if (!state.problems.isEmpty()) throw Error(problems: state.problems.toList())
+  if (!state.problems.isEmpty()) throw Error(problems: state.problems)
   when (decoded) {
     is Ok(value) => value
     is Err(_)    => throw Error(problems: [codec.Problem(path: "", message: "the settings could not be read")])

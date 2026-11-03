@@ -41,11 +41,11 @@ public fun hashPassword(password: Secret<string>): string {
 public fun verifyPassword(password: Secret<string>, hash: string): bool {
   val parts = hash.split("$")
   // "", "argon2id", "v=19", "m=…,t=…,p=…", salt, tag
-  if (parts.len() != 6 || !parts.at(0).isEmpty() || parts.at(1) != "argon2id" || parts.at(2) != "v=19") return false
+  if (parts.len() != 6 || !parts.get(0).isEmpty() || parts.get(1) != "argon2id" || parts.get(2) != "v=19") return false
   var memory: i64 = 0
   var passes: i64 = 0
   var lanes: i64 = 0
-  loop (field in parts.at(3).split(",")) {
+  loop (field in parts.get(3).split(",")) {
     val n = field.slice(2, field.len()).toInt() ?: return false
     when {
       field.startsWith("m=") => memory = n
@@ -56,8 +56,8 @@ public fun verifyPassword(password: Secret<string>, hash: string): bool {
   }
   if (lanes < 1 || lanes > maxLanes || passes < 1 || passes > maxPasses) return false
   if (memory < 8 * lanes || memory > maxMemoryKiB) return false
-  val salt = unpadded(parts.at(4)) ?: return false
-  val tag = unpadded(parts.at(5)) ?: return false
+  val salt = unpadded(parts.get(4)) ?: return false
+  val tag = unpadded(parts.get(5)) ?: return false
   if (salt.len() < 8 || salt.len() > 1024 || tag.len() < 4 || tag.len() > 1024) return false
   val got = argon2(Argon2Type.Id, password.expose().bytes(), salt, memory, passes, lanes, tag.len())
   Digest.of(got) == Digest.of(tag)

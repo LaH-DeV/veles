@@ -400,13 +400,9 @@ func (f *fnCtx) loopInvariant(e ast.Expr) bool {
 }
 
 func isMutableType(t types.Type) bool {
-	switch t := types.Underlying(t).(type) {
-	case *types.List:
-		return t.Mutable
-	case *types.Map:
-		return t.Mutable
-	case *types.Set:
-		return t.Mutable
+	switch types.Underlying(t).(type) {
+	case *types.List, *types.Map, *types.Set:
+		return true // changed in place by their methods (D231)
 	}
 	return false
 }

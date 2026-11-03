@@ -80,13 +80,13 @@ public struct Sql {
 /// every value becomes a parameter, and a `Sql` among the values is spliced
 /// in with its own parameters.
 public template fun sql(parts: List<string>, values: List<Param>): Sql {
-  val outParts: MutableList<string> = []
-  val outArgs: MutableList<Arg> = []
+  val outParts: List<string> = []
+  val outArgs: List<Arg> = []
   // the piece being written: it continues across a spliced fragment
   var current = StringBuilder()
   loop ((i, part) in parts.enumerate()) {
     current.append(part)
-    val v = values.at(i) ?: continue
+    val v = values.get(i) ?: continue
     val arg = v.toArg()
     val inner = arg.fragment
     if (inner != null) {
@@ -95,7 +95,7 @@ public template fun sql(parts: List<string>, values: List<Param>): Sql {
         if (j < inner.args.len()) {
           outParts.push(current.toString())
           current = StringBuilder()
-          outArgs.push(inner.args.at(j) ?: Arg())
+          outArgs.push(inner.args.get(j) ?: Arg())
         }
       }
     } else {

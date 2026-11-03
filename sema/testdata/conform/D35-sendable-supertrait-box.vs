@@ -9,14 +9,14 @@ struct Wrap<T> {
   value: T
 
   implement Sink {
-    fun put(n: i64) {}
+    fun put(n: i64) { }
   }
 }
 
-fun forward(s: Sink) {}
+fun forward(s: Sink) { }
 
 fun main() {
-  val items: MutableList<i64> = []
-  val bad: Sink = Wrap<MutableList<i64>>(value: items) // error: cannot be a 'Sink': the trait requires Sendable
+  val items: List<i64> = []
+  val bad: Sink = Wrap<*List<i64>>(value: &items)  // error: cannot be a 'Sink': the trait requires Sendable
   forward(bad)
 }

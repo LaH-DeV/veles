@@ -16,7 +16,7 @@ fun area(s: Shape): f64 => when (s) {
   is Rect => s.w * s.h
 }
 
-fun first(xs: List<string>): string? => xs.at(0)
+fun first(xs: List<string>): string? => xs.get(0)
 
 fun main() {
   val shapes: List<Shape> = [Circle(r: 1.0), Rect(w: 2.0, h: 3.0)]

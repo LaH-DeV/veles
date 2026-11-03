@@ -45,9 +45,9 @@ public struct Sha256 {
       val done = this.result
       if (done != null) return done
       this.absorb(padding(this.filled, 64, 8, this.total))
-      val out: MutableList<u8> = []
+      val out: List<u8> = []
       loop (w in this.state) {
-        pushU32(out, w)
+        pushU32(&out, w)
       }
       val d = Digest.of(out)
       this.result = d
@@ -63,7 +63,7 @@ public struct Sha256 {
     var i = 0
     if (this.filled > 0) {
       loop (this.filled < 64 && i < n) {
-        this.block.set(this.filled, data.at(i))
+        this.block.set(this.filled, data.get(i))
         this.filled = this.filled + 1
         i = i + 1
       }
@@ -76,7 +76,7 @@ public struct Sha256 {
       i = i + 64
     }
     loop (i < n) {
-      this.block.set(this.filled, data.at(i))
+      this.block.set(this.filled, data.get(i))
       this.filled = this.filled + 1
       i = i + 1
     }
@@ -107,22 +107,22 @@ public struct Sha256 {
     // SAFETY: i runs over 16..<64, so every index below is in 0..<64
     unsafe {
       loop (i in 16..<64) {
-        val a = w.atUnchecked(i - 15)
-        val b = w.atUnchecked(i - 2)
+        val a = w.getUnchecked(i - 15)
+        val b = w.getUnchecked(i - 2)
         val s0 = rotr32(a, 7) ^ rotr32(a, 18) ^ (a >> 3)
         val s1 = rotr32(b, 17) ^ rotr32(b, 19) ^ (b >> 10)
-        w.setUnchecked(i, w.atUnchecked(i - 16) +% s0 +% w.atUnchecked(i - 7) +% s1)
+        w.setUnchecked(i, w.getUnchecked(i - 16) +% s0 +% w.getUnchecked(i - 7) +% s1)
       }
     }
 
-    val a0 = this.state.at(0)
-    val b0 = this.state.at(1)
-    val c0 = this.state.at(2)
-    val d0 = this.state.at(3)
-    val e0 = this.state.at(4)
-    val f0 = this.state.at(5)
-    val g0 = this.state.at(6)
-    val h0 = this.state.at(7)
+    val a0 = this.state.get(0)
+    val b0 = this.state.get(1)
+    val c0 = this.state.get(2)
+    val d0 = this.state.get(3)
+    val e0 = this.state.get(4)
+    val f0 = this.state.get(5)
+    val g0 = this.state.get(6)
+    val h0 = this.state.get(7)
     var a = a0
     var b = b0
     var c = c0
@@ -135,7 +135,7 @@ public struct Sha256 {
     loop (r in 0..<64) {
       val sum1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25)
       val choose = (e & f) ^ ((~e) & g)
-      val t1 = h +% sum1 +% choose +% K256.at(r) +% w.at(r)
+      val t1 = h +% sum1 +% choose +% K256.get(r) +% w.get(r)
       val sum0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22)
       val major = (a & b) ^ (a & c) ^ (b & c)
       val t2 = sum0 +% major
@@ -163,7 +163,7 @@ public struct Sha256 {
 /// The big-endian word at `at` in a block held in an array. Called only
 /// where the block holds all four bytes: offsets 0, 4, … 60.
 fun wordOf(block: Array<u8, 64>, at: i64): u32 =>
-  ((block.at(at) ?: panic("sha256: a word is read inside the block")).toU32() << 24) |
-  ((block.at(at + 1) ?: panic("sha256: a word is read inside the block")).toU32() << 16) |
-  ((block.at(at + 2) ?: panic("sha256: a word is read inside the block")).toU32() << 8) |
-  (block.at(at + 3) ?: panic("sha256: a word is read inside the block")).toU32()
+  ((block.get(at) ?: panic("sha256: a word is read inside the block")).toU32() << 24) |
+  ((block.get(at + 1) ?: panic("sha256: a word is read inside the block")).toU32() << 16) |
+  ((block.get(at + 2) ?: panic("sha256: a word is read inside the block")).toU32() << 8) |
+  (block.get(at + 3) ?: panic("sha256: a word is read inside the block")).toU32()

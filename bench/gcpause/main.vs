@@ -48,7 +48,7 @@ fun main() {
       longest = longest.max(now - last)
       last = now
     }
-    val xs: MutableList<i64> = [i, i + 1, i + 2]
+    val xs: List<i64> = [i, i + 1, i + 2]
     churn += xs.len()
   }
   val ns = stopwatch.elapsed().toNanos()

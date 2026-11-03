@@ -2,7 +2,9 @@
 // a loop over it receives it (no `with`), anything else still needs `with`.
 use io
 
-error Boom { n: i64 }
+error Boom {
+  n: i64
+}
 
 fun download(n: i64): string throws Boom {
   await sleep(Duration.millis(1))
@@ -48,14 +50,14 @@ fun stopped(xs: List<i64>): i64 {
 }
 
 fun kept(xs: List<i64>): i64 {
-  val _ = xs.iter().mapConcurrent(x => plain(x)) // error: holds a running task, so it must be received
+  val _ = xs.iter().mapConcurrent(x => plain(x))  // error: holds a running task, so it must be received
   0
 }
 
 fun notSendable(xs: List<i64>): i64 {
-  val seen: MutableList<i64> = []
+  val seen: List<i64> = []
   var total: i64 = 0
-  loop (n in xs.iter().mapConcurrent(x => { // error: not Sendable
+  loop (n in xs.iter().mapConcurrent(x => {  // error: cannot cross a task boundary: it captures 'seen', a collection the lambda changes
     seen.push(x)
     x
   })) {

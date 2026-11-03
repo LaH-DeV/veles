@@ -327,13 +327,13 @@ func StripLabels(t Type) Type {
 	case *Pointer:
 		return &Pointer{Elem: StripLabels(t.Elem), Raw: t.Raw, Alias: t.Alias}
 	case *List:
-		return &List{Elem: StripLabels(t.Elem), Mutable: t.Mutable, Alias: t.Alias}
+		return &List{Elem: StripLabels(t.Elem), Alias: t.Alias}
 	case *Array:
 		return &Array{Elem: StripLabels(t.Elem), Len: t.Len, Alias: t.Alias}
 	case *Set:
-		return &Set{Elem: StripLabels(t.Elem), Mutable: t.Mutable, Alias: t.Alias}
+		return &Set{Elem: StripLabels(t.Elem), Alias: t.Alias}
 	case *Map:
-		return &Map{Key: StripLabels(t.Key), Value: StripLabels(t.Value), Mutable: t.Mutable, Alias: t.Alias}
+		return &Map{Key: StripLabels(t.Key), Value: StripLabels(t.Value), Alias: t.Alias}
 	case *Channel:
 		return &Channel{Elem: StripLabels(t.Elem), Alias: t.Alias}
 	case *Task:
@@ -379,19 +379,15 @@ func (r *Range) String() string {
 	return "Range<" + r.Elem.String() + ">"
 }
 
-// List is the immutable `List<T>`; MutableList is `MutableList<T>` (D25/D41).
+// List is `List<T>`, a value copied on its first change (D231).
 type List struct {
-	Elem    Type
-	Mutable bool
-	Alias   string
+	Elem  Type
+	Alias string
 }
 
 func (l *List) String() string {
 	if l.Alias != "" {
 		return l.Alias
-	}
-	if l.Mutable {
-		return "MutableList<" + l.Elem.String() + ">"
 	}
 	return "List<" + l.Elem.String() + ">"
 }
@@ -882,7 +878,7 @@ func Identical(a, b Type) bool {
 		return ok && Identical(a.Elem, b.Elem)
 	case *List:
 		b, ok := b.(*List)
-		return ok && a.Mutable == b.Mutable && Identical(a.Elem, b.Elem)
+		return ok && Identical(a.Elem, b.Elem)
 	case *Const:
 		b, ok := b.(*Const)
 		return ok && a.V == b.V
@@ -891,7 +887,7 @@ func Identical(a, b Type) bool {
 		return ok && Identical(a.Elem, b.Elem) && Identical(a.Len, b.Len)
 	case *Map:
 		b, ok := b.(*Map)
-		return ok && a.Mutable == b.Mutable && Identical(a.Key, b.Key) && Identical(a.Value, b.Value)
+		return ok && Identical(a.Key, b.Key) && Identical(a.Value, b.Value)
 	case *Channel:
 		b, ok := b.(*Channel)
 		return ok && Identical(a.Elem, b.Elem)
@@ -900,7 +896,7 @@ func Identical(a, b Type) bool {
 		return ok && Identical(a.Result, b.Result)
 	case *Set:
 		b, ok := b.(*Set)
-		return ok && a.Mutable == b.Mutable && Identical(a.Elem, b.Elem)
+		return ok && Identical(a.Elem, b.Elem)
 	case *Func:
 		b, ok := b.(*Func)
 		if !ok || len(a.Params) != len(b.Params) || !Identical(a.Ret, b.Ret) {
@@ -983,13 +979,13 @@ func (h *Hooks) Subst(t Type, m map[*TypeParam]Type) Type {
 	case *Range:
 		return &Range{Elem: h.Subst(t.Elem, m)}
 	case *List:
-		return &List{Elem: h.Subst(t.Elem, m), Mutable: t.Mutable}
+		return &List{Elem: h.Subst(t.Elem, m)}
 	case *Array:
 		return &Array{Elem: h.Subst(t.Elem, m), Len: h.Subst(t.Len, m)}
 	case *Map:
-		return &Map{Key: h.Subst(t.Key, m), Value: h.Subst(t.Value, m), Mutable: t.Mutable}
+		return &Map{Key: h.Subst(t.Key, m), Value: h.Subst(t.Value, m)}
 	case *Set:
-		return &Set{Elem: h.Subst(t.Elem, m), Mutable: t.Mutable}
+		return &Set{Elem: h.Subst(t.Elem, m)}
 	case *Channel:
 		return &Channel{Elem: h.Subst(t.Elem, m)}
 	case *Task:
@@ -1135,16 +1131,13 @@ func Key(t Type) string {
 	case *Range:
 		return "Range<" + Key(t.Elem) + ">"
 	case *List:
-		if t.Mutable {
-			return "MutableList<" + Key(t.Elem) + ">"
-		}
 		return "List<" + Key(t.Elem) + ">"
 	case *Array:
 		return "Array<" + Key(t.Elem) + "," + Key(t.Len) + ">"
 	case *Map:
-		return "Map" + fmt.Sprint(t.Mutable) + "<" + Key(t.Key) + "," + Key(t.Value) + ">"
+		return "Map<" + Key(t.Key) + "," + Key(t.Value) + ">"
 	case *Set:
-		return "Set" + fmt.Sprint(t.Mutable) + "<" + Key(t.Elem) + ">"
+		return "Set<" + Key(t.Elem) + ">"
 	case *Channel:
 		return "Channel<" + Key(t.Elem) + ">"
 	case *Task:
@@ -1228,11 +1221,10 @@ func (h *Hooks) ResolveAssoc(a *Assoc) Type {
 	return a
 }
 
-// Map is `Map<K, V>` / `MutableMap<K, V>`; Set is `Set<T>` / `MutableSet<T>`
-// (D25: insertion-ordered, reference types with an immutable/mutable split).
+// Map is `Map<K, V>` and Set is `Set<T>`: insertion-ordered (D25), values
+// copied on their first change (D231).
 type Map struct {
 	Key, Value Type
-	Mutable    bool
 	Alias      string
 }
 
@@ -1240,28 +1232,19 @@ func (m *Map) String() string {
 	if m.Alias != "" {
 		return m.Alias
 	}
-	name := "Map"
-	if m.Mutable {
-		name = "MutableMap"
-	}
-	return name + "<" + m.Key.String() + ", " + m.Value.String() + ">"
+	return "Map<" + m.Key.String() + ", " + m.Value.String() + ">"
 }
 
 type Set struct {
-	Elem    Type
-	Mutable bool
-	Alias   string
+	Elem  Type
+	Alias string
 }
 
 func (s *Set) String() string {
 	if s.Alias != "" {
 		return s.Alias
 	}
-	name := "Set"
-	if s.Mutable {
-		name = "MutableSet"
-	}
-	return name + "<" + s.Elem.String() + ">"
+	return "Set<" + s.Elem.String() + ">"
 }
 
 // Channel is `Channel<T>` (D16); Task is the handle of a launched task
@@ -1415,13 +1398,13 @@ func Unaliased(t Type, deep bool) Type {
 	case *Range:
 		return &Range{Elem: Unaliased(t.Elem, true)}
 	case *List:
-		return &List{Elem: Unaliased(t.Elem, true), Mutable: t.Mutable}
+		return &List{Elem: Unaliased(t.Elem, true)}
 	case *Array:
 		return &Array{Elem: Unaliased(t.Elem, true), Len: t.Len}
 	case *Map:
-		return &Map{Key: Unaliased(t.Key, true), Value: Unaliased(t.Value, true), Mutable: t.Mutable}
+		return &Map{Key: Unaliased(t.Key, true), Value: Unaliased(t.Value, true)}
 	case *Set:
-		return &Set{Elem: Unaliased(t.Elem, true), Mutable: t.Mutable}
+		return &Set{Elem: Unaliased(t.Elem, true)}
 	case *Channel:
 		return &Channel{Elem: Unaliased(t.Elem, true)}
 	case *Task:

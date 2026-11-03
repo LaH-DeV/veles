@@ -121,7 +121,7 @@ func (f *fnCtx) raceContestant(x Expr, at source.Span) Expr {
 	switch {
 	case rc.tasks == nil:
 		rc.elem = tt
-		rc.tasks = f.newTemp(&types.List{Elem: tt, Mutable: true})
+		rc.tasks = f.newTemp(&types.List{Elem: tt})
 	case !types.Identical(tt.Result, rc.elem.Result):
 		f.errorf(at, "the tasks of a 'race' give one type: this one gives '%s', the first gives '%s' (D169)", tt.Result, rc.elem.Result)
 		return x

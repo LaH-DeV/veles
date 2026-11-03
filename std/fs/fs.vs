@@ -276,7 +276,7 @@ public struct File {
 
     /// Exactly `n` bytes, or fewer when the file ends first.
     fun readExact(n: i64): List<u8> throws IoError {
-      val out: MutableList<u8> = []
+      val out: List<u8> = []
       loop (out.len() < n) {
         val chunk = try this.read((n - out.len()).min(bytes.KiB * 64))
         if (chunk.isEmpty()) break
@@ -291,7 +291,7 @@ public struct File {
     fun readLine(max: i64): string? throws IoError | io.TooLong {
       val start = this.next.load()
       var at = start
-      val line: MutableList<u8> = []
+      val line: List<u8> = []
       loop {
         val chunk = try this.readAt(at, bytes.KiB * 4)
         if (chunk.isEmpty()) {
@@ -302,7 +302,7 @@ public struct File {
         }
         var cut = -1
         loop (i in 0..<chunk.len()) {
-          if (chunk.at(i) == 10) {
+          if (chunk.get(i) == 10) {
             cut = i
             break
           }
@@ -318,8 +318,8 @@ public struct File {
         break
       }
       if (line.len() > max) throw this.tooLong(max)
-      if (!line.isEmpty() && line.at(line.len() - 1) == 13) line.removeAt(line.len() - 1)
-      line.toList().decodeUtf8() ?: throw IoError(path: this.path, code: 0, detail: "line is not valid UTF-8", kind: IoKind.InvalidData)
+      if (!line.isEmpty() && line.get(line.len() - 1) == 13) line.removeAt(line.len() - 1)
+      line.decodeUtf8() ?: throw IoError(path: this.path, code: 0, detail: "line is not valid UTF-8", kind: IoKind.InvalidData)
     }
 
     /// `text` as UTF-8, at the end of what was written so far.
@@ -527,18 +527,18 @@ public fun listDir(path: string): List<string> throws IoError {
 public fun walk(root: string): List<string> throws IoError {
   try checkPath(root)
   if (isFile(root)) return [root]
-  var out: MutableList<string> = []
+  var out: List<string> = []
   // paths still to visit, the next one last: an explicit stack rather than
   // recursion, so a deep tree cannot overflow the call stack
-  var pending: MutableList<string> = []
-  try pushEntries(root, pending)
+  var pending: List<string> = []
+  try pushEntries(root, &pending)
   loop (val p = pending.pop()) {
     // SAFETY: takes `p` by value and returns a number; it keeps nothing
     val kind = unsafe {
       veles_fs_lstat(p)
     }
     when (kind) {
-      2    => try pushEntries(p, pending)
+      2    => try pushEntries(p, &pending)
       3    => if (!isDir(p)) out.push(p)
       else => out.push(p)
     }
@@ -548,7 +548,7 @@ public fun walk(root: string): List<string> throws IoError {
 
 // pushEntries puts a directory's entries on the walk's stack in reverse, so
 // they come off in name order.
-fun pushEntries(dir: string, pending: MutableList<string>) throws IoError {
+fun pushEntries(dir: string, pending: *List<string>) throws IoError {
   val names = try listDir(dir)
   loop (name in names.reversed()) pending.push(paths.join(dir, name))
 }

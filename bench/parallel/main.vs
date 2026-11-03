@@ -5,13 +5,13 @@ use time
 
 fun work(seed: i64): i64 {
   var total: i64 = 0
-  val words: MutableMap<string, i64> = [:]
+  val words: Map<string, i64> = [:]
   loop (round in 0..<200) {
-    val xs: MutableList<i64> = []
+    val xs: List<i64> = []
     xs.reserve(200)
     loop (i in 0..<200) xs.push((seed * 31 + i * 7 + round) % 1000)
     val sorted = xs.sorted()
-    total += sorted.at(100) ?: 0
+    total += sorted.get(100) ?: 0
     val key = "k${(seed + round) % 17}"
     words.set(key, (words.get(key) ?: 0) + 1)
   }

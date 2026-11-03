@@ -81,7 +81,7 @@ func AllocSites(prog *Program) []AllocSite {
 			continue
 		}
 		for _, p := range fn.Params {
-			if p.AddrTaken && p.Span.IsValid() {
+			if p.HeapCell() && p.Span.IsValid() {
 				add(AllocSite{Span: p.Span, Stmt: fn.Span, Fun: fn.Display, What: cellWhat(p), Avoid: cellAvoid})
 			}
 		}
@@ -95,7 +95,7 @@ func AllocSites(prog *Program) []AllocSite {
 		// binding, a pattern, a loop variable, the compiler's own temporary):
 		// met at its declaration, at a reference, or where a lambda captures it
 		cell := func(v *Var) {
-			if v == nil || !v.AddrTaken || v.Captured || v.IsGlobal || v.IsParam || cells[v] {
+			if v == nil || !v.HeapCell() || v.Captured || v.IsGlobal || v.IsParam || cells[v] {
 				return
 			}
 			cells[v] = true
@@ -238,18 +238,12 @@ func allocSite(prog *Program, lay *types.Layout, x Expr) (AllocSite, bool) {
 		if !ok {
 			return AllocSite{}, false // an array literal: inline (D121)
 		}
-		if len(e.Elems) == 0 && !lt.Mutable {
-			return AllocSite{}, false // an empty immutable list is one shared constant (D187)
-		}
 		if len(e.Elems) == 0 {
 			return AllocSite{Span: at, What: fmt.Sprintf("a '%s': its storage comes with the first write (D187)", lt), Avoid: "'reserve(n)' sizes it once when the count is known", Later: true}, true
 		}
 		return AllocSite{Span: at, What: fmt.Sprintf("a new '%s' of %d %s", lt, len(e.Elems), plural(len(e.Elems), "element")), Avoid: constAvoid(e.Elems)}, true
 	case *MapLit:
 		mt := e.Type().(*types.Map)
-		if len(e.Entries) == 0 && !mt.Mutable {
-			return AllocSite{}, false
-		}
 		if len(e.Entries) == 0 {
 			return AllocSite{Span: at, What: fmt.Sprintf("a '%s': its storage comes with the first write (D187)", mt), Avoid: "'reserve(n)' sizes it once when the count is known", Later: true}, true
 		}
@@ -264,6 +258,9 @@ func allocSite(prog *Program, lay *types.Layout, x Expr) (AllocSite, bool) {
 		}
 		return AllocSite{Span: at, What: "a closure capturing " + strings.Join(names, ", "), Avoid: "pass " + strings.Join(names, ", ") + " as a parameter, or use a named function"}, true
 	case *Box:
+		if e.Ref {
+			return AllocSite{}, false // holds the pointer it was given (D232)
+		}
 		return AllocSite{Span: at, What: fmt.Sprintf("the '%s' copied to the heap as a '%s' object (D9)", e.X.Type(), e.Trait.Name), Avoid: fmt.Sprintf("a type parameter '<T: %s>' keeps the value where it is", e.Trait.Name)}, true
 	case *MakeVariant:
 		if !lay.VariantBoxed(e.Variant) {
@@ -348,7 +345,7 @@ func builtinAlloc(e *Builtin) (string, bool) {
 		"array.toList", "string.bytes", "string.chars", "string.split":
 		return fmt.Sprintf("a new '%s' from '%s'", e.Type(), e.Op[strings.Index(e.Op, ".")+1:]), true
 	case "set.new":
-		if st, ok := e.Type().(*types.Set); ok && st.Mutable {
+		if st, ok := e.Type().(*types.Set); ok {
 			return fmt.Sprintf("a '%s': its storage comes with the first write (D187)", st), true
 		}
 	case "chan.new":

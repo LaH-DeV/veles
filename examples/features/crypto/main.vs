@@ -10,7 +10,7 @@ use hex
 use io { println }
 use jwt
 
-fun bytes(b: u8, n: i64): List<u8> => MutableList<u8>.repeat(b, n).toList()
+fun bytes(b: u8, n: i64): List<u8> => List<u8>.repeat(b, n)
 
 /// FIPS 180-4, the three documented messages for each hash.
 fun digests() {

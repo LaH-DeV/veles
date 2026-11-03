@@ -27,8 +27,8 @@ val keywords: Map<string, i64> = [
 fun isIdentStart(b: u8): bool => b in 'a'..'z' || b in 'A'..'Z' || b == '_' || b >= 128
 fun isDigit(b: u8): bool => b in '0'..'9'
 
-fun tokenise(src: string): MutableList<Token> {
-  val out: MutableList<Token> = []
+fun tokenise(src: string): List<Token> {
+  val out: List<Token> = []
   val n = src.len()
   var i = 0
   loop (i < n) {

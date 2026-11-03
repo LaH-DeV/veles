@@ -40,7 +40,7 @@ fun leValueOf<const N: i64>(a: Array<u8, N>): u64 {
   var v: u64 = 0
   var i = N - 1
   loop (i >= 0) {
-    v = (v << 8) | (a.at(i) ?: 0).toU64()
+    v = (v << 8) | (a.get(i) ?: 0).toU64()
     i -= 1
   }
   v
@@ -51,17 +51,10 @@ fun readBytesAs(list: List<u8>, offset: i64, n: i64, big: bool): u64? {
   if (offset < 0 || n > list.len() || offset > list.len() - n) return null
   var v: u64 = 0
   loop (i in 0..<n) {
-    val b = (list.at(if (big) offset + i else offset + n - 1 - i) ?: return null).toU64()
+    val b = (list.get(if (big) offset + i else offset + n - 1 - i) ?: return null).toU64()
     v = (v << 8) | b
   }
   v
-}
-
-fun pushBytesOf(list: MutableList<u8>, v: u64, n: i64, big: bool) {
-  loop (i in 0..<n) {
-    val shift = (if (big) n - 1 - i else i) * 8
-    list.push(((v >> shift.wrapU64()) & 255).wrapU8())
-  }
 }
 
 extend i8 {
@@ -302,84 +295,92 @@ extend List<u8> {
   }
 }
 
-extend MutableList<u8> {
+extend List<u8> {
+  // the n low bytes of v, appended in the order `big` says
+  fun pushBytesOf(v: u64, n: i64, big: bool) {
+    loop (i in 0..<n) {
+      val shift = (if (big) n - 1 - i else i) * 8
+      this.push(((v >> shift.wrapU64()) & 255).wrapU8())
+    }
+  }
+
   /// Appends the 2 bytes of `x`, big endian.
   public fun pushI16Be(x: i16) {
-    pushBytesOf(this, x.wrapU64(), 2, true)
+    this.pushBytesOf(x.wrapU64(), 2, true)
   }
 
   /// Appends the 2 bytes of `x`, little endian.
   public fun pushI16Le(x: i16) {
-    pushBytesOf(this, x.wrapU64(), 2, false)
+    this.pushBytesOf(x.wrapU64(), 2, false)
   }
 
   /// Appends the 2 bytes of `x`, big endian.
   public fun pushU16Be(x: u16) {
-    pushBytesOf(this, x.wrapU64(), 2, true)
+    this.pushBytesOf(x.wrapU64(), 2, true)
   }
 
   /// Appends the 2 bytes of `x`, little endian.
   public fun pushU16Le(x: u16) {
-    pushBytesOf(this, x.wrapU64(), 2, false)
+    this.pushBytesOf(x.wrapU64(), 2, false)
   }
 
   /// Appends the 4 bytes of `x`, big endian.
   public fun pushI32Be(x: i32) {
-    pushBytesOf(this, x.wrapU64(), 4, true)
+    this.pushBytesOf(x.wrapU64(), 4, true)
   }
 
   /// Appends the 4 bytes of `x`, little endian.
   public fun pushI32Le(x: i32) {
-    pushBytesOf(this, x.wrapU64(), 4, false)
+    this.pushBytesOf(x.wrapU64(), 4, false)
   }
 
   /// Appends the 4 bytes of `x`, big endian.
   public fun pushU32Be(x: u32) {
-    pushBytesOf(this, x.wrapU64(), 4, true)
+    this.pushBytesOf(x.wrapU64(), 4, true)
   }
 
   /// Appends the 4 bytes of `x`, little endian.
   public fun pushU32Le(x: u32) {
-    pushBytesOf(this, x.wrapU64(), 4, false)
+    this.pushBytesOf(x.wrapU64(), 4, false)
   }
 
   /// Appends the 8 bytes of `x`, big endian.
   public fun pushI64Be(x: i64) {
-    pushBytesOf(this, x.wrapU64(), 8, true)
+    this.pushBytesOf(x.wrapU64(), 8, true)
   }
 
   /// Appends the 8 bytes of `x`, little endian.
   public fun pushI64Le(x: i64) {
-    pushBytesOf(this, x.wrapU64(), 8, false)
+    this.pushBytesOf(x.wrapU64(), 8, false)
   }
 
   /// Appends the 8 bytes of `x`, big endian.
   public fun pushU64Be(x: u64) {
-    pushBytesOf(this, x.wrapU64(), 8, true)
+    this.pushBytesOf(x.wrapU64(), 8, true)
   }
 
   /// Appends the 8 bytes of `x`, little endian.
   public fun pushU64Le(x: u64) {
-    pushBytesOf(this, x.wrapU64(), 8, false)
+    this.pushBytesOf(x.wrapU64(), 8, false)
   }
 
   /// Appends the 8 bytes of `x`, big endian.
   public fun pushIsizeBe(x: isize) {
-    pushBytesOf(this, x.wrapU64(), 8, true)
+    this.pushBytesOf(x.wrapU64(), 8, true)
   }
 
   /// Appends the 8 bytes of `x`, little endian.
   public fun pushIsizeLe(x: isize) {
-    pushBytesOf(this, x.wrapU64(), 8, false)
+    this.pushBytesOf(x.wrapU64(), 8, false)
   }
 
   /// Appends the 8 bytes of `x`, big endian.
   public fun pushUsizeBe(x: usize) {
-    pushBytesOf(this, x.wrapU64(), 8, true)
+    this.pushBytesOf(x.wrapU64(), 8, true)
   }
 
   /// Appends the 8 bytes of `x`, little endian.
   public fun pushUsizeLe(x: usize) {
-    pushBytesOf(this, x.wrapU64(), 8, false)
+    this.pushBytesOf(x.wrapU64(), 8, false)
   }
 }

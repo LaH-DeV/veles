@@ -13,8 +13,8 @@ struct Point {
   static fun fromText(s: string): Point? {
     val parts = s.split(",")
     if (parts.len() != 2) return null
-    val x = i64.parse(parts.at(0).trim()) ?: return null
-    val y = i64.parse(parts.at(1).trim()) ?: return null
+    val x = i64.parse(parts.get(0).trim()) ?: return null
+    val y = i64.parse(parts.get(1).trim()) ?: return null
     Point(x, y)
   }
 
@@ -26,7 +26,7 @@ struct Point {
 }
 
 struct Stack<T> {
-  items: MutableList<T> = []
+  items: List<T> = []
 
   static fun of(x: T): Stack<T> {
     val s = Stack<T>()

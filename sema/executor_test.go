@@ -46,11 +46,11 @@ fun main() throws ThreadError {
   }
 }`)
 	expectError(t, prelude+`struct Bag {
-  items: MutableList<i64>
+  items: *List<i64>
   fun first<T>(x: T): T => x
 }
 fun main() {
-  val b = Bag(items: [])
+  val b = Bag(items: &[])
   scope {
     async b.first(1)
   }

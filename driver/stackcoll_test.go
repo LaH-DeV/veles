@@ -23,14 +23,14 @@ func TestStackCollections(t *testing.T) {
 	src := `use io
 
 struct Acc {
-  items: MutableList<i64> = []
-  names: MutableList<string> = []
-  index: MutableMap<string, i64> = [:]
-  seen: MutableSet<i64> = MutableSet<i64>()
+  items: List<i64> = []
+  names: List<string> = []
+  index: Map<string, i64> = [:]
+  seen: Set<i64> = Set<i64>()
 }
 
 struct Holder {
-  items: MutableList<i64>
+  items: List<i64>
 }
 
 fun churn(n: i64): i64 {
@@ -43,7 +43,7 @@ fun churn(n: i64): i64 {
 }
 
 fun local(n: i64): i64 {
-  val xs: MutableList<i64> = []
+  val xs: List<i64> = []
   loop (i in 0..<n) xs.push(i * 2)
   var s = 0
   loop (x in xs) s += x
@@ -53,7 +53,7 @@ fun local(n: i64): i64 {
 fun inLoop(): i64 {
   var s = 0
   loop (i in 0..<5) {
-    val xs: MutableList<i64> = []
+    val xs: List<i64> = []
     s += xs.len()
     xs.push(i)
     xs.push(i + 1)
@@ -63,15 +63,15 @@ fun inLoop(): i64 {
 }
 
 fun literal(): i64 {
-  val xs: MutableList<i64> = [5, 6, 7]
+  val xs: List<i64> = [5, 6, 7]
   xs.push(8)
-  (xs.at(0) ?: 0) + (xs.at(3) ?: 0) + xs.len()
+  (xs.get(0) ?: 0) + (xs.get(3) ?: 0) + xs.len()
 }
 
 fun nested(): i64 {
-  val outer: MutableList<MutableList<i64>> = []
+  val outer: List<List<i64>> = []
   loop (i in 0..<4) {
-    val inner: MutableList<i64> = []
+    val inner: List<i64> = []
     inner.push(i)
     inner.push(i * i)
     outer.push(inner)
@@ -84,8 +84,8 @@ fun nested(): i64 {
 }
 
 fun maps(): i64 {
-  val m: MutableMap<string, i64> = [:]
-  val seen: MutableSet<i64> = MutableSet<i64>()
+  val m: Map<string, i64> = [:]
+  val seen: Set<i64> = Set<i64>()
   loop (i in 0..<30) {
     m.set("k${i % 12}", i)
     val _ = seen.add(i % 7)
@@ -107,8 +107,8 @@ fun fields(): i64 {
 }
 
 fun underPressure(): i64 {
-  val xs: MutableList<string> = []
-  val m: MutableMap<i64, string> = [:]
+  val xs: List<string> = []
+  val m: Map<i64, string> = [:]
   loop (i in 0..<200) {
     xs.push("item-$i")
     m.set(i, "value-$i")
@@ -121,47 +121,47 @@ fun underPressure(): i64 {
 }
 
 fun returned(): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (i in 0..<6) out.push(i)
   out
 }
 
-fun fill(xs: MutableList<i64>) {
+fun fill(xs: *List<i64>) {
   xs.push(100)
   xs.push(200)
 }
 
 fun filled(): List<i64> {
-  val xs: MutableList<i64> = []
-  fill(xs)
+  val xs: List<i64> = []
+  fill(&xs)
   xs
 }
 
 fun stored(): Holder {
-  val xs: MutableList<i64> = [1, 2, 3]
+  val xs: List<i64> = [1, 2, 3]
   Holder(items: xs)
 }
 
-fun pushedInto(sink: MutableList<MutableList<i64>>) {
-  val xs: MutableList<i64> = [9, 8]
+fun pushedInto(sink: *List<List<i64>>) {
+  val xs: List<i64> = [9, 8]
   sink.push(xs)
 }
 
 fun captured(): i64 {
-  val xs: MutableList<i64> = []
+  val xs: List<i64> = []
   val add = (x: i64) => xs.push(x)
   add(4)
   add(5)
-  xs.len() * 10 + (xs.at(1) ?: 0)
+  xs.len() * 10 + (xs.get(1) ?: 0)
 }
 
 fun copies(): i64 {
-  val xs: MutableList<i64> = [3, 1, 2]
+  val xs: List<i64> = [3, 1, 2]
   val sorted = xs.sorted()
   val part = xs.slice(1, 3)
-  val dup = xs.toList()
+  val dup = xs
   xs.addAll(dup)
-  (sorted.at(0) ?: 0) + part.len() * 10 + xs.len() * 100
+  (sorted.get(0) ?: 0) + part.len() * 10 + xs.len() * 100
 }
 
 fun main() {
@@ -175,8 +175,8 @@ fun main() {
   val r = returned()
   val f = filled()
   val h = stored()
-  val kept: MutableList<MutableList<i64>> = []
-  pushedInto(kept)
+  val kept: List<List<i64>> = []
+  pushedInto(&kept)
   val c = churn(2000)
   io.println("escaped ${r} ${f} ${h.items} ${kept} $c")
   io.println("captured ${captured()}")

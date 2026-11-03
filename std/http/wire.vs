@@ -70,7 +70,7 @@ fun readRequest(c: io.Stream, peer: string, limits: Limits, drain: Drain): (Requ
   if (major != "1") throw Fail(status: Status.httpVersionNotSupported, text: "HTTP version not supported")
   val http10 = minor == "0"
   val tooManyHeaders = Fail(status: Status.requestHeaderFieldsTooLarge, text: "request header fields too large")
-  val headers: MutableMap<string, string> = [:]
+  val headers: Map<string, string> = [:]
   var headerBytes: i64 = 0
   // lines, not entries: repeating one name costs the server the same and
   // the map would collapse them to a single key
@@ -151,8 +151,8 @@ val tokenMarks: List<u8> = "!#$%&'*+-.^_`|~".bytes()
 fun isDigits(s: string): bool => !s.isEmpty() && s.bytes().all(b => b.isAsciiDigit())
 
 fun parseQuery(text: string): Map<string, string> {
-  val out: MutableMap<string, string> = [:]
-  if (text.isEmpty()) return out.toMap()
+  val out: Map<string, string> = [:]
+  if (text.isEmpty()) return out
   loop (pair in text.split("&")) {
     if (pair.isEmpty()) continue
     // a key without `=` has the empty value
@@ -167,13 +167,13 @@ fun parseQuery(text: string): Map<string, string> {
 public fun percentDecode(s: string, plusIsSpace: bool): string {
   if (!s.contains("%") && !(plusIsSpace && s.contains("+"))) return s
   val bytes = s.bytes()
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   var i: i64 = 0
   loop (i < bytes.len()) {
-    val b = bytes.at(i)
+    val b = bytes.get(i)
     if (b == '%' && i + 2 < bytes.len()) {
-      val hi = bytes.at(i + 1)?.digitValue(16)
-      val lo = bytes.at(i + 2)?.digitValue(16)
+      val hi = bytes.get(i + 1)?.digitValue(16)
+      val lo = bytes.get(i + 2)?.digitValue(16)
       if (val high = hi && val low = lo) {
         out.push((high * 16 + low).wrapU8())
         i += 3
@@ -183,7 +183,7 @@ public fun percentDecode(s: string, plusIsSpace: bool): string {
     if (plusIsSpace && b == '+') out.push(' ') else out.push(b)
     i += 1
   }
-  out.toList().decodeUtf8() ?: s
+  out.decodeUtf8() ?: s
 }
 
 // `headOnly` is the answer to a HEAD request: every header a GET would

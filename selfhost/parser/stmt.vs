@@ -8,7 +8,7 @@ extend Parser {
   fun parseBlock(): ast.Block {
     val start = this.span()
     if (!this.expect(Kind.LBrace)) return ast.Block(pos: start)
-    val stmts: MutableList<ast.Stmt> = []
+    val stmts: List<ast.Stmt> = []
     loop {
       this.skipSemis()
       if (this.atAny(Kind.RBrace, Kind.EOF)) break
@@ -45,7 +45,7 @@ extend Parser {
   fun parseBinding(): ast.Binding {
     val start = this.span()
     if (this.accept(Kind.LParen)) {
-      val tuple: MutableList<ast.Binding> = []
+      val tuple: List<ast.Binding> = []
       loop (!this.atAny(Kind.RParen, Kind.EOF)) {
         tuple.push(this.parseBinding())
         if (!this.accept(Kind.Comma)) break
@@ -300,7 +300,7 @@ extend Parser {
       return ast.WithExpr(bindings: [w.binding], body: ast.Block(pos: w.pos), pos: this.spanFrom(start))
     }
     this.next()  // with
-    val bindings: MutableList<ast.WithBinding> = []
+    val bindings: List<ast.WithBinding> = []
     if (this.expect(Kind.LParen)) {
       loop (!this.atAny(Kind.RParen, Kind.EOF)) {
         bindings.push(this.parseWithItem())

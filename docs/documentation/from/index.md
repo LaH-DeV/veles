@@ -11,7 +11,7 @@ before the chapters, or keep it open beside them.
 - [From TypeScript](typescript.md) — sound types, one `null`, integers that
   are integers, and `async` without promises in every signature.
 - [From Swift](swift.md) — `?:` where you write `??`, `else return` where
-  you write `guard`, and collections shared by reference.
+  you write `guard`, and a `val` that does not freeze its value.
 - [From Kotlin](kotlin.md) — the closest syntax: what is the same, and what
   Veles took out (`!!`, inheritance, unchecked exceptions, `suspend`).
 - [From Rust](rust.md) — `Result` and traits without lifetimes or the

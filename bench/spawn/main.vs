@@ -9,7 +9,7 @@ fun square(i: i64): i64 =>
 fun batch(from: i64, to: i64): i64 {
   var sum: i64 = 0
   scope {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     tasks.reserve(to - from)
     loop (i in from..<to) {
       tasks.push(async square(i))

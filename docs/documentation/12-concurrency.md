@@ -402,7 +402,7 @@ no such user -1
 - The calls run at once; `awaitAll` returns when every one has finished.
 - The first failure **cancels the others** and leaves from `awaitAll` —
   unlike JavaScript's `Promise.all`, which leaves them running.
-- `awaitAll(tasks)` over a `List` or `MutableList` of handles gives a
+- `awaitAll(tasks)` over a `List` of handles gives a
   `List` of their values, in order.
 - There is no `await` in front: `awaitAll` is itself the point where the
   task waits, as `select` is.
@@ -482,7 +482,7 @@ fun size(n: i64): i64 throws Boom {
 fun total(ns: List<i64>): i64 throws Boom {
   var sum: i64 = 0
   scope {
-    val tasks: MutableList<Task<i64>> = []   // declared inside: the handles cannot outlive the scope
+    val tasks: List<Task<i64>> = []   // declared inside: the handles cannot outlive the scope
     loop (n in ns) tasks.push(async size(n))
     loop (t in tasks) sum += await t         // the value; a Boom fails the scope instead
   }
@@ -652,7 +652,7 @@ fun mayFail(n: i64): i64 throws Boom {
 
 fun crashes(): i64 {
   val xs = [1]
-  xs.at(5) ?: panic("crashes: index 5 is out of range")
+  xs.get(5) ?: panic("crashes: index 5 is out of range")
 }
 
 fun main() {
@@ -664,8 +664,8 @@ fun main() {
   io.println("${a.toString()}")
   io.println("${b.toString()}")
   when (c) {
-    is Ok(v)            => io.println("ok $v")
-    is Err(e)           => when (e) {
+    is Ok(v)  => io.println("ok $v")
+    is Err(e) => when (e) {
       is Panic(message) => io.println("panic: $message")
     }
   }
@@ -720,7 +720,7 @@ fun main() {
     results.closeAfter(4)   // closes itself after the 4th send, whoever sends it
     loop (i in 1..4) { jobs.send(Job(id: i)) }
     jobs.close()
-    val done: MutableList<string> = []
+    val done: List<string> = []
     loop {
       done.push(await results.recv() ?: break)
     }
@@ -940,7 +940,7 @@ fun lines(name: string): i64 {
 fun main() {
   val files = ["a.txt", "notes.md", "main.vs", "readme"]
   val total = scope(workers: 2) {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     loop (f in files) tasks.push(async lines(f))
     awaitAll(tasks).sum()
   }
@@ -1341,7 +1341,7 @@ fun fnv1a(data: List<u8>): u64 {
 }
 
 fun main() {
-  val data = MutableList<u8>.make(1 << 20, i => (i % 251).wrapU8())
+  val data = List<u8>.make(1 << 20, i => (i % 251).wrapU8())
   val digest = async fnv1a(data)
   io.println("hashing alongside")
   io.println("${await digest:x}")
@@ -1380,7 +1380,7 @@ hashing alongside
 The prelude's `withTimeout(limit, f)` calls `f` and gives up once `limit`
 has passed by throwing `Timeout`; `f`'s own errors are rethrown, so the
 call throws `E | Timeout`. `f` runs in the calling task, as an ordinary
-call (D151): it may use anything the caller can, a `MutableList` included,
+call (D151): it may use anything the caller can, a `List` included,
 and starts no task:
 
 ```veles
@@ -1488,7 +1488,7 @@ Output:
 - A task keeps the values bound where it was started, for as long as it
   runs — rebinding in the parent afterwards does not reach it.
 - The value is read from other tasks, on other threads, so it must be
-  Sendable (a `MutableList` is refused); a `TaskLocal` of a Sendable
+  Sendable (a `List` is refused); a `TaskLocal` of a Sendable
   value is itself Sendable and can be captured by a sendable lambda.
 - `withValue` may suspend (its function may), so it is not available
   inside a function that cannot — a lambda given to `List.map`, a
@@ -1497,10 +1497,10 @@ Output:
 ## What may cross a task boundary
 
 Data handed to `async` must be **Sendable** (D35): numbers, strings,
-immutable collections, structs whose fields are Sendable, channels,
-`Mutex` and `Atomic`. A `MutableList` is not — two tasks could then
-mutate it — and the compiler refuses the `async`. This is the concrete
-reason `List` and `MutableList` are separate types.
+lists, maps and sets of Sendable elements (values: no one else can change them, D231), structs whose fields are Sendable, channels,
+`Mutex` and `Atomic`. A pointer is not — two tasks could then
+change what it points at — and neither is a closure that changes a
+collection it captured; the compiler refuses the `async`.
 
 A trait can promise it for all its implementors: `trait Stream : Closeable + Sendable`.
 Its objects — an `io.Stream` holding a socket or a file — cross task
@@ -1650,11 +1650,17 @@ Output:
 hits 4000, total 4000
 ```
 
-Three rules keep this simple. `withLock`'s function cannot suspend, so
+Four rules keep this simple. `withLock`'s function cannot suspend, so
 no task ever waits at an `await` while holding a lock — the classic way
 to deadlock a coroutine runtime is ruled out by the compiler. Locking a
 `Mutex` again inside its own `withLock` panics with a message instead
-of hanging. And a lock is given back even when the function panics.
+of hanging. A lock is given back even when the function panics. And the
+pointer the function is given is lent only for the call (D233): it may
+read and change the value through it, but not return, store or capture
+it, so nothing reaches the value after the unlock. To take the value out,
+return a copy — `notes.withLock(n => *n)`, which is what `get()` does — or
+the part you need, `notes.withLock(n => n.len())`. The same holds for any
+function value given a pointer, not only a lock's.
 
 When the work under the lock is more than one expression, hold the lock
 with `with` instead (D107). `with n = notes.lock()` binds `n` to a
@@ -1665,7 +1671,7 @@ way out of it, as for any `with` ([chapter 13](13-memory-and-ffi.md)):
 use io
 
 struct Notes {
-  var lines: MutableList<string> = []
+  var lines: List<string> = []
   var saved: i64 = 0
 
   fun add(text: string) {
@@ -1711,18 +1717,18 @@ name, is a bare critical section.
 A module-level `var` is an error for the same reason a captured one is:
 every task sees the module's bindings, from whichever thread it runs on.
 For the same reason a module-level `val`, and a `static val`, must have a
-`Sendable` type. A `MutableMap` in a `val` is never reassigned, but its
+`Sendable` type. A `Map` in a `val` is never reassigned, but its
 methods change it. Module state that changes is a `val` holding a lock:
 
 ```veles
 // fragment
 var served = 0              // error: module-level 'var served' is shared by every task …
 var lock = Mutex(value: 0)  // error: … the lock is inside the value, so declare it 'val' and change what it holds: 'lock.set(...)'
-val seen = MutableMap<string, i64>()   // error: … 'MutableMap<string, i64>', which is not Sendable …
+val seen = Map<string, i64>()   // error: … 'Map<string, i64>', which is not Sendable …
 val served = Atomic(value: 0)      // ok: served.add(1)
-val cache = Mutex(value: MutableMap<string, string>())
+val cache = Mutex(value: Map<string, string>())
 lazy val table = buildTable()                // ok: built on its first read (below)
-val ports = ["http": 80, "https": 443]       // ok: an immutable Map is Sendable
+val ports = ["http": 80, "https": 443]       // ok: a Map is a value, Sendable
 ```
 
 No module global is a `var`, not even one holding a lock: replacing the
@@ -1818,13 +1824,17 @@ changes it has not seen:
 ```veles
 use io
 
-struct Config { var level: i64 }
+struct Config {
+  var level: i64
+}
 
 fun worker(config: RwLock<Config>, ready: Event, news: Subscription<string>, out: Channel<string>) {
   await ready.wait()
-  val level = config.withRead(c => c.level)   // a read region cannot wait: read, then leave it
+  val level = config.withRead(c => c.level)  // a read region cannot wait: read, then leave it
   loop {
-    val item = (try await news.recv()) catch (e) { "lost ${e.missed}" } ?: break
+    val item = (try await news.recv()) catch (e) {
+      "lost ${e.missed}"
+    } ?: break
     out.send("$item at level $level")
   }
 }
@@ -1864,7 +1874,7 @@ fun main() {
     level.set(2)
   }
   seen.close()
-  io.println("last seen: ${seen.toList().at(-1)}")
+  io.println("last seen: ${seen.toList().get(-1)}")
 }
 ```
 
@@ -1988,11 +1998,11 @@ an **executor** holds that state and the functions that use it (D150):
 use io
 
 executor gl {
-  var uploads: i64 = 0                            // made on gl's own thread
-  val textures: MutableMap<string, i64> = [:]     // not Sendable, and needs no lock
+  var uploads: i64 = 0                  // made on gl's own thread
+  var textures: Map<string, i64> = [:]  // only gl's thread reaches it: no lock
 
-  public fun texture(name: string): i64 {
-    textures.get(name) ?: upload(name)            // a call between gl's functions: direct
+  fun texture(name: string): i64 {
+    textures.get(name) ?: upload(name)  // a call between gl's functions: direct
   }
 
   fun upload(name: string): i64 {
@@ -2001,23 +2011,23 @@ executor gl {
     uploads
   }
 
-  public fun preload(names: List<string>): i64 {
-    val done: MutableList<string> = []
+  fun preload(names: List<string>): i64 {
+    val done: List<string> = []
     scope {
-      loop (n in names) async mark(done, n)       // children stay on gl: no Sendable check
+      loop (n in names) async mark(&done, n)  // children stay on gl: no Sendable check
     }
     done.len()
   }
 
-  public fun count(): i64 => uploads
+  fun count(): i64 => uploads
 }
 
-fun mark(done: MutableList<string>, name: string) {
+fun mark(done: *List<string>, name: string) {
   await sleep(Duration.millis(1))
   done.push(name)
 }
 
-executor cpu(threads: 2)                          // a named pool
+executor cpu(threads: 2)  // a named pool
 
 fun main() {
   io.println("${gl.texture("grass")} ${gl.texture("stone")} ${gl.texture("grass")}")

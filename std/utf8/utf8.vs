@@ -18,7 +18,7 @@
 ///   i += r.size
 /// }
 ///
-/// val out: MutableList<u8> = []
+/// val out: List<u8> = []
 /// utf8.encodeTo(out, 0x1F600)               // four bytes appended
 /// ```
 ///
@@ -155,10 +155,10 @@ public const fun decodeBytes(bytes: List<u8>, at: i64): Rune? {
   val n = bytes.len()
   if (at < 0 || at >= n) return null
   step(
-    bytes.at(at),
-    bytes.atOrDefault(at + 1, 0),
-    bytes.atOrDefault(at + 2, 0),
-    bytes.atOrDefault(at + 3, 0),
+    bytes.get(at),
+    bytes.getOrDefault(at + 1, 0),
+    bytes.getOrDefault(at + 2, 0),
+    bytes.getOrDefault(at + 3, 0),
     n - at,
   )
 }
@@ -223,7 +223,7 @@ const fun step(b0: u8, b1: u8, b2: u8, b3: u8, rest: i64): Rune? {
 /// stops dead on one bad code point is a denial of service, and one that
 /// emits invalid UTF-8 is worse than either. Check with `isScalar` where
 /// the difference matters.
-public const fun encodeTo(out: MutableList<u8>, code: i64): i64 {
+public const fun encodeTo(out: *List<u8>, code: i64): i64 {
   val cp = if (isScalar(code)) code else replacement
   when {
     cp < 0x80    => {
@@ -254,8 +254,8 @@ public const fun encodeTo(out: MutableList<u8>, code: i64): i64 {
 /// The UTF-8 bytes of `code`, as their own list. `encodeTo` is the one to
 /// use in a loop; this one is for a single character.
 public const fun encode(code: i64): List<u8> {
-  val out: MutableList<u8> = []
-  encodeTo(out, code)
+  val out: List<u8> = []
+  encodeTo(&out, code)
   out
 }
 

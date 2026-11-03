@@ -1,52 +1,56 @@
-// D102: a collection cannot change while a loop walks it.
+// D102, D231 addendum: a loop over a list, map or set walks it as it was
+// when the loop began, so the body may change it; a loop that walks it by
+// reference, and a loop over a Deque, may not change its length or order.
 use io
 
 struct Bag {
-  items: MutableList<i64>
+  items: List<i64>
 
   fun grow() {
     loop (x in this.items) {
-      this.items.push(x) // error: 'this.items.push' changes 'this.items' while the loop at line 8 walks it
+      this.items.push(x)  // the loop walks the items as they were
     }
   }
 }
 
-fun lists(xs: MutableList<i64>) {
+fun lists(xs: List<i64>) {
   loop (x in xs) {
-    if (x < 3) xs.push(x + 10) // error: 'xs.push' changes 'xs' while the loop at line 15 walks it
-    xs.set(0, x) // replacing an element in place is allowed
+    if (x < 3) xs.push(x + 10)
+    xs.set(0, x)
   }
   loop (&x in xs) {
     *x += 1
-    xs.removeAt(0) // error: 'xs.removeAt' changes 'xs' while the loop at line 19 walks it
+    xs.removeAt(0)  // error: 'xs.removeAt' changes 'xs' while the loop at line 21 walks it by reference
+  }
+  loop (&x in xs) {
+    *x += 1
+    xs.set(0, 1)  // replacing an element in place is allowed
+    xs.reserve(100)  // reserve changes neither the length nor the order
   }
   loop (_ in xs) {
     loop (_ in xs) {
-      xs.clear() // error: 'xs.clear' changes 'xs' while the loop at line 24 walks it // error: 'xs.clear' changes 'xs' while the loop at line 23 walks it
+      xs.clear()
     }
   }
-  loop (_ in xs) {
-    // a lambda passed as an argument runs here
-    call(() => xs.sort()) // error: 'xs.sort' changes 'xs' while the loop at line 28 walks it
-    // a stored one does not, until it is called
-    val _ = () => xs.pop()
-    xs.reserve(100) // reserve changes neither the length nor the order
-  }
-  loop (i in xs.indices()) xs.push(i) // a range walks no collection
-  loop (x in xs.toList()) xs.push(x) // nor does a copy
+  loop (i in xs.indices()) xs.push(i)
+  io.println("$xs")
 }
 
-fun call(f: fun()) => f()
-
-fun maps(m: MutableMap<string, i64>, s: MutableSet<i64>) {
-  loop ((k, n) in m) m.set(k, n + 1) // the visited key: a replacement
-  loop ((_, n) in m) m.set("new", n) // error: 'm.set' changes 'm' while the loop at line 43 walks it
-  loop ((k, &n) in m) { *n += 1; m.remove(k) } // error: 'm.remove' changes 'm' while the loop at line 44 walks it
-  loop (x in s) s.add(x + 1) // error: 's.add' changes 's' while the loop at line 45 walks it
+fun maps(m: Map<string, i64>, s: Set<i64>) {
+  loop ((_, n) in m) m.set("new", n)
+  loop ((k, &n) in m) {
+    *n += 1
+    m.set(k, 0)  // the visited key: a replacement
+    m.remove(k)  // error: 'm.remove' changes 'm' while the loop at line 41 walks it by reference
+  }
+  loop (x in s) s.add(x + 1)
+  io.println("$m $s")
 }
 
 fun deques(d: Deque<i64>) {
-  loop (x in d) d.addLast(x) // error: 'd.addLast' changes 'd' while the loop at line 49 walks it
+  loop (x in d) {
+    d.addLast(x)  // error: 'd.addLast' changes 'd' while the loop at line 51 walks it
+  }
 }
 
 fun main() {

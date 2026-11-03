@@ -1,12 +1,13 @@
-// Prelude — List, MutableList and Range methods (D25, D29, D46). In scope
-// in every file (D24).
+// Prelude — List and Range methods (D25, D29, D46). In scope in every
+// file (D24). A list is a value copied on its first change (D231).
 //
 // The compiler provides the primitives (`len`, `at`, `set`, `push`, `pop`,
 // `sorted`, the eager `map`/`filter`/`fold`, ...); the rest is Veles.
 
 extend<T> List<T> {
-  /// The element at `i`, or `d` when `i` is out of range; `this.at(i) ?: d`.
-  public const fun atOrDefault(i: i64, d: T): T => this.at(i) ?: d
+  /// A copy of the element at `i`, or `d` when `i` is out of range;
+  /// `this.get(i) ?: d`.
+  public const fun getOrDefault(i: i64, d: T): T => this.get(i) ?: d
 
   /// The first `n` elements (all of them when `n` exceeds the length).
   public const fun take(n: i64): List<T> => this.slice(0, n)
@@ -16,14 +17,14 @@ extend<T> List<T> {
 
   /// A new list of these elements followed by `other`'s.
   public const fun concat(other: List<T>): List<T> {
-    var out: MutableList<T> = []
+    var out: List<T> = []
     out.addAll(this)
     out.addAll(other)
     out
   }
 
   /// The valid indexes, `0..<len()`. In `loop (i in xs.indices())` the
-  /// checker knows each `i` is in range, so `xs.at(i)` is a `T` (D62).
+  /// checker knows each `i` is in range, so `xs.get(i)` is a `T` (D62).
   public const fun indices(): Range<i64> => 0..<this.len()
 
   /// The index of the first element `pred` accepts, or null when it accepts
@@ -50,7 +51,7 @@ extend<T> List<T> {
   /// `[(index: 0, value: "a"), (index: 1, value: "b")]`. Eager, like `map`;
   /// `xs.iter().enumerate()` is the lazy form.
   public const fun enumerate(): List<(index: i64, value: T)> {
-    var out: MutableList<(i64, T)> = []
+    var out: List<(i64, T)> = []
     var i: i64 = 0
     loop (x in this) {
       out.push((i, x))
@@ -61,10 +62,10 @@ extend<T> List<T> {
 
   /// Pairs of elements at the same index, as long as the shorter list.
   public const fun zip<U>(other: List<U>): List<(T, U)> {
-    var out: MutableList<(T, U)> = []
+    var out: List<(T, U)> = []
     var i: i64 = 0
     loop (a in this) {
-      val b = other.at(i) ?: break
+      val b = other.get(i) ?: break
       out.push((a, b))
       i += 1
     }
@@ -73,7 +74,7 @@ extend<T> List<T> {
 
   /// The lists `f` returns for each element, concatenated.
   public const fun flatMap<U, E>(f: fun(T): List<U> suspends throws E): List<U> throws E {
-    var out: MutableList<U> = []
+    var out: List<U> = []
     loop (x in this) {
       loop (y in try f(x)) {
         out.push(y)
@@ -84,8 +85,8 @@ extend<T> List<T> {
 
   /// The elements with duplicates removed, first occurrences kept in order.
   public const fun distinct(): List<T> {
-    var seen = MutableSet<T>()
-    var out: MutableList<T> = []
+    var seen = Set<T>()
+    var out: List<T> = []
     loop (x in this) {
       if (seen.add(x)) out.push(x)
     }
@@ -96,7 +97,7 @@ extend<T> List<T> {
   @caller_location
   public const fun chunked(n: i64): List<List<T>> {
     if (n <= 0) panic("chunked: size must be positive, got $n")
-    var out: MutableList<List<T>> = []
+    var out: List<List<T>> = []
     var i: i64 = 0
     loop (i < this.len()) {
       out.push(this.slice(i, i + n))
@@ -109,7 +110,7 @@ extend<T> List<T> {
   @caller_location
   public const fun windowed(n: i64): List<List<T>> {
     if (n <= 0) panic("windowed: size must be positive, got $n")
-    var out: MutableList<List<T>> = []
+    var out: List<List<T>> = []
     loop (i in 0..(this.len() - n)) {
       out.push(this.slice(i, i + n))
     }
@@ -122,12 +123,9 @@ extend<T> List<T> {
   /// The index of the last element, -1 when empty: `if (i < xs.lastIndex()) i += 1`.
   public const fun lastIndex(): i64 => this.len() - 1
 
-  /// The distinct elements as an immutable set: `xs.map(t => t.0).toSet()`.
-  public const fun toSet(): Set<T> => this.toMutableSet().toSet()
-
-  /// The distinct elements as a mutable set.
-  public const fun toMutableSet(): MutableSet<T> {
-    val out = MutableSet<T>()
+  /// The distinct elements as a set: `xs.map(t => t.0).toSet()`.
+  public const fun toSet(): Set<T> {
+    val out = Set<T>()
     loop (x in this) out.add(x)
     out
   }
@@ -141,9 +139,9 @@ extend<T> List<T> {
   /// is descending. Stable (equal elements keep their order); O(n log n).
   public const fun sortedWith(compare: fun(T, T): Ordering): List<T> {
     val n = this.len()
-    var src = this.toMutable()
-    if (n < 2) return src.toList()
-    var dst: MutableList<T> = this.toMutable()
+    var src = this
+    if (n < 2) return src
+    var dst: List<T> = this
     // bottom-up merge sort: runs of `width` merged into `dst`, then swapped
     var width: i64 = 1
     loop (width < n) {
@@ -154,11 +152,11 @@ extend<T> List<T> {
         var i = lo
         var j = mid
         loop (k in lo..<hi) {
-          if (i < mid && (j >= hi || compare(src.at(i) ?: panic("sortedWith: i < mid <= n"), src.at(j) ?: panic("sortedWith: j < hi <= n")) <= 0)) {
-            dst.set(k, src.at(i) ?: panic("sortedWith: i < mid <= n"))
+          if (i < mid && (j >= hi || compare(src.get(i) ?: panic("sortedWith: i < mid <= n"), src.get(j) ?: panic("sortedWith: j < hi <= n")) <= 0)) {
+            dst.set(k, src.get(i) ?: panic("sortedWith: i < mid <= n"))
             i += 1
           } else {
-            dst.set(k, src.at(j) ?: panic("sortedWith: j < hi <= n"))
+            dst.set(k, src.get(j) ?: panic("sortedWith: j < hi <= n"))
             j += 1
           }
         }
@@ -167,7 +165,7 @@ extend<T> List<T> {
       (src, dst) = (dst, src)
       width *= 2
     }
-    src.toList()
+    src
   }
 
   /// A copy sorted from largest to smallest key.
@@ -224,8 +222,8 @@ extend<T> List<T> {
   /// The elements whose keys are distinct, first occurrence kept:
   /// `names.distinctBy(n => n.toLower())`.
   public const fun distinctBy<K>(key: fun(T): K): List<T> {
-    var seen = MutableSet<K>()
-    var out: MutableList<T> = []
+    var seen = Set<K>()
+    var out: List<T> = []
     loop (x in this) {
       if (seen.add(key(x))) out.push(x)
     }
@@ -233,42 +231,7 @@ extend<T> List<T> {
   }
 }
 
-// The windows of a MutableList are copies (D196): the `List` methods above
-// would see `this` as an immutable list and share the storage, which a later
-// `push` or `set` on the mutable list would show through.
-extend<T> MutableList<T> {
-  /// The first `n` elements (all of them when `n` exceeds the length), copied.
-  public const fun take(n: i64): List<T> => this.slice(0, n)
-
-  /// The elements after the first `n`, copied.
-  public const fun drop(n: i64): List<T> => this.slice(n, this.len())
-
-  /// Consecutive pieces of `n` elements, copied; the last may be shorter.
-  @caller_location
-  public const fun chunked(n: i64): List<List<T>> {
-    if (n <= 0) panic("chunked: size must be positive, got $n")
-    var out: MutableList<List<T>> = []
-    var i: i64 = 0
-    loop (i < this.len()) {
-      out.push(this.slice(i, i + n))
-      i += n
-    }
-    out
-  }
-
-  /// Every window of `n` consecutive elements, copied (none when the list is shorter).
-  @caller_location
-  public const fun windowed(n: i64): List<List<T>> {
-    if (n <= 0) panic("windowed: size must be positive, got $n")
-    var out: MutableList<List<T>> = []
-    loop (i in 0..(this.len() - n)) {
-      out.push(this.slice(i, i + n))
-    }
-    out
-  }
-}
-
-extend<T> MutableList<T> {
+extend<T> List<T> {
   /// Sorts in place by `compare` (see `sortedWith`).
   public const fun sortWith(compare: fun(T, T): Ordering) {
     listTouched(this)
@@ -290,7 +253,7 @@ extend<T: Comparable> List<T> {
   /// The smallest element, or `null` when empty.
   public const fun min(): T? {
     if (this.isEmpty()) return null
-    var best = this.at(0)
+    var best = this.get(0)
     loop (x in this) {
       if (x < best) best = x
     }
@@ -300,7 +263,7 @@ extend<T: Comparable> List<T> {
   /// The largest element, or `null` when empty.
   public const fun max(): T? {
     if (this.isEmpty()) return null
-    var best = this.at(0)
+    var best = this.get(0)
     loop (x in this) {
       if (x > best) best = x
     }
@@ -333,7 +296,7 @@ extend<T> List<T> {
     var hi = this.len()
     loop (lo < hi) {
       val mid = lo + (hi - lo) / 2
-      val x = this.at(mid) ?: panic("partitionPoint: lo <= mid < hi <= len")
+      val x = this.get(mid) ?: panic("partitionPoint: lo <= mid < hi <= len")
       if (pred(x)) lo = mid + 1 else hi = mid
     }
     lo
@@ -349,7 +312,7 @@ extend<T> List<T> {
   /// list flips the arguments: `xs.binarySearchWith(x => wanted.compareTo(x))`.
   public const fun binarySearchWith(compare: fun(T): Ordering): i64? {
     val at = this.partitionPoint(x => compare(x) < 0)
-    val found = this.at(at) ?: return null  // at == len(): nothing is Equal
+    val found = this.get(at) ?: return null  // at == len(): nothing is Equal
     if (compare(found) == Ordering.Equal) at else null
   }
 
@@ -364,7 +327,7 @@ extend<T: Comparable> List<T> {
   /// not any: a list with duplicates gives the same answer every time.
   public const fun binarySearch(x: T): i64? {
     val at = this.lowerBound(x)
-    val found = this.at(at) ?: return null  // at == len(): x belongs at the end
+    val found = this.get(at) ?: return null  // at == len(): x belongs at the end
     if (found.compareTo(x) == Ordering.Equal) at else null
   }
 
@@ -379,11 +342,11 @@ extend<T: Comparable> List<T> {
   public const fun upperBound(x: T): i64 => this.partitionPoint(e => e <= x)
 }
 
-extend MutableList<i64> {
+extend List<i64> {
   /// Increments the element at `i`; a negative index counts from the end.
   @caller_location
   public const fun incrementAt(i: i64) {
-    val value = this.at(i) ?: panic("incrementAt: index $i out of bounds for list of length ${this.len()}")
+    val value = this.get(i) ?: panic("incrementAt: index $i out of bounds for list of length ${this.len()}")
     this.set(i, value + 1)
   }
 }
@@ -414,10 +377,10 @@ extend List<f64> {
 // one that copies cleanly: a mutable list, a pointer or a closure would be
 // shared by all the slots instead (D35 Sendable), and `make` is the way to
 // build a fresh one per slot.
-extend<T: Sendable> MutableList<T> {
-  /// A list of `count` copies of `x`: `MutableList<bool>.repeat(false, n)`.
-  public static const fun repeat(x: T, count: i64): MutableList<T> {
-    var out: MutableList<T> = []
+extend<T: Sendable> List<T> {
+  /// A list of `count` copies of `x`: `List<bool>.repeat(false, n)`.
+  public static const fun repeat(x: T, count: i64): List<T> {
+    var out: List<T> = []
     if (count > 0) out.reserve(count)
     loop (_ in 0..<count) out.push(x)
     out
@@ -429,23 +392,23 @@ extend<T: Sendable> MutableList<T> {
   }
 }
 
-extend<T> MutableList<T> {
+extend<T> List<T> {
   /// Replaces the element at `i` with `transform` of its current value,
   /// returning the replacement. Do not change this list from `transform`.
   @caller_location
   public const fun updateAt(i: i64, transform: fun(T): T): T {
-    val value = this.at(i) ?: panic("updateAt: index $i out of bounds for list of length ${this.len()}")
+    val value = this.get(i) ?: panic("updateAt: index $i out of bounds for list of length ${this.len()}")
     val updated = transform(value)
     this.set(i, updated)
     updated
   }
 }
 
-extend<T> MutableList<T> {
+extend<T> List<T> {
   /// A list of `n` elements where slot `i` holds `init(i)`:
-  /// `MutableList<MutableList<i64>>.make(n, _ => [])`.
-  public static const fun make(n: i64, init: fun(i64): T): MutableList<T> {
-    var out: MutableList<T> = []
+  /// `List<List<i64>>.make(n, _ => [])`.
+  public static const fun make(n: i64, init: fun(i64): T): List<T> {
+    var out: List<T> = []
     if (n > 0) out.reserve(n)
     loop (i in 0..<n) out.push(init(i))
     out
@@ -454,8 +417,8 @@ extend<T> MutableList<T> {
   /// Exchanges the elements at `i` and `j`.
   @caller_location
   public const fun swap(i: i64, j: i64) {
-    val a = this.at(i) ?: panic("swap: index $i out of bounds for list of length ${this.len()}")
-    val b = this.at(j) ?: panic("swap: index $j out of bounds for list of length ${this.len()}")
+    val a = this.get(i) ?: panic("swap: index $i out of bounds for list of length ${this.len()}")
+    val b = this.get(j) ?: panic("swap: index $j out of bounds for list of length ${this.len()}")
     this.set(i, b)
     this.set(j, a)
     listTouched(this)
@@ -473,7 +436,7 @@ extend<T> MutableList<T> {
   /// Removes and returns the element at index `i`, shifting the rest down.
   @caller_location
   public const fun removeAt(i: i64): T {
-    val removed = this.at(i) ?: panic("removeAt: index $i out of bounds for list of length ${this.len()}")
+    val removed = this.get(i) ?: panic("removeAt: index $i out of bounds for list of length ${this.len()}")
     listMove(this, i + 1, i, this.len() - 1 - i)
     this.pop()
     removed
@@ -585,7 +548,7 @@ extend<T> List<T> {
   /// `map` that drops the nulls: `f` returns `U?` and the result holds the
   /// values that were present, in order (Kotlin's `mapNotNull`).
   public const fun mapNotNull<U, E>(f: fun(T): U? suspends throws E): List<U> throws E {
-    val out: MutableList<U> = []
+    val out: List<U> = []
     loop (x in this) {
       val y = (try f(x)) ?: continue
       out.push(y)
@@ -596,8 +559,8 @@ extend<T> List<T> {
   /// Splits the list in two: the elements `p` accepts, then the rest, each
   /// in the original order.
   public const fun partition<E>(p: fun(T): bool suspends throws E): (List<T>, List<T>) throws E {
-    val yes: MutableList<T> = []
-    val no: MutableList<T> = []
+    val yes: List<T> = []
+    val no: List<T> = []
     loop (x in this) {
       if (try p(x)) yes.push(x) else no.push(x)
     }

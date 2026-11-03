@@ -117,7 +117,7 @@ fun main() throws EncodeError | DecodeError {
 
   // an untyped tree
   val tree = try json.parse("{\"a\": [1, 2.5, \"caf\\u00e9\", true, null]}")
-  println("${tree.get("a")?.at(2)?.asString()} ${tree.get("a")?.at(1)?.asF64()}")
+  println("${tree.get("a")?.elementAt(2)?.asString()} ${tree.get("a")?.elementAt(1)?.asF64()}")
   println(try json.encode(tree))
 
   // malformed text is one problem

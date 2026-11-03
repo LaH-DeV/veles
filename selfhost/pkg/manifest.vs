@@ -24,11 +24,11 @@ struct Manifest {
   var policy:    Policy = Policy()
   var registry:  RegistrySettings = RegistrySettings()
   /// `[runtime]`: the default pool and the collector (D143, D200).
-  var runtime:   RuntimeSettings = RuntimeSettings()
+  var runtime: RuntimeSettings = RuntimeSettings()
 
   /// The path dependencies, by name.
   fun paths(): Map<string, string> {
-    val out: MutableMap<string, string> = [:]
+    val out: Map<string, string> = [:]
     loop (dependency in this.requires) {
       val source = dependency.source
       if (source is PathSource) out.set(dependency.name, source.path)

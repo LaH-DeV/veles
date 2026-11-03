@@ -40,7 +40,7 @@ template fun html(parts: List<string>, values: List<Markup>): Html {
   val out = StringBuilder()
   loop ((i, part) in parts.enumerate()) {
     out.append(part)
-    val v = values.at(i)
+    val v = values.get(i)
     if (v != null) out.append(v.markup())
   }
   Html(text: out.toString())
@@ -70,10 +70,10 @@ struct Query {
 
 template fun sql(parts: List<string>, values: List<Param>): Query {
   val text = StringBuilder()
-  val params: MutableList<string> = []
+  val params: List<string> = []
   loop ((i, part) in parts.enumerate()) {
     text.append(part)
-    val v = values.at(i)
+    val v = values.get(i)
     if (v != null) {
       params.push(v.describe())
       text.append("$${i + 1}")

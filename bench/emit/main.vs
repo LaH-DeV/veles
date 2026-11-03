@@ -4,7 +4,7 @@
 use io { println }
 use time
 
-fun emitFunction(sb: StringBuilder, index: i64) {
+fun emitFunction(sb: *StringBuilder, index: i64) {
   sb.appendLine("define i64 @f$index(i64 %a, i64 %b) {")
   sb.appendLine("entry:")
   loop (t in 0..<40) {
@@ -26,7 +26,7 @@ fun main() {
     var lines: i64 = 0
     loop (_ in 0..<4) {
       val sb = StringBuilder()
-      loop (f in 0..<5000) emitFunction(sb, f)
+      loop (f in 0..<5000) emitFunction(&sb, f)
       val text = sb.toString()
       check += text.len()
       lines += 50 * 5000

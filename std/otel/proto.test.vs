@@ -15,7 +15,7 @@ test fun readVarint(bytes: List<u8>, at: i64): (i64, i64) {
   var result: u64 = 0
   var shift: i64 = 0
   var i = at
-  loop (val b = bytes.at(i)) {
+  loop (val b = bytes.get(i)) {
     i += 1
     result |= (b & 127).toU64() << shift
     if (b < 128) break
@@ -26,7 +26,7 @@ test fun readVarint(bytes: List<u8>, at: i64): (i64, i64) {
 
 // the fields of one message, in order
 test fun fields(bytes: List<u8>): List<Fld> {
-  val out: MutableList<Fld> = []
+  val out: List<Fld> = []
   var i: i64 = 0
   loop (i < bytes.len()) {
     val (key, afterKey) = readVarint(bytes, i)
@@ -42,7 +42,7 @@ test fun fields(bytes: List<u8>): List<Fld> {
       wire == 1 => {
         var v: u64 = 0
         loop (k in 0..<8) {
-          v |= (bytes.at(i + k) ?: 0).toU64() << (8 * k)
+          v |= (bytes.get(i + k) ?: 0).toU64() << (8 * k)
         }
         out.push(Fld(num, wire, value: v.wrapI64(), data: bytes.slice(i, i + 8)))
         i += 8
@@ -71,15 +71,15 @@ test fun all(fs: List<Fld>, num: i64): List<Fld> => fs.filter(f => f.num == num)
 test fun child(fs: List<Fld>, num: i64): List<Fld> {
   val found = all(fs, num)
   expect(found.len() == 1)
-  fields((found.at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data)
+  fields((found.get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data)
 }
 
 test fun text(fs: List<Fld>, num: i64): string {
   val found = all(fs, num)
-  (found.at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.decodeUtf8() ?: "<binary>"
+  (found.get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.decodeUtf8() ?: "<binary>"
 }
 
-test fun number(fs: List<Fld>, num: i64): i64 => (all(fs, num).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).value
+test fun number(fs: List<Fld>, num: i64): i64 => (all(fs, num).get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).value
 
 // ---- the encoder ----
 
@@ -190,9 +190,9 @@ test "a span's fields have the numbers opentelemetry-proto gives them" {
   )
   val f = fields(spanBytes(s))
   expect(all(f, 1).len() == 1)
-  expect((all(f, 1).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 16)
-  expect((all(f, 2).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 8)
-  expect((all(f, 4).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data == [8, 7, 6, 5, 4, 3, 2, 1])
+  expect((all(f, 1).get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 16)
+  expect((all(f, 2).get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 8)
+  expect((all(f, 4).get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data == [8, 7, 6, 5, 4, 3, 2, 1])
   expect(text(f, 5) == "load")
   expect(number(f, 6) == 2)
   expect(number(f, 7) == 1000)
@@ -246,8 +246,8 @@ test "metrics: a counter is a monotonic cumulative sum, a histogram carries its 
   val hp = child(data, 1)
   expect(number(hp, 4) == 3)
   // 3 buckets of 8 bytes, packed; 2 bounds of 8 bytes, packed
-  expect((all(hp, 6).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 24)
-  expect((all(hp, 7).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 16)
+  expect((all(hp, 6).get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 24)
+  expect((all(hp, 7).get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 16)
 }
 
 test "a gauge is a gauge, an up-down counter is a non-monotonic sum" {
@@ -274,7 +274,7 @@ test "a log record carries its severity, body and trace" {
   expect(number(f, 2) == 17)
   expect(text(f, 3) == "ERROR")
   expect(text(child(f, 5), 1) == "boom")
-  expect((all(f, 9).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 16)
-  expect((all(f, 10).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 8)
+  expect((all(f, 9).get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 16)
+  expect((all(f, 10).get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data.len() == 8)
   expect(number(f, 11) == 77)
 }

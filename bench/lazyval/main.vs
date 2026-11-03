@@ -7,7 +7,7 @@ use io { println }
 use time
 
 fun buildTable(): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (i in 0..<256) out.push(i * 7 % 13)
   out
 }
@@ -15,7 +15,7 @@ fun buildTable(): List<i64> {
 lazy val table = buildTable()
 
 @noinline
-fun lookup(i: i64): i64 => table.at(i % 256) ?: 0
+fun lookup(i: i64): i64 => table.get(i % 256) ?: 0
 
 fun main() {
   val n = 50000000

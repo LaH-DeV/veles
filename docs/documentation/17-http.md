@@ -170,7 +170,7 @@ val hits = Mutex(value: 0)
 app.get("/hits", req => http.Response.text("${hits.withLock(n => { *n += 1; *n })}"))
 ```
 
-The compiler refuses a captured `var` or a bare `MutableMap` at the
+The compiler refuses a captured `var` or a bare `Map` at the
 registration — the handler would not be a sendable function
 ([chapter 12](12-concurrency.md)).
 
@@ -520,7 +520,7 @@ fun main() {
   var jar = ""
   loop (_ in 0..<3) {
     val resp = http.call(h, http.Method.get, "/visit", headers: ["Cookie": jar])
-    val c = resp.cookies.at(0) ?: panic("no cookie")
+    val c = resp.cookies.get(0) ?: panic("no cookie")
     jar = "${c.name}=${c.value}"
     io.println("${resp.body.decodeUtf8() ?: ""} - cookie ${c.name}=${c.value}, kept ${c.maxAge?.toDays()} days")
   }

@@ -35,14 +35,14 @@ fun isLoopback(host: string): bool => host in ["localhost", "127.0.0.1", "::1"] 
 // %XX escapes and '+' are not special in the userinfo and path, only %XX is
 fun unescape(text: string): string? {
   if (!text.contains("%")) return text
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   val bytes = text.bytes()
   var i = 0
   loop (i < bytes.len()) {
-    val b = bytes.at(i)
+    val b = bytes.get(i)
     if (b == 37) {
-      val hi = (bytes.at(i + 1) ?: 0).digitValue(16) ?: return null
-      val lo = (bytes.at(i + 2) ?: 0).digitValue(16) ?: return null
+      val hi = (bytes.get(i + 1) ?: 0).digitValue(16) ?: return null
+      val lo = (bytes.get(i + 2) ?: 0).digitValue(16) ?: return null
       out.push((hi * 16 + lo).wrapU8())
       i += 3
     } else {

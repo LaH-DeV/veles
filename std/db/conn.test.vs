@@ -15,11 +15,11 @@ test "a connection logs in and answers a query" {
   val none: string? = null
   val rows = try conn.run(sql"select ${41 + 1}::int as answer, ${"héllo"}::text as greeting, ${none}::text as nothing", Duration.seconds(5))
   expect(rows.columns.len() == 3)
-  expect(rows.columns.at(0)?.name == "answer")
+  expect(rows.columns.get(0)?.name == "answer")
   expect(rows.rows.len() == 1)
-  expect(rows.rows.at(0)?.at(0) == "42")
-  expect(rows.rows.at(0)?.at(1) == "héllo")
-  expect((rows.rows.at(0) ?: []).filter(c => c == null).len() == 1)
+  expect(rows.rows.get(0)?.get(0) == "42")
+  expect(rows.rows.get(0)?.get(1) == "héllo")
+  expect((rows.rows.get(0) ?: []).filter(c => c == null).len() == 1)
   expect(rows.tag == "SELECT 1")
   conn.close()
 }
@@ -30,7 +30,7 @@ test "SCRAM-SHA-256 logs in with the right password and refuses the wrong one" {
   val target = try parseTarget(Secret.of(text), "veles-test")
   val conn = try Conn.open(target, Duration.seconds(10))
   val rows = try conn.run(sql"select current_user::text", Duration.seconds(5))
-  expect(rows.rows.at(0)?.at(0) == target.user)
+  expect(rows.rows.get(0)?.get(0) == target.user)
   conn.close()
   val wrong = Target(host: target.host, port: target.port, user: target.user, password: Secret.of("not the password"), database: target.database, tls: target.tls, rootCert: target.rootCert, application: "veles-test")
   when (Conn.open(wrong, Duration.seconds(10))) {

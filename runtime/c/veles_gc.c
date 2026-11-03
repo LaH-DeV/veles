@@ -82,6 +82,8 @@ typedef struct veles_span {
     size_t nused;      /* slots in use, so a full span is skipped without a scan */
     size_t virgin;     /* no slot from here on has held an object: its memory still reads as zeros */
     uint8_t wipes;     /* an object of a DESC_WIPE descriptor was allocated here: the sweep zeroes the dead ones */
+    uint8_t kept;      /* released with its memory still committed, counted in kept_bytes (sweep_span) */
+    struct veles_span *released_next; /* on the released stack, its pieces not yet free (sweep_span) */
     struct veles_span *next; /* in size class list */
     void *owner;       /* the thread allocating from it, or NULL (D66) */
     struct veles_arena *arena; /* where it was carved from, and its first piece there */
@@ -134,12 +136,15 @@ typedef struct veles_arena {
     size_t nslots;          /* 64 KiB pieces */
     veles_span **slots;     /* the span covering each piece (atomic) */
     uint8_t *taken;         /* a piece belongs to a span, live or released (heap_lock) */
+    uint8_t *kept;          /* a free piece still committed, its bytes a dead object's (heap_lock) */
     size_t free_hint;       /* every piece below it is taken */
     struct veles_arena *next;
 } veles_arena;
 
 static veles_arena **arena_l1[(size_t)1 << ARENA_L1_BITS];
 static veles_arena *arenas;  /* every arena (heap_lock) */
+static size_t kept_bytes;    /* released spans' memory still committed, in bytes (atomic) */
+static struct veles_span *released; /* spans released by a sweep whose pieces are not free yet (atomic stack) */
 
 static size_t allocated_since_gc;
 static size_t live_bytes;
@@ -333,7 +338,8 @@ static veles_arena *arena_new(size_t bytes) {
     ar->nslots = bytes >> SPAN_SHIFT;
     ar->slots = calloc(ar->nslots, sizeof *ar->slots);
     ar->taken = calloc(ar->nslots, 1);
-    if (!ar->slots || !ar->taken) oom();
+    ar->kept = calloc(ar->nslots, 1);
+    if (!ar->slots || !ar->taken || !ar->kept) oom();
     for (size_t off = 0; off < bytes; off += ARENA_SIZE) {
         uintptr_t a = (uintptr_t)base + off;
         size_t i1 = (a >> (ARENA_SHIFT + ARENA_L2_BITS)) & (((size_t)1 << ARENA_L1_BITS) - 1);
@@ -352,25 +358,47 @@ static veles_arena *arena_new(size_t bytes) {
     return ar;
 }
 
-/* k free pieces in a row of an arena, taken (heap_lock): the first run that
- * fits, else in a new arena */
+/* the pieces of the spans a sweep released are free again (heap_lock): the
+ * very next span may be carved there, not one a collection later. The span
+ * itself stays listed, its start NULL, until sweep_compact drops it — a
+ * marker may still hold it — and its slots point at it until a new span
+ * takes them. */
+static void take_released(void) {
+    veles_span *s = __atomic_exchange_n(&released, NULL, __ATOMIC_ACQUIRE);
+    while (s) {
+        veles_arena *ar = s->arena;
+        size_t k = s->bytes >> SPAN_SHIFT;
+        memset(ar->taken + s->piece, 0, k);
+        if (s->kept) memset(ar->kept + s->piece, 1, k);
+        if (s->piece < ar->free_hint) ar->free_hint = s->piece;
+        s = s->released_next;
+    }
+}
+
+/* k free pieces in a row of an arena, taken (heap_lock): the first run of
+ * kept pieces that fits (committed already: no page faults), else the first
+ * run that fits, else in a new arena */
 static int arena_take(size_t k, veles_arena **out, size_t *at) {
-    for (veles_arena *ar = arenas; ar; ar = ar->next) {
-        size_t run = 0;
-        for (size_t i = ar->free_hint; i < ar->nslots; i++) {
-            if (ar->taken[i]) {
-                run = 0;
-                continue;
-            }
-            if (++run == k) {
-                size_t first = i + 1 - k;
-                memset(ar->taken + first, 1, k);
-                if (first == ar->free_hint) {
-                    while (ar->free_hint < ar->nslots && ar->taken[ar->free_hint]) ar->free_hint++;
+    take_released();
+    size_t kept = __atomic_load_n(&kept_bytes, __ATOMIC_RELAXED) >> SPAN_SHIFT;
+    for (int any = kept >= k ? 0 : 1; any < 2; any++) {
+        for (veles_arena *ar = arenas; ar; ar = ar->next) {
+            size_t run = 0;
+            for (size_t i = ar->free_hint; i < ar->nslots; i++) {
+                if (ar->taken[i] || (!any && !ar->kept[i])) {
+                    run = 0;
+                    continue;
                 }
-                *out = ar;
-                *at = first;
-                return 1;
+                if (++run == k) {
+                    size_t first = i + 1 - k;
+                    memset(ar->taken + first, 1, k);
+                    if (first == ar->free_hint) {
+                        while (ar->free_hint < ar->nslots && ar->taken[ar->free_hint]) ar->free_hint++;
+                    }
+                    *out = ar;
+                    *at = first;
+                    return 1;
+                }
             }
         }
     }
@@ -412,6 +440,21 @@ static veles_span *new_span(int cls, size_t objsize, size_t bytes) {
     if (!arena_take(bytes >> SPAN_SHIFT, &ar, &at)) oom();
     char *start = ar->base + (at << SPAN_SHIFT);
     if (!os_commit(start, bytes)) oom();
+    /* pieces a dead large object left committed: cleared here, which costs
+     * less than the page faults of fresh memory (sweep_compact) */
+    size_t k = bytes >> SPAN_SHIFT;
+    for (size_t i = 0; i < k;) {
+        if (!ar->kept[at + i]) {
+            i++;
+            continue;
+        }
+        size_t j = i;
+        while (j < k && ar->kept[at + j]) j++;
+        memset(start + (i << SPAN_SHIFT), 0, (j - i) << SPAN_SHIFT);
+        memset(ar->kept + at + i, 0, j - i);
+        __atomic_sub_fetch(&kept_bytes, (j - i) << SPAN_SHIFT, __ATOMIC_RELAXED);
+        i = j;
+    }
     veles_span *s = calloc(1, sizeof *s);
     if (!s) oom();
     s->start = start;
@@ -1311,8 +1354,8 @@ void veles_runtime_gc(int64_t min_heap, int64_t goal) {
 static int gc_poison = -1;
 
 /* sweeps the span s: frees every unmarked object and clears the marks; an
- * empty large-object span gives its memory back at once and is left with
- * no start, for sweep_compact to drop from the list */
+ * empty large-object span is left with no start, for sweep_compact to drop
+ * from the list */
 static void sweep_span(veles_span *s) {
     size_t live = 0;
     /* a dead object is read only when it may need zeroing (a Secret's
@@ -1337,14 +1380,30 @@ static void sweep_span(veles_span *s) {
     s->marked_any = 0;
     s->nused = live;
     if (live == 0 && s->cls < 0) {
-        /* a large object's span gives its memory back now; its place in
-         * the arena is freed at the next collection (sweep_compact) */
+        /* a large object's span is released; its place in the arena is
+         * free at the next span made (take_released). Its memory stays
+         * committed while the kept spans fit in what the program allocates
+         * before the next collection (the goal): it would fault that much
+         * fresh memory in anyway, a fault per page — on Windows that cost
+         * bench/adapters (1.6 MB lists made and dropped) a quarter of its
+         * time, maps and gunzip a seventh. A span carved there clears it
+         * (new_span). What does not
+         * fit goes back to the OS now, outside the pause. */
         char *start = s->start;
         __atomic_store_n(&s->start, NULL, __ATOMIC_RELEASE);
-        os_decommit(start, s->bytes);
+        if (__atomic_add_fetch(&kept_bytes, s->bytes, __ATOMIC_RELAXED) <= __atomic_load_n(&gc_threshold, __ATOMIC_RELAXED)) {
+            s->kept = 1;
+        } else {
+            __atomic_sub_fetch(&kept_bytes, s->bytes, __ATOMIC_RELAXED);
+            os_decommit(start, s->bytes);
+        }
         free(s->marks);
         free(s->used);
         s->marks = s->used = NULL;
+        veles_span *head = __atomic_load_n(&released, __ATOMIC_RELAXED);
+        do {
+            s->released_next = head;
+        } while (!__atomic_compare_exchange_n(&released, &head, s, 1, __ATOMIC_RELEASE, __ATOMIC_RELAXED));
     }
 }
 
@@ -1428,6 +1487,7 @@ static void sweep_end(void) {
 
 /* the released spans leave the list and the page table (world stopped) */
 static void sweep_compact(void) {
+    take_released(); /* none is left on the stack when its span is freed */
     size_t w = 0;
     for (size_t i = 0; i < nspans; i++) {
         veles_span *s = all_spans[i];
@@ -1435,13 +1495,13 @@ static void sweep_compact(void) {
             all_spans[w++] = s;
             continue;
         }
-        /* its memory went back when it was swept; now its pieces of the
-         * arena are free for a new span */
+        /* its pieces are free already; the slots a new span has not taken
+         * still point at it */
         veles_arena *ar = s->arena;
         size_t k = s->bytes >> SPAN_SHIFT;
-        for (size_t j = 0; j < k; j++) __atomic_store_n(&ar->slots[s->piece + j], NULL, __ATOMIC_RELEASE);
-        memset(ar->taken + s->piece, 0, k);
-        if (s->piece < ar->free_hint) ar->free_hint = s->piece;
+        for (size_t j = 0; j < k; j++) {
+            if (ar->slots[s->piece + j] == s) __atomic_store_n(&ar->slots[s->piece + j], NULL, __ATOMIC_RELEASE);
+        }
         free(s);
     }
     nspans = w;

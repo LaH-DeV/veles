@@ -80,7 +80,7 @@ test "an array is a value" {
   var inner = Sha()
   val before = inner
   inner.state.set(2, 33)
-  expect(inner.state.at(2) == 33 && before.state.at(2) == 3)
+  expect(inner.state.get(2) == 33 && before.state.get(2) == 3)
   expect("$a" == "[7, 20, 30, 41]" && a.len() == 4 && !a.isEmpty())
 }
 
@@ -88,28 +88,28 @@ test "reading: at, first, last, indices" {
   val a: Array<i64, 4> = [10, 20, 30, 40]
   val far = 9
   val farBack = -9
-  expect(a.at(1) == 20 && a.at(-1) == 40 && a.at(far) == null && a.at(farBack) == null)
+  expect(a.get(1) == 20 && a.get(-1) == 40 && a.get(far) == null && a.get(farBack) == null)
   expect(a.first() == 10 && a.last() == 40)
   var s = 0
   loop (i in a.indices()) {
-    s += a.at(i)
+    s += a.get(i)
   }
   loop (i in 0..<4) {
-    s += a.at(i)
+    s += a.get(i)
   }
   var j = 0
   loop (j < 4) {
-    s += a.at(j)
+    s += a.get(j)
     j += 1
   }
   expect(s == 300)
-  expect(K.at(3) == 40 && K.at(-1) == 40)
+  expect(K.get(3) == 40 && K.get(-1) == 40)
   var t: u32 = 0
   loop (r in K.indices()) {
-    t += K.at(r)
+    t += K.get(r)
   }
   expect(t == 100)
-  expect(K.len() == 4 && NAMES.at(1) == "b" && GRID.at(1) == [3, 4])
+  expect(K.len() == 4 && NAMES.get(1) == "b" && GRID.get(1) == [3, 4])
 }
 
 test "loops: by value over a copy, by reference in place" {
@@ -119,7 +119,7 @@ test "loops: by value over a copy, by reference in place" {
     a.set(0, 100)
     seen += x
   }
-  expect(seen == 6 && a.at(0) == 100)
+  expect(seen == 6 && a.get(0) == 100)
   loop (&x in a) {
     *x = *x + 1
   }
@@ -133,10 +133,10 @@ test "constants as type arguments, and const generic parameters" {
   val r: Array<u8, 4 * 16> = Array.make(0)
   expect(q.len() == 4 && r.len() == 64)
   val b = Buf<8>(data: Array.make(1))
-  expect(b.capacity() == 8 && b.data.len() == 8 && b.data.at(7) == 1)
-  val c: MutableMap<string, Array<u8, 200>> = [:]
+  expect(b.capacity() == 8 && b.data.len() == 8 && b.data.get(7) == 1)
+  val c: Map<string, Array<u8, 200>> = [:]
   c.set("x", Array.make(3))
-  expect(c.get("x")?.at(199) == 3)
+  expect(c.get("x")?.get(199) == 3)
 }
 
 test "list methods work on an array, over a copy" {
@@ -146,7 +146,7 @@ test "list methods work on an array, over a copy" {
   expect(a.contains(2) && a.indexOf(5) == 3 && !a.contains(9))
   expect(a.sorted() == [1, 2, 3, 5] && a.toList() == [3, 1, 2, 5])
   expect(a.any(x => x == 5) && a.all(x => x > 0) && a.count(x => x > 1) == 3)
-  expect(a.toMutable().len() == 4 && a.sum() == 11)
+  expect(a.len() == 4 && a.sum() == 11)
   expect(["a", "b"].toArray<2>() == ["a", "b"] && ["a"].toArray<2>() == null)
   val words: Array<string, 3> = ["x", "y", "z"]
   expect(words.join("-") == "x-y-z")
@@ -154,7 +154,7 @@ test "list methods work on an array, over a copy" {
 
 test "equality, hashing, text and defaults" {
   val a: Array<i64, 2> = [1, 2]
-  val m: MutableMap<Array<i64, 2>, string> = [:]
+  val m: Map<Array<i64, 2>, string> = [:]
   m.set(a, "one-two")
   expect(m.get([1, 2]) == "one-two" && m.get([2, 1]) == null)
   expect(a != [1, 3] && a == [1, 2])
@@ -236,19 +236,19 @@ test "a large array is copied, passed and returned through memory" {
   b.set(5, 9)
   expect(weight(a) == 400 && weight(b) == 407 && a != b)
   val c = bump(b)
-  expect(c.at(0) == 200 && b.at(0) == 2 && weight(c) == 605)
+  expect(c.get(0) == 200 && b.get(0) == 2 && weight(c) == 605)
   val big = Block(data: a, tag: 1)
   var big2 = big
   big2.data.set(1, 77)
-  expect(big.data.at(1) == 2 && big2.data.at(1) == 77 && big != big2 && big == Block(data: a, tag: 1))
-  expect("${big.tag} ${big.data.at(0)}" == "1 2")
+  expect(big.data.get(1) == 2 && big2.data.get(1) == 77 && big != big2 && big == Block(data: a, tag: 1))
+  expect("${big.tag} ${big.data.get(0)}" == "1 2")
 }
 
 test "a large array in a nullable, a tuple, a branch and a list" {
   val a = make(2)
   val o: Array<u8, 200>? = a
   val none: Array<u8, 200>? = null
-  expect(o?.at(5) == 2 && none?.at(5) == null && o != none)
+  expect(o?.get(5) == 2 && none?.get(5) == null && o != none)
   val pair = (a, 7)
   val pair2 = pair
   expect(weight(pair.0) == 400 && pair2.1 == 7 && pair == pair2)
@@ -257,13 +257,13 @@ test "a large array in a nullable, a tuple, a branch and a list" {
     weight(a) > 1000 => make(5)
     else => a
   }
-  expect(pick.at(0) == 9 && w.at(1) == 2)
+  expect(pick.get(0) == 9 && w.get(1) == 2)
   val l = [a, pick]
-  expect(l.len() == 2 && l.at(1).at(0) == 9 && l.at(0) == a)
-  val m: MutableMap<string, Array<u8, 200>> = [:]
+  expect(l.len() == 2 && l.get(1).get(0) == 9 && l.get(0) == a)
+  val m: Map<string, Array<u8, 200>> = [:]
   m.set("a", a)
   m.set("b", pick)
-  expect(m.get("b")?.at(0) == 9 && m.get("z") == null)
+  expect(m.get("b")?.get(0) == 9 && m.get("z") == null)
 }
 
 test "a large array through errors, closures and trait objects" {
@@ -271,10 +271,10 @@ test "a large array through errors, closures and trait objects" {
   expect(checked(200) is Err)
   val inc = twice(make(2), x => {
     var y = x
-    y.set(0, y.at(0) + 1)
+    y.set(0, y.get(0) + 1)
     y
   })
-  expect(inc.at(0) == 4)
+  expect(inc.get(0) == 4)
   val s: Shape = Heavy(w: make(1))
   expect(s.weigh(make(2)) == 600)
 }
@@ -286,7 +286,7 @@ test "a large array through tasks and channels" {
     async feed(ch, a)
     val x = await ch.recv()
     val y = await ch.recv()
-    expect(x?.at(0) == 2 && y?.at(0) == 8)
+    expect(x?.get(0) == 2 && y?.get(0) == 8)
   }
   expect(weight(slowMake(4)) == 800)
 }
@@ -295,6 +295,6 @@ test "a megabyte array lives on the stack and copies like memcpy" {
   val big: Array<u8, 1048576> = Array.make(2)
   var big2 = big
   big2.set(5, 100)
-  expect(big.at(5) == 2 && big2.at(5) == 100 && big.len() == 1048576)
+  expect(big.get(5) == 2 && big2.get(5) == 100 && big.len() == 1048576)
 }
 `

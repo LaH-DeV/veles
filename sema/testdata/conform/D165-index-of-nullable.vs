@@ -14,9 +14,9 @@ fun lookups(xs: List<i64>, text: string, shelf: Shelf): i64 {
   if (xs.binarySearch(4) != -1) io.println("sorted hit") // error: 'binarySearch' answers null when nothing is found, never -1 (D165): write 'xs.binarySearch(4) != null'
   if (shelf.indexOf("a") >= 0) io.println("on the shelf")
   val at = xs.indexOfFirst(x => x > 2) ?: return 0
-  val first: i64 = xs.at(at)               // in range: the search found it
+  val first: i64 = xs.get(at)               // in range: the search found it
   val loose = xs.indexOf(9) ?: 0
-  val maybe: i64 = xs.at(loose) // error: type mismatch: expected 'i64', found 'i64?'
+  val maybe: i64 = xs.get(loose) // error: type mismatch: expected 'i64', found 'i64?'
   first + maybe
 }
 

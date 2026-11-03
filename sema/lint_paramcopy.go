@@ -22,9 +22,9 @@ import (
 // parameter's type (the copy-change-return idiom), the parameter is used
 // whole as a value after all (copy, change, store it somewhere), or its
 // address is taken (a pointer may be written through on purpose).
-// Reference-typed fields are not involved at all: pushing into a
-// MutableList field, or writing through a `*State` field, is seen by the
-// caller, and rootVar stops at a pointer, so those writes are not counted.
+// Writing through a `*State` field is seen by the caller, and rootVar stops
+// at a pointer, so those writes are not counted; pushing into a collection
+// field changes the copy like any other field since D231.
 func (c *Checker) lintParamCopies(prog *Program) {
 	for _, fn := range prog.Funcs {
 		if fn.Body == nil || len(fn.Params) == 0 {
@@ -43,7 +43,7 @@ func (c *Checker) lintParamCopies(prog *Program) {
 			if fn.Sig != nil && types.Identical(fn.Sig.Ret, p.Type) {
 				continue
 			}
-			if what := paramWrite(fn, p); what != "" {
+			if what := paramWrite(fn, p, holdsCollection(p.Type, map[types.Type]bool{})); what != "" {
 				c.warnLint("param_copy", p.Span, nil, "'%s' is a copy of the caller's '%s': this function %s, and the caller never sees the change; take '%s: *%s' (and pass '&x'), or return the changed value",
 					p.Name, p.Type, what, p.Name, p.Type)
 			}
@@ -53,8 +53,11 @@ func (c *Checker) lintParamCopies(prog *Program) {
 
 // paramWrite says how fn changes its by-value parameter p — "assigns
 // 'p.f'" or "calls 'm', which changes it" — or "" when it does not, or when
-// the copy is plainly intended (p used whole, or its address taken).
-func paramWrite(fn *Func, p *Var) string {
+// the copy is plainly intended (p used whole, or its address taken). With
+// strict (p holds a collection) a use of p whole does not excuse the change:
+// passing such a struct on was how its collections were shared before D231
+// (a StringBuilder handed down a chain of helpers that append to it).
+func paramWrite(fn *Func, p *Var, strict bool) string {
 	what := ""
 	escaped := false
 	placed := map[*VarRef]bool{} // VarRefs of p that only root a place
@@ -93,6 +96,14 @@ func paramWrite(fn *Func, p *Var) string {
 					}
 				}
 			}
+		case *Builtin:
+			// a change to a collection held in it: a value too since D231
+			if collectionWrites[n.Op] && collRoot(n.Args[0]) == p {
+				mark(n.Args[0])
+				if what == "" {
+					what = fmt.Sprintf("changes '%s'", placeText(n.Args[0]))
+				}
+			}
 		case *AddrOf:
 			if !recvs[n] && rootVar(n.X) == p {
 				escaped = true
@@ -112,7 +123,7 @@ func paramWrite(fn *Func, p *Var) string {
 			whole = true
 		}
 	})
-	if whole {
+	if whole && !strict {
 		return ""
 	}
 	return what
@@ -127,6 +138,15 @@ func placeText(e Expr) string {
 		return placeText(x.X) + "." + x.Name
 	case *TupleGet:
 		return fmt.Sprintf("%s.%d", placeText(x.X), x.Index)
+	case *Deref:
+		// `this` reads its place through the receiver pointer; a field of a
+		// pointer reads through it the same way (`p.items`)
+		if r, ok := x.X.(*VarRef); ok {
+			if r.Var.IsSelf {
+				return "this"
+			}
+			return r.Var.Name
+		}
 	}
 	return "it"
 }

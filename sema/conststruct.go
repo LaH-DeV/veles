@@ -114,19 +114,10 @@ func immutableIn(t types.Type, seen map[types.Type]bool) (types.Type, string) {
 		}
 		return nil, ""
 	case *types.List:
-		if tt.Mutable {
-			return t, fmt.Sprintf("use '%s'", &types.List{Elem: tt.Elem})
-		}
 		return immutableIn(tt.Elem, seen)
 	case *types.Set:
-		if tt.Mutable {
-			return t, fmt.Sprintf("use '%s'", &types.Set{Elem: tt.Elem})
-		}
 		return immutableIn(tt.Elem, seen)
 	case *types.Map:
-		if tt.Mutable {
-			return t, fmt.Sprintf("use '%s'", &types.Map{Key: tt.Key, Value: tt.Value})
-		}
 		if culprit, advice := immutableIn(tt.Key, seen); culprit != nil {
 			return culprit, advice
 		}

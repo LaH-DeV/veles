@@ -255,7 +255,7 @@ public struct MediaType {
 
   /// The type and subtype alone, lower-cased, without parameters:
   /// `text/html; charset=utf-8` → `text/html`. What to compare.
-  public fun essence(): string => (this.name.split(";").at(0) ?: "").trim().toLower()
+  public fun essence(): string => (this.name.split(";").get(0) ?: "").trim().toLower()
 
   implement Display {
     fun toString(): string => this.name

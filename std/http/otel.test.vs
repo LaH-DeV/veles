@@ -23,7 +23,7 @@ test fun pbVarint(bytes: List<u8>, at: i64): (i64, i64) {
   var result: u64 = 0
   var shift: i64 = 0
   var i = at
-  loop (val b = bytes.at(i)) {
+  loop (val b = bytes.get(i)) {
     i += 1
     result |= (b & 127).toU64() << shift
     if (b < 128) break
@@ -33,7 +33,7 @@ test fun pbVarint(bytes: List<u8>, at: i64): (i64, i64) {
 }
 
 test fun pbFields(bytes: List<u8>): List<PbField> {
-  val out: MutableList<PbField> = []
+  val out: List<PbField> = []
   var i: i64 = 0
   loop (i < bytes.len()) {
     val (key, afterKey) = pbVarint(bytes, i)
@@ -64,7 +64,7 @@ test fun pbFields(bytes: List<u8>): List<PbField> {
 
 test fun pbAll(fs: List<PbField>, num: i64): List<PbField> => fs.filter(f => f.num == num)
 
-test fun pbOne(fs: List<PbField>, num: i64): PbField => pbAll(fs, num).at(0) ?: PbField(num: 0, wire: 0, value: 0, data: [])
+test fun pbOne(fs: List<PbField>, num: i64): PbField => pbAll(fs, num).get(0) ?: PbField(num: 0, wire: 0, value: 0, data: [])
 
 test fun pbText(fs: List<PbField>, num: i64): string => pbOne(fs, num).data.decodeUtf8() ?: "<binary>"
 
@@ -80,7 +80,7 @@ test fun pbAttr(span: List<PbField>, key: string): List<PbField>? {
 // ---- a recording exporter ----
 
 struct Capture {
-  traces: Mutex<MutableList<List<u8>>> = newCaptured()
+  traces: Mutex<List<List<u8>>> = newCaptured()
 
   implement otel.Exporter {
     fun export(signal: otel.Signal, body: List<u8>) suspends throws otel.ExportError {
@@ -94,8 +94,8 @@ struct Capture {
 
   // every span exported so far, as its fields
   fun spans(): List<List<PbField>> {
-    val bodies = this.traces.withLock(q => q.toList())
-    val out: MutableList<List<PbField>> = []
+    val bodies = this.traces.withLock(q => *q)
+    val out: List<List<PbField>> = []
     loop (body in bodies) {
       val scopeSpans = pbFields(pbOne(pbFields(pbOne(pbFields(body), 1).data), 2).data)
       loop (s in pbAll(scopeSpans, 2)) {
@@ -123,8 +123,8 @@ test fun touches(span: List<PbField>, port: i64): bool {
   pbOne(pbAttr(span, "server.port") ?: [], 3).value == port
 }
 
-test fun newCaptured(): Mutex<MutableList<List<u8>>> {
-  val empty: MutableList<List<u8>> = []
+test fun newCaptured(): Mutex<List<List<u8>>> {
+  val empty: List<List<u8>> = []
   Mutex(value: empty)
 }
 
@@ -154,7 +154,7 @@ test "a request is a server span, named by its route, in the caller's trace" {
   expect(tel.flush())
   val found = capture.named("GET /users/{id}")
   expect(found.len() == 1)
-  val span = found.at(0) ?: []
+  val span = found.get(0) ?: []
   expect(pbOne(span, 6).value == 2)
   expect(hexString(pbOne(span, 1).data) == parentTrace)
   expect(hexString(pbOne(span, 4).data) == parentSpan)
@@ -174,7 +174,7 @@ test "a request with no traceparent starts a trace of its own" {
   with res = try Client.untraced(Duration.seconds(5)).get("${srv.url}/users/1")
   expect(res.ok)
   expect(tel.flush())
-  val span = capture.named("GET /users/{id}").at(0) ?: []
+  val span = capture.named("GET /users/{id}").get(0) ?: []
   expect(pbOne(span, 1).data.len() == 16)
   expect(pbAll(span, 4).isEmpty())
 }
@@ -190,11 +190,11 @@ test "a handler that fails marks its span failed; an unknown path is named by it
   with nowhere = try client.get("${srv.url}/nowhere")
   expect(nowhere.status == Status.notFound)
   expect(tel.flush())
-  val failed = capture.named("GET /boom").at(0) ?: []
+  val failed = capture.named("GET /boom").get(0) ?: []
   expect(pbOne(pbFields(pbOne(failed, 15).data), 3).value == 2)
   expect(pbText(pbAttr(failed, "error.type") ?: [], 1) == "500")
   // a 404 is the client's mistake, not the server's failure
-  val missing = capture.namedOn("GET", srv.port()).at(0) ?: []
+  val missing = capture.namedOn("GET", srv.port()).get(0) ?: []
   expect(pbAll(missing, 15).isEmpty())
 }
 
@@ -226,9 +226,9 @@ test "a call is a client span, and the service called continues the trace" {
   val seen = try callEcho("${srv.url}/echo?key=hidden")
   expect(tel.flush())
   val sent = otel.SpanContext.parse(seen) ?: fail("the server saw no valid traceparent: $seen")
-  val client = capture.namedOn("GET", srv.port()).filter(s => pbOne(s, 6).value == 3).at(0) ?: []
-  val caller = capture.named("caller").at(0) ?: []
-  val server = capture.named("GET /echo").at(0) ?: []
+  val client = capture.namedOn("GET", srv.port()).filter(s => pbOne(s, 6).value == 3).get(0) ?: []
+  val caller = capture.named("caller").get(0) ?: []
+  val server = capture.named("GET /echo").get(0) ?: []
   // caller → client call → server span, one trace
   expect(pbOne(client, 4).data == pbOne(caller, 2).data)
   expect(hexString(pbOne(client, 2).data) == sent.spanIdHex())
@@ -256,7 +256,7 @@ test "a failed call fails its span with the reason" {
   with silent = try canned("")
   expect(failKind(get("${silent.url}/x", timeout: Duration.seconds(2))) == FetchKind.Closed)
   expect(tel.flush())
-  val span = capture.namedOn("GET", silent.listener.port()).at(0) ?: []
+  val span = capture.namedOn("GET", silent.listener.port()).get(0) ?: []
   expect(pbOne(pbFields(pbOne(span, 15).data), 3).value == 2)
   expect(pbText(pbAttr(span, "error.type") ?: [], 1) == "Closed")
 }
@@ -272,13 +272,13 @@ test "nothing is added when otel is not running" {
 
 struct Collector {
   // path, content-type, content-encoding, authorization, body
-  posts: Mutex<MutableList<(string, string, string, string, List<u8>)>> = newPosts()
+  posts: Mutex<List<(string, string, string, string, List<u8>)>> = newPosts()
   // the status to answer with, and how many more times
   status: Atomic<i64> = Atomic(value: 200)
 }
 
-test fun newPosts(): Mutex<MutableList<(string, string, string, string, List<u8>)>> {
-  val empty: MutableList<(string, string, string, string, List<u8>)> = []
+test fun newPosts(): Mutex<List<(string, string, string, string, List<u8>)>> {
+  val empty: List<(string, string, string, string, List<u8>)> = []
   Mutex(value: empty)
 }
 
@@ -298,10 +298,10 @@ test "exporter: posts gzipped protobuf to the signal's path, with its headers" {
   with tel = try otel.start(service: "exported", exporter: exporter, interval: Duration.seconds(3600))
   otelSpan()
   expect(tel.flush())
-  val posts = collector.posts.withLock(q => q.toList())
+  val posts = collector.posts.withLock(q => *q)
   val traces = posts.filter(p => p.0 == "/v1/traces")
   expect(traces.len() == 1)
-  val (_, kind, coding, auth, body) = traces.at(0) ?: ("", "", "", "", [])
+  val (_, kind, coding, auth, body) = traces.get(0) ?: ("", "", "", "", [])
   expect(kind == "application/x-protobuf")
   expect(coding == "gzip")
   expect(auth == "Bearer k-123")

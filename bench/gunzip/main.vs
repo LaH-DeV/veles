@@ -8,20 +8,20 @@ use time
 val words: List<string> = ["the", "of", "and", "stream", "request", "value", "error", "handler", "buffer", "index", "result", "compile", "token", "branch", "memory", "thread", "socket", "length", "window", "symbol", "a", "to", "in", "is"]
 
 fun text(size: i64): List<u8> {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   var x: u64 = 88172645463325252
   loop (out.len() < size) {
     x ^= x << 13
     x ^= x >> 7
     x ^= x << 17
-    out.addAll((words.at((x % 24).wrapI64()) ?: "a").bytes())
+    out.addAll((words.get((x % 24).wrapI64()) ?: "a").bytes())
     out.push(if (x % 11 == 0) 10 else 32)
   }
   out
 }
 
 fun main() {
-  val data = text(2097152).toList()
+  val data = text(2097152)
   val packed = compress.gzip(data, 6)
   val (back, elapsed) = time.measure(() => {
     var back: List<u8> = []

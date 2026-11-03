@@ -13,7 +13,7 @@ use io { println, eprintln as warn }  // bare names on top of io.: println("x");
 
 const limit = 10                // module-level constant, computed at compile time (D113)
 const PAGE = limit * 4096       // constants, operators, "${...}", len(), if/when, structs
-const NAMES: List<string> = ["a", "b"]  // List/Map/Set tables: read-only in the binary; NAMES.at(0) is a string
+const NAMES: List<string> = ["a", "b"]  // List/Map/Set tables: read-only in the binary; NAMES.get(0) is a string
 const fun table(): List<u32> { ... }    // the compiler may run it (D113); an ordinary function at run time too
 const TABLE: List<u32> = table()        // computed while compiling, read-only in the binary
 lazy val words = loadWords()            // built on its first read, once (D210); also `static lazy val` in a type
@@ -49,7 +49,7 @@ val (a, b) = (1, "one")         // tuple destructuring, nests: val ((x, y), z) =
 | pointer       | `*T` (GC-managed), `*raw T` (unsafe, D50)                                                                                    |
 | tuple         | `(A, B)`, unit is `()`; labelled `(min: A, max: B)`: `t.min` or `t.0` (D166)                                                 |
 | function      | `fun(A, B): R`, with `suspends` / `throws E`; `sendable fun(...)` may cross tasks                                            |
-| collections   | `List<T> MutableList<T> Map<K,V> MutableMap<K,V> Set<T> MutableSet<T>`                                                       |
+| collections   | `List<T> List<T> Map<K,V> Map<K,V> Set<T> Set<T>`                                                       |
 | fixed arrays  | `Array<T, N>`: `N` elements inline, a value (D121)                                                                           |
 | ranges        | `Range<T>` from `a..b` (inclusive) or `a..<b`                                                                                |
 | concurrency   | `Channel<T>`, `Task<T>`, `Mutex<T>`, `Atomic<T>`                                                                             |
@@ -86,7 +86,7 @@ if (c) a else b                       // expression
 loop { ... break }                    // forever
 loop (cond) { ... }                   // while
 loop (x in xs) { ... }                // any Iterable, Range, Map ((k, v) in m); (a..b).step(n), (a..b).reversed(), (a..b).reversed().step(n); the body may not push/remove on xs itself (D102)
-loop (&x in xs) x.bump()             // by reference: x is *T (MutableList only); loop ((k, &v) in m) for map values
+loop (&x in xs) x.bump()             // by reference: x is *T (List only); loop ((k, &v) in m) for map values
 loop :outer (x in xs) { continue outer; break outer }
 when (v) { 1 => "one"; 2, 3 => "few"; else => "many" }
 when { x < 0 => "neg"; else => "pos" }
@@ -138,7 +138,7 @@ struct Shared<T> {
   private cell: *T
   init(value: T) { this.cell = &value }     // init parameters join the constructor (D73): Shared(value: 1)
 }
-const struct Tls { cert: string; ports: List<i64> }  // immutable all the way down (D212): no var, no Mutable*/pointer/fun/trait-object fields, nested structs const too; Sendable, a map key
+const struct Tls { cert: string; ports: List<i64> }  // immutable all the way down (D212): no var, no pointer/fun/trait-object fields, no change to a collection it holds, nested structs const too; Sendable, a map key
 val p = Point(x: 1)             // named construction (Point(x, y) puns variables named like fields); p == q, "$p" work
 val s = Shared(1)               // one constructor parameter: positional too (D163); throw UsageError("bad flag")
 val q = p.copy(x: 5)            // generated copy: named fields change, the rest kept, init runs again (D164)
@@ -152,6 +152,7 @@ trait Shape {
 struct Sq { s: f64; implement Shape { fun area(): f64 => this.s * this.s; override fun describe(): string => "sq" } }   // your own type: implement in the body
 implement Shape for i64 { fun area(): f64 => 0.0 }   // a foreign type: top-level implement (for your own type it is a lint with a quick fix)
 val s: Shape = Sq(s: 2.0)       // trait object (D9)
+writeAll(&out, data)            // `&x` as a trait object: its methods change out itself; boxing the copy of a place a method changes is an error (D232)
 if (s is Sq) s.s                // its concrete type, narrowed — the boxed value itself, writes reach it (D135)
 if (w is Flusher) w.flush()     // does its type implement another trait: viewed as that trait's object (D117)
 if (T implements Show) x.show() // generic code, compile time: each instance compiles only the branch it takes (D117)
@@ -213,12 +214,12 @@ smart-casts `r` to the payload; `r.message()` works on any error or error union.
 
 ```veles
 // fragment
-val xs = [1, 2, 3]              // List<i64>;   mut [1, 2] is MutableList (untyped only)
-val m = ["a": 1]                // Map<string, i64>;  mut ["a": 1]; typed: var m: MutableMap<string, i64> = [:]
-var s = MutableSet<i64>()
-xs.at(9) ?: -1; xs.at(0) ?: panic("why it is there"); xs.atOrDefault(9, -1); xs.at(-1); xs.len(); xs.contains(2); xs.first(); xs.last(); xs.indexOf(2)
-// reads are copies; writes go through a reference: ml.ref(i)?.bump(); ml.ref(i)?.n = 0; ml.set(i, x)
-// a T, not a T?, where the index is known: loop (i in xs.indices()) xs.at(i); if (xs.len() > 2) xs.at(2)
+val xs = [1, 2, 3]              // List<i64>: a value (D231) — val b = xs copies in O(1); the first change to either copies the elements
+val m = ["a": 1]                // Map<string, i64>; typed: val m: Map<string, i64> = [:]; val stops rebinding only, so m.set works
+var s = Set<i64>()
+xs.get(9) ?: -1; xs.get(0) ?: panic("why it is there"); xs.getOrDefault(9, -1); xs.get(-1); xs.len(); xs.contains(2); xs.first(); xs.last(); xs.indexOf(2)
+// get reads a copy; at reaches the element: xs.at(i)?.bump(); xs.at(i)?.n = 0; xs.set(i, x)
+// a T, not a T?, where the index is known: loop (i in xs.indices()) xs.get(i); if (xs.len() > 2) xs.get(2)
 val [first, ..rest] = xs else return; when (args) { [] => 0; [cmd, ..] => 1 }   // list patterns (D62)
 xs.map(f); xs.filter(p); xs.fold(0, f); xs.any(p); xs.all(p); xs.find(p); xs.forEach(f); xs.count(p); xs.mapNotNull(f); xs.partition(p)
 shapes.filterIs<Circle>(); maybes.filterNotNull()   // narrowed lists: List<Circle>, List<T>
@@ -226,19 +227,19 @@ xs.take(2); xs.drop(2); xs.slice(1, 3); xs.zip(ys); xs.enumerate(); xs.flatMap(f
 xs.sorted(); xs.sortedBy(key); xs.sortedBy(e => (-e.size, e.name)); xs.sortedDescending(); xs.sortedWith((a, b) => ...); xs.reversed(); xs.min(); xs.max(); xs.sum(); xs.join(", "); xs.iter()  // tuples order element by element
 xs.minBy(key); xs.maxBy(key); xs.minWith(cmp); xs.maxWith(cmp); xs.distinctBy(key); xs == ys  // lists, maps, sets compare by content
 sorted.binarySearch(x); sorted.binarySearchBy(key, target); sorted.binarySearchWith(e => e.compareTo(x))  // first match or null; the list must already be in order
-val i = xs.indexOf(v) ?: return; xs.at(i)  // the index family answers i64?, never -1 (D165); after `?: return` xs.at(i) is a T (D62)
+val i = xs.indexOf(v) ?: return; xs.get(i)  // the index family answers i64?, never -1 (D165); after `?: return` xs.get(i) is a T (D62)
 sorted.lowerBound(x); sorted.upperBound(x); sorted.partitionPoint(e => e < x)   // insertion points; upperBound - lowerBound is how many times x occurs
-ml.push(x); ml.pop(); ml.set(i, x); ml.insert(i, x); ml.removeAt(i); ml.addAll(ys); ml.sort(); ml.clear(); ml.toList(); xs.toMutable()
-ml.swap(i, j); ml.fill(x); ml.incrementAt(i) /* MutableList<i64> */; ml.updateAt(i, f) /* MutableList<T>; transforms and returns the new value */; MutableList.repeat(false, n) /* MutableList<bool>: a generic static infers its type, D137 */; MutableList<MutableList<i64>>.make(n, _ => [])
-val q = Deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.at(-1); q.len()
+xs.push(x); xs.pop(); xs.set(i, x); xs.insert(i, x); xs.removeAt(i); xs.addAll(ys); xs.sort(); xs.clear()   // change xs where it lives; fill(&xs) with fill(into: *List<T>) changes the caller's
+xs.swap(i, j); xs.fill(x); xs.incrementAt(i) /* List<i64> */; xs.updateAt(i, f) /* List<T>; transforms and returns the new value */; List.repeat(false, n) /* List<bool>: a generic static infers its type, D137 */; List<List<i64>>.make(n, _ => [])
+val q = Deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.get(-1); q.at(0)?.n += 1; q.len()
 val pq = PriorityQueue<i64>.natural(); pq.push(x); pq.pop(); pq.peek(); PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))
-m.get(k) ?: d; m.get(k) ?: panic("why"); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); mm.set(k, v); mm.remove(k)
-mm.ref(k)?.bump(); mm.ref(k)?.n += 1   // a pointer to the stored value; get returns a copy
-s.add(x); s.contains(x); s.remove(x); s.toList()
+m.get(k) ?: d; m.get(k) ?: panic("why"); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); m.set(k, v); m.remove(k)
+m.at(k)?.bump(); m.at(k)?.n += 1; groups.atOrPut(k, () => []).push(x)   // a pointer to the stored value; get returns a copy
+s.add(x); s.contains(x); s.remove(x); s.toList() /* the members */; loop (x in xs) xs.push(-x) /* the loop walks xs as it began */
 var a: Array<u32, 8> = [1, 2, 3, 4, 5, 6, 7, 8]   // N inline elements, no allocation, a value: val b = a copies (D121); N may be a constant: Array<u8, 4 * 16>, Array<u8, WIDTH>
-a.set(i, v); a.at(i); a.at(3); a.len(); loop (x in a); loop (&x in a)   // at is T? — T for a constant index in range, or one the bounds facts prove; set and &x need a var
+a.set(i, v); a.get(i); a.get(3); a.at(i); a.len(); loop (x in a); loop (&x in a)   // get is T? — T for a constant index in range, or one the bounds facts prove; at is a pointer; set, at and &x need a var
 Array<i64, 8>.make(0); xs.toArray<8>() /* Array<T, 8>?: null unless the list holds 8 */; a.toList(); a.map(f); a.fold(0, f)   // the read-only List methods run on a copy
-const K: Array<u32, 64> = [...]; K.at(3)       // a read-only table in the binary; a constant index is folded
+const K: Array<u32, 64> = [...]; K.get(3)      // a read-only table in the binary; a constant index is folded
 fun sum<const N: i64>(a: Array<i64, N>): i64   // a constant parameter: inferred from the argument, or written: zeros<16>(); N is an i64 in the body
 xs.iter().filter(p).map(f).take(n).skip(n).enumerate().zip(ys.iter()).toList()
 it.count(); it.fold(z, f); it.any(p); it.all(p); it.find(p); it.last(); it.forEach(f)
@@ -274,6 +275,7 @@ t.cancel()                       // stop a task at its next suspension point; it
 val v = try withTimeout(Duration.seconds(1), () => try fetch())   // R throws E | Timeout; the task is cancelled and unwound before Timeout is thrown
 // leaving a scope body early (return / throw / cancellation) cancels and joins its children
 val m = Mutex(value: state); m.withLock(s => s.n += 1); m.get(); m.set(v)
+m.withLock(s => *s)              // a copy out; 's => s' is an error: a function value's pointer parameter is lent for the call (D233)
 with s = m.lock()                // s: *State, locked to the end of the block; nothing in it may suspend (D107)
 val a = Atomic(value: 0); a.load(); a.store(1); a.swap(2); a.add(1); a.compareAndSet(3, 4); a.update(n => n * 2)
 a.load(order: MemoryOrder.Acquire); a.store(1, order: MemoryOrder.Release)   // optional order, default SeqCst; invalid for the operation = compile error (D144)
@@ -291,7 +293,7 @@ with clock = time.ticker(Duration.seconds(1)); await clock.ticks.recv()   // a s
 ```
 
 Suspension is inferred; `await` only on `sleep`, `recv`, task handles.
-Data passed to `async` must be Sendable (D35): no `Mutable*`.
+Data passed to `async` must be Sendable (D35): lists, maps and sets are (values, D231); pointers and closures that change a captured collection are not.
 
 ## Resources and unsafe
 
@@ -310,7 +312,7 @@ compact struct Sample { a: u8, b: i64, c: u8 }  // fields placed for the smalles
 extern "C" { fun printf(f: *raw u8, ...): i32 }  // C variadics: extra args promoted as C does (u8 → i32, f32 → f64); `5` is an i32 (D123)
 // SAFETY: p is a live NUL-terminated buffer  ← why the block is sound (a warning without it)
 val n = unsafe { strlen(p) }                  // C calls and raw pointers need unsafe (D44)
-unsafe { s.byteAtUnchecked(i) }               // also xs.atUnchecked(i), xs.setUnchecked(i, v): checked in debug only (D114)
+unsafe { s.byteAtUnchecked(i) }               // also xs.getUnchecked(i), xs.setUnchecked(i, v): checked in debug only (D114)
 with key = Secret.of(crypto.randomBytes(32))  // Secret<List<u8>>: prints [redacted], not Encodable, == constant time, wiped on close and when freed (D112)
 val url = cfg.databaseUrl.expose()            // the only way to the value: a fresh copy
 ```
@@ -384,7 +386,7 @@ test "parses a port" {                       // a sentence names it; no signatur
   expectNear(0.3, total, within: 1.0e-12)     // floats within a tolerance; NaN never passes (D230)
   val cfg = require(load("app.toml"))         // T? or Result: the value, or the test ends
   expectThrows<RangeError>(() => parsePort("70000"))
-  expectPanics(() => { val _ = [1].at(5) ?: panic("no") })
+  expectPanics(() => { val _ = [1].get(5) ?: panic("no") })
   fail("not written yet")                    // ends the test
   skipIf(os.env("PG") == null, "no PostgreSQL")  // ends it as skipped; skip(why) is Never (D178)
 }

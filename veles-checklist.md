@@ -1516,6 +1516,16 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-10-29 | Q76: trusted template literal pieces | **Tag-only invocation**, D227 addendum (user selected recommended of 3). Ordinary calls and function-value references are compile-time errors, including qualified names and calls inside holes. Rejected: defining-module-only calls and unrestricted ordinary calls. Built and verified on macOS. |
 | 2026-10-30 | Q78 + Q79: test expectations — roles and a message | **`expectEqual(expected, actual)`, expected first, as its own word; `expect(cond, "message")`, lazy, laid out like `assert`**, D229 (user over the recommended "a literal side of `==` is expected": "always expected first, so the function reads expect(expected, got)"; then 2a of 3 shapes; message: recommended of 3). Rejected: roles inferred inside `==`; `expect(expected, actual)` under one name (D179); a named `because:`; no message. |
 | 2026-10-30 | Q80: floats within a tolerance | **`f64`/`f32` `isClose(other, relative:, absolute:)` in the prelude and the test word `expectNear(expected, actual, within:)`**, D230 (user: recommended A plus B). Rejected: only writing `(a - b).abs() <= tolerance`. |
+| 2026-10-31 | Collections as values (user's question, not a Q) | **`List`/`Map`/`Set` are values copied on their first change (a shared mark on the header, no reference counts); `MutableList`/`MutableMap`/`MutableSet`, `mut [...]`, `toMutable()`, `freeze()` removed; sharing is `*List<T>`; `val` stops rebinding only; a parameter is the function's own copy; an inlay hint on a change that may copy, on by default**, D231 (user: recommended of 3, 2 and 2). Rejected: the reference collections and the split (D25/D35/D63/D188), reference counting, eager copies, deep `val`, read-only parameters, opt-in hints only. |
+| 2026-11-02 | D231 follow-ups | **`toList()`/`toMap()`/`toSet()` on their own type removed; a loop walks a snapshot of a collection its body changes (D102's panic gone); element writes renamed `refAt`, `getOrPut` → `refOrPut` returning `*V`; `ffi.Handle` holds a copy (`from` → `*raw T`, `value()`), `withRaw` reads, `withRawMut` writes**, D231 addendum (user: recommended of 3, 3 and 2; for access "split, renamed" over the recommended keep-the-names). Rejected: an `Immutable` error from `push`; `at` returning a pointer; panicking on any change in a loop. |
+| 2026-11-02 | Loops over a pointer-reached list (found measuring `adapters`) | **A value loop walks the list as it was however the list is reached: the loop lends the header (a `lent` flag bit; writers copy while it is set), cleared at the loop's end; the run-time guard stays for `loop (&x in xs)`, `Deque` loops and iterators**, D102 addendum (user: recommended of 3). Rejected: keeping the guard (two rules for one loop, +8.5% on `adapters`); guard-free adapter copies where the list is provably unreachable. |
+| 2026-11-02 | One accessor pair (user's idea, not a Q) | **On `List`, `Array` and `Map`, `at` gives a pointer to the element and `get` a copy; `refAt`/`ref` → `at`, a list's copying `at` → `get`, `refOrPut` → `atOrPut`, `atOrDefault` → `getOrDefault`, `atUnchecked` → `getUnchecked`; a set keeps `contains`; `Deque.at` → `get`**, D231 addendum 2 (user: "both map and lists "at" gets a reference, "get" gets a copy. (sets contains is ok)"). Supersedes addendum 1's `refAt`/`refOrPut` names. |
+| 2026-11-02 | Where the copy hint goes; copy-then-change as a warning (user's question on a hint inside a loop) | **Both places: the full hint on the statement that shared the value (`list2 copied at its first change, line 3`), a short `copies list2` marker at the change, `once` when a loop repeats the change but not the share; the marker left out on the share's line and the next; no warning — a copy made for a growing change gets room to grow instead**, D231 addendum 3 (user: recommended of 3 for the place; for the warning "no warning, maybe we can optimize it behind the scenes?" over the recommended plain no). Rejected: the change only (reads as a copy per round), the share site only, a `copy_then_grow` lint. |
+| 2026-11-03 | `std/lint`'s `Context.reports` (§11 D231 item 14) | **The list is a private field; `ctx.reports()` returns a copy; rules unchanged**, D231 addendum 4 (user: "maybe make them private but add method that allows for getting the copy?", over the recommended private field alone). Rejected: rules taking `*Context`, the public `*List<Report>` field. |
+| 2026-11-03 | `Value.at(i)` copies under the name that reaches (§11 D231 item 15) | **`Value.elementAt(i)`; `at` is an error with a fix**, D231 addendum 4 (user, recommended of 3). Rejected: `item(i)`, keeping `at`. |
+| 2026-11-03 | A pointer `Deque.at` (§11 D231 item 13) | **`Deque.at(i): (*T)?` beside `get(i)`, so `at` reaches on every indexed container**, D231 addendum 5 (user: "Yes, add Deque.at", recommended of 2). Rejected: `get` only. |
+| 2026-11-03 | A struct boxed into a trait object, changed through it (§11 D231 item 8) | **`&x` boxes as a trait object over `x` itself; boxing a named place whose implementation changes `this` is an error with the fix `&x` or `x.copy()`**, D232 (user, recommended of 3; Go's rule). Rejected: a warning lint with no `&x` form, leaving it documented. |
+| 2026-11-03 | A lock's pointer escaping `withLock` (§11 D231 item 9) | **A pointer parameter of a function value is lent for the call — returning, storing, capturing it or passing it where it is kept is an error — language-wide, no annotation**, D233 (user: "lent callback param but I'd say we do not use annotation if we can?", then the language-wide rule, recommended of 3, after measuring 128 such parameters in the tree with no escape). Rejected: `@lent` on the std methods only, refusing a pointer in the result type, a `Sendable` bound. |
 
 ## 11. Known limitations to revisit
 
@@ -1848,6 +1858,90 @@ std/compress` exited 255, and `TestHashFlooding`,
       `skipInShort`: `driver` 231 s → 154 s); `docs` (100 s) is now the long pole of the quick tier and the
       driver's serial phase (tests that capture stdio) is unchanged.
 
+- [ ] **D231 (value collections), what is left (2026-11-02, branch
+      `lists-maps-and-sets-as-values`, an experiment).** Built: copy on
+      write (runtime share/unique/own, `codegen/llvm/cow.go`, `sema/share.go`),
+      the removed spellings with fixes, the addendum's four follow-ups, the
+      lints `param_copy` (collections) and `copy_changed`, std/examples/bench
+      migrated, docs chapter 4 rewritten and the references updated;
+      addendum 2 (`at` reaches, `get` copies) built and the tree migrated;
+      the full `go build`, `go vet`, `go test ./...` pass on Windows and
+      Linux (2026-11-02, Go 1.27.1). Left: (1)–(2) done 2026-11-02 (selfhost's
+      span walker and `dump_toml` take pointers; tests of removed behaviour
+      replaced: `TestFreezeRemoved`, the snapshot loop in
+      `TestLoopOverChangedCollection`, conformance `D231-values.vs`); (3) done
+      2026-11-02: the copy inlay hint (`sema/copyhint.go`, `lsp/inlay.go`,
+      `veles.inlayHints.copies`, on by default) — and since 2026-11-03 across
+      functions: a field shared through `this` or a pointer in one function is
+      shared on entry to every method of that struct (`copies this.items
+      (shared in Shelf.all)`), a pointer parameter a caller handed a shared
+      value is shared on entry (`copies into (shared by the caller, main)`),
+      settled in rounds (`copyCross`; `TestCopySites`,
+      `TestCrossFunctionCopyHints`); the two needless copies it found are
+      fixed (2026-11-02, spec D231 note): destructuring a fresh tuple moves
+      its parts (`partsMoved`), and `clear()` on a shared or lent list, map
+      or set takes the empty constant instead of copying (`clearColl`; the
+      hint says `copies xs as empty`); (5) done 2026-11-03: `fill(&xs)`
+      no longer gives `xs` a heap cell — a local whose every `&` pointer is
+      read at once or lent to a parameter or receiver the callee keeps no
+      pointer to stays in the frame (`lentAddrPass`, `Var.HeapCell`; a
+      capture, an escaping receiver, a by-reference loop or a pointer bound
+      to a name still promote it; `TestLentAddressStaysInFrame`,
+      `TestLentAddressKeepsValues`); (6)
+      done 2026-11-02 (D102 addendum: value loops lend the list, so a change
+      through a pointer during the loop copies it; the guard stays for
+      by-reference loops, `Deque` loops and iterators); (4) done 2026-11-02:
+      `regex` is at the base (the cost was copies of its program; lent
+      aliases, kept parameters moved, unique-once pointers and locals —
+      bench/results.md); the Windows-only `adapters` +3–7% is two more
+      collections (less memory live, so a lower GC goal), not D231's code —
+      with equal collections it is 4% faster than the base;
+      `Inflater.codes`' extra instructions were the copy-on-write test on
+      every `out.push`, which the unique-once pointer lost to its calls —
+      done 2026-11-03: a call on the way out of the function (`throw
+      corrupt(…)`, `this.finishBlock(); return`) no longer undoes it
+      (`exitCalls`, `TestExitCallsKeepCopiesApart`), and the limit check
+      in the loop throws directly (the
+      Windows "~1.5 ms per collection" was page faults on fresh large
+      spans, fixed 2026-11-02 — plan progress log); D188's freeze half
+      (`LIST_FROZEN`, its checks on every write, `veles_list_freeze` and
+      kin) removed 2026-11-02; (7) done 2026-11-03: it was a real hole, and so were two
+      shortcuts of (4) — a value read through a pointer lent to a read-only
+      parameter, a lent alias of a `this` field, and a pointer made unique
+      once all let a callee that reached the same object another way (a
+      global, a struct or closure argument, its receiver, another field)
+      change the caller's value or write into a copy it took; now only
+      locals are lent, and the other two are ruled out by any call or
+      suspension when their object lives behind a pointer
+      (`TestPointerReachedValuesStayValues`, seven cases; the benchmarks
+      unchanged, regex included); (8) done 2026-11-03 (D232): `&x` boxes as
+      a trait object over `x`, and boxing a copy of a named place whose
+      implementation changes `this` is an error with the fix `&x` or
+      `x.copy()` (conformance `D232-box-pointer.vs`, `D232-box-sendable.vs`,
+      `TestBoxedPointerChangesThePlace`); (9) done 2026-11-03 (D233): a
+      pointer parameter of a function value is lent — returning, storing or
+      capturing it is an error, language-wide, `withLock(x => x)` included
+      (conformance `D233-lent-params.vs`); a lambda written for a function
+      parameter the callee keeps no hold of may capture it (`Var.FnKept`).
+      A local `val` struct built around the pointer is followed like an
+      alias (its field read through or lent is fine, the struct handed on
+      whole keeps it; `stash` and `wrapOut` in the conformance case);
+      (10) done 2026-11-02:
+      `sema/move.go` (D63's move proof), the `redundant_copy` lint's body
+      (its name stays valid in `[lint]`, described as retired, so a
+      manifest naming it still loads), the "moved immutable" hint and two
+      dead messages removed; the third, a const struct's generic field
+      (D212), was not dead — `Pair<i64, Mutex<i64>>` reaches it — and has a
+      conformance case now; (11) done 2026-11-02: chapters 13, 18 and 26
+      read; chapter 13 now says collections are values too; (12) not run on macOS (benchmarks on Windows and
+      Linux are at or under the base since 2026-11-02, bench/results.md);
+      (13) done 2026-11-03 (D231 addendum 5): `Deque.at(i): (*T)?` over the
+      std-only `slotPayload` intrinsic (tests in
+      `std/prelude/collections.test.vs`); (14) done 2026-11-03
+      (D231 addendum 4): the list is a private field, `ctx.reports()` a
+      copy; (15) done 2026-11-03 (D231 addendum 4): `Value.elementAt(i)`,
+      `at` an error with a fix; (16) done 2026-11-02: the migration switch `VELES_MIGRATE_ACCESS`
+      removed (in git history for a branch still to migrate).
 - [ ] **Swift and Kotlin tabs not run (2026-10-31).** The code groups of
       chapters 2–10 and 12 (N7): the Kotlin tabs of every chapter and the
       Swift tabs of chapters 2, 3, 4, 5, 8 and 10 were written without a
@@ -2274,6 +2368,20 @@ bindgen`; plan P10; `.winmd` input later), D167 (`std/cli`; plan C9; its attribu
   (5) Pages read as written at the last pause include the hot spans' (an allocator's), skipped
   span by span when nothing in them is marked; a program whose fresh objects mostly live would
   rescan them all there — rounds that reset only those pages run while the program does.
+  (6) **Memory kept for reuse is never given back while the program idles** (2026-11-02): a
+  dead large span's memory stays committed up to the goal for the next spans; with no scavenger
+  (Go returns idle spans in the background) a program that shrinks keeps up to one goal of it.
+  (7) **A small-object span that empties is never released** — only large spans give memory
+  back or are reused as another size.
+  (8) **The conservative stack scan reads stale bytes in partly written stack buffers**
+  (2026-11-03). `bench/emit` on Windows held the previous round's 8 MB builder buffer through the
+  next round (peak 45 → 78 MB) once `lentAddrPass` changed its frames: a 21-byte interpolation
+  buffer `veles_u64_format` filled only up to the digits kept a list-header pointer an earlier call
+  had left in that stack memory (found by printing the stack words that reached each round's
+  header; it sat inside `emitFunction`'s frame). Fixed for that buffer: the formatter writes all
+  20 bytes, digits then zeros, in fixed-size moves (no CRT call; `emit` back to 45 MB and its old
+  time). Open in general: any stack slot written only in part (a stack buffer a callee fills) can
+  do the same; precise stack maps would end it.
 
 - **Declared executors (D150, built 2026-10-11), kept for later:** they run until the program ends
   rather than being closed after `main` (nothing of theirs is left running then: their tasks were

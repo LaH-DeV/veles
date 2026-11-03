@@ -18,7 +18,7 @@ import (
 
 // BuiltinDoc describes one built-in method.
 type BuiltinDoc struct {
-	Recv string // receiver family: "string", "List", "MutableList", "Map", ... "float", "int", "enum"
+	Recv string // receiver family: "string", "List", "Map", ... "float", "int", "enum"
 	Name string
 	Sig  string // parameter list and result, e.g. "(i: i64): T?"
 	Doc  string
@@ -35,13 +35,10 @@ func (d BuiltinDoc) Static() bool { return builtinStatics[d.Recv+"."+d.Name] }
 // declaration header each is rendered under.
 var builtinFamilies = []struct{ family, header, doc string }{
 	{"string", "struct string", "Immutable UTF-8 text. Concatenate with `+`, build with interpolation `\"...$x...\"`."},
-	{"List", "struct List<T>", "An immutable list. `[a, b]` literals; `xs.at(i)` is a `T?`, or a `T` where the index is known to be in range (D62)."},
-	{"MutableList", "struct MutableList<T>", "A growable list: every `List` method, plus mutation. `mut [a, b]` literals (D25); `.toList()` copies it into a `List` (D63)."},
+	{"List", "struct List<T>", "A list, a value: copying it is O(1) and the first change to a copy copies the storage (D231). `[a, b]` literals; `xs.get(i)` is a `T?`, or a `T` where the index is known to be in range (D62)."},
 	{"Array", "struct Array<T, const N: i64>", "`N` elements stored inline — in a local, a field, another array, a C struct — with no allocation, and a value: assignment and passing copy it (D121). The read-only `List` methods work on it, over a copy."},
-	{"Map", "struct Map<K, V>", "An immutable hash map. `[k: v]` literals; `m.get(k)` is a `V?`."},
-	{"MutableMap", "struct MutableMap<K, V> : Map<K, V>", "A hash map that can be changed in place."},
-	{"Set", "struct Set<T>", "An immutable hash set."},
-	{"MutableSet", "struct MutableSet<T> : Set<T>", "A hash set that can be changed in place."},
+	{"Map", "struct Map<K, V>", "An insertion-ordered hash map, a value copied on its first change (D231). `[k: v]` literals; `m.get(k)` is a `V?`."},
+	{"Set", "struct Set<T>", "An insertion-ordered hash set, a value copied on its first change (D231)."},
 	{"Channel", "struct Channel<T>", "A bounded channel between tasks (D16). `Channel<T>(capacity: n)` creates one."},
 	{"Task", "struct Task<T>", "A handle to a running child of a `scope`, from `async f()` — or of a block, from `with t = async f()`, which cancels it when the block ends (D100); `await t` is its result, `t.cancel()` stops it."},
 	{"Result", "sealed trait Result<T, E>", "A success or a typed error. Handle it before interpolation; toString() explicitly prints the wrapper (D157)."},
@@ -69,8 +66,8 @@ var builtinDocs = []BuiltinDoc{
 
 	{"List", "len", "(): i64", "Number of elements."},
 	{"List", "isEmpty", "(): bool", "True when there are no elements."},
-	{"List", "at", "(i: i64): T?", "The element at `i`, or `null` when `i` is out of range; a negative `i` counts from the end, so `xs.at(-1)` is the last element."},
-	{"List", "atUnchecked", "(i: i64): T", "The element at `i` (`0 <= i < len`, no counting from the end) without the bounds check in a release build; only inside `unsafe` (D114). A debug build still checks and panics \"unchecked index out of bounds\"; in release an out-of-range `i` is undefined behaviour."},
+	{"List", "get", "(i: i64): T?", "A copy of the element at `i`, or `null` when `i` is out of range; a negative `i` counts from the end, so `xs.get(-1)` is the last element. `at` gives a pointer to change it."},
+	{"List", "getUnchecked", "(i: i64): T", "The element at `i` (`0 <= i < len`, no counting from the end) without the bounds check in a release build; only inside `unsafe` (D114). A debug build still checks and panics \"unchecked index out of bounds\"; in release an out-of-range `i` is undefined behaviour."},
 	{"List", "first", "(): T?", "The first element, or `null` when empty."},
 	{"List", "last", "(): T?", "The last element, or `null` when empty."},
 	{"List", "contains", "(x: T): bool", "True when some element equals `x`."},
@@ -81,32 +78,28 @@ var builtinDocs = []BuiltinDoc{
 	{"List", "reversed", "(): List<T>", "A reversed copy."},
 	{"List", "join", "(sep: string): string", "The elements rendered and joined with `sep`."},
 	{"List", "iter", "(): Iterator<T>", "A lazy iterator over the elements (D46)."},
-	{"List", "slice", "(from: i64, to: i64): List<T>", "The elements in `from..<to`, both ends clamped to the list; empty when `from >= to`. On an immutable `List` it is a window onto the same storage (no copy, and it keeps that storage alive: `toList()` detaches it); on a `MutableList` it is one bulk copy (D196)."},
-	{"List", "toList", "(): List<T>", "An immutable copy."},
-	{"List", "toMutable", "(): MutableList<T>", "A mutable copy."},
+	{"List", "slice", "(from: i64, to: i64): List<T>", "The elements in `from..<to`, both ends clamped to the list; empty when `from >= to`. A window onto the same storage, which it keeps alive: no copy until either list is changed (D196, D231)."},
 	{"List", "decodeUtf8", "(): string?", "On a `List<u8>` only: the bytes as text, or `null` when they are not valid UTF-8 (D18)."},
 	{"Array", "len", "(): i64", "The length `N`, a constant."},
 	{"Array", "isEmpty", "(): bool", "True when `N` is zero."},
-	{"Array", "at", "(i: i64): T?", "The element at `i`, or `null` when `i` is out of range; a negative `i` counts from the end. Where `i` is a constant in range — or the bounds facts put it there — it is a plain `T` (D121)."},
-	{"Array", "atUnchecked", "(i: i64): T", "The element at `i` (`0 <= i < N`) without the bounds check in a release build; only inside `unsafe` (D114). A debug build still checks and panics."},
+	{"Array", "get", "(i: i64): T?", "A copy of the element at `i`, or `null` when `i` is out of range; a negative `i` counts from the end. Where `i` is a constant in range — or the bounds facts put it there — it is a plain `T` (D121)."},
+	{"Array", "getUnchecked", "(i: i64): T", "The element at `i` (`0 <= i < N`) without the bounds check in a release build; only inside `unsafe` (D114). A debug build still checks and panics."},
 	{"Array", "first", "(): T", "The first element (an array of `N > 0` is never empty); `null` for `N == 0`."},
 	{"Array", "last", "(): T", "The last element (an array of `N > 0` is never empty); `null` for `N == 0`."},
 	{"Array", "set", "(i: i64, x: T)", "Replaces the element at `i` in the variable the method is called on, which must be a `var`; panics when `i` is out of range. A negative `i` counts from the end."},
 	{"Array", "setUnchecked", "(i: i64, x: T)", "Replaces the element at `i` (`0 <= i < N`) without the bounds check in a release build; only inside `unsafe` (D114)."},
-	{"Array", "indices", "(): Range<i64>", "The valid indexes, `0..<N`. In `loop (i in a.indices())` the checker knows each `i` is in range, so `a.at(i)` is a `T` (D62)."},
-	{"Array", "toList", "(): List<T>", "An immutable copy as a list."},
-	{"Array", "toMutable", "(): MutableList<T>", "A mutable copy as a list."},
+	{"Array", "indices", "(): Range<i64>", "The valid indexes, `0..<N`. In `loop (i in a.indices())` the checker knows each `i` is in range, so `a.get(i)` is a `T` (D62)."},
+	{"Array", "toList", "(): List<T>", "A copy as a list."},
 	{"Array", "make", "(value: T)", "Called on the type: `Array<i64, 8>.make(0)` is eight copies of `value`; `Array.make(0)` where the expected type names the array."},
-	{"MutableList", "push", "(x: T)", "Appends `x`."},
-	{"MutableList", "addAll", "(xs: List<T>)", "Appends every element of `xs` (a bulk copy); `xs` may be the list itself."},
-	{"MutableList", "reserve", "(n: i64)", "Makes room for at least `n` elements in all, so pushing up to `n` does not grow the list again. Never shrinks it, never changes the elements."},
-	{"MutableList", "set", "(i: i64, x: T)", "Replaces the element at `i`; panics when `i` is out of range. A negative `i` counts from the end."},
-	{"MutableList", "setUnchecked", "(i: i64, x: T)", "Replaces the element at `i` (`0 <= i < len`) without the bounds check in a release build; only inside `unsafe` (D114). A debug build still checks and panics."},
-	{"MutableList", "ref", "(i: i64): (*T)?", "A pointer to the element at `i`, or `null` when `i` is out of range: `xs.ref(i)?.bump()` and `xs.ref(i)?.n = 0` change the element in place. A negative `i` counts from the end."},
-	{"MutableList", "pop", "(): T?", "Removes and returns the last element, or `null` when empty."},
-	{"MutableList", "clear", "()", "Removes every element."},
-	{"MutableList", "isFrozen", "(): bool", "True once `freeze()` has made this list immutable: every change through this name now panics. A question for code that may be handed a finished list; refusing or reporting an error is the usual answer, skipping the change is usually a bug hiding (D188)."},
-	{"MutableList", "freeze", "(): List<T>", "Makes this list immutable in place, without a copy, and returns it as a `List`: every later change through a `MutableList` name panics, so use it only when the compiler cannot prove a move (D63) and a copy is too dear. If a pointer into the list was made with `ref` or `loop (&x in …)`, the elements are copied once so that pointer cannot change the `List` (D188)."},
+	{"List", "push", "(x: T)", "Appends `x`."},
+	{"List", "addAll", "(xs: List<T>)", "Appends every element of `xs` (a bulk copy); `xs` may be the list itself."},
+	{"List", "reserve", "(n: i64)", "Makes room for at least `n` elements in all, so pushing up to `n` does not grow the list again. Never shrinks it, never changes the elements."},
+	{"List", "set", "(i: i64, x: T)", "Replaces the element at `i`; panics when `i` is out of range. A negative `i` counts from the end."},
+	{"List", "setUnchecked", "(i: i64, x: T)", "Replaces the element at `i` (`0 <= i < len`) without the bounds check in a release build; only inside `unsafe` (D114). A debug build still checks and panics."},
+	{"List", "at", "(i: i64): (*T)?", "A pointer to the element at `i`, or `null` when `i` is out of range: `xs.at(i)?.bump()` and `xs.at(i)?.n = 0` change the element in place, and a read through it right away (`xs.at(i).n` where `i` is known in range) copies nothing. On a shared list it copies the list first (D231); `get` gives a copy. A negative `i` counts from the end."},
+	{"Array", "at", "(i: i64): (*T)?", "A pointer to the element at `i`, or `null` when `i` is out of range, in the array's own storage: the array must be a `var` or a `var` field. `get` gives a copy."},
+	{"List", "pop", "(): T?", "Removes and returns the last element, or `null` when empty."},
+	{"List", "clear", "()", "Removes every element."},
 
 	{"Map", "len", "(): i64", "Number of entries."},
 	{"Map", "isEmpty", "(): bool", "True when there are no entries."},
@@ -116,32 +109,24 @@ var builtinDocs = []BuiltinDoc{
 	{"Map", "keys", "(): List<K>", "The keys."},
 	{"Map", "values", "(): List<V>", "The values."},
 	{"Map", "entries", "(): List<(key: K, value: V)>", "The entries as labelled tuples, `(key: k, value: v)` (D166)."},
-	{"Map", "toMap", "(): Map<K, V>", "An immutable copy."},
-	{"Map", "toMutable", "(): MutableMap<K, V>", "A mutable copy."},
-	{"MutableMap", "set", "(key: K, value: V)", "Inserts or replaces the entry for `key`."},
-	{"MutableMap", "reserve", "(n: i64)", "Makes room for at least `n` entries in all, so inserting up to `n` neither grows the map nor rehashes it. Never shrinks it, never changes the entries (D105)."},
-	{"MutableMap", "ref", "(key: K): (*V)?", "A pointer to the value stored for `key`, or `null` when there is no entry: `m.ref(k)?.bump()`, `m.ref(k)?.n += 1` change the entry in place."},
-	{"MutableMap", "remove", "(key: K): V?", "Removes the entry for `key`, returning its value, or `null`."},
-	{"MutableMap", "clear", "()", "Removes every entry."},
-	{"MutableMap", "isFrozen", "(): bool", "True once `freeze()` has made this map immutable (D188)."},
-	{"MutableMap", "freeze", "(): Map<K, V>", "Makes this map immutable in place, without a copy, and returns it as a `Map`: every later change through a `MutableMap` name panics, so use it only when the compiler cannot prove a move (D63) and a copy is too dear. A pointer made with `ref` before is not shared with the result: the entries are copied once (D188)."},
+	{"Map", "set", "(key: K, value: V)", "Inserts or replaces the entry for `key`."},
+	{"Map", "reserve", "(n: i64)", "Makes room for at least `n` entries in all, so inserting up to `n` neither grows the map nor rehashes it. Never shrinks it, never changes the entries (D105)."},
+	{"Map", "at", "(key: K): (*V)?", "A pointer to the value stored for `key`, or `null` when there is no entry: `m.at(k)?.bump()`, `m.at(k)?.n += 1` change the entry in place; `get` gives a copy (D231)."},
+	{"Map", "remove", "(key: K): V?", "Removes the entry for `key`, returning its value, or `null`."},
+	{"Map", "clear", "()", "Removes every entry."},
 
 	{"Set", "len", "(): i64", "Number of elements."},
 	{"Set", "isEmpty", "(): bool", "True when there are no elements."},
 	{"Set", "contains", "(x: T): bool", "True when `x` is a member."},
 	{"Set", "toList", "(): List<T>", "The members as a list."},
-	{"Set", "toSet", "(): Set<T>", "An immutable copy."},
-	{"Set", "toMutable", "(): MutableSet<T>", "A mutable copy."},
 	{"Set", "union", "(other: Set<T>): Set<T>", "The members of either set."},
 	{"Set", "intersect", "(other: Set<T>): Set<T>", "The members of both sets."},
 	{"Set", "difference", "(other: Set<T>): Set<T>", "The members of this set that are not in `other`."},
 	{"Set", "isSubsetOf", "(other: Set<T>): bool", "True when every member of this set is in `other`."},
-	{"MutableSet", "add", "(x: T): bool", "Adds `x`; true when it was not already a member."},
-	{"MutableSet", "reserve", "(n: i64)", "Makes room for at least `n` members in all, so adding up to `n` neither grows the set nor rehashes it. Never shrinks it, never changes the members (D105)."},
-	{"MutableSet", "remove", "(x: T): bool", "Removes `x`; true when it was a member."},
-	{"MutableSet", "clear", "()", "Removes every member."},
-	{"MutableSet", "isFrozen", "(): bool", "True once `freeze()` has made this set immutable (D188)."},
-	{"MutableSet", "freeze", "(): Set<T>", "Makes this set immutable in place, without a copy, and returns it as a `Set`: every later change through a `MutableSet` name panics (D188)."},
+	{"Set", "add", "(x: T): bool", "Adds `x`; true when it was not already a member."},
+	{"Set", "reserve", "(n: i64)", "Makes room for at least `n` members in all, so adding up to `n` neither grows the set nor rehashes it. Never shrinks it, never changes the members (D105)."},
+	{"Set", "remove", "(x: T): bool", "Removes `x`; true when it was a member."},
+	{"Set", "clear", "()", "Removes every member."},
 
 	{"Channel", "send", "(x: T) suspends", "Sends `x`, suspending while the channel is full. As a `race` arm, `ch.send(x) => …`, `x` is sent only if that arm wins (D108)."},
 	{"Channel", "recv", "(): T? suspends", "Receives the next value, suspending while empty; `null` once closed and drained."},
@@ -285,19 +270,10 @@ func builtinFamily(t types.Type) string {
 			return "int"
 		}
 	case *types.List:
-		if tt.Mutable {
-			return "MutableList"
-		}
 		return "List"
 	case *types.Map:
-		if tt.Mutable {
-			return "MutableMap"
-		}
 		return "Map"
 	case *types.Set:
-		if tt.Mutable {
-			return "MutableSet"
-		}
 		return "Set"
 	case *types.Array:
 		return "Array"
@@ -317,16 +293,12 @@ func builtinFamily(t types.Type) string {
 	return ""
 }
 
-// lookupBuiltinDoc finds the entry for a method on a receiver family; a
-// mutable collection inherits its immutable family's methods.
+// lookupBuiltinDoc finds the entry for a method on a receiver family.
 func lookupBuiltinDoc(family, name string) *BuiltinDoc {
 	for i := range builtinDocs {
 		if builtinDocs[i].Recv == family && builtinDocs[i].Name == name {
 			return &builtinDocs[i]
 		}
-	}
-	if base := strings.TrimPrefix(family, "Mutable"); base != family {
-		return lookupBuiltinDoc(base, name)
 	}
 	if family != "any" && (name == "apply" || name == "edit") {
 		return lookupBuiltinDoc("any", name) // on every type (D207)
@@ -352,8 +324,7 @@ func (c *Checker) refBuiltin(span source.Span, recv types.Type, name string) {
 		Detail: "fun " + recv.String() + "." + name + receiverSig(d.Sig, recv) + "  (built in)", Doc: d.Doc})
 }
 
-// BuiltinMethods lists the catalogued methods of a receiver type: those of
-// its family plus, for a mutable collection, its immutable family's.
+// BuiltinMethods lists the catalogued methods of a receiver type's family.
 func BuiltinMethods(t types.Type) []BuiltinDoc {
 	family := builtinFamily(t)
 	if family == "" {
@@ -361,7 +332,7 @@ func BuiltinMethods(t types.Type) []BuiltinDoc {
 	}
 	var out []BuiltinDoc
 	for _, d := range builtinDocs {
-		if d.Recv == family || (strings.HasPrefix(family, "Mutable") && d.Recv == strings.TrimPrefix(family, "Mutable")) {
+		if d.Recv == family {
 			out = append(out, d)
 		}
 	}
@@ -369,7 +340,7 @@ func BuiltinMethods(t types.Type) []BuiltinDoc {
 }
 
 // BuiltinFamily names the catalogue family of a receiver type ("string",
-// "List", "MutableMap", "int", ...), or "" for types with no built-ins.
+// "List", "Map", "int", ...), or "" for types with no built-ins.
 func BuiltinFamily(t types.Type) string { return builtinFamily(t) }
 
 // basicTypeDocs describes the primitive types for hover.

@@ -14,7 +14,7 @@ struct OtlpExporter {
   implement otel.Exporter {
     fun export(signal: otel.Signal, body: List<u8>) suspends throws otel.ExportError {
       val url = this.endpoint + otel.signalPath(signal)
-      val headers: MutableMap<string, string> = [:]
+      val headers: Map<string, string> = [:]
       loop ((name, value) in this.headers.entries()) {
         headers.set(name, value.expose())
       }
@@ -54,7 +54,7 @@ struct OtlpExporter {
 /// ```
 public fun otlp(endpoint: string, headers: Map<string, Secret<string>> = [:], timeout: Duration = Duration.seconds(10), gzip: bool = true, tlsOptions: tls.Options = tls.Options()): otel.Exporter {
   val trimmed = if (endpoint.endsWith("/")) (endpoint.substring(0, endpoint.len() - 1) ?: endpoint) else endpoint
-  val lower: MutableMap<string, Secret<string>> = [:]
+  val lower: Map<string, Secret<string>> = [:]
   loop ((name, value) in headers.entries()) {
     lower.set(name.toLower(), value)
   }

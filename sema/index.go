@@ -31,12 +31,12 @@ type Index struct {
 	// Held marks the value of each `with` that receives a value holding
 	// tasks (D111): its brace stops those tasks before it closes the value.
 	Held map[source.Span]bool
-	// Moved marks each mutable collection that D63 hands over as its immutable
-	// form without a copy (D188): the editor says so after it.
-	Moved map[source.Span]bool
 	// Allocs are the heap allocation sites of the package's own code (D213),
 	// for the editor's opt-in `heap` hints
 	Allocs []AllocSite
+	// Copies are the changes that may copy a collection shared since its
+	// last change (D231), for the editor's `copies` hints
+	Copies []CopySite
 }
 
 // TypeDecl is where the type of a value is declared, for
@@ -180,6 +180,7 @@ func (c *Checker) indexInferred(prog *Program) {
 	}
 	c.index.Inferred = map[source.Span]Inferred{}
 	c.index.Allocs = AllocSites(prog)
+	c.index.Copies = CopySites(prog)
 	for _, fn := range prog.Funcs {
 		t := fn.tmpl
 		if fn.IsClosure || t == nil || t.Decl == nil || t.Sig == nil || !t.Decl.Name.Pos.IsValid() {

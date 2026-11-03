@@ -47,7 +47,7 @@ encoding", then UTF-8). A byte-order mark at the very start is allowed.
 **A spelling that Veles used to have, or that another language has.**
 `'impl' is spelled 'implement'`, `there is no 'for'; every loop is spelled
 'loop'`, `'xs[i]' is not indexing; brackets are for collection literals
-only — use 'xs.at(i)'`, `'=' assigns; use '==' to compare`.
+only — use 'xs.get(i)'`, `'=' assigns; use '==' to compare`.
 
 The old form still parses, so the rest of the file checks, and the error
 carries the fix: the editor's quick fix, or `veles check --fix` for a
@@ -58,7 +58,7 @@ index-of family (`indexOf`, `indexOfFirst`, `lastIndexOf`, `binarySearch`,
 `binarySearchBy`, `binarySearchWith`) answers `i64?`, so a test of the old
 `-1` — `>= 0`, `< 0`, `== -1`, `!= -1` — is refused with the fix that tests
 for null. Better still: `val i = xs.indexOf(v) ?: return`, after which
-`xs.at(i)` is a `T`, or `contains` when the index is not needed.
+`xs.get(i)` is a `T`, or `contains` when the index is not needed.
 
 #### `'yieldNow()' was removed (D197): write the statement 'cede'`
 
@@ -201,15 +201,18 @@ declarations — its methods, `implement` and `extend` blocks; everyone else
 reads it. Call a method of the type, or make the field a plain `var` if
 outside writes are intended (D22).
 
-#### `cannot take 'T.f' out of 'T': the field is 'protected var'`, `cannot call 'push' on 'T.f'`
+#### `cannot call 'push' on 'T.f': the field is 'protected var'`
 
-On a `protected var` field whose type is a mutable collection, the
-contents belong to the type too (D87). From outside, read it through a
-method that does not change it (`t.items.len()`, `.first()`, `.contains(x)`),
-loop over it, or interpolate it. Binding, passing or returning the field
-would hand out the handle, and a mutating method (`push`, `set`, `clear`,
-`swap`, `ref`, ...) changes it: give the type a method that does the change,
-or copy with `t.items.toList()`.
+On a `protected var` field whose type is a collection, the contents belong
+to the type too (D87): from outside, a method that changes the collection
+in place (`push`, `set`, `clear`, `swap`, `at`, ...) is refused, as an
+assignment to the field is. Give the type a method that does the change.
+Reading the field, looping over it and taking it are fine: a collection is a
+value, so what you take is a copy of your own (D231).
+
+`cannot walk 'T.f' by reference: the field is 'protected var'` is the same
+rule for `loop (&x in t.f)`, which would change the elements in place:
+loop over the values, or give the type a method that changes them.
 
 ### type-mismatch
 
@@ -269,7 +272,7 @@ expected: a parameter, a field, a return.
 #### `cannot infer the element type of an empty list; annotate it`
 
 `[]` and `[:]` have no elements to infer from. Write the type on the
-binding — `var xs: MutableList<i64> = []` — or pass the literal
+binding — `var xs: List<i64> = []` — or pass the literal
 where the expected type is known (a parameter, a field, a return). (D25)
 
 ### generics
@@ -518,7 +521,7 @@ constants, operators, interpolation, `len()`, `toT()`/`wrapT()`, `if` and
 read-only `List`, `Map` and `Set` — laid out once in the binary, never built
 at start-up. What would fail at run time fails the build instead, in every
 profile: an overflow (write `+%` to wrap on purpose), a division by zero, a
-shift past the width, `TABLE.at(i)` out of range. A call of a function that is
+shift past the width, `TABLE.get(i)` out of range. A call of a function that is
 not a `const fun`, a `val`, anything mutable or made at run time is refused:
 compute it with `val`.
 
@@ -618,13 +621,14 @@ allowed, since that recursion can end. (P7)
 
 ### mutability
 
-**Changing what cannot change.** `cannot assign to 'x': it is a 'val';
-declare it with 'var'`, `cannot push into an immutable List; use
-MutableList`.
+**Changing what cannot change, and the removed spellings of change.**
+`cannot assign to 'x': it is a 'val'; declare it with 'var'`, `'MutableList'
+was removed`, `'push' changes a temporary copy`.
 
-A `val` is never rebound, a bare field is never reassigned, and a `List`,
-`Map` or `Set` never changes; the `var`, `var` field and `Mutable…`
-versions do (D11, D22, D25).
+A `val` is never rebound and a bare field is never reassigned (D11, D22). A
+`List`, `Map` or `Set` is a value that can be changed where it lives — a
+variable, a field, an element reached with `at` — whatever binds it
+(D231).
 
 #### `cannot assign to 'x': it is a 'val'; declare it with 'var'`
 
@@ -641,39 +645,66 @@ type's own code should change it, or build a new value (D22). A
 method call on a global `val` is refused the same way when the method
 changes its receiver: a global is shared by every task (D35).
 
-#### `cannot push into an immutable List; use MutableList`
+#### `'MutableList' was removed (D231): a 'List' is a value that can be changed in place`
 
-`List` is immutable. Use a `MutableList` (`mut [...]` or the
-`MutableList<T>` annotation), or build a new list with `map`/`filter`.
-(D25)
+`MutableList`, `MutableMap`, `MutableSet` and the `mut [...]` literal are
+gone: every `List`, `Map` and `Set` can be changed where it lives, and
+copying one gives an independent value (D231). The fix writes the plain
+name. A function that filled a `MutableList` parameter for its caller takes
+`*List<T>` now, and its callers pass `&xs`.
 
-#### `'xs.push' changes 'xs' while the loop at line 12 walks it`
+`toMutable()` and `freeze()` were removed with it (the fix drops the call),
+and so were `toList()` on a list, `toMap()` on a map and `toSet()` on a set:
+binding the value is the copy.
 
-A loop walks the collection as it is, so a call in its body that changes
-its length or order — `push`, `pop`, `insert`, `removeAt`, `clear`,
-`sort`, a map's `remove` or `set` of a new key, a set's `add` — would
-make it visit elements twice or skip them (D102). Loop over a copy
-(`loop (x in xs.toList())`, the quick fix), or collect the changes and
-apply them after the loop. Replacing an element in place (`xs.set(i, v)`,
-`*x = v` in `loop (&x in xs)`, `m.set(k, v)` for the key being visited)
-is allowed, and so is a loop over `xs.indices()` or a range, which walks
-no collection — the way to grow a worklist while walking it. A change
-made where the compiler cannot see it (a function handed the same list)
-panics instead, when the loop next steps: `'xs' changed while a loop
-walked it`.
+Element access is a pair on `List`, `Array` and `Map` (D231 addendum 2):
+`at` gives a pointer to the element, `get` a copy. The fixes rename `ref`
+and `refAt` to `at`, a list's or an array's old copying `at` to `get`,
+`atOrDefault` to `getOrDefault`, `atUnchecked` to `getUnchecked`, and a
+map's `getOrPut` and `refOrPut` to `atOrPut`, which gives a pointer to
+the stored value.
 
-#### `'items' is a 'MutableList<i64>'; a const struct holds only immutable data: use 'List<i64>'`
+#### `'push' changes a temporary copy of '…' that is then discarded`
+
+The change is made to a value no variable holds — the result of a call,
+an element read with `get` — and is lost with it. Bind it with `val`
+to change a copy of your own, or reach the place itself: `xs.at(i)`,
+`m.at(k)`, `m.atOrPut(k, make)`, or a pointer (D231).
+
+#### `'xs.addFirst' changes 'xs' while the loop at line 12 walks it`
+
+A loop over a `Deque` walks the queue itself, so a call in its body that
+changes its length — `addFirst`, `addLast`, `removeFirst`, `removeLast`,
+`clear` — would make it visit elements twice or skip them (D102). Collect
+the changes and apply them after the loop. A loop over a `List`, `Map` or
+`Set` is not affected: it walks the collection as it was when it began,
+whatever changes it meanwhile, in the body or through a pointer a called
+function holds (D231, D102 addendum).
+
+#### `'xs.removeAt' changes 'xs' while the loop at line 12 walks it by reference`
+
+`loop (&x in xs)` walks the list itself, not a snapshot, so that `x` can
+change the element in place; a call in its body that changes the list's
+length or order — `push`, `pop`, `removeAt`, `insert`, `clear`, `sort` —
+would move the elements under the loop (D102). Replacing an element
+(`xs.set(i, v)`) is fine. Collect the changes and apply them after the
+loop, or loop by value. A change to the length made where the compiler
+cannot see it — through a pointer a called function holds — panics when
+the loop next steps: `'xs' changed while a loop walked it`.
+
+#### `'items' is a 'StringBuilder'; a const struct holds only immutable data: use 'string'`, `push would change a collection inside 'T', a const struct`
 
 A `const struct` promises that nothing reached through its values
-changes (D212), so each field must be deeply immutable. The message names
-the field and what to use: the immutable collection, `string` for a
-`StringBuilder`, `const struct` on a plain struct you declared (the
-promise is written at every level), a `const` variant for a sealed type.
+changes (D212), so each field must be deeply immutable, and a collection
+inside one is never changed in place (D231). The message names the field and
+what to use: `string` for a `StringBuilder`, `const struct` on a plain
+struct you declared (the promise is written at every level), a `const`
+variant for a sealed type.
 A `var` field is refused the same way; build a changed value with
 `copy`. Pointers, functions, trait objects, channels, task handles and
 `Mutex`/`Atomic` are state, not data: keep them beside the value. For a
 generic one the error is where the type arguments are written:
-`'Pair' is a const struct, so its field 'second' is a 'MutableList<i64>'`.
+`'Pair' is a const struct, so its field 'second' is a 'List<i64>'`.
 
 ### references
 
@@ -687,11 +718,33 @@ copies it. To change the element itself, reach it in place —
 
 #### `'f' is a copy of the caller's 'Fuzzer': this function calls 'range', which changes 'f.rng', and the caller never sees the change`
 
-A warning. A struct is a value (D7), so a parameter is a copy of what the
-caller passed; changing its `var` fields changes the copy. Take a pointer
-— `f: *Fuzzer`, called with `&fuzzer` — to change the caller's value, or
-return the changed one. Fields that are references (a `MutableList`, a
-`*State`) are shared, so pushing into them is seen and is not reported.
+A warning (`param_copy`). A struct is a value (D7), and so is a list, a
+map or a set (D231), so a parameter is a copy of what the caller passed;
+changing its `var` fields, or pushing into a collection it holds, changes
+the copy. Take a pointer — `f: *Fuzzer`, called with `&fuzzer`;
+`out: *List<u8>`, called with `&bytes` — to change the caller's value, or
+return the changed one. A field behind a pointer (`*State`) is shared, so
+a change through it is seen and is not reported.
+
+#### `'edges' is a copy of the element 'this.adj.get(a)': this change does not reach the collection`
+
+A warning (`copy_changed`). A local was bound to a copy of a field, an
+element or a value behind a pointer, then changed — and the changed copy
+is not used afterwards, so the change was almost certainly meant for the
+original. Reach the original: `this.adj.at(a)` for an element,
+`val out = &this.out` for a field, or change it directly (D231).
+
+#### `'xs' is lent to this function only for the call (D233): the body returns it, which would keep it beyond the call; read the value with '*xs'`
+
+A pointer handed to a function value — a lambda, or a named function used
+as one — is lent for that call: `notes.withLock(xs => …)` gives the lambda
+the locked value only while the lock is held. The body may read and change
+through the pointer and pass it on to a call that keeps no pointer, but
+returning it, storing it or capturing it would let the value be reached
+after the call — after the unlock. Return a copy, `xs => *xs`, or the part
+that is needed, `xs => xs.len()`. A named function that keeps its pointer
+parameter is refused as a function value with the same reason; call it
+from a lambda instead.
 
 ### calls
 
@@ -915,7 +968,7 @@ The `val`/`var`, loop, destructuring or pattern binding is never read
 ### tasks
 
 **Tasks, suspension and what may cross between them.** `argument of type
-'MutableList<i64>' is not Sendable and cannot cross a task boundary`,
+'List<i64>' is not Sendable and cannot cross a task boundary`,
 `'async' must be lexically inside a 'scope' or 'gather' block, or be the
 value of a 'with'`.
 
@@ -940,13 +993,13 @@ lambda or a `when` arm, `async { cede }` for `async cede` — each comes with
 the fix. A program that named something `cede` before the keyword existed
 renames it: `expected identifier, found keyword 'cede'`.
 
-#### `module-level 'val cache' has type 'MutableMap<i64, i64>', which is not Sendable`
+#### `module-level 'val cache' has type 'Map<i64, i64>', which is not Sendable`
 
 Every task, on any thread, reaches a module-level `val` or a `static
 val`. A mutable collection, a `StringBuilder`, or a struct holding one
 would be changed through its methods by several threads at once (D66).
 Make the value immutable (`List`, `Map`, `Set`; `.toList()`), keep it
-behind a lock (`val cache = Mutex(value: MutableMap<i64, i64>())`), or
+behind a lock (`val cache = Mutex(value: Map<i64, i64>())`), or
 keep it in an executor's state when one thread owns it (D150). For a
 trait object, declare the trait `Sendable` (`trait Clock : Sendable`) so
 every implementor is.
@@ -1025,7 +1078,7 @@ scope, await there, and keep the _values_:
 // fragment
 var total: i64 = 0
 scope {
-  val tasks: MutableList<Task<i64>> = []
+  val tasks: List<Task<i64>> = []
   loop (u in urls) tasks.push(async fetchSize(u))
   loop (t in tasks) total += await t
 }
@@ -1058,7 +1111,7 @@ A task's result reaches whoever awaits it, not a `with`, so a value
 holding a task cannot come out of one (D111). Call the function directly
 and receive what it returns with `with`.
 
-#### `argument of type 'MutableList<i64>' is not Sendable and cannot cross a task boundary`
+#### `argument of type 'List<i64>' is not Sendable and cannot cross a task boundary`
 
 Tasks may only share immutable data (D35). Pass a `List` (`.toList()`),
 send items over a `Channel`, or guard shared state with `Mutex(value: ...)`.
@@ -1256,13 +1309,13 @@ comment; until the reason after `SAFETY:` is filled in, the warning says
 it "gives no reason". Or declare the function `unsafe fun`, so its
 callers take on the obligation.
 
-#### `'atUnchecked' skips the bounds check in a release build, so it needs an 'unsafe' block`
+#### `'getUnchecked' skips the bounds check in a release build, so it needs an 'unsafe' block`
 
-`atUnchecked`, `setUnchecked` and `byteAtUnchecked` (D114) are undefined
+`getUnchecked`, `setUnchecked` and `byteAtUnchecked` (D114) are undefined
 behaviour in a release build when the index is out of range, so they are
 written inside `unsafe { }` with a `// SAFETY:` comment saying why the
 index is in range. Most code wants the checked form the message names
-(`at(i)`, `set(i, v)`, `byteAt(i)`); the compiler already drops a check
+(`get(i)`, `set(i, v)`, `byteAt(i)`); the compiler already drops a check
 it can prove.
 
 ### attributes
@@ -1403,9 +1456,9 @@ prints where (D64).
 
 ### `panic: index 3 out of bounds for list of length 1`
 
-`xs.set(i, v)` or `xs.swap(i, j)` with a bad index. A read is `xs.at(i)`,
+`xs.set(i, v)` or `xs.swap(i, j)` with a bad index. A read is `xs.get(i)`,
 a `T?` — or a `T` where the compiler can see the index is in range (D62);
-where it cannot, say why the read cannot fail: `xs.at(i) ?: panic("…")`.
+where it cannot, say why the read cannot fail: `xs.get(i) ?: panic("…")`.
 The line under the message, `at main.vs:7:31`, is where it happened (D64). A debug build adds `in <function>` and a
 `called from file:line:col in <function>` line per call up to the task's
 first function (D81); a release build prints the location and

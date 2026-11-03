@@ -111,6 +111,11 @@ func (g *gen) placeAs(e sema.Expr, mode placeMode) string {
 		}
 		return g.varPtr(e.Var)
 	case *sema.Deref:
+		if a, ok := e.X.(*sema.AddrOf); ok && isPlace(a.X) {
+			// `*&place` (`xs.at(i).n`): the place itself, in the mode its
+			// user needs — a read through `at` copies nothing (D231)
+			return g.placeAs(a.X, mode)
+		}
 		return g.expr(e.X)
 	case *sema.Unwrap:
 		// the payload of a nullable place (after a null test)
@@ -153,17 +158,20 @@ func (g *gen) placeAs(e sema.Expr, mode placeMode) string {
 		if _, ok := e.Args[0].Type().(*types.Array); ok && (e.Op == "list.ref" || e.Op == "list.refUnchecked") {
 			return g.arrayElemPtr(e.Args[0], g.expr(e.Args[1]), e.Op == "list.refUnchecked", e.Span, mode)
 		}
-		if e.Op == "list.ref" {
-			list := g.expr(e.Args[0])
+		if e.Op == "list.ref" || e.Op == "list.refUnchecked" {
+			// a write, or a pointer that outlives the access, goes to the
+			// list's own place made unique (D231); a read needs nothing
+			var list string
+			if mode == placeRead {
+				list = g.expr(e.Args[0])
+			} else {
+				list = g.writableColl(e.Args[0], mode)
+			}
 			idx := g.expr(e.Args[1])
-			g.listGuard(list, e.Args[0].Type(), mode)
+			if e.Op == "list.refUnchecked" {
+				return g.listElemPtrUnchecked(list, idx, listElem(e.Args[0].Type()), e.Span)
+			}
 			return g.listElemPtr(list, idx, listElem(e.Args[0].Type()), g.where(e.Span))
-		}
-		if e.Op == "list.refUnchecked" {
-			list := g.expr(e.Args[0])
-			idx := g.expr(e.Args[1])
-			g.listGuard(list, e.Args[0].Type(), mode)
-			return g.listElemPtrUnchecked(list, idx, listElem(e.Args[0].Type()), e.Span)
 		}
 	}
 	// Not a place: materialise into a temporary.
@@ -398,6 +406,9 @@ func (g *gen) expr(e sema.Expr) string {
 		g.storeVal(e.X.Type(), v, cell)
 		return cell
 	case *sema.Deref:
+		if a, ok := e.X.(*sema.AddrOf); ok && isPlace(a.X) {
+			return g.loadVal(e.Type(), g.placeAs(a.X, placeRead)) // a read through `at` (D231)
+		}
 		p := g.expr(e.X)
 		return g.loadVal(e.Type(), p)
 	case *sema.SomeWrap:
@@ -527,6 +538,8 @@ func (g *gen) expr(e sema.Expr) string {
 		return g.closure(e)
 	case *sema.Box:
 		return g.box(e)
+	case *sema.Share:
+		return g.shareValue(e.Type(), g.expr(e.X)) // D231
 	case *sema.CallVirtual:
 		return g.callVirtual(e)
 	case *sema.Launch:
@@ -1382,8 +1395,9 @@ func (g *gen) try(e *sema.Try) string {
 
 func (g *gen) listLit(e *sema.ListLit) string {
 	lt := e.Type().(*types.List)
-	if len(e.Elems) == 0 && !lt.Mutable {
-		return g.emptyList(lt.Elem) // an immutable empty list is one shared constant (D187)
+	if len(e.Elems) == 0 && !g.stackLit[e] && !g.freshLit[e] {
+		// the one shared empty constant (D187), copied on its first change (D231)
+		return g.emptyList(lt.Elem)
 	}
 	var list string
 	if g.stackLit[e] {
@@ -1775,20 +1789,17 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		v := g.newTmp()
 		g.emit("%s = icmp u%s ptr %s, %s", v, strings.TrimPrefix(e.Op, "rawptr."), a, b)
 		return v
-	case "list.isFrozen":
-		return g.isFrozen(g.expr(e.Args[0]), listHeader, flagsField)
-	case "list.freeze":
-		// the list, now immutable, in place (D188)
-		l := g.expr(e.Args[0])
-		r := g.newTmp()
-		g.emit("%s = call ptr @veles_list_freeze(ptr %s)", r, l)
-		return r
 	case "list.rawData":
-		// the element storage: veles_list's first field (D69, withRaw)
-		l := g.expr(e.Args[0])
-		g.listGuard(l, e.Args[0].Type(), placeExpose) // a pointer into the storage (D188)
+		// the element storage: veles_list's first field (D69, withRaw). C may
+		// write through it, so the list's own storage, made unique (D231)
+		l := g.writableColl(e.Args[0], placeExpose)
 		p := g.newTmp()
 		g.emit("%s = load ptr, ptr %s", p, l)
+		return p
+	case "list.readData":
+		// the same storage for C only to read: the list as it is
+		p := g.newTmp()
+		g.emit("%s = load ptr, ptr %s", p, g.expr(e.Args[0]))
 		return p
 	case "list.joinText":
 		l := g.expr(e.Args[0])
@@ -1799,32 +1810,32 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.emit("%s = load %s, ptr %s", r, strType, out)
 		return r
 	case "list.appendText":
-		l := g.expr(e.Args[0])
+		l := g.growableColl(e.Args[0])
 		sp, sl := g.strPtrLen(g.expr(e.Args[1]))
 		g.emit("call void @veles_list_append_bytes(ptr %s, ptr %s, i64 %s)", l, sp, sl)
 		return "zeroinitializer"
 	case "list.trimText":
-		g.emit("call void @veles_bytes_trim(ptr %s)", g.expr(e.Args[0]))
+		g.emit("call void @veles_bytes_trim(ptr %s)", g.writableColl(e.Args[0], placeWrite))
 		return "zeroinitializer"
 	case "list.asciiCase":
-		l := g.expr(e.Args[0])
+		l := g.writableColl(e.Args[0], placeWrite)
 		upper := g.expr(e.Args[1])
 		g.emit("call void @veles_bytes_ascii_case(ptr %s, i1 %s)", l, upper)
 		return "zeroinitializer"
 	case "list.replaceText":
-		l := g.expr(e.Args[0])
+		l := g.writableColl(e.Args[0], placeWrite)
 		op, ol := g.strPtrLen(g.expr(e.Args[1]))
 		rp, rl := g.strPtrLen(g.expr(e.Args[2]))
 		g.emit("call void @veles_bytes_replace(ptr %s, ptr %s, i64 %s, ptr %s, i64 %s)", l, op, ol, rp, rl)
 		return "zeroinitializer"
 	case "list.insertText":
-		l := g.expr(e.Args[0])
+		l := g.growableColl(e.Args[0])
 		at := g.expr(e.Args[1])
 		sp, sl := g.strPtrLen(g.expr(e.Args[2]))
 		g.emit("call void @veles_bytes_insert(ptr %s, i64 %s, ptr %s, i64 %s)", l, at, sp, sl)
 		return "zeroinitializer"
 	case "list.takeText":
-		l := g.expr(e.Args[0])
+		l := g.expr(e.Args[0]) // the string shares the storage, which is marked shared (D231)
 		out := g.alloca(strType)
 		g.emit("store %s zeroinitializer, ptr %s", strType, out)
 		ok := g.newTmp()
@@ -1852,12 +1863,12 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		p := g.expr(e.Args[0])
 		return g.loadVal(e.Type(), p)
 	case "list.reserve":
-		l := g.expr(e.Args[0])
+		l := g.writableColl(e.Args[0], placeWrite)
 		n := g.expr(e.Args[1])
 		g.emit("call void @veles_list_reserve(ptr %s, i64 %s)", l, n)
 		return "zeroinitializer"
 	case "list.push":
-		l := g.expr(e.Args[0])
+		l := g.growableColl(e.Args[0])
 		x := g.expr(e.Args[1])
 		et := g.llType(e.Args[1].Type())
 		xt := e.Args[1].Type()
@@ -1895,7 +1906,7 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.placeLabel(doneL)
 		return "zeroinitializer"
 	case "list.pop":
-		l := g.expr(e.Args[0])
+		l := g.writableColl(e.Args[0], placeWrite)
 		nt := e.Type().(*types.Nullable)
 		et := g.llType(nt.Elem)
 		var tmp string
@@ -1924,58 +1935,42 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		return v
 	case "list.copy":
 		l := g.expr(e.Args[0])
-		if rt, ok := e.Type().(*types.List); ok && !rt.Mutable {
-			// the copy of an empty list into an immutable one is the shared
-			// empty constant: nothing to allocate (D187)
-			lenP, n, isEmpty := g.newTmp(), g.newTmp(), g.newTmp()
-			g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", lenP, listHeader, l)
-			g.emit("%s = load i64, ptr %s", n, lenP)
-			g.emit("%s = icmp eq i64 %s, 0", isEmpty, n)
-			res := g.alloca("ptr")
-			emptyL, copyL, doneL := g.newLabel("copy.empty"), g.newLabel("copy.full"), g.newLabel("copy.done")
-			g.emitTerm("br i1 %s, label %%%s, label %%%s", isEmpty, emptyL, copyL)
-			g.placeLabel(emptyL)
-			g.emit("store ptr %s, ptr %s", g.emptyList(rt.Elem), res)
-			g.emitTerm("br label %%%s", doneL)
-			g.placeLabel(copyL)
-			c := g.newTmp()
-			g.emit("%s = call ptr @veles_list_copy(ptr %s)", c, l)
-			g.emit("store ptr %s, ptr %s", c, res)
-			g.emitTerm("br label %%%s", doneL)
-			g.placeLabel(doneL)
-			out := g.newTmp()
-			g.emit("%s = load ptr, ptr %s", out, res)
-			return out
-		}
 		v := g.newTmp()
 		g.emit("%s = call ptr @veles_list_copy(ptr %s)", v, l)
+		g.shareElems(v, listElem(e.Args[0].Type())) // the elements are held twice (D231)
 		return v
 	case "list.addAll":
-		l := g.expr(e.Args[0])
+		l := g.growableColl(e.Args[0])
 		src := g.expr(e.Args[1])
 		g.emit("call void @veles_list_append_list(ptr %s, ptr %s)", l, src)
+		g.shareElems(src, listElem(e.Args[1].Type())) // its elements are held twice now (D231)
 		return "zeroinitializer"
 	case "list.slice":
 		l := g.expr(e.Args[0])
 		from := g.expr(e.Args[1])
 		to := g.expr(e.Args[2])
 		v := g.newTmp()
-		// an immutable List cannot change, so its window shares the storage
-		// (D196); a MutableList's window is a copy
-		fn := "veles_list_slice"
-		if lt, ok := types.Underlying(e.Args[0].Type()).(*types.List); ok && !lt.Mutable && !g.mayAliasMutable(e.Args[0]) {
-			fn = "veles_list_view"
+		// a window onto the same storage, both headers marked shared (D196,
+		// D231) — a copy when a pointer was made into it
+		if _, isArray := e.Args[0].Type().(*types.Array); isArray {
+			g.emit("%s = call ptr @veles_list_slice(ptr %s, i64 %s, i64 %s)", v, l, from, to)
+		} else {
+			g.emit("%s = call ptr @veles_list_view(ptr %s, i64 %s, i64 %s)", v, l, from, to)
 		}
-		g.emit("%s = call ptr @%s(ptr %s, i64 %s, i64 %s)", v, fn, l, from, to)
+		g.shareElems(v, listElem(e.Args[0].Type()))
 		return v
 	case "list.move":
-		l := g.expr(e.Args[0])
+		l := g.writableColl(e.Args[0], placeWrite)
 		from, to, n := g.expr(e.Args[1]), g.expr(e.Args[2]), g.expr(e.Args[3])
 		g.emit("call void @veles_list_move(ptr %s, i64 %s, i64 %s, i64 %s)", l, from, to, n)
 		return "zeroinitializer"
 	case "list.touch":
 		// an order change made through `set` (sort, swap): D102 counts it
-		g.bumpMods(g.expr(e.Args[0]))
+		g.bumpMods(g.writableColl(e.Args[0], placeWrite))
+		return "zeroinitializer"
+	case "list.own", "map.own":
+		// before `loop (&x in xs)`: xs's own storage, unique and exposed (D231)
+		g.writableColl(e.Args[0], placeExpose)
 		return "zeroinitializer"
 	case "task.blockOn":
 		// D152 (std's runBlocking): the closure runs as a task placed on
@@ -2013,11 +2008,60 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		g.panicAt(e.Args[2].(*sema.StringConst).Value, g.where(e.Span))
 		g.placeLabel(okL)
 		return "zeroinitializer"
+	case "list.lend", "map.lend":
+		// a value loop begins (D102 addendum): mark the header lent when
+		// nothing else holds it — 1 if this loop set the mark, 0 if the
+		// header was shared or lent already (it may be read-only then)
+		header, field := listHeader, flagsField
+		if e.Op == "map.lend" {
+			header, field = mapHeader, mapFlagsField
+		}
+		h := g.expr(e.Args[0])
+		fp, f, bits, free := g.newTmp(), g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", fp, header, h, field)
+		g.emit("%s = load i64, ptr %s", f, fp)
+		g.emit("%s = and i64 %s, %d", bits, f, flagShared|flagLent)
+		g.emit("%s = icmp eq i64 %s, 0", free, bits)
+		slot := g.alloca("i64")
+		g.emit("store i64 0, ptr %s", slot)
+		setL, doneL := g.newLabel("lend.set"), g.newLabel("lend.done")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", free, setL, doneL)
+		g.placeLabel(setL)
+		nf := g.newTmp()
+		g.emit("%s = or i64 %s, %d", nf, f, flagLent)
+		g.emit("store i64 %s, ptr %s", nf, fp)
+		g.emit("store i64 1, ptr %s", slot)
+		g.emitTerm("br label %%%s", doneL)
+		g.placeLabel(doneL)
+		r := g.newTmp()
+		g.emit("%s = load i64, ptr %s", r, slot)
+		return r
+	case "list.unlend", "map.unlend":
+		// the loop ends: clear the mark it set (a header copied meanwhile by
+		// a writer is no longer anyone's but the loop's, and is dropped)
+		header, field := listHeader, flagsField
+		if e.Op == "map.unlend" {
+			header, field = mapHeader, mapFlagsField
+		}
+		h := g.expr(e.Args[0])
+		set := g.expr(e.Args[1])
+		did := g.newTmp()
+		g.emit("%s = icmp ne i64 %s, 0", did, set)
+		clearL, doneL := g.newLabel("unlend.clear"), g.newLabel("unlend.done")
+		g.emitTerm("br i1 %s, label %%%s, label %%%s", did, clearL, doneL)
+		g.placeLabel(clearL)
+		fp, f, nf := g.newTmp(), g.newTmp(), g.newTmp()
+		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 %d", fp, header, h, field)
+		g.emit("%s = load i64, ptr %s", f, fp)
+		g.emit("%s = and i64 %s, %d", nf, f, ^int64(flagLent))
+		g.emit("store i64 %s, ptr %s", nf, fp)
+		g.emitTerm("br label %%%s", doneL)
+		g.placeLabel(doneL)
+		return "zeroinitializer"
 	case "list.mods", "map.mods":
 		return g.mods(e.Op == "map.mods", g.expr(e.Args[0]))
 	case "list.clear":
-		l := g.expr(e.Args[0])
-		g.emit("call void @veles_list_clear(ptr %s)", l)
+		g.clearColl(e.Args[0])
 		return "zeroinitializer"
 	case "string.len":
 		s := g.expr(e.Args[0])
@@ -2434,8 +2478,11 @@ func (g *gen) thunkFor(fn *sema.Func) string {
 func (g *gen) box(e *sema.Box) string {
 	t := e.X.Type()
 	v := g.expr(e.X)
-	data := g.gcAlloc(t)
-	g.storeVal(t, v, data)
+	data := v // `&x`: the object holds the pointer itself (D232)
+	if !e.Ref {
+		data = g.gcAlloc(t)
+		g.storeVal(t, v, data)
+	}
 	vt := g.vtable(e)
 	a := g.newTmp()
 	g.emit("%s = insertvalue { ptr, ptr } undef, ptr %s, 0", a, data)
@@ -2448,7 +2495,7 @@ func (g *gen) box(e *sema.Box) string {
 // thunks that adapt the impl's calling convention to `(ptr self, args...)`.
 // Slot 0 is the type's identity (D117, D135); the methods follow.
 func (g *gen) vtable(e *sema.Box) string {
-	return g.vtableFor(e.Trait, e.X.Type(), e.Methods)
+	return g.vtableFor(e.Trait, e.Boxed(), e.Methods)
 }
 
 func vtableName(trait *types.Trait, t types.Type) string {
@@ -2734,20 +2781,4 @@ func (g *gen) bumpMods(l string) {
 	g.emit("%s = load i64, ptr %s", v, p)
 	g.emit("%s = add i64 %s, 1", n, v)
 	g.emit("store i64 %s, ptr %s", n, p)
-}
-
-// mayAliasMutable reports whether the immutable List x may in fact be a
-// MutableList's own header: the `this` of a `List` extension method, which a
-// MutableList receiver is passed as. A window of it must be a copy (D196).
-// std's own methods are written to account for that, with a `MutableList`
-// version of each method that cuts windows.
-func (g *gen) mayAliasMutable(x sema.Expr) bool {
-	if d, ok := x.(*sema.Deref); ok {
-		x = d.X // `this` is a pointer to the receiver's place
-	}
-	ref, ok := x.(*sema.VarRef)
-	if !ok || !ref.Var.IsSelf {
-		return false
-	}
-	return g.fn == nil || g.fn.Span.File == nil || !g.fn.Span.File.Embedded
 }

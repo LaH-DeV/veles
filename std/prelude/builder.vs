@@ -3,7 +3,7 @@
 
 /// Accumulates text. `StringBuilder()` starts one; `toString()` reads it.
 public struct StringBuilder {
-  private bytes: MutableList<u8> = []
+  private bytes: List<u8> = []
 
   /// Appends `s`.
   public const fun append(s: string) {
@@ -65,7 +65,7 @@ public struct StringBuilder {
   @caller_location
   public const fun insert(at: i64, text: string) {
     if (at < 0 || at > this.bytes.len()) panic("insert: index $at out of bounds for a builder of ${this.bytes.len()} bytes")
-    if (((this.bytes.at(at) ?: 0) & 0xC0) == 0x80) panic("insert: index $at is inside a character")
+    if (((this.bytes.get(at) ?: 0) & 0xC0) == 0x80) panic("insert: index $at is inside a character")
     listInsertText(this.bytes, at, text)
   }
 

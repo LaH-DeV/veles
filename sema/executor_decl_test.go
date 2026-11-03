@@ -15,10 +15,10 @@ import (
 // Sendable; its arguments are named, and its name is its declaration's.
 func TestExecutorDeclarationRules(t *testing.T) {
 	const gl = `executor gl {
-  var textures: MutableMap<i64, string> = [:]
+  var textures: Map<i64, string> = [:]
   public fun texture(id: i64): string => textures.get(id) ?: "none"
   public fun count(): i64 => textures.len()
-  public fun fill(ids: MutableList<i64>) { }
+  public fun fill(ids: *List<i64>) { }
 }
 `
 	expectClean(t, prelude+gl+`fun main() {
@@ -37,9 +37,9 @@ func TestExecutorDeclarationRules(t *testing.T) {
   io.println(f(1))
 }`, "'gl.texture' runs on executor 'gl': outside its code it is called, not taken as a value")
 	expectError(t, prelude+gl+`fun main() {
-  val ids: MutableList<i64> = [1]
-  gl.fill(ids)
-}`, "argument of type 'MutableList<i64>' is not Sendable, and this call runs 'fill' on executor 'gl'")
+  val ids: List<i64> = [1]
+  gl.fill(&ids)
+}`, "argument of type '*List<i64>' is not Sendable, and this call runs 'fill' on executor 'gl'")
 	// a plain function cannot wait for the executor
 	expectError(t, prelude+gl+`fun main() throws ThreadError {
   with t = try Thread.start(name: "t", f: () => io.println(gl.texture(1)))
@@ -88,15 +88,15 @@ fun main() {
   }
 }`)
 	// what crosses is still checked: Sendable
-	expectError(t, prelude+gl+`fun ids(): MutableList<i64> => MutableList()
-executor cpu(threads: 2) {
-  public fun sum(xs: MutableList<i64>): i64 => xs.len()
+	expectError(t, prelude+gl+`executor cpu(threads: 2) {
+  public fun sum(xs: *List<i64>): i64 => xs.len()
 }
 fun main() {
+  val ids: List<i64> = [1]
   scope {
-    async cpu.sum(ids())
+    async cpu.sum(&ids)
   }
-}`, "argument of type 'MutableList<i64>' is not Sendable, and this call runs 'sum' on executor 'cpu'")
+}`, "argument of type '*List<i64>' is not Sendable, and this call runs 'sum' on executor 'cpu'")
 }
 
 // D150 across modules: `mod.gl.f(x)` reaches a public function of a public

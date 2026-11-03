@@ -36,7 +36,7 @@ fun square(i: i64): i64 {
 fun batch(from: i64): i64 {
   var sum: i64 = 0
   scope {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     loop (i in from..<from + 1000) {
       tasks.push(async square(i))
     }
@@ -89,9 +89,9 @@ extern "C" {
 fun main() {
   var made = 0
   loop (round in 0..<10) {
-    val big: MutableList<MutableList<u8>> = []
+    val big: List<List<u8>> = []
     loop (k in 0..<8) {
-      big.push(MutableList<u8>.repeat(255, 200000 + k))
+      big.push(List<u8>.repeat(255, 200000 + k))
     }
     big.clear()
     // SAFETY: a runtime hook that takes nothing; the second collection frees
@@ -99,9 +99,9 @@ fun main() {
     unsafe { veles_gc_collect() }
     // SAFETY: as above
     unsafe { veles_gc_collect() }
-    val small: MutableList<MutableList<i64>> = []
+    val small: List<List<i64>> = []
     loop (k in 0..<20000) {
-      val l: MutableList<i64> = []
+      val l: List<i64> = []
       l.push(k)
       small.push(l)
     }
@@ -122,6 +122,80 @@ fun main() {
 	out, err := run.CombinedOutput()
 	if err != nil || strings.TrimSpace(string(out)) != "made 200000" {
 		t.Fatalf("got %q, %v", out, err)
+	}
+}
+
+// A large object's span is released when a sweep finds it dead, its pieces
+// free for the next span at once and its memory kept committed up to the
+// goal, cleared when a span is carved there (2026-11-02). Eight tasks make,
+// read and drop large lists of numbers and of pointers, keeping three alive
+// across rounds, under every way of marking, with swept objects poisoned.
+func TestLargeSpansReused(t *testing.T) {
+	t.Parallel()
+	if _, err := findClang(); err != nil {
+		t.Skip("clang not available:", err)
+	}
+	dir := t.TempDir()
+	src := `use io
+
+struct Cell {
+  value: i64
+}
+
+fun churn(seed: i64, rounds: i64): i64 {
+  var check: i64 = 0
+  val ring: List<List<*Cell>> = []
+  loop (r in 0..<rounds) {
+    val numbers: List<i64> = []
+    loop (i in 0..<(6000 + r % 7 * 1000)) numbers.push(seed + i * r)
+    val cells: List<*Cell> = []
+    loop (i in 0..<(5000 + r % 5 * 500)) cells.push(&Cell(value: (seed * 7 + i + r) % 1009))
+    loop (n in numbers) check = (check * 31 + n) % 1000000007
+    if (ring.len() == 3) {
+      val [oldest, ..] = ring else break
+      loop (c in oldest) check = (check * 17 + c.value) % 1000000007
+      ring.removeAt(0)
+    }
+    ring.push(cells)
+  }
+  loop (kept in ring) {
+    loop (c in kept) check = (check + c.value) % 1000000007
+  }
+  check
+}
+
+fun main() {
+  var total: i64 = 0
+  scope {
+    val ts: List<Task<i64>> = []
+    loop (t in 0..<8) ts.push(async churn(t * 1000, 60))
+    loop (t in ts) total = (total + await t) % 1000000007
+  }
+  io.println("$total")
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	modes := []string{"0", "all"}
+	if runtime.GOOS == "windows" {
+		modes = append(modes, "1")
+	}
+	for _, release := range profiles() {
+		exe := filepath.Join(dir, fmt.Sprintf("large%v.exe", release))
+		if code := Run(Options{Path: filepath.Join(dir, "main.vs"), Mode: "build", Output: exe, Release: release, Sanitize: *sanitize}); code != 0 {
+			t.Fatalf("build failed with exit %d", code)
+		}
+		for _, mode := range modes {
+			for _, threads := range threadCounts("1", "8") {
+				run := exec.Command(exe)
+				run.Env = append(os.Environ(), "VELES_THREADS="+threads, "VELES_GC_CONCURRENT="+mode, "VELES_GC_POISON=1", "VELES_GC_THRESHOLD=2000000")
+				out, err := run.CombinedOutput()
+				if got := strings.TrimSpace(string(out)); err != nil || got != "316228134" {
+					t.Fatalf("release=%v concurrent=%s threads %s: %v\n%s", release, mode, threads, err, got)
+				}
+			}
+		}
 	}
 }
 
@@ -172,8 +246,8 @@ fun churn(seed: i64, kept: List<List<i64>>): i64 {
   var check: i64 = 0
   loop (round in 0..<30) {
     val tree = build(8, seed + round)
-    val names: MutableList<string> = []
-    val counts: MutableMap<string, i64> = [:]
+    val names: List<string> = []
+    val counts: Map<string, i64> = [:]
     loop (i in 0..<200) {
       val name = "n${(seed * 31 + i) % 97}"
       names.push(name)
@@ -185,16 +259,16 @@ fun churn(seed: i64, kept: List<List<i64>>): i64 {
 }
 
 fun main() {
-  val rows: MutableList<List<i64>> = []
+  val rows: List<List<i64>> = []
   loop (r in 0..<2000) {
-    val row: MutableList<i64> = []
+    val row: List<i64> = []
     loop (c in 0..<64) row.push(r * 64 + c)
     rows.push(row)
   }
-  val kept = rows.toList()
+  val kept = rows
   var sum: i64 = 0
   scope {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     loop (s in 0..<16) tasks.push(async churn(s, kept))
     loop (t in tasks) sum += await t
   }
@@ -271,19 +345,19 @@ fun walk(start: *Node, depth: i64): i64 {
 
 fun churn(seed: i64, rounds: i64): i64 {
   val n: i64 = 2000
-  val slots: MutableList<*Node> = []
+  val slots: List<*Node> = []
   loop (i in 0..<n) slots.push(&Node(value: seed + i, next: null))
   var check: i64 = 0
   loop (r in 0..<rounds) {
     loop (i in 0..<n) {
-      val old = slots.at(i) ?: break
-      val neighbour = slots.at((i * 7 + r) % n) ?: break
+      val old = slots.get(i) ?: break
+      val neighbour = slots.get((i * 7 + r) % n) ?: break
       slots.set(i, &Node(value: (old.value * 13 + r) % 100003, next: if (r % 3 == 0) neighbour else old))
-      val junk: MutableList<i64> = [i, r, seed]
+      val junk: List<i64> = [i, r, seed]
       check = (check + junk.len()) % 1000000007
     }
     if (r % 10 == 9) {
-      loop (i in 0..<n) check = (check + walk(slots.at(i) ?: break, 6)) % 1000000007
+      loop (i in 0..<n) check = (check + walk(slots.get(i) ?: break, 6)) % 1000000007
     }
   }
   check
@@ -292,7 +366,7 @@ fun churn(seed: i64, rounds: i64): i64 {
 fun main() {
   var total: i64 = 0
   scope {
-    val ts: MutableList<Task<i64>> = []
+    val ts: List<Task<i64>> = []
     loop (t in 0..<8) ts.push(async churn(t * 1000, 120))
     loop (t in ts) total = (total + await t) % 1000000007
   }
@@ -855,7 +929,7 @@ fun relock(how: string) {
 
 fun main() throws Lagged {
   if (os.args().len() > 0) {
-    relock(os.args().at(0) ?: "")
+    relock(os.args().get(0) ?: "")
     return
   }
   // RwLock: writers never interleave with readers or each other
@@ -1183,7 +1257,7 @@ error Odd {
   fun message(): string => "odd ${this.n}"
 }
 
-fun load(cache: MutableList<i64>, id: i64) {
+fun load(cache: *List<i64>, id: i64) {
   await sleep(Duration.millis(1))
   cache.push(id * 10)
 }
@@ -1191,7 +1265,7 @@ fun load(cache: MutableList<i64>, id: i64) {
 executor gl {
   val home: i64 = tid()
   var made: i64 = 0
-  var names: MutableMap<i64, string> = [:]
+  var names: Map<i64, string> = [:]
 
   public fun texture(id: i64): string {
     made += 1
@@ -1206,9 +1280,9 @@ executor gl {
 
   // children stay on gl and share the list without a lock
   public fun preload(ids: List<i64>): i64 {
-    val cache: MutableList<i64> = []
+    val cache: List<i64> = []
     scope {
-      loop (id in ids) async load(cache, id)
+      loop (id in ids) async load(&cache, id)
     }
     var sum: i64 = 0
     loop (x in cache) sum += x
@@ -1337,7 +1411,7 @@ error Odd {
   fun message(): string => "odd ${this.n}"
 }
 
-fun note(seen: Mutex<MutableMap<i64, bool>>, depth: i64) {
+fun note(seen: Mutex<Map<i64, bool>>, depth: i64) {
   seen.withLock(s => s.set(tid(), true))
   if (depth > 0) {
     // a child launched by a task on the pool runs on the pool too
@@ -1432,7 +1506,7 @@ fun busy(done: Atomic<i64>, sw: time.Stopwatch) {
 fun main() throws ThreadError | IoError | io.TooLong | Odd {
   io.println("1. a pool's tasks, and their children, run on its threads:")
   with cpu = try Executor.pool(threads: 3, name: "cpu")
-  val threads: MutableMap<i64, bool> = [:]
+  val threads: Map<i64, bool> = [:]
   val seen = Mutex(value: threads)
   scope(on: cpu) {
     loop (_ in 0..<8) async note(seen, 2)
@@ -1805,7 +1879,7 @@ fun fair() {
 }
 
 fun main() {
-  if (os.args().at(0) == "fair") {
+  if (os.args().get(0) == "fair") {
     fair()
     return
   }
@@ -2107,7 +2181,7 @@ fun spin(n: i64): i64 {
   x
 }
 
-fun next(lines: MutableList<string>): string {
+fun next(lines: *List<string>): string {
   await sleep(Duration.millis(1))
   lines.removeAt(0)
 }
@@ -2198,8 +2272,8 @@ fun main() throws Odd | Timeout | ThreadError {
   with cpu = try Executor.pool(threads: 2, name: "cpu")
 
   io.println("1. a non-Sendable capture:")
-  val lines: MutableList<string> = ["a", "b"]
-  io.println("  -> ${try withTimeout(Duration.millis(1000), () => next(lines))}, ${lines.len()} left")
+  val lines: List<string> = ["a", "b"]
+  io.println("  -> ${try withTimeout(Duration.millis(1000), () => next(&lines))}, ${lines.len()} left")
 
   io.println("2. a plain loop is stopped, on any number of threads:")
   val sw = time.Stopwatch.start()
@@ -2562,9 +2636,9 @@ fun fails(): i64 throws Nope {
 }
 
 fun main() {
-  val ids: MutableList<i64> = []
+  val ids: List<i64> = []
   loop (i in 0..<200) ids.push(i)
-  val got = ids.toList().mapConcurrent(i => handle(i) - 3 * i, workers: 64)
+  val got = ids.mapConcurrent(i => handle(i) - 3 * i, workers: 64)
   val wrong = got.filter(d => d != 0).len()
   val r = requestId.withValue(99, () => try fails())
   io.println("$wrong wrong, threw: ${r is Err}, outside: ${requestId.get()}")
@@ -2765,7 +2839,7 @@ func TestRunPassesArgumentsVerbatim(t *testing.T) {
 
 fun main() throws {
   val args = os.args()
-  if (args.at(0) == "child") {
+  if (args.get(0) == "child") {
     loop (a in args.drop(1)) io.println("[$a]")
     return
   }
@@ -2829,7 +2903,7 @@ fun child(mode: string) throws {
 
 fun main() throws {
   val args = os.args()
-  if (args.at(0) == "child") return try child(args.at(1) ?: "")
+  if (args.get(0) == "child") return try child(args.get(1) ?: "")
   val me = os.program()
   val a = try os.run(me, ["child", "echo"], input: "hello\nworld\n")
   io.println("echo: stdout ${a.stdout.len()} ${a.stdout.startsWith("hello")} stderr '${a.stderr.trim()}'")
@@ -3033,7 +3107,7 @@ func TestCallerLocationPanics(t *testing.T) {
 	dir := t.TempDir()
 	src := `use io
 
-fun bad(xs: MutableList<i64>) {
+fun bad(xs: List<i64>) {
   xs.swap(0, 7)
 }
 
@@ -3042,7 +3116,7 @@ fun badRadix(n: i64) {
 }
 
 fun main() {
-  val xs: MutableList<i64> = [1, 2, 3]
+  val xs: List<i64> = [1, 2, 3]
   io.println(255.toString(radix: 16))
   if (xs.len() == 3) badRadix(5)
   bad(xs)
@@ -3098,7 +3172,7 @@ fun twice(x: i64): i64 {
 }
 
 fun main() {
-  when (os.args().at(0) ?: "ok") {
+  when (os.args().get(0) ?: "ok") {
     "retry" => io.println("${retry(0, () => twice(1))}")
     "map" => io.println("${[1, 2].mapConcurrent(x => twice(x), workers: 0)}")
     "each" => [1, 2].forEachConcurrent(x => io.println("$x"), workers: 0)
@@ -3155,8 +3229,8 @@ fun depth(n: i64): i64 {
 }
 
 fun main() {
-  val n = (os.args().at(0) ?: "10").toInt() ?: 10
-  if (os.args().at(1) == "task") {
+  val n = (os.args().get(0) ?: "10").toInt() ?: 10
+  if (os.args().get(1) == "task") {
     scope {
       val t = async depth(n)
       println("depth $n: ${await t}")
@@ -3297,9 +3371,9 @@ fun spinUntil(started: Atomic<i64>, limit: i64): bool {
   true
 }
 
-fun median(xs: MutableList<i64>): i64 {
-  val s = xs.toList().sorted()
-  s.at(s.len() / 2) ?: 0
+fun median(xs: List<i64>): i64 {
+  val s = xs.sorted()
+  s.get(s.len() / 2) ?: 0
 }
 
 fun main() {
@@ -3309,7 +3383,7 @@ fun main() {
     async child(first)
     io.println("first child started while main computed: ${spinUntil(first, 2000000000)}")
   }
-  val waits: MutableList<i64> = []
+  val waits: List<i64> = []
   loop (_ in 0..<50) {
     val started = Atomic(value: 0)
     scope {
@@ -3319,15 +3393,15 @@ fun main() {
     }
   }
   io.println("every child started: ${waits.len() == 50}, median under 5 ms: ${median(waits) < 5000000}")
-  val sleeps: MutableList<i64> = []
+  val sleeps: List<i64> = []
   loop (_ in 0..<40) {
     val sw = time.Stopwatch.start()
     await sleep(Duration.micros(200))
     sleeps.push(sw.elapsed().toNanos())
   }
-  io.println("sleep(200 us): never early ${sleeps.toList().all(n => n >= 200000)}, median under 8 ms ${median(sleeps) < 8000000}")
+  io.println("sleep(200 us): never early ${sleeps.all(n => n >= 200000)}, median under 8 ms ${median(sleeps) < 8000000}")
   val never = Channel<i64>()
-  val races: MutableList<i64> = []
+  val races: List<i64> = []
   loop (_ in 0..<40) {
     val sw = time.Stopwatch.start()
     select {
@@ -3335,7 +3409,7 @@ fun main() {
       sleep(Duration.micros(300)) => races.push(sw.elapsed().toNanos())
     }
   }
-  io.println("race timeout of 300 us: never early ${races.toList().all(n => n >= 300000)}, median under 8 ms ${median(races) < 8000000}")
+  io.println("race timeout of 300 us: never early ${races.all(n => n >= 300000)}, median under 8 ms ${median(races) < 8000000}")
 }
 `
 	want := `first child started while main computed: true

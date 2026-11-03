@@ -36,7 +36,7 @@ public trait Iterator {
   }
 
   fun toList(): List<Item> {
-    var out: MutableList<Item> = []
+    var out: List<Item> = []
     loop {
       val v = this.next()
       if (v == null) break
@@ -168,7 +168,7 @@ fun runConcurrentMap<T, R, E>(f: sendable fun(T): R suspends throws E, jobs: Cha
   scope {
     // oldest first; the iterating task keeps at most `workers` under way,
     // so taking the first off is cheap
-    val running: MutableList<Task<R>> = []
+    val running: List<Task<R>> = []
     var open = true
     loop (open || !running.isEmpty()) {
       if (running.isEmpty()) {
@@ -176,7 +176,7 @@ fun runConcurrentMap<T, R, E>(f: sendable fun(T): R suspends throws E, jobs: Cha
         running.push(async f(job))
         continue
       }
-      val first = running.at(0) ?: break
+      val first = running.get(0)
       if (open) {
         // the oldest call's value, or a new element to start meanwhile
         select {
@@ -299,7 +299,7 @@ public struct ListIter<T> {
   implement Iterator {
     type Item = T
     fun next(): T? {
-      val v = this.list.at(this.index) ?: return null
+      val v = this.list.get(this.index) ?: return null
       this.index += 1
       v
     }
@@ -309,11 +309,6 @@ public struct ListIter<T> {
 implement<T> Iterable for List<T> {
   type Iter = ListIter<T>
   fun iterator(): ListIter<T> => ListIter(list: this)
-}
-
-implement<T> Iterable for MutableList<T> {
-  type Iter = ListIter<T>
-  fun iterator(): ListIter<T> => ListIter(list: this.toList())
 }
 
 public struct RangeIter<T> {

@@ -25,7 +25,7 @@ struct Check {
 /// http.serve(listener, app.handler(), health: health, stop: () => os.shutdownSignal())
 /// ```
 public struct Health {
-  private checks:  Mutex<MutableList<Check>> = newChecks()
+  private checks:  Mutex<List<Check>> = newChecks()
   private stopped: Atomic<bool> = Atomic(value: false)
 
   /// Adds a readiness check: `f` passes by returning and fails by throwing,
@@ -84,12 +84,12 @@ public struct Health {
     if (this.stopped.load()) {
       return probeAnswer(Status.serviceUnavailable, "{\"status\": \"stopping\", \"checks\": {}}", MediaType.json)
     }
-    val checks = this.checks.withLock(list => list.toList())
+    val checks = this.checks.withLock(list => *list)
     val failures: List<string?> = runAll(checks)
     var failed = false
     val parts = StringBuilder()
     loop ((i, c) in checks.enumerate()) {
-      val why = failures.at(i) ?: null
+      val why = failures.get(i) ?: null
       if (why != null) {
         failed = true
         logs.warn("health check failed", field("check", c.name), field("error", why))
@@ -103,15 +103,15 @@ public struct Health {
   }
 }
 
-fun newChecks(): Mutex<MutableList<Check>> {
-  val empty: MutableList<Check> = []
+fun newChecks(): Mutex<List<Check>> {
+  val empty: List<Check> = []
   Mutex(value: empty)
 }
 
 // every check, concurrently, each in a task of its own that cannot fail the
 // others: the outcome of each, in order
 fun runAll(checks: List<Check>): List<string?> suspends => scope {
-  val tasks: MutableList<Task<string?>> = []
+  val tasks: List<Task<string?>> = []
   loop (c in checks) {
     tasks.push(async probe(c))
   }

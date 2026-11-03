@@ -56,10 +56,10 @@ struct LintSettings {
   /// The column `long_line` allows; null for the default.
   var maxWidth: i64? = null
   /// The level set for each lint of the registry; a lint missing has its default.
-  levels: MutableMap<string, LintLevel> = [:]
+  levels: Map<string, LintLevel> = [:]
   /// The level set for each rule of a dependency, keyed `package.rule`
   /// (rules written in Veles, std/lint). A rule runs only when named here.
-  library: MutableMap<string, LintLevel> = [:]
+  library: Map<string, LintLevel> = [:]
 }
 
 /// The column `long_line` allows when a package does not set `max_width`.
@@ -89,6 +89,7 @@ fun lintOptions(): List<Setting<LintSettings>> => [
 /// rather than a level, so it is not listed.
 fun lints(): List<LintInfo> => [
   warn("continue_skips_step", "a `continue` that jumps over the step of a hand-written counting loop"),
+  warn("copy_changed", "a collection copied out of a field and changed, the change never reaching the field (D231)"),
   warn("count_loop", "a loop that only counts is written `iter.len()`"),
   warn("else_if_ladder", "three or more `else if` branches in a row are a `when { }`"),
   warn("inline_implement", "an `implement` beside a type can be written inside its body"),
@@ -102,7 +103,7 @@ fun lints(): List<LintInfo> => [
   warn("never_closed", "a `Closeable` that is never closed or handed on"),
   warn("param_copy", "a parameter changed in a function whose caller never sees the change"),
   warn("pattern_form", "a pattern written in a longer form than needed"),
-  warn("redundant_copy", "a `.toList()` of a collection that is not used afterwards: without it the collection is moved immutable"),
+  warn("redundant_copy", "retired with D231 (a copy is a binding now, so there is no `.toList()` to drop): never reports; kept so a manifest that names it still loads"),
   warn("redundant_discard", "`val _ = f()` for a value a statement may simply ignore"),
   warn("redundant_implement", "an `implement Trait { }` around the methods of a variant of that sealed trait"),
   warn("redundant_label", "an argument label that repeats the variable passed (`f(x: x)`)"),

@@ -113,7 +113,7 @@ struct FileServer {
     val st = try fs.stat(sent)
     val tag: string? = if (this.etag) "W/\"${if (gzipped) "gz-" else ""}${st.size}-${st.modified.toMicros()}\"" else null
     val modified: time.Timestamp? = if (this.lastModified) st.modified else null
-    val headers: MutableMap<string, string> = ["cache-control": this.cacheControl]
+    val headers: Map<string, string> = ["cache-control": this.cacheControl]
     if (!gzipped) headers.set("accept-ranges", "bytes")
     if (hasGzip) headers.set("vary", "accept-encoding")
     if (gzipped) headers.set(Header.contentEncoding, "gzip")
@@ -121,7 +121,7 @@ struct FileServer {
     if (val m = modified) headers.set("last-modified", time.formatHttp(m))
 
     if (val status = precondition(req, tag, modified)) {
-      return if (status == Status.notModified) Response(status, headers: headers.toMap()) else Response.empty(status)
+      return if (status == Status.notModified) Response(status, headers) else Response.empty(status)
     }
     val size = st.size
     val media = MediaType.ofExtension(path.ext(p))
@@ -140,7 +140,7 @@ struct FileServer {
   // opens it. The length is announced from the stat; a file that shrinks
   // meanwhile ends the response short and the connection is closed, which
   // the client sees as a truncated download.
-  fun send(media: MediaType, headers: MutableMap<string, string>, p: string, from: i64, count: i64, status: Status): Response {
+  fun send(media: MediaType, headers: Map<string, string>, p: string, from: i64, count: i64, status: Status): Response {
     var resp = Response.stream(media, sendFile(p, from, count), length: count, status: status)
     loop ((name, value) in headers.entries()) {
       resp = resp.withHeader(name, value)

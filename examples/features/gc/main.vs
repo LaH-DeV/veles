@@ -37,7 +37,7 @@ struct Thing {
 fun main() {
   // long-lived data must survive many collections while garbage churns
   val keep = build(2000)
-  var keepMap: MutableMap<string, List<i64>> = [:]
+  var keepMap: Map<string, List<i64>> = [:]
   loop (i in 0..<50) {
     keepMap.set("k$i", [i, i * 2])
   }
@@ -51,13 +51,13 @@ fun main() {
   loop (round in 0..<200) {
     val garbage = build(500)
     val strs = (0..<200).iterator().map(x => "item $x $round").toList()
-    var m: MutableMap<i64, string> = [:]
+    var m: Map<i64, string> = [:]
     loop (s in strs) {
       m.set(s.len(), s)
     }
     checksum += sum(garbage) + m.len() + counter()
   }
-  val words: MutableList<string> = []
+  val words: List<string> = []
   loop (i in 0..<2000) {
     words.push("w" + "$i")
   }
@@ -68,7 +68,7 @@ fun main() {
     total += a + b
   }
   println("map ${keepMap.len()} $total ${keepMap.get("k7") ?: []}")
-  println("${boxes.map(b => b.name())} ${counter()} ${words.len()} ${words.at(1999) ?: panic("gc: 2000 words were pushed")}")
+  println("${boxes.map(b => b.name())} ${counter()} ${words.len()} ${words.get(1999) ?: panic("gc: 2000 words were pushed")}")
 
   // many small short-lived objects between two collections: linear time.
   // The allocator once scanned every slot of every full span on each

@@ -150,7 +150,7 @@ struct Conn {
     val execute = Out()
     execute.cstring("")
     execute.i32(0)
-    val out: MutableList<u8> = []
+    val out: List<u8> = []
     out.addAll(parse.frame(80))
     out.addAll(bind.frame(66))
     out.addAll(describe.frame(68))
@@ -158,14 +158,14 @@ struct Conn {
     out.addAll(Out().frame(83))  // Sync
     try this.send(out)
     var columns: List<Column> = []
-    val rows: MutableList<List<string?>> = []
+    val rows: List<List<string?>> = []
     var tag = ""
     var failure: DbError? = null
     loop {
       val m = try this.receive()
       when {
         m.kind == msgReady          => {
-          this.inTransaction.store((m.body.at(0) ?: 73) != 73)
+          this.inTransaction.store((m.body.get(0) ?: 73) != 73)
           break
         }
         m.kind == msgError          => {
@@ -208,7 +208,7 @@ struct Conn {
 
 fun readColumns(c: *Cursor): List<Column> throws DbError {
   val n = try c.i16()
-  val out: MutableList<Column> = []
+  val out: List<Column> = []
   loop (_ in 0..<n) {
     val name = try c.cstring()
     try c.i32()  // the table
@@ -224,7 +224,7 @@ fun readColumns(c: *Cursor): List<Column> throws DbError {
 
 fun readRow(c: *Cursor): List<string?> throws DbError {
   val n = try c.i16()
-  val out: MutableList<string?> = []
+  val out: List<string?> = []
   loop (_ in 0..<n) {
     val len = try c.i32()
     if (len < 0) {
@@ -258,11 +258,11 @@ fun connect(target: Target): Conn suspends throws DbError {
   out.cstring("client_encoding")
   out.cstring("UTF8")
   out.byte(0)
-  val startup: MutableList<u8> = []
+  val startup: List<u8> = []
   startup.pushU32Be((out.body.len() + 4).wrapU32())
-  startup.addAll(out.body.toList())
+  startup.addAll(out.body)
   val conn = Conn(stream, target: target.shown())
-  try login(conn, target, startup.toList()) catch (e) {
+  try login(conn, target, startup) catch (e) {
     conn.close()
     throw e
   }
@@ -278,7 +278,7 @@ fun secure(socket: net.Conn, target: Target): io.Stream suspends throws DbError 
   val answer = socket.readExact(1) catch (e) {
     throw transport(e)
   }
-  if (answer.at(0) != 83) {
+  if (answer.get(0) != 83) {
     socket.close()
     throw DbError(kind: ErrorKind.Connection, text: "the server does not offer TLS; connect with ?sslmode=disable if the network is trusted")
   }
@@ -363,7 +363,7 @@ fun login(conn: Conn, target: Target, startup: List<u8>) suspends throws DbError
         }
       }
       m.kind == msgReady => {
-        conn.inTransaction.store((m.body.at(0) ?: 73) != 73)
+        conn.inTransaction.store((m.body.get(0) ?: 73) != 73)
         return
       }
     }

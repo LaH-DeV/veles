@@ -110,7 +110,7 @@ func (f *fnCtx) safeReceiver(x ast.Expr) (pre []Stmt, cond Expr, place Expr, ok 
 	}
 	// a temporary: writing through it reaches something only when it is a
 	// reference (a pointer or a collection handle); an element read such
-	// as `xs.at(i)` is a copy, and `xs.ref(i)` the pointer (D25, v0.27)
+	// as `xs.get(i)` is a copy, and `xs.at(i)` the pointer (D25, v0.27)
 	if !isReferenceType(nt.Elem) {
 		if _, isPtr := nt.Elem.(*types.Pointer); !isPtr {
 			f.copyMutationHint(x, x.Span(), fmt.Sprintf("assigning through '?.' into a temporary value of type '%s' has no effect", nt.Elem))

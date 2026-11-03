@@ -42,11 +42,11 @@ test "rows read into structs; values travel apart from the text" {
   expect(inserted == 2)
   val all = try pool.query<Account>(sql"select id, owner, balance, note, opened_at from ${table} order by balance")
   expect(all.len() == 2)
-  expect(all.at(0)?.owner == evil)
-  expect(all.at(0)?.note == "noted")
-  expect(all.at(1)?.owner == "Ada")
-  expect(all.at(1)?.note == null)
-  expect(time.now().toMicros() - (all.at(1)?.openedAt?.toMicros() ?: 0) < 60000000)
+  expect(all.get(0)?.owner == evil)
+  expect(all.get(0)?.note == "noted")
+  expect(all.get(1)?.owner == "Ada")
+  expect(all.get(1)?.note == null)
+  expect(time.now().toMicros() - (all.get(1)?.openedAt?.toMicros() ?: 0) < 60000000)
   val one = try pool.queryOne<Account>(sql"select id, owner, balance, note, opened_at from ${table} where owner = ${"Ada"}")
   expect(one?.balance == 250)
   val none = try pool.queryOne<Account>(sql"select id, owner, balance, note, opened_at from ${table} where owner = ${"nobody"}")
@@ -79,7 +79,7 @@ test "every standard parameter type arrives as itself" {
   val id = crypto.uuidV4()
   val at = time.parseRfc3339("2026-10-05T10:34:56.789012Z") ?: fail("a timestamp")
   val rows = try pool.query<Echo>(sql"select ${7}::bigint as a, ${2.5}::float8 as b, ${true}::bool as c, ${"héllo wörld ☃"}::text as d, ${bytes}::bytea as e, ${id}::text as f, ${at}::timestamptz as g, ${Duration.millis(1500)}::interval::text as h")
-  val r = rows.at(0) ?: fail("a row")
+  val r = rows.get(0) ?: fail("a row")
   expect(r.a == 7)
   expect(r.b == 2.5)
   expect(r.c)
@@ -180,7 +180,7 @@ test "a transaction commits, rolls back, and abandons what it did not commit" {
 test "a pool of four serves fifty tasks on at most four connections" {
   val url = testUrl() ?: return
   with pool = try open(url, size: 4)
-  val set: MutableSet<i64> = []
+  val set: Set<i64> = []
   val seen = Mutex(value: set)
   scope {
     loop (i in 0..<50) {
@@ -192,12 +192,12 @@ test "a pool of four serves fifty tasks on at most four connections" {
   expect(seen.withLock(s => s.len()) >= 1)
 }
 
-test fun worker(pool: Pool, i: i64, seen: Mutex<MutableSet<i64>>) suspends {
+test fun worker(pool: Pool, i: i64, seen: Mutex<Set<i64>>) suspends {
   val pid = pool.query<i64>(sql"select pg_backend_pid()::bigint from pg_sleep(0.02)") catch (e) {
     fail("worker $i: ${e.message()}")
   }
   seen.withLock(s => {
-    s.add(pid.at(0) ?: 0)
+    s.add(pid.get(0) ?: 0)
   })
 }
 

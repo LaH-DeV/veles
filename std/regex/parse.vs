@@ -117,7 +117,7 @@ struct Parsed {
 }
 
 const fun parse(pattern: string, flags: Flags): Parsed {
-  val codes: MutableList<i64> = []
+  val codes: List<i64> = []
   var at = 0
   loop (at < pattern.len()) {
     val r = utf8.decode(pattern, at) ?: panic("regex: a string is valid UTF-8")
@@ -134,7 +134,7 @@ const fun parse(pattern: string, flags: Flags): Parsed {
     parser.pos = parser.backRefAt
     parser.fail("\\${parser.maxBackRef} refers to a group the pattern does not have")
   }
-  Parsed(root, groups: parser.groups, names: parser.names.toMap(), exact: parser.exact, error: parser.error, errorAt: parser.errorAt)
+  Parsed(root, groups: parser.groups, names: parser.names, exact: parser.exact, error: parser.error, errorAt: parser.errorAt)
 }
 
 /// A code point as the ASCII byte it is, or 255 for one that is not ASCII (or
@@ -158,7 +158,7 @@ struct Parser {
   var exact:      bool = false
   var maxBackRef: i64 = 0
   var backRefAt:  i64 = 0
-  names:          MutableMap<string, i64> = [:]
+  names:          Map<string, i64> = [:]
 
   /// Records the first problem; later ones are consequences of it.
   const fun fail(message: string) {
@@ -172,9 +172,9 @@ struct Parser {
 
   /// The code point here, or -1 at the end — and once a problem is recorded,
   /// so every loop that reads ahead stops.
-  const fun peek(): i64 => if (this.failed()) -1 else this.codes.at(this.pos) ?: -1
+  const fun peek(): i64 => if (this.failed()) -1 else this.codes.get(this.pos) ?: -1
 
-  const fun peekAt(ahead: i64): i64 => if (this.failed()) -1 else this.codes.at(this.pos + ahead) ?: -1
+  const fun peekAt(ahead: i64): i64 => if (this.failed()) -1 else this.codes.get(this.pos + ahead) ?: -1
 
   const fun look(ch: u8): bool => sym(this.peek()) == ch
 
@@ -207,15 +207,15 @@ struct Parser {
       return Nothing()
     }
     val saved = this.flags
-    val items: MutableList<Node> = [this.sequence(depth)]
+    val items: List<Node> = [this.sequence(depth)]
     loop (this.eat('|')) items.push(this.sequence(depth))
     // `(?i)` ends with its group
     this.flags = saved
-    if (items.len() == 1) items.at(0) else Choice(items)
+    if (items.len() == 1) items.get(0) else Choice(items)
   }
 
   const fun sequence(depth: i64): Node {
-    val items: MutableList<Node> = []
+    val items: List<Node> = []
     loop {
       this.skipSpace()
       val b = sym(this.peek())
@@ -224,7 +224,7 @@ struct Parser {
       items.push(this.quantified(atom))
     }
     if (items.len() == 0) return Nothing()
-    if (items.len() == 1) return items.at(0)
+    if (items.len() == 1) return items.get(0)
     Cat(items)
   }
 
@@ -643,7 +643,7 @@ struct Parser {
 
   /// `[…]`, after the opening bracket.
   const fun bracket(): Node {
-    val pairs: MutableList<i64> = []
+    val pairs: List<i64> = []
     val negated = this.eat('^')
     var first = true
     loop {
@@ -657,13 +657,13 @@ struct Parser {
       }
       first = false
       if (this.look('[') && sym(this.peekAt(1)) == ':') {
-        if (this.posixClass(pairs)) continue
+        if (this.posixClass(&pairs)) continue
       }
-      val lo = this.classAtom(pairs) ?: continue
+      val lo = this.classAtom(&pairs) ?: continue
       var hi = lo
       if (this.look('-') && sym(this.peekAt(1)) != ']' && this.peekAt(1) != -1) {
         this.pos += 1
-        val end = this.classAtom(pairs)
+        val end = this.classAtom(&pairs)
         if (end == null) {
           this.fail("a range cannot end in a class such as \\d")
           break
@@ -677,14 +677,14 @@ struct Parser {
       pairs.push(lo)
       pairs.push(hi)
     }
-    var ranges = normalize(pairs.toList())
+    var ranges = normalize(pairs)
     if (this.flags.ignoreCase) ranges = this.fold(ranges)
     Ranges(ranges: if (negated) negate(ranges) else ranges)
   }
 
   /// One member of a class: its code point, or null after adding a class
   /// escape (`\d`) straight to `pairs`.
-  const fun classAtom(pairs: MutableList<i64>): i64? {
+  const fun classAtom(pairs: *List<i64>): i64? {
     val c = this.peek()
     this.pos += 1
     if (sym(c) != '\\') return c
@@ -725,17 +725,17 @@ struct Parser {
   }
 
   /// `[:alpha:]`, `[:^alpha:]` and friends inside a class; false when it is not one.
-  const fun posixClass(pairs: MutableList<i64>): bool {
+  const fun posixClass(pairs: *List<i64>): bool {
     var start = this.pos + 2
-    val negated = sym(this.codes.at(start) ?: -1) == '^'
+    val negated = sym(this.codes.get(start) ?: -1) == '^'
     if (negated) start += 1
     var end = start
-    loop (isLetter(this.codes.at(end) ?: -1)) end += 1
-    if (sym(this.codes.at(end) ?: -1) != ':' || sym(this.codes.at(end + 1) ?: -1) != ']') return false
+    loop (isLetter(this.codes.get(end) ?: -1)) end += 1
+    if (sym(this.codes.get(end) ?: -1) != ':' || sym(this.codes.get(end + 1) ?: -1) != ']') return false
     val name = StringBuilder()
     var i = start
     loop (i < end) {
-      name.appendByte(sym(this.codes.at(i) ?: -1))
+      name.appendByte(sym(this.codes.get(i) ?: -1))
       i += 1
     }
     val set = posix(name.toString())
@@ -779,24 +779,24 @@ const fun spaceRanges(): List<i64> => [9, 10, 12, 13, 32, 32]
 const fun normalize(pairs: List<i64>): List<i64> {
   // insertion sort by the low end: pattern classes are short, and tuples do not
   // compare in the compiler's evaluator
-  val lows: MutableList<i64> = []
-  val highs: MutableList<i64> = []
+  val lows: List<i64> = []
+  val highs: List<i64> = []
   var i = 0
   loop (i + 1 < pairs.len()) {
-    val lo = pairs.at(i) ?: 0
+    val lo = pairs.get(i) ?: 0
     var at = lows.len()
-    loop (at > 0 && (lows.at(at - 1) ?: 0) > lo) at -= 1
+    loop (at > 0 && (lows.get(at - 1) ?: 0) > lo) at -= 1
     lows.insert(at, lo)
-    highs.insert(at, pairs.at(i + 1) ?: 0)
+    highs.insert(at, pairs.get(i + 1) ?: 0)
     i += 2
   }
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (k in 0..<lows.len()) {
-    val lo = lows.at(k)
-    val hi = highs.at(k) ?: 0
+    val lo = lows.get(k)
+    val hi = highs.get(k) ?: 0
     val last = out.len() - 1
-    if (last >= 1 && lo <= (out.at(last) ?: 0) + 1) {
-      if (hi > (out.at(last) ?: 0)) out.set(last, hi)
+    if (last >= 1 && lo <= (out.get(last) ?: 0) + 1) {
+      if (hi > (out.get(last) ?: 0)) out.set(last, hi)
     } else {
       out.push(lo)
       out.push(hi)
@@ -807,12 +807,12 @@ const fun normalize(pairs: List<i64>): List<i64> {
 
 /// Everything in 0..U+10FFFF that `ranges` leaves out.
 const fun negate(ranges: List<i64>): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   var next = 0
   var i = 0
   loop (i + 1 < ranges.len()) {
-    val lo = ranges.at(i) ?: 0
-    val hi = ranges.at(i + 1) ?: 0
+    val lo = ranges.get(i) ?: 0
+    val hi = ranges.get(i + 1) ?: 0
     if (lo > next) {
       out.push(next)
       out.push(lo - 1)
@@ -829,11 +829,11 @@ const fun negate(ranges: List<i64>): List<i64> {
 
 /// `ranges` plus the other case of every ASCII letter in them.
 const fun foldRanges(ranges: List<i64>): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   var i = 0
   loop (i + 1 < ranges.len()) {
-    val lo = ranges.at(i) ?: 0
-    val hi = ranges.at(i + 1) ?: 0
+    val lo = ranges.get(i) ?: 0
+    val hi = ranges.get(i + 1) ?: 0
     out.push(lo)
     out.push(hi)
     // the lower-case letters in the range as upper case, and the reverse
@@ -856,21 +856,21 @@ const fun foldRanges(ranges: List<i64>): List<i64> {
 
 /// One code point as text, for messages.
 const fun utf8String(code: i64): string {
-  val out: MutableList<u8> = []
-  utf8.encodeTo(out, code)
+  val out: List<u8> = []
+  utf8.encodeTo(&out, code)
   out.decodeUtf8() ?: "?"
 }
 
 /// `ranges` plus every other case of the code points in them: Unicode simple
 /// case folding, for `(?i)` under the `u` flag.
 const fun foldUnicode(ranges: List<i64>): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (x in ranges) out.push(x)
   var i = 0
   loop (i + 1 < foldNext.len()) {
-    val c = foldNext.at(i) ?: 0
+    val c = foldNext.get(i) ?: 0
     if (inSet(ranges, c)) {
-      var member = foldNext.at(i + 1) ?: c
+      var member = foldNext.get(i + 1) ?: c
       loop (member != c) {
         out.push(member)
         out.push(member)
@@ -889,13 +889,13 @@ const fun foldOf(c: i64): i64 {
   var hi = foldNext.len() / 2 - 1
   loop (lo <= hi) {
     val mid = (lo + hi) / 2
-    val key = foldNext.at(2 * mid) ?: 0
+    val key = foldNext.get(2 * mid) ?: 0
     if (c < key) {
       hi = mid - 1
     } else if (c > key) {
       lo = mid + 1
     } else {
-      return foldNext.at(2 * mid + 1) ?: c
+      return foldNext.get(2 * mid + 1) ?: c
     }
   }
   c

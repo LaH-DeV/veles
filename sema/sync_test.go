@@ -66,10 +66,10 @@ fun main() {
   }
 }`, "the lock on 'l' is held until the end of its 'with' block")
 	expectError(t, prelude+`fun main() {
-  val l = RwLock(value: MutableList<i64>())
+  val l = RwLock(value: &List<i64>())
   scope {
     async hold(l)
   }
 }
-fun hold(l: RwLock<MutableList<i64>>) { }`, "is not Sendable")
+fun hold(l: RwLock<*List<i64>>) { }`, "is not Sendable")
 }

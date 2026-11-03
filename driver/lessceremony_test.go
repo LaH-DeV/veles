@@ -93,7 +93,7 @@ fun allFail(closed: Atomic<i64>, finished: Atomic<i64>): i64 throws Boom {
 
 fun allListed(): i64 throws Boom {
   scope {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     loop (i in 1..4) tasks.push(async work(i, 5 - i))
     return awaitAll(tasks).sum()
   }

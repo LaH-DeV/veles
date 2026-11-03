@@ -4,10 +4,10 @@ use io { println }
 use time
 
 fun main() {
-  var data: MutableList<u8> = []
+  var data: List<u8> = []
   data.reserve(1048576)
   loop (i in 0..<1048576) data.push((i * 31 % 256).wrapU8())
-  val bytes = data.toList()
+  val bytes = data
   val (last, elapsed) = time.measure(() => {
     var last = ""
     loop (_ in 0..<16) last = "${crypto.sha256(bytes)}"

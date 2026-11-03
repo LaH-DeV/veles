@@ -23,12 +23,12 @@ struct NewNote {
 }
 
 fun service(): http.Handler {
-  val notes: Mutex<MutableList<Note>> = Mutex(value: [Note(id: 1, title: "water the plants")])
+  val notes: Mutex<List<Note>> = Mutex(value: [Note(id: 1, title: "water the plants")])
   // how many times /busy has been asked, to be busy for the first two
   val busy: Atomic<i64> = Atomic(value: 0)
   val app = http.Router()
 
-  app.get("/notes", req => http.Response.json(try json.encode(notes.withLock(n => n.toList()))))
+  app.get("/notes", req => http.Response.json(try json.encode(notes.withLock(n => *n))))
 
   app.post("/notes", req => {
     val given = when (json.decode<NewNote>(try req.text())) {
@@ -94,7 +94,7 @@ fun main() throws IoError {
   do {
     // read a list of things
     val notes = try client.get("$base/notes").json<List<Note>>()
-    println("${notes.len()} note(s); first: ${notes.at(0)?.title ?: "-"}")
+    println("${notes.len()} note(s); first: ${notes.get(0)?.title ?: "-"}")
 
     // send one
     val made = try client.post("$base/notes", body: try http.Payload.json(NewNote(title: "call mum")))

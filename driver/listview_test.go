@@ -20,9 +20,9 @@ func TestListWindows(t *testing.T) {
 	src := `use io
 
 fun numbers(n: i64): List<i64> {
-  val xs: MutableList<i64> = []
+  val xs: List<i64> = []
   loop (i in 0..<n) xs.push(i * 3)
-  xs.freeze()
+  xs
 }
 
 // a window out of a list that is gone once this returns
@@ -34,14 +34,14 @@ fun middle(): List<i64> {
 fun churn(): i64 {
   var total: i64 = 0
   loop (round in 0..<200) {
-    val junk: MutableList<i64> = []
+    val junk: List<i64> = []
     loop (i in 0..<5000) junk.push(i + round)
     total += junk.len()
   }
   total
 }
 
-// a List method a program writes may be called on a MutableList, whose own
+// a List method a program writes may be called on a List, whose own
 // header it then sees as "this": its windows are copies
 extend<T> List<T> {
   fun firstTwo(): List<T> => this.slice(0, 2)
@@ -56,14 +56,14 @@ fun main() {
   io.println("${all.slice(-5, 2)} ${all.slice(7, 3)} ${all.slice(5, 5).isEmpty()} ${all.take(3)} ${all.drop(17)}")
 
   // a mutable list's window is a copy: later changes do not show in it
-  val m: MutableList<i64> = [1, 2, 3, 4]
+  val m: List<i64> = [1, 2, 3, 4]
   val copy = m.slice(0, 2)
   m.set(0, 99)
   m.push(5)
   io.println("$copy $m")
 
   // the same for the List methods, called on a mutable list
-  val mm: MutableList<i64> = [1, 2, 3, 4, 5, 6]
+  val mm: List<i64> = [1, 2, 3, 4, 5, 6]
   val t = mm.take(3)
   val d = mm.drop(4)
   val c = mm.chunked(2)
@@ -74,7 +74,7 @@ fun main() {
   io.println("$t $d $c $w $f2")
 
   // a mutable copy of a window is its own list
-  val grown = head.toMutable()
+  val grown = head
   grown.push(1000)
   io.println("$head $grown")
 
@@ -86,7 +86,7 @@ fun main() {
   // windows of windows, and the adapters over them
   val chunks = all.chunked(6)
   val sums = chunks.map(c => c.fold(0, (a, b) => a + b))
-  io.println("${chunks.len()} $sums ${all.windowed(18).len()} ${all.windowed(18).at(2)}")
+  io.println("${chunks.len()} $sums ${all.windowed(18).len()} ${all.windowed(18).get(2)}")
 }
 `
 	want := "[0, 3, 6, 9] [48, 51, 54, 57] [51, 54]\n" +

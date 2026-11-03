@@ -22,7 +22,7 @@ fun sorts<T>(xs: List<T>): bool {
 struct Unordered { n: i64 }
 
 fun main() {
-  static assert(FIELDS.at(0) == "id", "the id comes first")
+  static assert(FIELDS.get(0) == "id", "the id comes first")
   val n = 3
   static assert(n == 3, "a local is not a constant") // error: 'n' is not a constant (D113)
   io.println("${sorts([1, 2])} ${sorts([Unordered(n: 1)])}")

@@ -286,7 +286,7 @@ machine today; compare the Veles column.
 | sha256    |  16 | 86.39ms | 11.31ms |       7.6× |
 
 `sha256` after std's SHA-256 moved its state, block buffer and message
-schedule from `MutableList`s to `Array<u32, 8>`, `Array<u8, 64>` and a
+schedule from `List`s to `Array<u32, 8>`, `Array<u8, 64>` and a
 `var w: Array<u32, 64>` per block (D121; the round constants are an
 `Array<u32, 64>` table the bounds facts index without a check): 86–91 ms in
 four runs against 113–135 ms before (four runs). Every other benchmark's IR is
@@ -403,7 +403,7 @@ is expected to differ.
 | --------- | ------: | ------: | ------: | ---------: |
 | emptycoll | 2000000 | 71.74ms | 18.39ms |       3.9× |
 
-`emptycoll` (D187) is two million records with an empty `MutableList`, an empty `MutableMap` and an
+`emptycoll` (D187) is two million records with an empty `List`, an empty `Map` and an
 empty `List` field, one in eight used. Before D187 (empty values allocated their storage and every
 `[]` its own header) it ran in about 205 ms (10.7–11.3× Go, three runs); after, about 73 ms
 (three runs within 4%). The Go column is Go with escape analysis: its record never leaves the
@@ -1050,3 +1050,258 @@ The short Go reference was 7.56-7.82 ms before and 7.39-9.26 ms after. This
 does not claim the same gain for paths needing normalization; drive/UNC and
 dot/separator fallback behavior is checked separately, including 2,664 POSIX
 inputs against Go and explicit cross-platform root cases.
+
+## 2026-11-02 — go1.27.1, windows/amd64 — D231 (lists, maps and sets as values), an experiment
+
+Branch `lists-maps-and-sets-as-values` against its base 03424e3, the same
+machine. The full suite three times each (base on 2026-10-31, the branch on
+2026-11-02) disagreed even on rows the change cannot touch (`sort`,
+`gcpause`, `httphello` 8–15% slower, spreads up to 18%), so the deciding
+numbers are **interleaved** runs: each benchmark built by both compilers,
+`--release`, run alternately 9 times each, minimum / median in ms.
+
+| benchmark | base min / median | D231 min / median | change (median) |
+|---|---:|---:|---:|
+| adapters | 44.30 / 44.73 | 46.59 / 48.54 | +8.5% |
+| ast | 39.22 / 41.05 | 39.89 / 43.37 | +5.7% |
+| emptycoll | 18.45 / 19.87 | 18.30 / 19.47 | -2.0% |
+| gzip | 128.92 / 134.11 | 133.81 / 135.11 | +0.7% |
+| gunzip | 70.46 / 73.50 | 71.50 / 72.65 | -1.1% |
+| json | 52.57 / 57.45 | 56.07 / 58.45 | +1.8% |
+| lexer | 51.55 / 58.36 | 53.06 / 60.69 | +4.0% |
+| maps | 73.26 / 77.11 | 74.30 / 77.58 | +0.6% |
+| regex | 13.05 / 14.21 | 14.47 / 16.77 | +18.0% |
+| sort | 35.13 / 36.59 | 34.82 / 37.66 | +2.9% |
+| strings | 52.44 / 54.76 | 54.57 / 57.62 | +5.2% |
+| trees | 149.79 / 157.46 | 152.48 / 161.81 | +2.8% |
+| intern | 29.22 / 32.20 | 31.67 / 32.23 | +0.1% |
+| tofixed | 34.97 / 35.63 | 34.07 / 37.42 | +5.0% |
+| fslist | 89.55 / 92.12 | 90.89 / 92.02 | -0.1% |
+
+Memory: the same — `idle` 249 bytes per parked task in both, `gcpause`
+longest pause 1.3 ms (base) and 1.4 ms (D231).
+
+A micro-benchmark of the primitives (10 M elements, three runs each): push
+57–67 ms vs 59–68 ms base, a loop 5 ms vs 4 ms, `set` 14 vs 14–15 ms, `at` 6
+vs 6–7 ms — the copy-on-write check itself is noise. Copy counts (a runtime
+counter, removed again): every copy in `regex`, `json`, `lexer` and
+`adapters` was of an empty list (the shared `[]` constant getting its own
+header at its first push), so none of the time is spent copying elements.
+
+Where the time goes: `regex` (+18%) is the one clear regression. Its VM
+now reaches its scratch lists through pointers (`val stackA =
+&scratch.stackA`, so a push changes the machine's own list), and every
+write reloads the list header from the pointer and tests the shared bit;
+the base kept the header in a register. Two allocations the migration had
+added per search were removed on the way (a heap copy of the `Machine`,
+and a cell for `this`: `&this.field` lent to a parameter that keeps no
+pointer is no longer an escape, `Var.PtrKept`). What would remove the rest:
+TBAA metadata separating header fields from elements, or an "already
+unique" fact inside a function (checklist §11, D231 entry). `adapters`
+(+8.5%) is not yet explained.
+
+### Rerun after addendum 2 (`at` reaches, `get` copies), 2026-11-02
+
+The same interleaved method (base binaries from the run above, the branch
+rebuilt after the `at`/`get` migration and the bounds-facts fix), 9 runs
+each, minimum / median in ms. Rows that moved more than 5% were run twice
+more; those runs are given after the table.
+
+| benchmark | base min / median | D231 min / median | change (median) |
+|---|---:|---:|---:|
+| adapters | 39.88 / 42.89 | 44.69 / 46.70 | +8.9% |
+| ast | 38.24 / 38.75 | 37.71 / 38.73 | -0.1% |
+| emptycoll | 17.76 / 18.23 | 16.24 / 18.77 | +2.9% |
+| gzip | 126.44 / 128.27 | 127.56 / 130.37 | +1.6% |
+| gunzip | 73.98 / 74.55 | 71.23 / 73.22 | -1.8% |
+| json | 54.56 / 55.74 | 55.38 / 58.54 | +5.0% |
+| lexer | 54.82 / 58.22 | 56.34 / 59.28 | +1.8% |
+| maps | 74.92 / 76.88 | 74.30 / 76.52 | -0.5% |
+| regex | 12.37 / 13.42 | 14.28 / 15.17 | +13.1% |
+| sort | 35.33 / 38.26 | 35.66 / 36.47 | -4.7% |
+| strings | 53.50 / 54.65 | 50.88 / 55.11 | +0.8% |
+| trees | 151.37 / 155.24 | 151.52 / 158.73 | +2.2% |
+| intern | 29.05 / 29.90 | 31.48 / 33.36 | +11.6% |
+| tofixed | 33.18 / 38.20 | 34.55 / 38.58 | +1.0% |
+| fslist | 90.82 / 92.72 | 91.06 / 92.61 | -0.1% |
+
+Reruns (median change): `intern` +4.1%, +3.5% (the +11.6% was noise);
+`json` +3.4%, +1.2%; `adapters` +8.0%, +9.1%; `regex` +9.9%, +7.1%. So:
+`regex` is +7–13% (from +18%: reads through `at` fold `*&place` back into
+the place and copy nothing), `adapters` stays ~+8.5% and unexplained,
+everything else within ±5%. Memory unchanged: `idle` 249 bytes per parked
+task in both; `gcpause` longest pause 1.2 ms (D231) and 1.8 ms (base),
+within that row's usual spread.
+
+### `adapters` explained, 2026-11-02
+
+Callgrind instruction counts on Linux (immune to load; `bench/adapters`,
+`--release`): base **310.4M**, D231 **349.9M** (+12.7%). Per function:
+the prelude `map` 88.0M → 100.0M — 3 instructions more per element (4M
+elements) — and the benchmark's closure, where `filter`, `fold`, `any`,
+`all` and `find` are inlined, 161.0M → 184.0M, the same 2–3 per element
+visited. With the D102 change guard switched off (an experiment switch,
+removed again) the count is **310.7M**: the base's. So the whole gap is the
+guard — a load of the list's change count, a compare and a branch per step
+— on loops over a list reached through a pointer, which every prelude
+adapter's `this` is. The base had no guard there because an immutable
+`List` could not change.
+
+Two other differences turned up and were fixed, though neither moved this
+benchmark:
+
+- **A lambda capturing a list made its caller suspend.** The share pass
+  wraps a sendable lambda in a block that marks its captured collections
+  shared, and D116's check for "the lambda passed does not suspend" saw
+  only a bare lambda — so `main` here lost its plain instance and
+  `time.measure` ran its coroutine copy (and a lock held around such a call
+  would have been refused). `sema.LambdaOf` sees through the block; sema
+  and codegen both use it (`TestCapturingLambdaStaysPlain`).
+- **A local list nothing else holds paid the copy-on-write test on every
+  write**, and started as the shared `[]` constant. `sema.OwnedCollections`
+  finds such locals (built from an empty literal; never copied while alive,
+  address-taken, captured, reassigned, sliced or loop-snapshotted); they
+  start as a fresh header and their writes skip the test
+  (`TestOwnedCollections`). `map`/`filter`'s `out` is one.
+
+### After the D102 addendum (value loops lend the list), 2026-11-02
+
+The guard on value loops replaced by the lend (a flag bit set at the
+loop's start, cleared at its end). `bench/adapters` on Linux: callgrind
+**310.7M** instructions against the base's **310.4M** (was 349.9M);
+`map` 88.0M and the closure 161.0M, the base's figures. Wall time on Linux,
+15 interleaved runs: base 39.64 ms median (37.04 min), D231 40.02 (38.45),
++1%.
+
+Windows, interleaved, 9 runs each (median change against base): adapters
++2.8% (reruns +6.9%, +4.8%), ast -0.9%, emptycoll -5.6%, gzip +0.2%, gunzip
+-0.4%, json -1.1%, lexer -1.4%, maps +0.3%, regex +19.8% (reruns +9.6%,
++16.7%), sort -3.4%, strings +2.0%, trees -1.9%, intern +0.2%, tofixed
++4.6%, fslist +1.7%. The Windows `adapters` residue (+3–7%, minimums ~5%
+apart) has no instruction-count counterpart on Linux and is not explained;
+`regex` keeps its per-write cost (checklist §11 (4)).
+
+### `regex` back to the base, 2026-11-02
+
+Callgrind (Linux) showed most of the regex gap was not the per-write test
+but **copies of `Program`** (six lists and a map): every `find` copied it
+three times and `backtrack` bound five of its fields, each copy marking
+every list shared (`veles_list_share` 8.6M instructions, `Machine.of` and
+`search` no longer inlined). Four compiler changes, none in std:
+
+- **Lent aliases** (`sema/lentalias.go`): a `val` bound from a field path of
+  a read-only parameter, `this` or a local, that is only read while nothing
+  in the function writes an overlapping path, takes its address or hands
+  the receiver (or another pointer of its type) to a call, is lent — no
+  mark (`val insts = prog.insts`, `val prog = this.prog`).
+- **Kept parameters used once** (`ownedOnceParams`): a parameter the
+  function keeps arrives as its own copy; kept whole once, outside loops,
+  never changed, the keep is a move (`Machine(prog, …)`).
+- **Shares already made**: the inline test of the shared bit before
+  `veles_list_share` / `veles_map_share`.
+- **Unique once** (`sema.UniquePointers`, `OwnedCollections` widened): a
+  pointer local (`val stackA = &scratch.stackA`) or a local list that is
+  written, and that nothing in the function can copy, replace, lend or hand
+  to a call, is made unique once where it is bound; its writes skip the
+  copy-on-write test. Only written ones: making a read-only local unique
+  copied a shared table for nothing (found as `gunzip` +13.5% with a new
+  `memcpy` line in the profile, fixed the same day).
+
+`bench/regex`, Linux instructions: base **202.0M**, before **218.0M**,
+after **200.4M** (`backtrack` 72.4M → 72.0M). `TestCopyShortcutsKeepValues`
+pins ten cases where each shortcut must not apply (a field changed after a
+lent alias, the receiver passed to a method, another pointer of the
+receiver's type, a kept parameter used twice or in a loop, a copy taken
+while a pointer lives, a pointer handed to a call, a value lent to a callee
+that keeps it), in both profiles.
+
+Windows, interleaved, 9 runs each, median change against base: adapters
++6.8%, ast -0.9%, emptycoll -9.3%, gzip +0.0%, gunzip -0.2%, json +1.1%,
+lexer -0.2%, maps +0.0%, regex -1.6%, sort +0.6%, strings +1.9%, trees
+-1.5%, intern +5.4% (earlier runs -0.9%…+4%), tofixed -3.2%, fslist +0.1%.
+`adapters` stays the one Windows-only residue (equal instruction counts on
+Linux, +1% wall time there). `gunzip`'s `Inflater.codes` runs 10% more
+instructions than the base's (Linux) without costing wall time on either
+machine; not looked into.
+
+### Windows `adapters` residue explained, 2026-11-02
+
+Not the code: `map`, `filter` and the inlined `fold`/`any`/`all`/`find` loops
+are the base's instructions (only addresses and the lend/unlend outside
+each loop differ), and `veles_list_push` is identical. Interleaved, 11
+runs each, median (ms):
+
+| setting | base | D231 |
+|---|---:|---:|
+| default | 42.4 | 45.5 |
+| `VELES_GC_OFF=1` | 42.96 | 43.09 |
+| `VELES_GC_GOAL=400` (3 collections each) | 47.7 | 45.8 |
+
+`VELES_GC_TRACE`: the base keeps 7.08 MB live, D231 5.45 MB (`val input =
+xs` no longer copies), so the goal is lower and D231 collects 7 times to
+the base's 5. Pauses are 0.02–0.2 ms, yet each collection costs ~1.5 ms
+of wall time on Windows (checklist §11). `VELES_GC_MIN_HEAP` 16M/32M did
+not change the counts.
+
+### Large spans reused, 2026-11-02 — go1.27.1, windows/amd64
+
+The ~1.5 ms of wall time per collection was page faults, not the
+collection. A dead large object's span (a list buffer over 32 KiB)
+was decommitted when swept and its pieces freed only at the next
+collection's compact, so every new buffer was fresh memory: a fault per
+4 KiB page, about 20k faults in `adapters` whether the GC ran or not.
+Now (`runtime/c/veles_gc.c`) a swept large span keeps its memory
+committed while the kept total fits in the goal (what the program
+allocates before the next collection; the rest is decommitted as before,
+outside the pause), its pieces are free for the very next span
+(`take_released`), `arena_take` prefers a run of kept pieces, and
+`new_span` clears kept pieces with `memset`.
+
+Interleaved, 9 runs each, median ms / peak working set MB / page faults
+(base = main, D231 = the branch before this, D231+ = with it):
+
+| benchmark | base | D231 | D231+ | D231+ vs D231 |
+|---|---:|---:|---:|---:|
+| adapters | 42.89 / 28.5 / 20.4k | 44.57 / 23.2 / 20.0k | 33.48 / 25.8 / 8.4k | -24.9% |
+| maps | 75.85 / 38.1 / 30.6k | 76.74 / 38.1 / 30.6k | 64.99 / 45.7 / 17.8k | -15.3% |
+| gunzip | 71.54 / 66.4 / 29.8k | 72.53 / 45.5 / 27.6k | 62.34 / 54.5 / 14.7k | -14.0% |
+| lexer | 56.40 / 108.6 / 36.1k | 59.00 / 114.1 / 36.1k | 52.17 / 120.2 / 29.5k | -11.6% |
+| strings | 55.41 / 28.2 / 18.4k | 54.04 / 28.2 / 18.5k | 49.46 / 31.6 / 12.1k | -8.5% |
+| json | 56.95 / 19.7 / 9.1k | 57.73 / 20.0 / 8.6k | 52.93 / 21.9 / 5.4k | -8.3% |
+| sort | 38.39 / 24.0 / 8.0k | 38.61 / 24.0 / 7.4k | 35.75 / 24.0 / 7.4k | -7.4% |
+| intern | 30.97 / 45.5 / 13.8k | 30.73 / 45.5 / 13.8k | 28.71 / 48.2 / 11.9k | -6.6% |
+| emptycoll | 18.94 | 18.58 | 17.72 | -4.6% |
+| gzip | 131.43 / 30.6 | 134.45 / 34.1 | 131.11 / 37.9 | -2.5% |
+| gcpause | 475.54 | 475.36 | 465.67 | -2.0% |
+
+ast, regex, tofixed, fslist and trees: within noise, page faults unchanged
+(trees read +7% once; rerun 11 times: 152.9/155.4 against 159.0/155.7).
+Peak memory grows by at most what the goal allows to be kept (maps +7.6
+MB, gunzip +9 MB, still under the base's 66.4). Pauses unchanged
+(0.02-0.08 ms on `adapters`). Linux not measured for time.
+
+### The last D231 items, 2026-11-03/04 — go1.27.1, linux/amd64 (WSL) and windows/amd64
+
+Base: the branch's commit 03424e3 (before D231), built the same way.
+
+Linux, wall time, median of 15 interleaved runs (ms):
+
+| bench | base | D231 |
+|---|---:|---:|
+| adapters | 37.1 | 32.2 |
+| gunzip | 60.6 | 52.2 |
+| emit | 57.0 | 55.6 |
+| regex | 10.9 | 11.1 |
+
+Linux, instructions (callgrind): adapters 310.4M → 366.4M and gunzip
+2299M → 2363M, all of it in libc's `memset` (the collector zeroing a kept
+large span it reuses, 2026-11-02, in place of the kernel's page faults —
+the wall times above are lower); the programs' own functions are equal.
+`Inflater.codes` 499.9M → 516.2M (+3.3%, was +10%: the copy-on-write test
+on every `out.push` is gone, `exitCalls`); emit 736.4M → 739.6M; regex
+202.0M → 201.3M.
+
+Windows: `emit` back to 45 MB peak (was 78 MB after the lent-address
+pass: a stale list header in the unwritten tail of an interpolation
+buffer, now written whole), time equal with the pass on or off; gunzip
+−2% from `exitCalls`.

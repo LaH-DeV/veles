@@ -9,7 +9,7 @@ import (
 	"github.com/LaH-DeV/veles/types"
 )
 
-// Bounds facts (D62 B): `xs.at(i)` is a `T`, not a `T?`, where the checker
+// Bounds facts (D62 B): `xs.get(i)` is a `T`, not a `T?`, where the checker
 // knows the index is in range — D5's smart casts, applied to an index.
 //
 // The facts ride in f.narrow beside the smart casts, under paths no field
@@ -23,9 +23,11 @@ import (
 //
 // Only locals take part — a list or an index held in a variable whose
 // address is not taken — so an assignment is the one way to change them,
-// and an assignment drops the facts (invalidatePlace). A MutableList can
-// also shrink through an alias, so its facts end at any call that could
-// reach it (killMutableBounds). The read the fact proves still goes
+// and an assignment drops the facts (invalidatePlace). A list a call can
+// reach — a global, or `this` in an `extend List` method, which points at
+// the caller's place — can also shrink through it, so its facts end at any
+// call (killMutableBounds); a local list is a value no call can change
+// (D231). The read the fact proves still goes
 // through the runtime's checked get: a missed case is a panic, never a
 // read out of bounds.
 const (
@@ -51,7 +53,7 @@ func belowKey(idx *Var, k int64) place {
 }
 
 // constRangeFacts: `loop (i in lo..<K)` with constant ends — `K256.len()` and
-// `a.indices()` on an array are constants — puts i in lo..<K, so `a.at(i)`
+// `a.indices()` on an array are constants — puts i in lo..<K, so `a.get(i)`
 // on an array of length K is a `T` (D121).
 func (f *fnCtx) constRangeFacts(iter Expr, idx *Var) {
 	rl, ok := iter.(*RangeLit)
@@ -112,10 +114,14 @@ func (f *fnCtx) boundsList(e ast.Expr) (*Var, *types.List) {
 	default:
 		return nil, nil
 	}
-	if v.IsSelf && !lt.Mutable {
-		// an `extend List` method also runs on a MutableList (D25), so its
-		// receiver may change during a call like any MutableList
-		lt = &types.List{Elem: lt.Elem, Mutable: true}
+	if v.IsSelf || v.IsGlobal {
+		// reachable from a call: its facts are this fresh type, which
+		// killMutableBounds drops (D231)
+		lt = &types.List{Elem: lt.Elem}
+		if f.reachableLists == nil {
+			f.reachableLists = map[*types.List]bool{}
+		}
+		f.reachableLists[lt] = true
 	}
 	return v, lt
 }
@@ -316,25 +322,25 @@ func (f *fnCtx) isEmptyFacts(c *ast.CallExpr, whenFalse facts) {
 	}
 }
 
-// dropMutableBounds removes the facts about MutableLists from fs: what a
-// condition learned before a call later in the same condition.
-func dropMutableBounds(fs facts) {
+// dropMutableBounds removes the facts about lists a call can reach from
+// fs: what a condition learned before a call later in the same condition.
+func (f *fnCtx) dropMutableBounds(fs facts) {
 	for k, t := range fs {
-		if lt, ok := t.(*types.List); ok && lt.Mutable && isBoundsPath(k.path) {
+		if lt, ok := t.(*types.List); ok && f.reachableLists[lt] && isBoundsPath(k.path) {
 			delete(fs, k)
 		}
 	}
 }
 
-// killMutableBounds ends every fact about a MutableList: a call may reach
-// the list through an alias and shrink it (D62).
+// killMutableBounds ends every fact about a list a call can reach: it may
+// shrink the list through that path (D62).
 func (f *fnCtx) killMutableBounds() {
-	dropMutableBounds(f.narrow)
+	f.dropMutableBounds(f.narrow)
 }
 
 func (f *fnCtx) hasMutableBounds() bool {
 	for k, t := range f.narrow {
-		if lt, ok := t.(*types.List); ok && lt.Mutable && isBoundsPath(k.path) {
+		if lt, ok := t.(*types.List); ok && f.reachableLists[lt] && isBoundsPath(k.path) {
 			return true
 		}
 	}
@@ -344,11 +350,70 @@ func (f *fnCtx) hasMutableBounds() bool {
 // afterExpr ends the MutableList facts when the checked expression x can
 // run code that might shrink one: any call, or a pop or clear.
 func (f *fnCtx) afterExpr(x Expr) {
-	if x == nil || !f.hasMutableBounds() {
+	if x == nil {
 		return
 	}
-	if hirMayShrink(x) {
+	if f.hasMutableBounds() && hirMayShrink(x) {
 		f.killMutableBounds()
+	}
+	// a local list is a value, but its own methods change it: a pop, or a
+	// call handed its address (a prelude method's `this`) ends its facts
+	for _, v := range shrunkLocals(x) {
+		f.dropBoundsOf(v)
+	}
+}
+
+// shrinkOps are the list built-ins that can make a list shorter.
+var shrinkOps = map[string]bool{"list.pop": true, "list.clear": true, "list.takeText": true, "list.trimText": true, "list.replaceText": true}
+
+// shrunkLocals are the variables whose list x may shorten: the receiver of
+// a shrinking built-in, or a variable whose address a call is given.
+func shrunkLocals(x Expr) []*Var {
+	var out []*Var
+	root := func(e Expr) {
+		if a, ok := e.(*AddrOf); ok {
+			e = a.X
+		}
+		if r, ok := e.(*VarRef); ok {
+			out = append(out, r.Var)
+		}
+	}
+	walkExpr(x, func(n any) {
+		switch n := n.(type) {
+		case *Builtin:
+			if shrinkOps[n.Op] && len(n.Args) > 0 {
+				root(n.Args[0])
+			}
+		case *Call:
+			for _, a := range n.Args {
+				if _, ok := a.(*AddrOf); ok {
+					root(a)
+				}
+			}
+		case *CallIndirect:
+			for _, a := range n.Args {
+				if _, ok := a.(*AddrOf); ok {
+					root(a)
+				}
+			}
+		case *CallVirtual:
+			for _, a := range n.Args {
+				if _, ok := a.(*AddrOf); ok {
+					root(a)
+				}
+			}
+		}
+	})
+	return out
+}
+
+// dropBoundsOf ends the facts about v's length and the indexes into it.
+func (f *fnCtx) dropBoundsOf(v *Var) {
+	in := pathIn + strconv.Itoa(v.ID)
+	for k := range f.narrow {
+		if (k.v == v && strings.HasPrefix(k.path, pathLen)) || k.path == in {
+			delete(f.narrow, k)
+		}
 	}
 }
 
@@ -370,8 +435,8 @@ func hirMayShrink(x Expr) bool {
 // pureListMethods are the methods that cannot run user code or shrink a
 // list; every other call is assumed to be able to.
 var pureListMethods = map[string]bool{
-	"at": true, "len": true, "set": true, "ref": true, "isEmpty": true, "push": true,
-	"byteAt": true, "get": true, "atUnchecked": true, "setUnchecked": true, "byteAtUnchecked": true,
+	"at": true, "get": true, "len": true, "set": true, "isEmpty": true, "push": true,
+	"byteAt": true, "getUnchecked": true, "setUnchecked": true, "byteAtUnchecked": true,
 }
 
 // astMayShrink reports whether running node could shrink a MutableList:
@@ -398,6 +463,27 @@ func astMayShrink(node any) bool {
 			}
 		}
 		return true
+	})
+	return found
+}
+
+// astCallsChanging reports whether node calls, on the local named name, a
+// method that may shorten it — any but the pure ones, which a loop body
+// runs again after its last statement.
+func astCallsChanging(node any, name string) bool {
+	found := false
+	walkAST(node, func(n any) bool {
+		if found {
+			return false
+		}
+		if c, ok := n.(*ast.CallExpr); ok {
+			if m, isMember := c.Fun.(*ast.MemberExpr); isMember && !pureListMethods[m.Name.Name] {
+				if x, isName := m.X.(*ast.NameExpr); isName && x.Name == name {
+					found = true
+				}
+			}
+		}
+		return !found
 	})
 	return found
 }
@@ -472,16 +558,16 @@ func (f *fnCtx) rangeLoopFacts(s *ast.LoopStmt, idx *Var) {
 	default:
 		return
 	}
-	if list == nil || astChangesVar(s.Body, list.Name) {
+	if list == nil || astChangesVar(s.Body, list.Name) || astCallsChanging(s.Body, list.Name) {
 		return
 	}
-	if lt.Mutable && astMayShrink(s.Body) {
+	if f.reachableLists[lt] && astMayShrink(s.Body) {
 		return
 	}
 	f.narrow[inKey(idx, list)] = lt
 }
 
-// indexProven reports whether the facts put `recv.at(arg)` in range: a
+// indexProven reports whether the facts put `recv.get(arg)` (or `recv.at(arg)`) in range: a
 // constant below a known length (or a negative one within it, counted from
 // the end), or an index variable known to be `0 <= i < recv.len()`.
 func (f *fnCtx) indexProven(recv, arg ast.Expr) bool {

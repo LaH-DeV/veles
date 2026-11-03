@@ -14,7 +14,7 @@ test fun corsAllowed(app: Handler, origin: string): bool =>
 test fun from(origin: string): Map<string, string> => ["Origin": origin]
 
 test fun preflight(origin: string, asks: string = ""): Map<string, string> {
-  val h: MutableMap<string, string> = ["Origin": origin, "Access-Control-Request-Method": "PUT"]
+  val h: Map<string, string> = ["Origin": origin, "Access-Control-Request-Method": "PUT"]
   if (!asks.isEmpty()) h.set("Access-Control-Request-Headers", asks)
   h
 }

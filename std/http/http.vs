@@ -171,7 +171,7 @@ public struct Request {
   /// how a middleware hands something to the handlers behind it — there
   /// are no task-local values yet.
   public fun withHeader(name: string, value: string): Request {
-    val h = this.headers.toMutable()
+    val h = this.headers
     h.set(name.toLower(), value)
     Request(method: this.method, path: this.path, query: this.query, headers: h, body: this.body, peer: this.peer, params: this.params, rawQuery: this.rawQuery)
   }
@@ -203,7 +203,7 @@ public struct Request {
   /// The fields of an `application/x-www-form-urlencoded` body. Another
   /// content type is a 415, a body that is not UTF-8 a 400.
   public fun formFields(): Fields suspends throws Fail | IoError {
-    val media = (this.header(Header.contentType) ?: "").split(";").at(0)?.trim()?.toLower() ?: ""
+    val media = (this.header(Header.contentType) ?: "").split(";").get(0)?.trim()?.toLower() ?: ""
     if (media != "application/x-www-form-urlencoded") {
       throw Fail(status: Status.unsupportedMediaType, text: "expected application/x-www-form-urlencoded, got '${if (media.isEmpty()) "nothing" else media}'")
     }
@@ -301,7 +301,7 @@ public struct Response {
 
   /// The same response with a header set (names are lower-cased).
   public fun withHeader(name: string, value: string): Response {
-    val h = this.headers.toMutable()
+    val h = this.headers
     h.set(name.toLower(), value)
     Response(status: this.status, headers: h, body: this.body, cookies: this.cookies, stream: this.stream, streamLength: this.streamLength, quiet: this.quiet)
   }
@@ -411,7 +411,7 @@ fun dispatch(h: Handler, req: Request): Response {
 /// io.println("${resp.status} ${resp.body.decodeUtf8() ?: ""}")   // 201 Created ...
 /// ```
 public fun call(handler: Handler, method: Method, target: string, body: string = "", headers: Map<string, string> = [:]): Response {
-  val lower: MutableMap<string, string> = [:]
+  val lower: Map<string, string> = [:]
   loop ((name, value) in headers.entries()) {
     lower.set(name.toLower(), value)
   }
@@ -447,8 +447,8 @@ fun adapt<E>(h: sendable fun(Request): Response suspends throws E | Fail): Handl
 /// `"*"`. `http.Router()` makes an empty one; register routes, then hand
 /// `handler()` to `serve`.
 public struct Router {
-  private routes:     MutableList<Route> = []
-  private middleware: MutableList<Middleware> = []
+  private routes:     List<Route> = []
+  private middleware: List<Middleware> = []
 
   public fun get<E>(pattern: string, h: sendable fun(Request): Response suspends throws E | Fail) {
     this.add(Method.get, pattern, adapt(h))
@@ -488,10 +488,10 @@ public struct Router {
   /// The routes as one handler: first match wins, 405 when only the method
   /// differs, 404 otherwise — then the middleware, outermost first.
   public fun handler(): Handler {
-    val routes = this.routes.toList()
+    val routes = this.routes
     var h: Handler = req => route(routes, req)
     // applied last to first, so the first one wrapped ends up outside
-    loop (m in this.middleware.toList().reversed()) {
+    loop (m in this.middleware.reversed()) {
       h = m(h)
     }
     h
@@ -565,7 +565,7 @@ public fun timeout(limit: Duration): Middleware => (next => req => {
 // answers 204 with the same `Allow`.
 fun route(routes: List<Route>, req: Request): Response {
   val segments = segmentsOf(req.path)
-  val allowed: MutableList<Method> = []
+  val allowed: List<Method> = []
   loop (r in routes) {
     val params = matchRoute(r.segments, segments) ?: continue
     val m = r.method
@@ -610,15 +610,15 @@ fun segmentsOf(p: string): List<string> => p.split("/").filter(s => !s.isEmpty()
 
 // the captures when the pattern matches the path, or null
 fun matchRoute(pattern: List<string>, segments: List<string>): Map<string, string>? {
-  val params: MutableMap<string, string> = [:]
+  val params: Map<string, string> = [:]
   loop (i in 0..<pattern.len()) {
-    val p = pattern.at(i)
+    val p = pattern.get(i)
     if (p == "*") {
       params.set("*", segments.drop(i).join("/"))
-      return params.toMap()
+      return params
     }
     if (i >= segments.len()) return null
-    val s = segments.at(i)
+    val s = segments.get(i)
     if (p.startsWith("{") && p.endsWith("}")) {
       params.set(p.substring(1, p.len() - 1) ?: p, s)
     } else if (p != s) {

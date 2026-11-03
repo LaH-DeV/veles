@@ -66,8 +66,8 @@ A name written on every other line does not need its prefix. List it in
 braces after the module (D85):
 
 ```veles
-use http { Request, Response }
-use io { eprintln as warn, println, readLine }
+use http
+use io { eprintln as warn, println }
 
 fun main() {
   println("hello")           // bare

@@ -65,26 +65,26 @@ test "a signed read keeps the sign" {
 }
 
 test "the readers work on a list being built" {
-  val out: MutableList<u8> = [0, 0, 0, 1]
+  val out: List<u8> = [0, 0, 0, 1]
   expect(out.readU32Be(0) == 1)
 }
 
 test "writers append the bytes in the order asked" {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   out.pushU16Be(0x0102.wrapU16())
   out.pushU16Le(0x0102.wrapU16())
   out.pushU32Be(0xdeadbeef.wrapU32())
   out.pushI32Le((-2).wrapI32())
   out.pushU64Be(1.wrapU64())
   out.pushI16Be((-1).wrapI16())
-  expect(out.toList() == [1, 2, 2, 1, 222, 173, 190, 239, 254, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255])
+  expect(out == [1, 2, 2, 1, 222, 173, 190, 239, 254, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 1, 255, 255])
   expect(out.readU32Be(4) == 3735928559)
   expect(out.readI32Le(8) == -2)
 }
 
 test "a header written and read back" {
   // a made-up record: magic, version, length, checksum
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   out.pushU32Be(0x56454c53.wrapU32())
   out.pushU16Le(3.wrapU16())
   out.pushU32Le(70000.wrapU32())

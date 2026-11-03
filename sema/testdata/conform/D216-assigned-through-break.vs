@@ -13,7 +13,7 @@ fun firstNegative(xs: List<i64>): i64 {
       found = -1
       break
     }
-    if ((xs.at(i) ?: 0) < 0) {
+    if ((xs.get(i) ?: 0) < 0) {
       found = i
       break
     }
@@ -27,7 +27,7 @@ fun missesOne(xs: List<i64>): i64 {
   var i = 0
   loop {
     if (i == xs.len()) break
-    if ((xs.at(i) ?: 0) < 0) {
+    if ((xs.get(i) ?: 0) < 0) {
       found = i
       break
     }
@@ -44,7 +44,7 @@ fun rowWithSeven(grid: List<List<i64>>): i64 {
       hit = -1
       break
     }
-    loop (x in grid.at(r) ?: []) {
+    loop (x in grid.get(r) ?: []) {
       if (x == 7) {
         hit = r
         break rows
@@ -71,7 +71,7 @@ fun firstPositiveOrNone(xs: List<i64>): i64 {
   var i = 0
   loop {
     if (i == xs.len()) return -1
-    if ((xs.at(i) ?: 0) > 0) {
+    if ((xs.get(i) ?: 0) > 0) {
       found = i
       break
     }

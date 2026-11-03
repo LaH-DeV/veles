@@ -47,9 +47,9 @@ fun main() {
   val pair = (1, "two")
   val (x, y) = pair
   println("tuple $x $y ${pair.1}")
-  var xs: MutableList<i64> = []
+  var xs: List<i64> = []
   loop (i in 0..<5) {
     xs.push(i * i)
   }
-  println("squares ${xs} len ${xs.len()} last ${xs.at(4) ?: panic("five squares were pushed")}")
+  println("squares ${xs} len ${xs.len()} last ${xs.get(4) ?: panic("five squares were pushed")}")
 }

@@ -47,7 +47,7 @@ extend Printer {
         this.write("(")
         loop ((i, elem) in t.elems.enumerate()) {
           if (i > 0) this.write(", ")
-          if (val label = t.labels.at(i)) this.write("${label.name}: ")
+          if (val label = t.labels.get(i)) this.write("${label.name}: ")
           this.typ(elem)
         }
         this.write(")")

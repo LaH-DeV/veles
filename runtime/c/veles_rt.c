@@ -44,14 +44,24 @@ typedef struct {
     veles_desc *desc; /* array descriptor of the elements */
     int64_t mods;      /* D102: changes of length or order so far; a loop over
                         * the list compares it on every step */
-    int64_t flags;     /* LIST_EXPOSED / LIST_FROZEN (D188) */
+    int64_t flags;     /* LIST_EXPOSED / LIST_SHARED / LIST_LENT */
 } veles_list;
 
-/* D188: a pointer into the storage was made (EXPOSED); freeze() turned the
- * collection immutable (FROZEN): any change through a name that still sees it
- * as mutable panics. The same two bits on a map's header. */
+/* D188: a pointer into the storage was made (EXPOSED). The same bits on a
+ * map's header. (Bit 2 was D188's FROZEN, gone with freeze() in D231.)
+ * D231: the header is held by more than one value (SHARED): it is never
+ * written again, and a change through any of them copies it first. */
 #define LIST_EXPOSED 1
-#define LIST_FROZEN 2
+#define LIST_SHARED 4
+/* a value loop is walking this header (D102 addendum, D231): until the
+ * loop ends, a change through any other path copies it first, as for a
+ * shared one, so the loop walks the list as it was. Set and cleared by the
+ * loop's own code (codegen), only on a header nothing else holds. */
+#define LIST_LENT 8
+
+/* marks the collections inside one element shared, writing back a copy for
+ * one with a pointer into its storage (codegen's per-type share function) */
+typedef void (*veles_share_fn)(void *elem);
 
 int64_t veles_desc_size(veles_desc *d);
 
@@ -528,7 +538,9 @@ static const char digit_pairs[201] =
     "8081828384858687888990919293949596979899";
 
 int64_t veles_u64_format(char *buf, uint64_t v) {
-    char tmp[VELES_INT_DIGITS];
+    /* the digits end at tmp[VELES_INT_DIGITS]; zeros follow them */
+    char tmp[2 * VELES_INT_DIGITS];
+    memset(tmp + VELES_INT_DIGITS, 0, VELES_INT_DIGITS);
     int i = VELES_INT_DIGITS;
     while (v >= 100) {
         unsigned r = (unsigned)(v % 100);
@@ -542,9 +554,13 @@ int64_t veles_u64_format(char *buf, uint64_t v) {
     } else {
         tmp[--i] = (char)('0' + v);
     }
-    int64_t n = VELES_INT_DIGITS - i;
-    memcpy(buf, tmp + i, (size_t)n);
-    return n;
+    /* all of the caller's buffer is written, the digits and zeros after
+     * them, in fixed-size moves (no call): it is a stack slot, the stack is
+     * scanned conservatively, and bytes an earlier call left past the
+     * digits read as a pointer that keeps dead memory alive (bench/emit
+     * kept a whole 8 MB builder buffer a round longer on Windows) */
+    memcpy(buf, tmp + i, VELES_INT_DIGITS);
+    return VELES_INT_DIGITS - i;
 }
 
 /* one more byte than the digits for the sign */
@@ -900,63 +916,18 @@ int64_t veles_list_len(veles_list *l) {
     return l->len;
 }
 
-/* ---- freeze (D188) ----------------------------------------------------- */
-
-static void frozen_panic(const char *what) {
-    char msg[96];
-    int n = snprintf(msg, sizeof msg, "%s was frozen by freeze() and cannot be changed; copy it with toMutable()", what);
-    veles_panic(msg, n);
-}
-
-/* the guard of every change to a list through a name that sees it as mutable */
-static inline void list_writable(veles_list *l) {
-    if (l->flags & LIST_FROZEN) frozen_panic("list");
-}
-
 /* veles_list_move moves count elements from index `from` to index `to`, the
  * ranges overlapping as memmove allows: std's insert and removeAt, which
  * check that both lie inside the list. A change of order (D102). */
 void veles_list_move(veles_list *l, int64_t from, int64_t to, int64_t count) {
-    list_writable(l);
     if (count <= 0 || from == to) return;
     memmove(l->data + to * l->elem, l->data + from * l->elem, (size_t)(count * l->elem));
     l->mods++;
 }
 
-/* a write through an element place (set, an element assignment) */
-void veles_list_write_check(veles_list *l) {
-    list_writable(l);
-}
-
-/* a pointer into the list's storage is being made: remember it, so freeze()
- * copies the storage instead of sharing it with the pointer. A write-capable
- * pointer into a frozen list is refused like any other change. */
-void veles_list_expose(veles_list *l) {
-    list_writable(l);
-    l->flags |= LIST_EXPOSED;
-}
-
-/* The list becomes immutable in place: the same object, now read-only through
- * every name. Storage nobody holds a pointer into is shared as it is; storage
- * a pointer was made into is copied first, so that pointer can never change
- * the frozen list (it writes into the abandoned buffer, as after a growth). */
-veles_list *veles_list_freeze(veles_list *l) {
-    list_writable(l);
-    if (l->flags & LIST_EXPOSED) {
-        char *nd = l->len > 0 ? veles_gc_alloc(l->desc, l->elem * l->len) : NULL;
-        if (l->len > 0) memcpy(nd, l->data, (size_t)(l->elem * l->len));
-        l->data = nd;
-    }
-    l->cap = l->len; /* no room left: the inline push falls to the runtime, which panics */
-    l->flags |= LIST_FROZEN;
-    l->flags &= ~(int64_t)LIST_EXPOSED;
-    return l;
-}
-
 /* room for at least n elements in all (D83): pushing up to n does not grow
  * the storage again; never shrinks */
 void veles_list_reserve(veles_list *l, int64_t n) {
-    list_writable(l);
     if (n <= l->cap) return;
     char *nd = veles_gc_alloc(l->desc, l->elem * n);
     if (l->len > 0) memcpy(nd, l->data, (size_t)(l->elem * l->len));
@@ -965,7 +936,6 @@ void veles_list_reserve(veles_list *l, int64_t n) {
 }
 
 void veles_list_push(veles_list *l, const void *item) {
-    list_writable(l);
     if (l->len == l->cap) {
         int64_t ncap = l->cap ? l->cap * 2 : 4;
         char *nd = veles_gc_alloc(l->desc, l->elem * ncap);
@@ -1070,7 +1040,6 @@ void veles_string_join(veles_string *out, veles_list *l, const char *sep, int64_
 static inline bool ascii_space(unsigned char c) { return c == ' ' || (c >= 9 && c <= 13); }
 
 void veles_bytes_trim(veles_list *l) {
-    list_writable(l);
     int64_t i = 0, j = l->len;
     while (i < j && ascii_space((unsigned char)l->data[i])) i++;
     while (j > i && ascii_space((unsigned char)l->data[j - 1])) j--;
@@ -1081,7 +1050,6 @@ void veles_bytes_trim(veles_list *l) {
 }
 
 void veles_bytes_ascii_case(veles_list *l, bool upper) {
-    list_writable(l);
     unsigned char lo = upper ? 'a' : 'A', hi = upper ? 'z' : 'Z';
     for (int64_t i = 0; i < l->len; i++) {
         unsigned char c = (unsigned char)l->data[i];
@@ -1092,7 +1060,6 @@ void veles_bytes_ascii_case(veles_list *l, bool upper) {
 /* every occurrence of a non-empty old as repl: in place when repl is no
  * longer than old, else into one new buffer of the final size */
 void veles_bytes_replace(veles_list *l, const char *old, int64_t olen, const char *repl, int64_t rlen) {
-    list_writable(l);
     char *s = l->data;
     int64_t len = l->len, count = 0;
     for (int64_t i = 0; olen > 0 && i + olen <= len;) {
@@ -1123,7 +1090,6 @@ void veles_bytes_replace(veles_list *l, const char *old, int64_t olen, const cha
 
 /* n bytes at index at, which std checked is in 0..len on a character edge */
 void veles_bytes_insert(veles_list *l, int64_t at, const char *p, int64_t n) {
-    list_writable(l);
     if (n == 0) return;
     if (l->len + n > l->cap) {
         int64_t ncap = l->cap * 2;
@@ -1141,29 +1107,26 @@ void veles_bytes_insert(veles_list *l, int64_t at, const char *p, int64_t n) {
 }
 
 /* the bytes as text without a copy (`edit` on a string, D207): the string
- * shares the storage and the list is frozen, so nothing can change it again;
- * storage a pointer was made into is copied first, as by freeze. False
- * when the bytes are not UTF-8. */
+ * shares the storage and the list is marked shared, so a change copies it
+ * first (D231); storage a pointer was made into is copied instead. A header
+ * shared already is not written (it may be read-only). False when the bytes
+ * are not UTF-8. */
 bool veles_bytes_take_text(veles_string *out, veles_list *l) {
-    list_writable(l);
     if (!veles_utf8_valid((const unsigned char *)l->data, l->len)) return false;
+    out->len = l->len;
     if (l->flags & LIST_EXPOSED) {
         char *buf = veles_alloc(l->len + 1);
         if (l->len > 0) memcpy(buf, l->data, (size_t)l->len);
         out->data = buf;
-    } else {
-        out->data = l->data;
+        return true;
     }
-    out->len = l->len;
-    l->cap = l->len;
-    l->flags |= LIST_FROZEN;
-    l->flags &= ~(int64_t)LIST_EXPOSED;
+    out->data = l->data;
+    if (!(l->flags & LIST_SHARED)) l->flags |= LIST_SHARED;
     return true;
 }
 
 /* appends n bytes to a list of u8 (StringBuilder.append) */
 void veles_list_append_bytes(veles_list *l, const char *p, int64_t n) {
-    list_writable(l);
     if (l->len + n > l->cap) {
         int64_t ncap = l->cap * 2;
         if (ncap < l->len + n) ncap = l->len + n;
@@ -1247,7 +1210,6 @@ void veles_unchecked_index_panic(int64_t i, int64_t len, int64_t kind, const cha
 }
 
 bool veles_list_pop(veles_list *l, void *out) {
-    list_writable(l);
     if (l->len == 0) return false;
     l->len--;
     l->mods++;
@@ -1260,6 +1222,70 @@ veles_list *veles_list_copy(veles_list *l) {
     if (l->len > 0) memcpy(c->data, l->data, (size_t)(l->elem * l->len));
     c->len = l->len;
     return c;
+}
+
+/* ---- copy on write (D231) ----------------------------------------------
+ * A list is a value held as a pointer to its header. Copying the value out
+ * of a place that stays alive marks the header shared (veles_list_share);
+ * a change made through a shared header first gives the place a fresh,
+ * unshared one (veles_list_unique). A shared header is never written, so
+ * any number of tasks may read it at once. The empty constant and the
+ * constant tables are shared from the start (codegen). */
+
+/* every element of a fresh copy is held twice now: the collections in
+ * each are marked shared */
+void veles_list_share_elems(veles_list *l, veles_share_fn share) {
+    if (!share) return;
+    for (int64_t i = 0; i < l->len; i++) share(l->data + l->elem * i);
+}
+
+static veles_list *list_clone_cap(veles_list *l, veles_share_fn share, int64_t cap);
+
+static veles_list *list_clone(veles_list *l, veles_share_fn share) {
+    return list_clone_cap(l, share, l->len);
+}
+
+/* a copy of l with room for cap elements (cap >= l->len) */
+static veles_list *list_clone_cap(veles_list *l, veles_share_fn share, int64_t cap) {
+    veles_list *c = veles_list_new(l->desc, cap);
+    if (l->len > 0) memcpy(c->data, l->data, (size_t)(l->elem * l->len));
+    c->len = l->len;
+    veles_list_share_elems(c, share);
+    return c;
+}
+
+/* the handle a copy of l holds: l itself, marked shared — or, when a pointer
+ * into l's storage was made (EXPOSED), a copy of its own, so that pointer
+ * cannot reach it. A header already shared is not written: it may be read
+ * by other tasks, or be read-only. */
+veles_list *veles_list_share(veles_list *l, veles_share_fn share) {
+    if (!l || (l->flags & LIST_SHARED)) return l;
+    if (l->flags & LIST_EXPOSED) return list_clone(l, share);
+    l->flags |= LIST_SHARED;
+    return l;
+}
+
+/* the header a change may write: l when nothing else holds it, else a fresh
+ * copy the caller stores in place of l */
+veles_list *veles_list_unique(veles_list *l, veles_share_fn share) {
+    if (!(l->flags & (LIST_SHARED | LIST_LENT))) return l;
+    return list_clone(l, share);
+}
+
+/* veles_list_unique before a change that grows the list (push, addAll, a
+ * text append): the copy gets the room a push would grow it to, so the
+ * first push after a copy does not copy the elements a second time — the
+ * usual `val more = list` then `more.push(...)` in a loop (D231 addendum 3) */
+veles_list *veles_list_unique_grow(veles_list *l, veles_share_fn share) {
+    if (!(l->flags & (LIST_SHARED | LIST_LENT))) return l;
+    return list_clone_cap(l, share, l->len > 2 ? l->len * 2 : 4);
+}
+
+/* `loop (&x in xs)`: the pointers the loop hands out reach xs's own storage
+ * (made unique by the caller first), so a copy of xs taken meanwhile gets
+ * storage of its own (veles_list_share) */
+void veles_list_own(veles_list *l) {
+    l->flags |= LIST_EXPOSED;
 }
 
 /* The elements in from..<to as a new list, both ends clamped to the list;
@@ -1275,12 +1301,14 @@ veles_list *veles_list_slice(veles_list *l, int64_t from, int64_t to) {
     return c;
 }
 
-/* The same elements as a window onto l's storage, not a copy (D196): for a
- * receiver that is an immutable List, which nothing can write through, so the
- * sharing cannot be seen. The new header points into the middle of l's buffer
- * (the collector follows an interior pointer, D10), which it keeps alive; an
+/* The same elements as a window onto l's storage, not a copy (D196). Both
+ * headers are marked shared, so a change through either copies first and
+ * the sharing cannot be seen (D231); storage a pointer was made into is
+ * copied instead. The new header points into the middle of l's buffer (the
+ * collector follows an interior pointer, D10), which it keeps alive; an
  * empty window holds on to nothing. */
 veles_list *veles_list_view(veles_list *l, int64_t from, int64_t to) {
+    if (l->flags & LIST_EXPOSED) return veles_list_slice(l, from, to);
     if (from < 0) from = 0;
     if (to > l->len) to = l->len;
     if (from > to) from = to;
@@ -1290,6 +1318,8 @@ veles_list *veles_list_view(veles_list *l, int64_t from, int64_t to) {
         c->data = l->data + l->elem * from;
         c->len = n;
         c->cap = n;
+        c->flags = LIST_SHARED;
+        if (!(l->flags & LIST_SHARED)) l->flags |= LIST_SHARED;
     }
     return c;
 }
@@ -1309,7 +1339,6 @@ void *veles_race_list(void *t, veles_list *tasks) {
 }
 
 void veles_list_append_list(veles_list *dst, veles_list *src) {
-    list_writable(dst);
     int64_t n = src->len;
     if (n == 0) return;
     if (dst->len + n > dst->cap) {
@@ -1326,7 +1355,6 @@ void veles_list_append_list(veles_list *dst, veles_list *src) {
 }
 
 void veles_list_clear(veles_list *l) {
-    list_writable(l);
     l->len = 0;
     l->mods++;
 }
@@ -1354,7 +1382,7 @@ typedef struct {
     int64_t keySize;
     int64_t valSize;
     int64_t mods; /* D102: entries added or removed so far */
-    int64_t flags; /* LIST_EXPOSED / LIST_FROZEN (D188) */
+    int64_t flags; /* LIST_EXPOSED / LIST_SHARED / LIST_LENT, as for lists */
 } veles_map;
 
 /* Hashing is keyed with a secret drawn from the operating system at start-up,
@@ -1562,40 +1590,6 @@ int64_t veles_map_len(veles_map *m) {
     return m->len;
 }
 
-/* ---- freeze (D188), as for lists ---------------------------------------- */
-
-static inline void map_writable(veles_map *m) {
-    if (m->flags & LIST_FROZEN) frozen_panic(m->valDesc ? "map" : "set");
-}
-
-/* a pointer into the entries is being made (m.ref) */
-void veles_map_expose(veles_map *m) {
-    map_writable(m);
-    m->flags |= LIST_EXPOSED;
-}
-
-/* The map becomes immutable in place. Entry arrays a pointer was made into are
- * copied first (the index is rebuilt over the copy), so that pointer can never
- * change the frozen map. */
-veles_map *veles_map_freeze(veles_map *m) {
-    map_writable(m);
-    if ((m->flags & LIST_EXPOSED) && m->cap > 0) {
-        char *nk = veles_gc_alloc(m->keyDesc, m->keySize * m->cap + 1);
-        char *nv = m->valDesc ? veles_gc_alloc(m->valDesc, m->valSize * m->cap + 1) : map_no_vals;
-        veles_meta *nm = veles_alloc((int64_t)sizeof(veles_meta) * m->cap);
-        memcpy(nk, m->keys, (size_t)(m->keySize * m->used));
-        if (m->valSize) memcpy(nv, m->vals, (size_t)(m->valSize * m->used));
-        memcpy(nm, m->meta, sizeof(veles_meta) * (size_t)m->used);
-        m->keys = nk;
-        m->vals = nv;
-        m->meta = nm;
-        if (m->icap > 0) map_rebuild(m, m->icap);
-    }
-    m->flags |= LIST_FROZEN;
-    m->flags &= ~(int64_t)LIST_EXPOSED;
-    return m;
-}
-
 int64_t veles_map_mods(veles_map *m) {
     return m->mods;
 }
@@ -1678,7 +1672,6 @@ static int64_t map_append(veles_map *m, int64_t hash, const void *key, const voi
 
 /* insert or overwrite; returns the entry index */
 int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void *val, veles_eq_fn eq) {
-    map_writable(m);
     hash = (int64_t)map_slot(hash);
     int64_t e = map_find(m, hash, key, eq);
     if (e >= 0) {
@@ -1689,7 +1682,6 @@ int64_t veles_map_insert(veles_map *m, int64_t hash, const void *key, const void
 }
 
 bool veles_map_remove(veles_map *m, int64_t hash, const void *key, veles_eq_fn eq) {
-    map_writable(m);
     hash = (int64_t)map_slot(hash);
     if (m->icap == 0) { /* small: no index to update */
         int64_t e = map_find(m, hash, key, eq);
@@ -1735,7 +1727,6 @@ bool veles_map_live(veles_map *m, int64_t e) {
 }
 
 void veles_map_clear(veles_map *m) {
-    map_writable(m);
     m->len = 0;
     m->mods++;
     m->used = 0;
@@ -1746,7 +1737,6 @@ void veles_map_clear(veles_map *m) {
  * n neither grows the arrays nor rebuilds the index (map_append's two
  * conditions). Never shrinks; the contents and their order stay. */
 void veles_map_reserve(veles_map *m, int64_t n) {
-    map_writable(m);
     if (n <= 0) return;
     if (m->cap == 0) map_start(m);
     if (m->used > m->len) map_compact(m); /* dead entries would count against n */
@@ -1778,6 +1768,41 @@ veles_map *veles_map_copy(veles_map *m) {
         }
     }
     return c;
+}
+
+/* ---- copy on write for maps and sets (D231), as for lists ---------------- */
+
+/* every entry of a fresh copy is held twice now */
+void veles_map_share_entries(veles_map *m, veles_share_fn key, veles_share_fn val) {
+    if (!key && !val) return;
+    for (int64_t e = 0; e < m->used; e++) {
+        if (!m->meta[e].live) continue;
+        if (key) key(m->keys + e * m->keySize);
+        if (val) val(m->vals + e * m->valSize);
+    }
+}
+
+static veles_map *map_clone(veles_map *m, veles_share_fn key, veles_share_fn val) {
+    veles_map *c = veles_map_copy(m);
+    veles_map_share_entries(c, key, val);
+    return c;
+}
+
+veles_map *veles_map_share(veles_map *m, veles_share_fn key, veles_share_fn val) {
+    if (!m || (m->flags & LIST_SHARED)) return m;
+    if (m->flags & LIST_EXPOSED) return map_clone(m, key, val);
+    m->flags |= LIST_SHARED;
+    return m;
+}
+
+veles_map *veles_map_unique(veles_map *m, veles_share_fn key, veles_share_fn val) {
+    if (!(m->flags & (LIST_SHARED | LIST_LENT))) return m;
+    return map_clone(m, key, val);
+}
+
+/* `loop ((k, &v) in m)`, as veles_list_own */
+void veles_map_own(veles_map *m) {
+    m->flags |= LIST_EXPOSED;
 }
 
 veles_list *veles_map_keys(veles_map *m) {

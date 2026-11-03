@@ -73,7 +73,7 @@ public trait Args {
     val help = helpOf<This>(command)
     val scanned = try scan(args, specs, help)
     val values = scanned.values
-    val problems = scanned.problems.toMutable()
+    val problems = scanned.problems
     problems.addAll(invalidValues<This>(values, specs))
     if (!problems.isEmpty()) throw usage(problems, command, help)
     This.build(f => {
@@ -117,7 +117,7 @@ fun readCommand<T>(args: List<string>, command: string): T throws Error {
   val [word, ..rest] = args else throw usage(["a command is missing"], command, help)
   if (word == "--help" || word == "-h") throw Error(kind: ErrorKind.Help, text: help)
   if (word == "--version" && !build.program.version.isEmpty()) throw versionError()
-  val names: MutableList<string> = []
+  val names: List<string> = []
   inline loop (m in T.members) {
     val name = kebab(m.name)
     if (word == name) return try m.Type.readArgs(rest, "$command $name")
@@ -131,11 +131,11 @@ fun commandsHelp<T>(command: string): string {
   val out = StringBuilder()
   if (!T.doc.isEmpty()) out.append("${T.doc}\n\n")
   out.append("Usage: $command <command> [options]\n\nCommands:\n")
-  val rows: MutableList<(string, string)> = []
+  val rows: List<(string, string)> = []
   inline loop (m in T.members) {
     rows.push((kebab(m.name), firstLine(m.doc)))
   }
-  table(out, rows)
+  table(&out, rows)
   out.append("\nRun '$command <command> --help' for a command's options.")
   out.toString()
 }
@@ -160,7 +160,7 @@ struct Spec {
 }
 
 fun specsOf<T>(): List<Spec> {
-  val out: MutableList<Spec> = []
+  val out: List<Spec> = []
   inline loop (f in T.fields) {
     val flag = f.attr<Flag>() ?: Flag()
     val long = if (flag.name.isEmpty()) kebab(f.name) else flag.name
@@ -205,16 +205,16 @@ struct Scanned {
 // the arguments sorted into each field's texts; throws only for --help and
 // --version, every other problem is listed
 fun scan(args: List<string>, specs: List<Spec>, help: string): Scanned throws Error {
-  val values: MutableMap<string, MutableList<string>> = [:]
-  val problems: MutableList<string> = []
-  val positionals: MutableList<string> = []
+  val values: Map<string, List<string>> = [:]
+  val problems: List<string> = []
+  val positionals: List<string> = []
   val add = (field: string, text: string) => {
-    if (val list = values.get(field)) list.push(text) else values.set(field, [text])
+    if (val list = values.at(field)) list.push(text) else values.set(field, [text])
   }
   var i: i64 = 0
   var flagsEnded = false
   loop (i < args.len()) {
-    val arg = args.at(i)
+    val arg = args.get(i)
     i += 1
     when {
       flagsEnded || arg == "-" || !arg.startsWith("-") => positionals.push(arg)
@@ -242,7 +242,7 @@ fun scan(args: List<string>, specs: List<Spec>, help: string): Scanned throws Er
           if (val text = attached) add(found.field, text) else add(found.field, if (on) "true" else "false")
         } else if (val text = attached) {
           add(found.field, text)
-        } else if (val next = args.at(i)) {
+        } else if (val next = args.get(i)) {
           add(found.field, next)
           i += 1
         } else {
@@ -266,7 +266,7 @@ fun scan(args: List<string>, specs: List<Spec>, help: string): Scanned throws Er
           }
           if (k < arg.len()) {
             add(spec.field, arg.slice(k, arg.len()))
-          } else if (val next = args.at(i)) {
+          } else if (val next = args.get(i)) {
             add(spec.field, next)
             i += 1
           } else {
@@ -283,10 +283,10 @@ fun scan(args: List<string>, specs: List<Spec>, help: string): Scanned throws Er
     if (!spec.positional) continue
     if (spec.repeated) {
       loop (p < positionals.len()) {
-        add(spec.field, positionals.at(p))
+        add(spec.field, positionals.get(p))
         p += 1
       }
-    } else if (val text = positionals.at(p)) {
+    } else if (val text = positionals.get(p)) {
       add(spec.field, text)
       p += 1
     }
@@ -303,14 +303,14 @@ fun scan(args: List<string>, specs: List<Spec>, help: string): Scanned throws Er
     }
     if (spec.required) problems.push(if (spec.positional) "the argument <${spec.long}> is missing" else "the flag '--${spec.long}' is missing")
   }
-  val out: MutableMap<string, List<string>> = [:]
-  loop ((field, texts) in values.entries()) out.set(field, texts.toList())
+  val out: Map<string, List<string>> = [:]
+  loop ((field, texts) in values.entries()) out.set(field, texts)
   Scanned(values: out, problems)
 }
 
 // each text that does not read as its field's type, as a sentence
 fun invalidValues<T>(values: Map<string, List<string>>, specs: List<Spec>): List<string> {
-  val out: MutableList<string> = []
+  val out: List<string> = []
   inline loop (f in T.fields) {
     val texts = values.get(f.name) ?: []
     val spec = specs.find(s => s.field == f.name)
@@ -334,8 +334,8 @@ fun helpOf<T>(command: string): string {
   val out = StringBuilder()
   if (!T.doc.isEmpty()) out.append("${T.doc}\n\n")
   out.appendLine("Usage: ${usageLine(specs, command)}")
-  val arguments: MutableList<(string, string)> = []
-  val options: MutableList<(string, string)> = []
+  val arguments: List<(string, string)> = []
+  val options: List<(string, string)> = []
   loop (spec in specs) {
     if (spec.hidden) continue
     var text = firstLine(spec.doc)
@@ -354,10 +354,10 @@ fun helpOf<T>(command: string): string {
   if (!build.program.version.isEmpty()) options.push(("    --version", "Print the version"))
   if (!arguments.isEmpty()) {
     out.append("\nArguments:\n")
-    table(out, arguments)
+    table(&out, arguments)
   }
   out.append("\nOptions:\n")
-  table(out, options)
+  table(&out, options)
   out.toString().trimEnd()
 }
 
@@ -371,7 +371,7 @@ fun usageLine(specs: List<Spec>, command: string): string {
 }
 
 // two columns, the first padded to the widest
-fun table(out: StringBuilder, rows: List<(string, string)>) {
+fun table(out: *StringBuilder, rows: List<(string, string)>) {
   var width: i64 = 0
   loop ((left, _) in rows) width = width.max(left.len())
   loop ((left, right) in rows) {
@@ -449,16 +449,16 @@ fun nearest(word: string, candidates: List<string>): string? {
 // optimal string alignment: Levenshtein plus swapping two neighbours
 fun distance(a: string, b: string): i64 {
   val n = b.len()
-  var before = MutableList<i64>.repeat(0, n + 1)
-  var previous = MutableList<i64>.make(n + 1, j => j)
-  var current = MutableList<i64>.repeat(0, n + 1)
+  var before = List<i64>.repeat(0, n + 1)
+  var previous = List<i64>.make(n + 1, j => j)
+  var current = List<i64>.repeat(0, n + 1)
   loop (i in 1..a.len()) {
     current.set(0, i)
     loop (j in 1..n) {
       val cost = if (a.byteAt(i - 1) == b.byteAt(j - 1)) 0 else 1
-      var d = ((previous.at(j) ?: 0) + 1).min((current.at(j - 1) ?: 0) + 1).min((previous.at(j - 1) ?: 0) + cost)
+      var d = ((previous.get(j) ?: 0) + 1).min((current.get(j - 1) ?: 0) + 1).min((previous.get(j - 1) ?: 0) + cost)
       if (i > 1 && j > 1 && a.byteAt(i - 1) == b.byteAt(j - 2) && a.byteAt(i - 2) == b.byteAt(j - 1)) {
-        d = d.min((before.at(j - 2) ?: 0) + 1)
+        d = d.min((before.get(j - 2) ?: 0) + 1)
       }
       current.set(j, d)
     }
@@ -467,5 +467,5 @@ fun distance(a: string, b: string): i64 {
     previous = current
     current = oldest
   }
-  previous.at(n) ?: 0
+  previous.get(n) ?: 0
 }

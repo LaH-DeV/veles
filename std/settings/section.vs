@@ -31,7 +31,7 @@ public struct Section {
 
   /// The table's keys and values in the TOML module's stable order.
   public fun entries(): List<Entry> {
-    val out: MutableList<Entry> = []
+    val out: List<Entry> = []
     loop (key in this.table.keys()) {
       val value = this.table.get(key) ?: continue
       out.push(Entry(key, value))
@@ -48,7 +48,7 @@ public struct Section {
 
 fun stringList(section: Section, value: Value, what: string, example: string): List<string> throws SettingsError {
   val items = value.asList() ?: throw section.failAt(value, "$what is a list, e.g. $example")
-  val out: MutableList<string> = []
+  val out: List<string> = []
   loop (item in items) {
     out.push(item.asString() ?: throw section.failAt(item, "$what holds strings only"))
   }

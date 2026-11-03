@@ -6,16 +6,16 @@ test "values become placeholders and keep their order" {
   val q = sql"select id from users where name = ${name} and age > ${18}"
   expect(q.text() == "select id from users where name = $1 and age > $2")
   expect(q.valueCount() == 2)
-  expect(q.args.at(0)?.text == "O'Brien")
-  expect(q.args.at(1)?.text == "18")
-  expect(q.args.at(1)?.oid == 20)
+  expect(q.args.get(0)?.text == "O'Brien")
+  expect(q.args.get(1)?.text == "18")
+  expect(q.args.get(1)?.oid == 20)
 }
 
 test "a value that looks like SQL is still only a value" {
   val evil = "x'; drop table users; --"
   val q = sql"select * from t where a = ${evil}"
   expect(q.text() == "select * from t where a = $1")
-  expect(q.args.at(0)?.text == evil)
+  expect(q.args.get(0)?.text == evil)
 }
 
 test "a query with no values is its text" {
@@ -31,8 +31,8 @@ test "a Sql among the values is spliced and renumbered" {
   val q = sql"select * from users where name = ${name} and ${adult} and active = ${true}"
   expect(q.text() == "select * from users where name = $1 and age >= $2 and active = $3")
   expect(q.valueCount() == 3)
-  expect(q.args.at(1)?.text == "18")
-  expect(q.args.at(2)?.text == "t")
+  expect(q.args.get(1)?.text == "18")
+  expect(q.args.get(2)?.text == "t")
 }
 
 test "a fragment nests and can be used twice" {

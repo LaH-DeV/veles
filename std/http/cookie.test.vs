@@ -101,7 +101,7 @@ test "a response keeps its cookies through withHeader and a head-only copy" {
 test "withoutCookie is a Max-Age=0 cookie with the same path and domain" {
   val resp = Response.empty(Status.noContent).withoutCookie("sid", path: "/app", domain: "example.com")
   expect(resp.cookies.len() == 1)
-  expect(setCookieLine(resp.cookies.at(0) ?: panic("no cookie")) == "sid=; Max-Age=0; Domain=example.com; Path=/app")
+  expect(setCookieLine(resp.cookies.get(0) ?: panic("no cookie")) == "sid=; Max-Age=0; Domain=example.com; Path=/app")
 }
 
 test "a Request reads its cookies" {

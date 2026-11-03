@@ -87,7 +87,7 @@ public struct Version {
 fun comparePre(a: List<string>, b: List<string>): Ordering {
   if (a.isEmpty() || b.isEmpty()) return b.len().compareTo(a.len())
   loop (i in 0..<a.len().min(b.len())) {
-    val order = compareIdentifier(a.at(i) ?: "", b.at(i) ?: "")
+    val order = compareIdentifier(a.get(i) ?: "", b.get(i) ?: "")
     if (order != Ordering.Equal) return order
   }
   a.len().compareTo(b.len())

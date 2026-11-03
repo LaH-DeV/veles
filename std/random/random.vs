@@ -24,7 +24,7 @@ public struct Rng {
   public static fun seeded(n: i64): Rng {
     // splitmix64 expands one seed into four words
     var x = n.wrapU64()
-    var s: MutableList<u64> = []
+    var s: List<u64> = []
     loop (_ in 0..<4) {
       x +%= GOLDEN
       var z = x
@@ -63,10 +63,10 @@ public struct Rng {
   public fun boolean(): bool => (this.nextU64() & 1) == 1
 
   /// One element of `xs`, or `null` when it is empty.
-  public fun pick<T>(xs: List<T>): T? => if (xs.isEmpty()) null else xs.at(this.range(0, xs.len()))
+  public fun pick<T>(xs: List<T>): T? => if (xs.isEmpty()) null else xs.get(this.range(0, xs.len()))
 
   /// Reorders `xs` in place (Fisher–Yates).
-  public fun shuffle<T>(xs: MutableList<T>) {
+  public fun shuffle<T>(xs: *List<T>) {
     var i = xs.len() - 1
     loop (i > 0) {
       val j = this.range(0, i + 1)
@@ -103,6 +103,6 @@ public fun boolean(): bool => shared.withLock(r => r.boolean())
 public fun pick<T>(xs: List<T>): T? => shared.withLock(r => r.pick(xs))
 
 /// Reorders `xs` in place.
-public fun shuffle<T>(xs: MutableList<T>) {
+public fun shuffle<T>(xs: *List<T>) {
   shared.withLock(r => r.shuffle(xs))
 }

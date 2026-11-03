@@ -53,12 +53,17 @@ func (g *gen) extractBoxed(t types.Type, x string, v *types.Struct) string {
 func (g *gen) boxedPlace(slot string, v *types.Struct, mode placeMode) string {
 	box := g.newTmp()
 	g.emit("%s = load ptr, ptr %s", box, slot)
-	if mode == placeRead || !hasVarField(v) {
+	if mode == placeRead || (!hasVarField(v) && !g.needsShare(v)) {
 		return box
 	}
 	fresh := g.gcAlloc(v)
 	size, _ := g.layout(v)
 	g.emit("call void @llvm.memcpy.p0.p0.i64(ptr %s, ptr %s, i64 %d, i1 false)", fresh, box, size)
+	if g.needsShare(v) {
+		// the collections in it are held by both boxes now (D231): a change
+		// to one in place copies it first
+		g.emit("call void %s(ptr %s)", g.shareFn(v), fresh)
+	}
 	g.emit("store ptr %s, ptr %s", fresh, slot)
 	return fresh
 }

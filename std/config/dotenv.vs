@@ -116,8 +116,8 @@ fun validName(name: string): bool {
 /// value ends at the line or at ` #`. A line that is none of these is a
 /// problem, and reading goes on with the next.
 fun parseDotenv(text: string): Dotenv {
-  val vars: MutableMap<string, string> = [:]
-  val problems: MutableList<string> = []
+  val vars: Map<string, string> = [:]
+  val problems: List<string> = []
   var scan = Scanner(text: text.replace("\r\n", "\n"))
   loop (!scan.atEnd()) {
     scan.skipBlank()

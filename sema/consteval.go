@@ -269,6 +269,26 @@ func copyVal(v ConstVal) ConstVal {
 		return &CSome{v.T, copyVal(v.V)}
 	case *CVariant:
 		return &CVariant{v.T, v.Variant, copyVal(v.V)}
+	case *CList:
+		// a collection is a value (D231): changing the copy leaves the original
+		out := &CList{T: v.T, Elems: make([]ConstVal, len(v.Elems))}
+		for i, x := range v.Elems {
+			out.Elems[i] = copyVal(x)
+		}
+		return out
+	case *CMap:
+		out := &CMap{T: v.T, Keys: make([]ConstVal, len(v.Keys)), Vals: make([]ConstVal, len(v.Vals))}
+		for i := range v.Keys {
+			out.Keys[i] = copyVal(v.Keys[i])
+			out.Vals[i] = copyVal(v.Vals[i])
+		}
+		return out
+	case *CSet:
+		out := &CSet{T: v.T, Elems: make([]ConstVal, len(v.Elems))}
+		for i, x := range v.Elems {
+			out.Elems[i] = copyVal(x)
+		}
+		return out
 	}
 	return v
 }
@@ -357,6 +377,8 @@ func (ev *constEval) expr(e Expr) ConstVal {
 		if t, ok := ev.expr(e.X).(*CTuple); ok && e.Index < len(t.Elems) {
 			return t.Elems[e.Index]
 		}
+	case *Share:
+		return copyVal(ev.expr(e.X)) // a copy of the collections in it (D231)
 	case *ListLit:
 		if at, isArray := e.Type().(*types.Array); isArray {
 			out := &CArray{T: at}
@@ -594,7 +616,13 @@ func (ev *constEval) exec(s Stmt) ctl {
 		if s.Init == nil {
 			ev.errorf(source.Span{}, "this statement is not a constant expression (D113)")
 		}
-		ev.bind(s.Var, ev.val(s.Init))
+		if s.Var.Lent && s.Var.LentFor == nil {
+			// a lent temp names the collection itself, as in compiled code:
+			// `loop (&p in xs)` writes through it into xs (D231)
+			ev.bind(s.Var, ev.expr(s.Init))
+		} else {
+			ev.bind(s.Var, ev.val(s.Init))
+		}
 	case *ExprStmt:
 		// a conditional in statement position may end the function or a loop
 		switch x := s.X.(type) {
@@ -1085,6 +1113,16 @@ func (ev *constEval) builtin(e *Builtin) ConstVal {
 			}
 		}
 		return &CNull{nt}
+	case "map.ref":
+		// `m.at(k)`: a pointer to the stored value, or null (D231)
+		m := ev.expr(e.Args[0]).(*CMap)
+		k := ev.expr(e.Args[1])
+		nt := e.Type().(*types.Nullable)
+		i := constIndex(m.Keys, k)
+		if i < 0 {
+			return &CNull{nt}
+		}
+		return &CSome{nt, &CPtr{T: nt.Elem, get: func() ConstVal { return m.Vals[i] }, set: func(v ConstVal) { m.Vals[i] = v }}}
 	case "map.contains":
 		k := ev.expr(e.Args[1])
 		switch m := ev.expr(e.Args[0]).(type) {
@@ -1473,19 +1511,10 @@ func (c *Checker) notConstType(t types.Type, key bool, seen map[types.Type]bool)
 	case *types.Array:
 		return c.notConstType(t.Elem, key, seen)
 	case *types.List:
-		if t.Mutable {
-			return "a 'MutableList' can change and a constant cannot; use 'List'"
-		}
 		return c.notConstType(t.Elem, key, seen)
 	case *types.Set:
-		if t.Mutable {
-			return "a 'MutableSet' can change and a constant cannot; use 'Set'"
-		}
 		return c.notConstType(t.Elem, true, seen)
 	case *types.Map:
-		if t.Mutable {
-			return "a 'MutableMap' can change and a constant cannot; use 'Map'"
-		}
 		if why := c.notConstType(t.Key, true, seen); why != "" {
 			return why
 		}

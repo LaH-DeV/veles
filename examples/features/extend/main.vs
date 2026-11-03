@@ -12,7 +12,7 @@ struct Vec2 {
 }
 
 struct Stack<T> {
-  items: MutableList<T>
+  items: List<T>
 }
 
 trait Show {
@@ -57,9 +57,9 @@ fun main() {
   println("${names} ${names.join("|")} ${"ab".repeat(2).toUpper()}")
   println("${names.map(n => n.padEnd(6, ".")).join("")}")
   val xs = [4, 8, 15, 16, 23, 42]
-  println("${xs.take(2)} ${xs.drop(4)} ${xs.sum()} ${xs.max()} ${xs.at(-1)} ${xs.chunked(4)}")
+  println("${xs.take(2)} ${xs.drop(4)} ${xs.sum()} ${xs.max()} ${xs.get(-1)} ${xs.chunked(4)}")
   println("${xs.count(x => x % 2 == 0)} ${xs.zip(names)} ${[3, 1, 3, 2, 1].distinct()}")
-  var m = mut [3, 1, 2]
+  var m = [3, 1, 2]
   m.insert(1, 9)
   m.sort()
   println("$m removed ${m.removeAt(0)} -> $m")

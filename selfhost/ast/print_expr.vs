@@ -162,7 +162,7 @@ extend Printer {
         this.write("(tuple")
         loop ((i, elem) in e.elems.enumerate()) {
           this.write(" ")
-          if (val label = e.labels.at(i)) this.write("${label.name}: ")
+          if (val label = e.labels.get(i)) this.write("${label.name}: ")
           this.expr(elem)
         }
         this.write(")")

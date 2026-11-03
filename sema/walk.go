@@ -70,137 +70,169 @@ func walkExprs(es []Expr, visit func(node any)) {
 }
 
 func walkExpr(e Expr, visit func(node any)) {
+	walker{visit}.expr(e)
+}
+
+// childVisitor is what eachChild hands an expression's children to.
+type childVisitor interface {
+	expr(Expr)
+	block(*Block)
+	stmt(Stmt)
+}
+
+// walker visits every node below an expression (walkExpr).
+type walker struct{ visit func(node any) }
+
+func (w walker) expr(e Expr) {
 	if e == nil {
 		return
 	}
-	visit(e)
+	w.visit(e)
+	eachChild(e, w)
+}
+
+func (w walker) block(b *Block) { walkBlock(b, w.visit) }
+func (w walker) stmt(s Stmt)    { walkStmt(s, w.visit) }
+
+func eachExpr(es []Expr, v childVisitor) {
+	for _, e := range es {
+		v.expr(e)
+	}
+}
+
+// eachChild hands e's direct children to v in evaluation order: its
+// expressions, blocks and statements (a block or a statement whole, for v
+// to enter). Lambdas' bodies are not among them (walkBlock).
+func eachChild(e Expr, v childVisitor) {
 	switch e := e.(type) {
 	case *Call:
-		walkExprs(e.Args, visit)
+		eachExpr(e.Args, v)
 	case *CallIndirect:
-		walkExpr(e.Fn, visit)
-		walkExprs(e.Args, visit)
+		v.expr(e.Fn)
+		eachExpr(e.Args, v)
 	case *CallVirtual:
-		walkExpr(e.Obj, visit)
-		walkExprs(e.Args, visit)
+		v.expr(e.Obj)
+		eachExpr(e.Args, v)
 	case *Builtin:
-		walkExprs(e.Args, visit)
+		eachExpr(e.Args, v)
 	case *Binary:
-		walkExpr(e.L, visit)
-		walkExpr(e.R, visit)
+		v.expr(e.L)
+		v.expr(e.R)
 	case *Unary:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *Cast:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *ToString:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *StringConcat:
-		walkExprs(e.Parts, visit)
+		eachExpr(e.Parts, v)
 	case *FieldGet:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *TupleGet:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *StructLit:
-		walkExprs(e.Fields, visit)
+		eachExpr(e.Fields, v)
 	case *TupleLit:
-		walkExprs(e.Elems, visit)
+		eachExpr(e.Elems, v)
 	case *AddrOf:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *Deref:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *SomeWrap:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *IsNull:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *Unwrap:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *MakeVariant:
-		walkExpr(e.Value, visit)
+		v.expr(e.Value)
 	case *VariantTest:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *VariantCast:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *TypeTest:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *Downcast:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *TraitTest:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *TraitCast:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *If:
-		walkExpr(e.Cond, visit)
-		walkBlock(e.Then, visit)
-		walkBlock(e.Else, visit)
+		v.expr(e.Cond)
+		v.block(e.Then)
+		v.block(e.Else)
 	case *BlockExpr:
-		walkBlock(e.Block, visit)
+		v.block(e.Block)
 	case *MakeResult:
-		walkExpr(e.Value, visit)
+		v.expr(e.Value)
 	case *ResultIsErr:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *ResultValue:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *ErrorConvert:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *UnionTest:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *UnionCast:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *ListLit:
-		walkExprs(e.Elems, visit)
+		eachExpr(e.Elems, v)
 	case *MapLit:
 		for _, en := range e.Entries {
-			walkExpr(en[0], visit)
-			walkExpr(en[1], visit)
+			v.expr(en[0])
+			v.expr(en[1])
 		}
 	case *RangeLit:
-		walkExpr(e.Lo, visit)
-		walkExpr(e.Hi, visit)
+		v.expr(e.Lo)
+		v.expr(e.Hi)
 	case *Elvis:
-		walkExpr(e.L, visit)
-		walkExpr(e.R, visit)
+		v.expr(e.L)
+		v.expr(e.R)
 	case *Let:
-		walkExpr(e.Init, visit)
-		walkExpr(e.Body, visit)
+		v.expr(e.Init)
+		v.expr(e.Body)
 	case *Match:
-		walkExpr(e.Init, visit)
+		v.expr(e.Init)
 		for _, arm := range e.Arms {
-			walkExpr(arm.Test, visit)
+			v.expr(arm.Test)
 			for _, b := range arm.Binds {
-				walkStmt(b, visit)
+				v.stmt(b)
 			}
-			walkExpr(arm.Guard, visit)
-			walkBlock(arm.Body, visit)
+			v.expr(arm.Guard)
+			v.block(arm.Body)
 		}
 	case *Try:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *Throw:
-		walkExpr(e.Value, visit)
+		v.expr(e.Value)
 	case *Box:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
+	case *Share:
+		v.expr(e.X)
 	case *LazyRead:
-		walkExpr(e.Build, visit)
+		v.expr(e.Build)
 	case *Launch:
-		walkExpr(e.Call, visit)
+		v.expr(e.Call)
 	case *AwaitTask:
-		walkExpr(e.X, visit)
+		v.expr(e.X)
 	case *ScopeBlock:
-		walkExpr(e.On, visit)
-		walkExpr(e.Workers, visit)
+		v.expr(e.On)
+		v.expr(e.Workers)
 		if e.Held != nil {
-			walkExpr(e.Held.Init, visit) // the value a `with` receives (D111)
+			v.expr(e.Held.Init) // the value a `with` receives (D111)
 		}
-		walkBlock(e.Body, visit)
+		v.block(e.Body)
 		if e.Held != nil {
-			walkExpr(e.Held.Close, visit)
+			v.expr(e.Held.Close)
 		}
 	case *RaceFirst:
-		walkExpr(e.Tasks, visit)
+		v.expr(e.Tasks)
 	case *Race:
 		for _, arm := range e.Arms {
-			walkExpr(arm.Source, visit)
-			walkExpr(arm.Value, visit)
-			walkBlock(arm.Body, visit)
+			v.expr(arm.Source)
+			v.expr(arm.Value)
+			v.block(arm.Body)
 		}
 	}
 }

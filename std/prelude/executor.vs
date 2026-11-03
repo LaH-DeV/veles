@@ -76,7 +76,7 @@ public struct Executor {
 
   static fun make(threads: i64, single: bool, name: string, priority: Priority, cpus: List<i64>): Executor throws ThreadError {
     var reason = ""
-    val at = listRawData(cpus)
+    val at = listReadData(cpus)
     // SAFETY: the runtime copies the name and the CPUs (`at`, alive with
     // `cpus` for the call); on a refusal it stores a fresh string in
     // `reason`, a local that outlives the call
@@ -218,7 +218,7 @@ public struct Thread {
     // name and CPUs are copied; on a refusal `reason` gets a fresh string
     val h = unsafe {
       val cell: *raw sendable fun() = &body
-      veles_thread_start(name, priority.value, listRawData(cpus), cpus.len(), stackSize, cell.cast<*raw u8>(), &reason)
+      veles_thread_start(name, priority.value, listReadData(cpus), cpus.len(), stackSize, cell.cast<*raw u8>(), &reason)
     }
     if (!reason.isEmpty()) throw ThreadError(reason)
     Thread(handle: h)

@@ -22,7 +22,7 @@ runs.
 | `switch v := x.(type)` | `when (x) { is A => …; is B => … }`, exhaustive over a `sealed trait` |
 | `go f()` | `async f()`, inside a block that waits for it |
 | `defer f.Close()` | `with f = try fs.open(p)` |
-| `[]T` | `List<T>` (never changes) or `MutableList<T>` |
+| `[]T` | `List<T>` (never changes) or `List<T>` |
 | `len(s)`, `s[i]` on a string | `s.len()` (bytes, as in Go), `s.byteAt(i)` |
 | exported by a capital letter | `public` (other packages), nothing (this package), `internal`, `private` |
 | `for` | `loop (x in xs)`, `loop (cond)`, `loop { }`; ranges `0..<n` |
@@ -136,7 +136,7 @@ primitives themselves (`sleep`, `recv`, a task handle).
 Go finds a data race with `-race`, at run time, if the test happens to
 hit it. Veles refuses one before the program runs: what crosses into a
 task must be `Sendable` — immutable values, channels, `Mutex`, `Atomic` —
-and a `MutableList` or a struct holding one is not. A module-level `var`
+and a `List` or a struct holding one is not. A module-level `var`
 is an error for the same reason; shared state lives behind `Atomic` or
 `Mutex` (D35, D66).
 

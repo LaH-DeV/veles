@@ -31,7 +31,7 @@ const maxMessage: i64 = 268435456
 /// A message being built: the body is written in pieces and `frame` puts the
 /// type byte and the length in front.
 struct Out {
-  body: MutableList<u8> = []
+  body: List<u8> = []
 
   fun byte(b: u8) {
     this.body.push(b)
@@ -57,11 +57,11 @@ struct Out {
 
   // the message: type, length (counting itself), body
   fun frame(kind: u8): List<u8> {
-    val out: MutableList<u8> = []
+    val out: List<u8> = []
     out.push(kind)
     out.pushU32Be((this.body.len() + 4).wrapU32())
-    out.addAll(this.body.toList())
-    out.toList()
+    out.addAll(this.body)
+    out
   }
 }
 
@@ -74,7 +74,7 @@ struct Cursor {
   fun remaining(): i64 => this.data.len() - this.pos
 
   fun byte(): u8 throws DbError {
-    val b = this.data.at(this.pos) ?: throw truncated()
+    val b = this.data.get(this.pos) ?: throw truncated()
     this.pos += 1
     b
   }
@@ -102,7 +102,7 @@ struct Cursor {
   fun cstring(): string throws DbError {
     var end = this.pos
     loop {
-      val b = this.data.at(end) ?: throw truncated()
+      val b = this.data.get(end) ?: throw truncated()
       if (b == 0) break
       end += 1
     }
@@ -131,7 +131,7 @@ fun readMessage(stream: io.Stream): Message suspends throws DbError | IoError {
   if (head.len() < 5) {
     throw DbError(kind: ErrorKind.Closed, text: "the server closed the connection")
   }
-  val kind = head.at(0)
+  val kind = head.get(0)
   val len = (head.readI32Be(1) ?: 0).toI64()
   if (len < 4 || len - 4 > maxMessage) {
     throw DbError(kind: ErrorKind.Protocol, text: "the server sent a message of $len bytes")
@@ -145,7 +145,7 @@ fun readMessage(stream: io.Stream): Message suspends throws DbError | IoError {
 
 /// A `ErrorResponse` or `NoticeResponse`: fields, each a code byte and text.
 fun readFields(c: *Cursor): Map<u8, string> throws DbError {
-  val fields: MutableMap<u8, string> = [:]
+  val fields: Map<u8, string> = [:]
   loop {
     val code = try c.byte()
     if (code == 0) break

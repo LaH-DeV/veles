@@ -1,16 +1,16 @@
 @const.main.PRIMES.data = private unnamed_addr constant [3 x i64] [i64 2, i64 3, i64 5]
-@const.main.PRIMES = private unnamed_addr constant { ptr, i64, i64, i64, ptr, i64, i64 } { ptr @const.main.PRIMES.data, i64 3, i64 3, i64 8, ptr @adesc.i64, i64 0, i64 0 }
+@const.main.PRIMES = private unnamed_addr constant { ptr, i64, i64, i64, ptr, i64, i64 } { ptr @const.main.PRIMES.data, i64 3, i64 3, i64 8, ptr @adesc.i64, i64 0, i64 4 }
 @const.main.NESTED.0.data = private unnamed_addr constant [1 x i8] [i8 1]
-@const.main.NESTED.0 = private unnamed_addr constant { ptr, i64, i64, i64, ptr, i64, i64 } { ptr @const.main.NESTED.0.data, i64 1, i64 1, i64 1, ptr @adesc.u8, i64 0, i64 0 }
+@const.main.NESTED.0 = private unnamed_addr constant { ptr, i64, i64, i64, ptr, i64, i64 } { ptr @const.main.NESTED.0.data, i64 1, i64 1, i64 1, ptr @adesc.u8, i64 0, i64 4 }
 @const.main.NESTED.1.data = private unnamed_addr constant [0 x i8] zeroinitializer
-@const.main.NESTED.1 = private unnamed_addr constant { ptr, i64, i64, i64, ptr, i64, i64 } { ptr @const.main.NESTED.1.data, i64 0, i64 0, i64 1, ptr @adesc.u8, i64 0, i64 0 }
+@const.main.NESTED.1 = private unnamed_addr constant { ptr, i64, i64, i64, ptr, i64, i64 } { ptr @const.main.NESTED.1.data, i64 0, i64 0, i64 1, ptr @adesc.u8, i64 0, i64 4 }
 @const.main.NESTED.data = private unnamed_addr constant [2 x ptr] [ptr @const.main.NESTED.0, ptr @const.main.NESTED.1]
-@const.main.NESTED = private unnamed_addr constant { ptr, i64, i64, i64, ptr, i64, i64 } { ptr @const.main.NESTED.data, i64 2, i64 2, i64 8, ptr @adesc.List_u8_, i64 0, i64 0 }
+@const.main.NESTED = private unnamed_addr constant { ptr, i64, i64, i64, ptr, i64, i64 } { ptr @const.main.NESTED.data, i64 2, i64 2, i64 8, ptr @adesc.List_u8_, i64 0, i64 4 }
 @const.main.WORDS.keys = private unnamed_addr constant [2 x %str] [%str { ptr @.str.1, i64 3 }, %str { ptr @.str.2, i64 3 }]
 @const.main.WORDS.vals = private unnamed_addr constant [2 x i64] [i64 1, i64 2]
 @const.main.WORDS.meta = internal global [2 x { i64, i8 }] [{ i64, i8 } { i64 0, i8 1 }, { i64, i8 } { i64 0, i8 1 }]
 @const.main.WORDS.index = internal global [16 x i64] zeroinitializer
-@const.main.WORDS = private unnamed_addr constant { ptr, ptr, ptr, ptr, ptr, ptr, i64, i64, i64, i64, i64, i64, i64, i64 } { ptr @const.main.WORDS.keys, ptr @const.main.WORDS.vals, ptr @const.main.WORDS.meta, ptr @adesc.string, ptr @adesc.i64, ptr @const.main.WORDS.index, i64 16, i64 2, i64 2, i64 2, i64 16, i64 8, i64 0, i64 0 }
+@const.main.WORDS = private unnamed_addr constant { ptr, ptr, ptr, ptr, ptr, ptr, i64, i64, i64, i64, i64, i64, i64, i64 } { ptr @const.main.WORDS.keys, ptr @const.main.WORDS.vals, ptr @const.main.WORDS.meta, ptr @adesc.string, ptr @adesc.i64, ptr @const.main.WORDS.index, i64 16, i64 2, i64 2, i64 2, i64 16, i64 8, i64 0, i64 4 }
 define i64 @v_main.size() {
 entry:
   %t2 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 1048576, i64 3)

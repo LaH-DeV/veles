@@ -33,13 +33,13 @@ struct RowState {
   var inList:  bool = false
   var listAt:  i64 = 0
   var depth:   i64 = 0  // objects or lists opened inside a column: a row has none, so they are skipped
+  recorded:    codec.Problems = codec.Problems()  // shared by every copy, as the rest (D231)
 }
 
 struct RowDecoder {
-  columns:  List<Column>
-  row:      List<string?>
-  state:    *RowState
-  recorded: codec.Problems = codec.Problems()
+  columns: List<Column>
+  row:     List<string?>
+  state:   *RowState
 
   static fun of(columns: List<Column>, row: List<string?>): RowDecoder =>
     RowDecoder(columns, row, state: &RowState())
@@ -47,21 +47,21 @@ struct RowDecoder {
   // the text of the column being read, or of the first one for a scalar target
   fun cell(): string? {
     val s = this.state
-    if (s.inList) return s.items.at(s.listAt) ?: null
+    if (s.inList) return s.items.get(s.listAt) ?: null
     val i = if (s.column < 0) 0 else s.column
-    this.row.at(i) ?: null
+    this.row.get(i) ?: null
   }
 
   fun oid(): i64 {
     val s = this.state
     val i = if (s.column < 0) 0 else s.column
-    (this.columns.at(i)?.oid) ?: 0
+    (this.columns.get(i)?.oid) ?: 0
   }
 
   fun here(): string {
     val s = this.state
     if (s.column < 0 || !s.pending && !s.inList) return ""
-    val name = this.columns.at(s.column)?.name ?: ""
+    val name = this.columns.get(s.column)?.name ?: ""
     if (s.inList) codec.indexPath(name, s.listAt) else name
   }
 
@@ -74,7 +74,7 @@ struct RowDecoder {
   }
 
   fun bad(at: string, want: string, got: string) {
-    this.recorded.record(at, "expected $want, found \"$got\"")
+    this.state.recorded.record(at, "expected $want, found \"$got\"")
   }
 
   implement codec.Decoder {
@@ -100,7 +100,7 @@ struct RowDecoder {
         s.stage = 1
         return
       }
-      this.recorded.record(this.here(), "a column does not hold an object; read it as text and decode it")
+      this.state.recorded.record(this.here(), "a column does not hold an object; read it as text and decode it")
       s.pending = false
       s.depth += 1
     }
@@ -108,7 +108,7 @@ struct RowDecoder {
     fun nextKey(): string? throws DecodeError {
       val s = this.state
       if (s.depth > 0) return null
-      val c = this.columns.at(s.next) ?: return null
+      val c = this.columns.get(s.next) ?: return null
       s.column = s.next
       s.next += 1
       s.pending = true
@@ -128,7 +128,7 @@ struct RowDecoder {
     fun beginList() throws DecodeError {
       val s = this.state
       if (s.inList) {
-        this.recorded.record(this.here(), "a column does not hold a list of lists")
+        this.state.recorded.record(this.here(), "a column does not hold a list of lists")
         s.depth += 1
         return
       }
@@ -143,7 +143,7 @@ struct RowDecoder {
       val text = taken
       val parsed = if (this.oid() == oidBytea) byteaItems(text) else arrayItems(text)
       if (parsed == null) {
-        this.recorded.record(at, "expected an array or bytea, found \"$text\"")
+        this.state.recorded.record(at, "expected an array or bytea, found \"$text\"")
         s.items = []
       } else {
         s.items = parsed
@@ -236,15 +236,15 @@ struct RowDecoder {
 
     fun path(): string => this.here()
 
-    fun problemAt(path: string, message: string) => this.recorded.record(path, message)
+    fun problemAt(path: string, message: string) => this.state.recorded.record(path, message)
 
-    fun problems(): List<codec.Problem> => this.recorded.list()
+    fun problems(): List<codec.Problem> => this.state.recorded.list()
   }
 }
 
 /// `T` read from each row of `rows`: every problem of a row is reported together, at its column.
 fun decodeRows<T: Decodable>(rows: Rows): List<T> throws DecodeError {
-  val out: MutableList<T> = []
+  val out: List<T> = []
   loop (row in rows.rows) {
     val dec = RowDecoder.of(rows.columns, row)
     val value = try T.decode(dec)
@@ -279,12 +279,12 @@ fun rfc3339(text: string, zoned: bool): string {
 // `\x0a0b` (bytea in its hex output form) as the decimal text of each byte
 fun byteaItems(text: string): List<string?>? {
   if (!text.startsWith("\\x")) return null
-  val out: MutableList<string?> = []
+  val out: List<string?> = []
   val bytes = text.bytes()
   var i = 2
   loop (i + 1 < bytes.len()) {
-    val hi = (bytes.at(i) ?: 0).digitValue(16) ?: return null
-    val lo = (bytes.at(i + 1) ?: 0).digitValue(16) ?: return null
+    val hi = (bytes.get(i) ?: 0).digitValue(16) ?: return null
+    val lo = (bytes.get(i + 1) ?: 0).digitValue(16) ?: return null
     out.push("${hi * 16 + lo}")
     i += 2
   }
@@ -296,25 +296,25 @@ fun byteaItems(text: string): List<string?>? {
 // dimension of scalars; a nested array is not a list of scalars and is refused.
 fun arrayItems(text: string): List<string?>? {
   val bytes = text.bytes()
-  if (bytes.len() < 2 || bytes.at(0) != 123 || bytes.at(bytes.len() - 1) != 125) return null
-  val out: MutableList<string?> = []
+  if (bytes.len() < 2 || bytes.get(0) != 123 || bytes.get(bytes.len() - 1) != 125) return null
+  val out: List<string?> = []
   var i = 1
   val end = bytes.len() - 1
-  if (end == 1) return out.toList()
+  if (end == 1) return out
   loop {
-    val first = bytes.at(i)
+    val first = bytes.get(i)
     if (first == 123) return null
-    val item: MutableList<u8> = []
+    val item: List<u8> = []
     var quoted = false
     if (first == 34) {
       quoted = true
       i += 1
       loop {
         if (i >= end) return null
-        val b = bytes.at(i) ?: 0
+        val b = bytes.get(i) ?: 0
         if (b == 92) {
           if (i + 1 >= end) return null
-          item.push(bytes.at(i + 1) ?: 0)
+          item.push(bytes.get(i + 1) ?: 0)
           i += 2
         } else if (b == 34) {
           i += 1
@@ -327,7 +327,7 @@ fun arrayItems(text: string): List<string?>? {
     } else {
       loop {
         if (i >= end) break
-        val b = bytes.at(i) ?: 0
+        val b = bytes.get(i) ?: 0
         if (b == 44) break
         item.push(b)
         i += 1
@@ -336,7 +336,7 @@ fun arrayItems(text: string): List<string?>? {
     val s = item.decodeUtf8() ?: return null
     out.push(if (!quoted && s == "NULL") null else s)
     if (i >= end) break
-    if (bytes.at(i) != 44) return null
+    if (bytes.get(i) != 44) return null
     i += 1
   }
   out

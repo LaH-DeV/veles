@@ -275,7 +275,7 @@ after the fields, named at the call like fields:
 use io
 
 struct Tally {
-  private counts: MutableMap<string, i64> = [:]
+  private counts: Map<string, i64> = [:]
   private total:  i64
 
   init(words: List<string>, weight: i64 = 1) {
@@ -402,7 +402,7 @@ for a class, so the differences are the things to unlearn:
 | | class (Kotlin / TS / Java) | Veles struct |
 |---|---|---|
 | Assignment | copies a *reference*; two names, one object | copies the *value*; two names, two structs (D7) |
-| Sharing one instance | the default | explicit: a pointer `*T` (`&x`, [Sharing with pointers](#sharing-with-pointers) below), or a reference type such as `MutableList` |
+| Sharing one instance | the default | explicit: a pointer `*T` (`&x`, [Sharing with pointers](#sharing-with-pointers) below), or a reference type such as `List` |
 | Inheritance | `class Dog : Animal` | none. Shared behaviour is a trait (chapter 8); a closed family is a `sealed trait` with variant structs (chapter 9) |
 | Constructor | written by hand | implicit, by field name: `Point(x: 1, y: 2)`, or positional when it takes one parameter: `Meters(5)`; `static fun` for anything with logic |
 | Copy with changes | `data class` `copy(...)` (Kotlin), spread (TS) | generated: `p.copy(x: 5)` |
@@ -457,7 +457,7 @@ assign the `var` fields of the struct it was called on, and the reader
 learns what can change from the type, not from every method signature.
 And `acct` is a `val`, yet `deposit` changed it: `val` and `var` on a
 binding say whether the *name* can be rebound (`acct = Account(...)`),
-exactly as they do for a `MutableList`. Immutability is a property of
+exactly as they do for a `List`. Immutability is a property of
 the type — try `acct.owner = "bob"`: the compiler refuses, and no method
 could do it either. A struct with no `var` fields and no collections
 inside cannot change at all, whoever holds it.
@@ -476,15 +476,17 @@ languages need:
 use io
 
 struct Stats {
-  public protected var count: i64 = 0   // everyone reads it, only Stats writes it
-  fun record() { this.count += 1 }
+  protected var count: i64 = 0  // everyone reads it, only Stats writes it
+  fun record() {
+    this.count += 1
+  }
 }
 
 fun main() {
   val s = Stats()
   s.record()
   s.record()
-  io.println("${s.count}")             // reading is fine; `s.count = 0` is an error here
+  io.println("${s.count}")  // reading is fine; `s.count = 0` is an error here
 }
 ```
 
@@ -517,20 +519,20 @@ it says: the field is protected from writes by anyone but its owner. And
 `protected` never restricts *reading*: `public protected var` is the
 normal spelling, "public to read, protected to write".
 
-On a field whose type is a mutable collection, `protected` covers the
-*contents* too (D87), because a collection is a handle: whoever holds it
-can change what it holds. From outside the type the field may only be
-looked at — the receiver of a method that does not change it, a loop head,
-an interpolated value. Changing it, binding it, passing it and returning it
-are errors that say so; `.toList()` makes a copy anyone may keep:
+On a field whose type is a collection, `protected` covers the *contents*
+too (D87): from outside the type, a method that changes the collection in
+place (`push`, `set`, `clear`, …) is an error, just as assigning the field
+is. Reading it, looping over it and taking it are fine — a collection is a
+value (D231), so what you take is a copy of your own, which changes nothing
+in the struct:
 
 ```veles
 use io
 
 struct Inbox {
-  public protected var lines: MutableList<string> = []
+  protected var lines: List<string> = []
 
-  public fun receive(line: string) {
+  fun receive(line: string) {
     this.lines.push(line)
   }
 }
@@ -540,23 +542,23 @@ fun main() {
   inbox.receive("first")
   inbox.receive("second")
   val n = inbox.lines.len()
-  val copy = inbox.lines.toList()
-  io.println("$n ${inbox.lines} ${copy.first()}")
+  val copy = inbox.lines  // a copy: changing it leaves the inbox alone
+  copy.push("mine")
+  io.println("$n ${inbox.lines} ${copy.len()}")
   // inbox.lines.push("x")   error: only Inbox changes its contents
-  // val taken = inbox.lines error: cannot take it; copy it with .toList()
 }
 ```
 
 Output:
 ```text
-2 [first, second] first
+2 [first, second] 3
 ```
 
 Because a struct is a value, a method changes the copy it was called on.
 `var b = acct; b.deposit(1)` leaves `acct` alone, and a method called
-on a temporary — `accounts.at(0)?.deposit(1)`, a copy of the element —
+on a temporary — `accounts.get(0)?.deposit(1)`, a copy of the element —
 is an error, since the change would be thrown away with the copy
-(chapter 4 shows `ref` and `loop (&x in xs)`, which reach the element
+(chapter 4 shows `at` and `loop (&x in xs)`, which reach the element
 itself). A struct passed to a function is a copy too: to let the
 callee change yours, pass `&acct` ([Sharing with pointers](#sharing-with-pointers)).
 A function that changes a struct parameter anyway — assigns one of its
@@ -567,12 +569,13 @@ uses it whole (stores it, passes it on).
 
 ### Immutable all the way down: `const struct`
 
-A struct with no `var` fields still holds whatever its fields hold: a
-`MutableList` inside it changes, whoever holds the struct. `const struct`
-promises more and the compiler checks it: no `var` field, and every field
-deeply immutable — numbers, `bool`, strings, enums, immutable `List`,
-`Map` and `Set` of such, tuples, nullables, arrays, other `const struct`s,
-and sealed types whose variants are all `const` (D212).
+A struct with no `var` fields can still change through its fields: a
+method may push into a `List` field in place. `const struct` promises
+more and the compiler checks it: no `var` field, no change to a collection
+it holds (a `push` on one is an error), and every field deeply immutable —
+numbers, `bool`, strings, enums, `List`, `Map` and `Set` of such, tuples,
+nullables, arrays, other `const struct`s, and sealed types whose variants
+are all `const` (D212, D231).
 
 ```veles
 use io
@@ -617,7 +620,7 @@ What can change is refused at the field, with the immutable form to use:
 ```veles
 // fragment
 const struct Tags {
-  names: MutableList<string> // error: 'names' is a 'MutableList<string>'; a const struct holds only immutable data: use 'List<string>'
+  names: List<string> // error: 'names' is a 'List<string>'; a const struct holds only immutable data: use 'List<string>'
 }
 ```
 
@@ -627,7 +630,7 @@ written at every level, so a later `var` there cannot break it unseen.
 Pointers, functions, trait objects, channels, task handles and the
 synchronized types (`Mutex`, `Atomic`, …) are state rather than data and
 are refused. A generic `const struct Pair<A, B>` is checked again for
-each use: `Pair<i64, MutableList<i64>>` is an error where it is written.
+each use: `Pair<i64, List<i64>>` is an error where it is written.
 
 What it gives: a `const struct` is `Sendable` (it crosses to other tasks
 and channels, and can be a module `val`, as `policy` is above), it is a
@@ -795,7 +798,7 @@ struct Note {
 
 struct Notes {
   private var next: i64 = 1
-  private items:    MutableList<Note> = []
+  private items:    List<Note> = []
 
   fun add(text: string): Note {
     val n = Note(id: this.next, text)
@@ -803,7 +806,7 @@ struct Notes {
     this.next += 1
     n
   }
-  fun all(): List<Note> => this.items.toList()
+  fun all(): List<Note> => this.items
   fun find(id: i64): Note? => this.items.find(n => n.id == id)
 }
 
@@ -837,18 +840,18 @@ is private from then on:
 use io
 
 struct Parser {
-  private toks:    List<string>   // supplied at construction, then hidden
-  private var pos: i64 = 0        // the type's own bookkeeping
+  private toks:    List<string>  // supplied at construction, then hidden
+  private var pos: i64 = 0       // the type's own bookkeeping
 
   fun next(): string? {
-    val t = this.toks.at(this.pos)
+    val t = this.toks.get(this.pos)
     this.pos += 1
     t
   }
 }
 
 fun main() {
-  val p = Parser(toks: ["a", "b"])   // fine; Parser(toks: [], pos: 3) is not
+  val p = Parser(toks: ["a", "b"])  // fine; Parser(toks: [], pos: 3) is not
   io.println("${p.next()} ${p.next()} ${p.next()}")
 }
 ```
@@ -902,7 +905,7 @@ use io
 type Index = i64
 type Hash = u64
 type Key = (Index, Hash)
-type Groups = MutableMap<Key, MutableList<string>>
+type Groups = Map<Key, List<string>>
 type Handler = fun(string): string
 type StrMap<V> = Map<string, V>
 
@@ -911,9 +914,9 @@ fun apply(h: Handler, s: string): string => h(s)
 fun main() {
   val groups: Groups = [:]
   val k: Key = (1, 2)
-  groups.getOrPut(k, () => []).push("first")
+  groups.atOrPut(k, () => []).push("first")
   val n: Index = 40
-  val plain: i64 = n + 2                 // an Index is an i64
+  val plain: i64 = n + 2  // an Index is an i64
   val names: StrMap<i64> = ["ann": 41]
   io.println("${groups.get(k)} $plain ${names.get("ann")} ${apply(s => s + "!", "hi")}")
 }

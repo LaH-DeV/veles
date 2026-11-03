@@ -33,7 +33,7 @@ type Position = i64
 struct Lexer {
   src:     string
   var pos: Position = 0
-  toks:    MutableList<(Token, Position)> = []
+  toks:    List<(Token, Position)> = []
 
   fun run(): List<(Token, Position)> throws SyntaxError {
     loop (this.pos < this.src.len()) {
@@ -59,7 +59,7 @@ struct Lexer {
       }
     }
     this.toks.push((End(), this.pos))
-    this.toks.toList()
+    this.toks
   }
 }
 
@@ -108,7 +108,7 @@ struct Parser {
   private var pos:    Position = 0
 
   // the token list ends with an end token, and the parser never moves past it
-  private fun here(): (Token, Position) => this.tokens.at(this.pos) ?: panic("calc: the parser stops at the end token")
+  private fun here(): (Token, Position) => this.tokens.get(this.pos) ?: panic("calc: the parser stops at the end token")
   private fun peek(): Token => this.here().0
   private fun col(): Position => this.here().1
 
@@ -156,7 +156,7 @@ struct Parser {
         val nt = this.peek()
         if (nt is Op && nt.text == "(") {
           this.next()
-          var args: MutableList<Expr> = []
+          var args: List<Expr> = []
           val first = this.peek()
           if (!(first is Op && first.text == ")")) {
             loop {
@@ -212,7 +212,7 @@ error EvalError {
 }
 
 struct Env {
-  private vars: MutableMap<string, f64> = [:]
+  private vars: Map<string, f64> = [:]
 
   fun eval(e: Expr): f64 throws EvalError => when (e) {
     is Literal(value)          => value
@@ -250,8 +250,8 @@ struct Env {
       else                   => throw EvalError(message: "unknown function '$name'")
     }
     if (arity >= 0 && args.len() != arity) throw EvalError(message: "'$name' takes $arity argument(s), got ${args.len()}")
-    val a = args.at(0) ?: 0.0
-    val b = args.at(1) ?: 0.0
+    val a = args.get(0) ?: 0.0
+    val b = args.get(1) ?: 0.0
     when (name) {
       "sqrt"  => if (a < 0.0) throw EvalError(message: "sqrt of a negative number") else a.sqrt()
       "abs"   => a.abs()
@@ -264,7 +264,7 @@ struct Env {
     }
   }
 
-  fun peek(): Map<string, f64> => this.vars.toMap()
+  fun peek(): Map<string, f64> => this.vars
 }
 
 fun show(e: Expr): string => when (e) {

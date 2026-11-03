@@ -98,7 +98,7 @@ test fun askBytes(port: i64, request: List<u8>): List<u8> throws IoError {
   with conn = try net.connect("127.0.0.1", port)
   try conn.write(request)
   try conn.shutdownWrite()
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   loop {
     val chunk = try conn.read()
     if (chunk.isEmpty()) break
@@ -110,7 +110,7 @@ test fun askBytes(port: i64, request: List<u8>): List<u8> throws IoError {
 // where the blank line after the headers ends
 test fun headEnd(response: List<u8>): i64 {
   var at = 0
-  loop (at + 3 < response.len() && !(response.at(at) == 13 && response.at(at + 1) == 10 && response.at(at + 2) == 13 && response.at(at + 3) == 10)) {
+  loop (at + 3 < response.len() && !(response.get(at) == 13 && response.get(at + 1) == 10 && response.get(at + 2) == 13 && response.get(at + 3) == 10)) {
     at += 1
   }
   at + 4
@@ -121,12 +121,12 @@ test fun headOf(response: List<u8>): string => response.take(headEnd(response)).
 test fun bodyOf(response: List<u8>): List<u8> => response.drop(headEnd(response))
 
 test fun unchunk(framed: List<u8>): List<u8> {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   var at = 0
   loop {
     var size = 0
-    loop (at < framed.len() && framed.at(at) != 13) {
-      val digit = (framed.at(at) ?: 48).toI64()
+    loop (at < framed.len() && framed.get(at) != 13) {
+      val digit = (framed.get(at) ?: 48).toI64()
       size = size * 16 + (if (digit >= 97) digit - 87 else digit - 48)
       at += 1
     }

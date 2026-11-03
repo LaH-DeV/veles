@@ -54,7 +54,7 @@ public fun inflate(bytes: List<u8>, max: i64 = DEFAULT_MAX): List<u8> throws Com
 /// after another are joined, as `gzip -d` does. The checksum and the length
 /// are verified.
 public fun gunzip(bytes: List<u8>, max: i64 = DEFAULT_MAX): List<u8> throws CompressError {
-  val result: MutableList<u8> = []
+  val result: List<u8> = []
   var at = 0
   loop {
     val member = try gunzipMember(bytes, at, max - result.len())
@@ -74,7 +74,7 @@ fun truncated(what: string): CompressError =>
   CompressError(message: "gzip data ends inside $what", kind: CompressKind.Truncated)
 
 fun byteAt(bytes: List<u8>, i: i64, what: string): i64 throws CompressError {
-  val b = bytes.at(i) ?: throw truncated(what)
+  val b = bytes.get(i) ?: throw truncated(what)
   b.toI64()
 }
 
@@ -84,28 +84,28 @@ fun gzipHeaderLength(bytes: List<u8>, from: i64): i64 throws CompressError {
   val have = bytes.len() - from
   if (have < 10) {
     // what is there must still be the start of a header
-    if (have >= 1 && bytes.at(from) != 0x1f) throw corrupt("not a gzip stream (the magic bytes are missing)")
-    if (have >= 2 && bytes.at(from + 1) != 0x8b) throw corrupt("not a gzip stream (the magic bytes are missing)")
+    if (have >= 1 && bytes.get(from) != 0x1f) throw corrupt("not a gzip stream (the magic bytes are missing)")
+    if (have >= 2 && bytes.get(from + 1) != 0x8b) throw corrupt("not a gzip stream (the magic bytes are missing)")
     return -1
   }
-  if (bytes.at(from) != 0x1f || bytes.at(from + 1) != 0x8b) throw corrupt("not a gzip stream (the magic bytes are missing)")
-  if (bytes.at(from + 2) != 8) throw corrupt("a gzip compression method other than deflate")
-  val flags = (bytes.at(from + 3) ?: 0).toI64()
+  if (bytes.get(from) != 0x1f || bytes.get(from + 1) != 0x8b) throw corrupt("not a gzip stream (the magic bytes are missing)")
+  if (bytes.get(from + 2) != 8) throw corrupt("a gzip compression method other than deflate")
+  val flags = (bytes.get(from + 3) ?: 0).toI64()
   if (flags & 0xe0 != 0) throw corrupt("reserved gzip flags are set")
   var at = from + 10
   if (flags & 4 != 0) {
     if (at + 2 > bytes.len()) return -1
-    val extra = (bytes.at(at) ?: 0).toI64() | ((bytes.at(at + 1) ?: 0).toI64() << 8)
+    val extra = (bytes.get(at) ?: 0).toI64() | ((bytes.get(at + 1) ?: 0).toI64() << 8)
     at += 2 + extra
   }
   if (flags & 8 != 0) {
-    loop (at < bytes.len() && bytes.at(at) != 0) {
+    loop (at < bytes.len() && bytes.get(at) != 0) {
       at += 1
     }
     at += 1
   }
   if (flags & 16 != 0) {
-    loop (at < bytes.len() && bytes.at(at) != 0) {
+    loop (at < bytes.len() && bytes.get(at) != 0) {
       at += 1
     }
     at += 1
@@ -143,7 +143,7 @@ fun le32(bytes: List<u8>, at: i64): i64 throws CompressError {
 // eight tables of 256: table k holds the CRC of a byte followed by k zero
 // bytes, so eight bytes are folded with eight independent lookups
 fun buildCrcTable(): List<i64> {
-  val table: MutableList<i64> = []
+  val table: List<i64> = []
   loop (n in 0..<256) {
     var c = n
     loop (_ in 0..<8) {
@@ -153,8 +153,8 @@ fun buildCrcTable(): List<i64> {
   }
   loop (k in 1..<8) {
     loop (n in 0..<256) {
-      val before = table.at((k - 1) * 256 + n) ?: 0
-      table.push((table.at(before & 255) ?: 0) ^ (before >> 8))
+      val before = table.get((k - 1) * 256 + n) ?: 0
+      table.push((table.get(before & 255) ?: 0) ^ (before >> 8))
     }
   }
   table
@@ -174,12 +174,12 @@ fun crc32Update(crc: i64, bytes: List<u8>): i64 {
   // 256), and i + 7 < n guards the eight reads
   unsafe {
     loop (i + 8 <= n) {
-      val low = c ^ (bytes.atUnchecked(i).toI64() | (bytes.atUnchecked(i + 1).toI64() << 8) | (bytes.atUnchecked(i + 2).toI64() << 16) | (bytes.atUnchecked(i + 3).toI64() << 24))
-      c = crcTable.atUnchecked(1792 + (low & 255)) ^ crcTable.atUnchecked(1536 + ((low >> 8) & 255)) ^ crcTable.atUnchecked(1280 + ((low >> 16) & 255)) ^ crcTable.atUnchecked(1024 + ((low >> 24) & 255)) ^ crcTable.atUnchecked(768 + bytes.atUnchecked(i + 4).toI64()) ^ crcTable.atUnchecked(512 + bytes.atUnchecked(i + 5).toI64()) ^ crcTable.atUnchecked(256 + bytes.atUnchecked(i + 6).toI64()) ^ crcTable.atUnchecked(bytes.atUnchecked(i + 7).toI64())
+      val low = c ^ (bytes.getUnchecked(i).toI64() | (bytes.getUnchecked(i + 1).toI64() << 8) | (bytes.getUnchecked(i + 2).toI64() << 16) | (bytes.getUnchecked(i + 3).toI64() << 24))
+      c = crcTable.getUnchecked(1792 + (low & 255)) ^ crcTable.getUnchecked(1536 + ((low >> 8) & 255)) ^ crcTable.getUnchecked(1280 + ((low >> 16) & 255)) ^ crcTable.getUnchecked(1024 + ((low >> 24) & 255)) ^ crcTable.getUnchecked(768 + bytes.getUnchecked(i + 4).toI64()) ^ crcTable.getUnchecked(512 + bytes.getUnchecked(i + 5).toI64()) ^ crcTable.getUnchecked(256 + bytes.getUnchecked(i + 6).toI64()) ^ crcTable.getUnchecked(bytes.getUnchecked(i + 7).toI64())
       i += 8
     }
     loop (i < n) {
-      c = crcTable.atUnchecked((c ^ bytes.atUnchecked(i).toI64()) & 255) ^ (c >> 8)
+      c = crcTable.getUnchecked((c ^ bytes.getUnchecked(i).toI64()) & 255) ^ (c >> 8)
       i += 1
     }
   }
@@ -208,7 +208,7 @@ public fun deflate(bytes: List<u8>, level: i64 = 6): List<u8> {
 /// `Content-Encoding: gzip`. A level outside 0–9 panics.
 public fun gzip(bytes: List<u8>, level: i64 = 6): List<u8> {
   checkLevel("gzip", level)
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   out.addAll(gzipHeader(level))
   out.addAll(deflate(bytes, level))
   out.addAll(gzipTrailer(crc32(bytes), bytes.len()))
@@ -220,7 +220,7 @@ fun gzipHeader(level: i64): List<u8> =>
   [0x1f, 0x8b, 8, 0, 0, 0, 0, 0, if (level == 9) 2 else if (level == 1) 4 else 0, 255]
 
 fun gzipTrailer(crc: i64, size: i64): List<u8> {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   loop (k in 0..<4) {
     out.push(((crc >> (8 * k)) & 255).wrapU8())
   }

@@ -974,7 +974,7 @@ func TestHoverValuesAndModules(t *testing.T) {
 func TestCompletionVisibility(t *testing.T) {
 	// one dangling `.` per buffer: `//A` (inside next) or `//B` (in main)
 	// is replaced with the receiver under test
-	base := "use io\n\nstruct Parser {\n  private toks: List<string>\n  private var pos: i64 = 0\n  public val tag: string = \"p\"\n  static val zero = 0\n  public static fun of(n: i64): Parser => Parser(toks: [])\n  fun next(): string? {\n    val t = this.toks.at(this.pos)\n    //A\n    t\n  }\n  private fun bump() { this.pos += 1 }\n  public fun done(): bool => this.pos >= this.toks.len()\n}\n\nextend Parser {\n  fun rewind() { this.pos = 0 }\n}\n\nfun main() {\n  val p = Parser(toks: [\"a\"])\n  //B\n  io.println(\"${p.done()} ${p.tag}\")\n}\n"
+	base := "use io\n\nstruct Parser {\n  private toks: List<string>\n  private var pos: i64 = 0\n  public val tag: string = \"p\"\n  static val zero = 0\n  public static fun of(n: i64): Parser => Parser(toks: [])\n  fun next(): string? {\n    val t = this.toks.get(this.pos)\n    //A\n    t\n  }\n  private fun bump() { this.pos += 1 }\n  public fun done(): bool => this.pos >= this.toks.len()\n}\n\nextend Parser {\n  fun rewind() { this.pos = 0 }\n}\n\nfun main() {\n  val p = Parser(toks: [\"a\"])\n  //B\n  io.println(\"${p.done()} ${p.tag}\")\n}\n"
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.vs")
 	if err := os.WriteFile(path, []byte(base), 0o644); err != nil {
@@ -1032,7 +1032,7 @@ func TestCompletionVisibility(t *testing.T) {
 	}
 	// top-level: this module's names and the prelude, not another module's
 	got = labels(base, 20, 0)
-	if !got["Parser"] || !got["main"] || !got["MutableList"] || got["println"] {
+	if !got["Parser"] || !got["main"] || !got["List"] || got["println"] {
 		t.Errorf("top-level completion: %v", got)
 	}
 }
@@ -1756,7 +1756,7 @@ func TestHoverExtensionFunction(t *testing.T) {
 // D173: the imported module's hover lists its extension functions, and the
 // `use` line ends with the types they extend.
 func TestExtensionsShownOnTheImport(t *testing.T) {
-	strx := "public extend string with fun shout(): string => this.toUpper()\n\npublic extend<T> List<T> with fun second(): T? => this.at(1)\n\ninternal extend i64 with fun hidden(): i64 => this\n"
+	strx := "public extend string with fun shout(): string => this.toUpper()\n\npublic extend<T> List<T> with fun second(): T? => this.get(1)\n\ninternal extend i64 with fun hidden(): i64 => this\n"
 	src := "use io\nuse strx extend\n\nfun main() {\n  io.println(\"hi\".shout())\n}\n"
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "strx"), 0o755); err != nil {

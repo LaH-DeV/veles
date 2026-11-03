@@ -84,11 +84,11 @@ var constBuiltins = map[string]bool{
 	"string.contains": true, "string.split": true, "string.toInt": true, "string.asciiCase": true, "string.replace": true,
 	"list.len": true, "list.get": true, "list.ref": true, "list.push": true, "list.pop": true,
 	"list.clear": true, "list.copy": true, "list.addAll": true, "list.slice": true, "list.reserve": true,
-	"list.touch": true, "list.mods": true, "list.checkMods": true, "list.appendText": true, "list.move": true, "list.trimText": true, "list.asciiCase": true, "list.replaceText": true, "list.insertText": true, "list.takeText": true,
+	"list.touch": true, "list.mods": true, "list.checkMods": true, "list.lend": true, "list.unlend": true, "list.appendText": true, "list.move": true, "list.trimText": true, "list.asciiCase": true, "list.replaceText": true, "list.insertText": true, "list.takeText": true,
 	"list.joinText": true, "list.decodeUtf8": true, "list.decodeUtf8Range": true,
 	"list.toArray": true, "array.toList": true, "list.sortedNative": true,
-	"map.len": true, "map.get": true, "map.contains": true, "map.set": true, "map.remove": true,
-	"map.clear": true, "map.reserve": true, "map.copy": true, "list.freeze": true, "map.freeze": true, "map.keys": true, "map.values": true,
+	"map.len": true, "map.get": true, "map.ref": true, "map.contains": true, "map.set": true, "map.remove": true,
+	"map.clear": true, "map.reserve": true, "map.copy": true, "list.own": true, "map.own": true, "map.keys": true, "map.values": true,
 	"map.entries": true, "map.mods": true, "map.checkMods": true,
 	"set.new": true, "set.add": true,
 	"num.toChecked": true, "panic": true,
@@ -556,12 +556,12 @@ func (ev *constEval) builtinMore(e *Builtin) (ConstVal, bool) {
 		ev.expr(e.Args[0])
 		ev.expr(e.Args[1])
 		return &CUnit{}, true
-	case "list.touch", "list.checkMods", "map.checkMods":
+	case "list.touch", "list.checkMods", "map.checkMods", "list.unlend":
 		for _, a := range e.Args {
 			ev.expr(a)
 		}
 		return &CUnit{}, true // no other code runs while the compiler evaluates: nothing can change under a loop
-	case "list.mods", "map.mods":
+	case "list.mods", "map.mods", "list.lend":
 		ev.expr(e.Args[0])
 		return i64v(0), true
 	case "list.move":
@@ -708,18 +708,10 @@ func (ev *constEval) builtinMore(e *Builtin) (ConstVal, bool) {
 		ev.expr(e.Args[0])
 		ev.expr(e.Args[1])
 		return &CUnit{}, true
-	case "list.freeze":
-		// the List over the same elements; a later write through the old
-		// name, which panics in a program, is not modelled here (D188)
-		l := ev.mutList(e)
-		return &CList{T: e.Type().(*types.List), Elems: l.Elems[:len(l.Elems):len(l.Elems)]}, true
-	case "map.freeze":
-		switch m := ev.expr(e.Args[0]).(type) {
-		case *CMap:
-			return &CMap{T: e.Type().(*types.Map), Keys: m.Keys[:len(m.Keys):len(m.Keys)], Vals: m.Vals[:len(m.Vals):len(m.Vals)]}, true
-		case *CSet:
-			return &CSet{T: e.Type().(*types.Set), Elems: m.Elems[:len(m.Elems):len(m.Elems)]}, true
-		}
+	case "list.own", "map.own":
+		// the evaluator's collections are never shared (copyVal): nothing to do
+		ev.expr(e.Args[0])
+		return &CUnit{}, true
 	case "map.copy":
 		switch m := ev.expr(e.Args[0]).(type) {
 		case *CMap:

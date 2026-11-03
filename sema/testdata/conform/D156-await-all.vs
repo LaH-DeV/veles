@@ -3,7 +3,9 @@
 // belong to the awaitAll, which is the await of each handle passed to it.
 use io
 
-error Boom { n: i64 }
+error Boom {
+  n: i64
+}
 
 fun work(n: i64): i64 throws Boom {
   await sleep(Duration.millis(1))
@@ -45,7 +47,7 @@ fun mixed(): i64 throws Boom {
 
 fun listed(): i64 throws Boom {
   scope {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     loop (i in 0..<4) tasks.push(async work(i))
     return awaitAll(tasks).sum()
   }
@@ -61,35 +63,35 @@ fun inScope(): i64 throws Boom {
 }
 
 fun notTask(): i64 throws Boom {
-  val (x, y) = awaitAll(work(1), async work(2)) // error: 'work(1)' finishes before 'awaitAll' starts
+  val (x, y) = awaitAll(work(1), async work(2))  // error: 'work(1)' finishes before 'awaitAll' starts
   x + y
 }
 
 fun awaited(): i64 throws Boom {
-  val (x, y) = await awaitAll(async work(1), async work(2)) // error: 'awaitAll' waits; remove 'await'
+  val (x, y) = await awaitAll(async work(1), async work(2))  // error: 'awaitAll' waits; remove 'await'
   x + y
 }
 
 fun single(): i64 throws Boom {
   val a = async work(1)
   val other = plain(2)
-  awaitAll(a) + other // warning: use 'await a'
+  awaitAll(a) + other  // warning: use 'await a'
 }
 
 fun notAHandle(): i64 throws Boom {
   val n = 3
-  val (x, y) = awaitAll(n, async work(2)) // error: 'awaitAll' waits for tasks, and 'n' is a 'i64'
+  val (x, y) = awaitAll(n, async work(2))  // error: 'awaitAll' waits for tasks, and 'n' is a 'i64'
   x + y
 }
 
-val early = awaitAll(async plain(1), async plain(2)) // error: 'awaitAll' cannot appear in a global initializer
+val early = awaitAll(async plain(1), async plain(2))  // error: 'awaitAll' cannot appear in a global initializer
 
 fun none() {
-  awaitAll() // error: 'awaitAll' waits for tasks
+  awaitAll()  // error: 'awaitAll' waits for tasks
 }
 
 fun quiet(): i64 {
-  val (x, y) = awaitAll(async work(1), async plain(2)) // error: but the function is not declared 'throws'
+  val (x, y) = awaitAll(async work(1), async plain(2))  // error: but the function is not declared 'throws'
   x + y
 }
 

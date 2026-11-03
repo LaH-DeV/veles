@@ -67,10 +67,10 @@ public const fun encodedLen(n: i64, pad: bool = true): i64 {
 
 /// Byte `i` of the input, widened. `write` reads below `n` only: the loop
 /// runs while `i + 3 <= n`, and the tail reads just the `left` bytes after it.
-const fun input(bytes: List<u8>, i: i64): i64 => (bytes.at(i) ?: panic("base64.encode: every read is below the input length")).toI64()
+const fun input(bytes: List<u8>, i: i64): i64 => (bytes.get(i) ?: panic("base64.encode: every read is below the input length")).toI64()
 
 const fun write(bytes: List<u8>, alphabet: string, pad: bool): string {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   val n = bytes.len()
   var i = 0
   loop (i + 3 <= n) {
@@ -122,7 +122,7 @@ fun read(text: string, url: bool): List<u8> throws Invalid {
     throw Invalid(message: "base64: padded input must be a multiple of four characters, got $n", position: n)
   }
 
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   var acc = 0
   var bits = 0
   var i = 0
@@ -183,7 +183,7 @@ fun sextet(b: u8, url: bool, at: i64): i64 throws Invalid {
 /// printable ASCII, `0x0a` when it is not.
 fun describe(b: u8): string {
   if (b in 32..<127) {
-    val one: MutableList<u8> = [b]
+    val one: List<u8> = [b]
     return "'${one.decodeUtf8() ?: "?"}'"
   }
   val d = "0123456789abcdef"

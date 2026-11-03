@@ -280,7 +280,7 @@ fails once in a thousand runs.
 
 Veles refuses to compile it. The rule: what you hand to a task must be
 **Sendable** — something no one can change behind anyone's back:
-numbers, strings, immutable lists (`List`, not `MutableList`), structs
+numbers, strings, lists (a list is a value: no one else can change it), structs
 made of those. A function that would change a `var` from inside tasks
 is refused (`forEachConcurrent` runs its function as tasks, several at
 once):

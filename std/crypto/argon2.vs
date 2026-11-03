@@ -28,7 +28,7 @@ const argonVersion: i64 = 19  // 0x13
 // sixteen words, first the rows of the 8x8 matrix of 16-byte registers, then its columns
 
 fun buildRows(): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (r in 0..<8) loop (k in 0..<16) {
     out.push(r * 16 + k)
   }
@@ -36,7 +36,7 @@ fun buildRows(): List<i64> {
 }
 
 fun buildCols(): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (c in 0..<8) loop (r in 0..<8) {
     out.push(r * 16 + c * 2)
     out.push(r * 16 + c * 2 + 1)
@@ -48,7 +48,7 @@ fun buildCols(): List<i64> {
 fun blamka(a: u64, b: u64): u64 => a +% b +% (((a & 0xffffffff) * (b & 0xffffffff)) << 1)
 
 // the quarter round on four words of z, named by their indexes
-fun argonGB(z: MutableList<u64>, ia: i64, ib: i64, ic: i64, id: i64) {
+fun argonGB(z: *List<u64>, ia: i64, ib: i64, ic: i64, id: i64) {
   var a = z.wordAt(ia)
   var b = z.wordAt(ib)
   var c = z.wordAt(ic)
@@ -68,23 +68,23 @@ fun argonGB(z: MutableList<u64>, ia: i64, ib: i64, ic: i64, id: i64) {
 }
 
 // the permutation on the sixteen words that `tbl` names from `base`
-fun argonPerm(z: MutableList<u64>, tbl: List<i64>, base: i64) {
-  val i0 = tbl.at(base) ?: 0
-  val i1 = tbl.at(base + 1) ?: 0
-  val i2 = tbl.at(base + 2) ?: 0
-  val i3 = tbl.at(base + 3) ?: 0
-  val i4 = tbl.at(base + 4) ?: 0
-  val i5 = tbl.at(base + 5) ?: 0
-  val i6 = tbl.at(base + 6) ?: 0
-  val i7 = tbl.at(base + 7) ?: 0
-  val i8 = tbl.at(base + 8) ?: 0
-  val i9 = tbl.at(base + 9) ?: 0
-  val i10 = tbl.at(base + 10) ?: 0
-  val i11 = tbl.at(base + 11) ?: 0
-  val i12 = tbl.at(base + 12) ?: 0
-  val i13 = tbl.at(base + 13) ?: 0
-  val i14 = tbl.at(base + 14) ?: 0
-  val i15 = tbl.at(base + 15) ?: 0
+fun argonPerm(z: *List<u64>, tbl: List<i64>, base: i64) {
+  val i0 = tbl.get(base) ?: 0
+  val i1 = tbl.get(base + 1) ?: 0
+  val i2 = tbl.get(base + 2) ?: 0
+  val i3 = tbl.get(base + 3) ?: 0
+  val i4 = tbl.get(base + 4) ?: 0
+  val i5 = tbl.get(base + 5) ?: 0
+  val i6 = tbl.get(base + 6) ?: 0
+  val i7 = tbl.get(base + 7) ?: 0
+  val i8 = tbl.get(base + 8) ?: 0
+  val i9 = tbl.get(base + 9) ?: 0
+  val i10 = tbl.get(base + 10) ?: 0
+  val i11 = tbl.get(base + 11) ?: 0
+  val i12 = tbl.get(base + 12) ?: 0
+  val i13 = tbl.get(base + 13) ?: 0
+  val i14 = tbl.get(base + 14) ?: 0
+  val i15 = tbl.get(base + 15) ?: 0
   argonGB(z, i0, i4, i8, i12)
   argonGB(z, i1, i5, i9, i13)
   argonGB(z, i2, i6, i10, i14)
@@ -97,7 +97,7 @@ fun argonPerm(z: MutableList<u64>, tbl: List<i64>, base: i64) {
 
 // out[ooff..] = G(x[xoff..], y[yoff..]) (xor the old content of out when `keep`): the compression
 // function, with `rr` and `z` as 128-word scratch
-fun argonG(out: MutableList<u64>, ooff: i64, x: MutableList<u64>, xoff: i64, y: MutableList<u64>, yoff: i64, keep: bool, rr: MutableList<u64>, z: MutableList<u64>, rows: List<i64>, cols: List<i64>) {
+fun argonG(out: *List<u64>, ooff: i64, x: *List<u64>, xoff: i64, y: *List<u64>, yoff: i64, keep: bool, rr: *List<u64>, z: *List<u64>, rows: List<i64>, cols: List<i64>) {
   loop (k in 0..<128) {
     val r = x.wordAt(xoff + k) ^ y.wordAt(yoff + k)
     rr.set(k, r)
@@ -121,13 +121,13 @@ fun argonG(out: MutableList<u64>, ooff: i64, x: MutableList<u64>, xoff: i64, y: 
 }
 
 // the next block of 128 addresses: the counter in word 6 goes up and G is applied twice to the input
-fun argonNext(input: MutableList<u64>, tmp: MutableList<u64>, addr: MutableList<u64>, zero: MutableList<u64>, rr: MutableList<u64>, z: MutableList<u64>, rows: List<i64>, cols: List<i64>) {
+fun argonNext(input: *List<u64>, tmp: *List<u64>, addr: *List<u64>, zero: *List<u64>, rr: *List<u64>, z: *List<u64>, rows: List<i64>, cols: List<i64>) {
   input.set(6, input.wordAt(6) +% 1)
   argonG(tmp, 0, zero, 0, input, 0, false, rr, z, rows, cols)
   argonG(addr, 0, zero, 0, tmp, 0, false, rr, z, rows, cols)
 }
 
-fun le32(out: MutableList<u8>, n: i64) {
+fun le32(out: *List<u8>, n: i64) {
   loop (j in 0..<4) {
     out.push((n >> (8 * j)).wrapU8())
   }
@@ -135,11 +135,11 @@ fun le32(out: MutableList<u8>, n: i64) {
 
 // H': BLAKE2b stretched to any length (RFC 9106 §3.3)
 fun argonHash(input: List<u8>, outLen: i64): List<u8> {
-  val head: MutableList<u8> = []
-  le32(head, outLen)
+  val head: List<u8> = []
+  le32(&head, outLen)
   head.addAll(input)
-  if (outLen <= 64) return blake2b(head.toList(), outLen)
-  val out: MutableList<u8> = []
+  if (outLen <= 64) return blake2b(head, outLen)
+  val out: List<u8> = []
   var v = blake2b(head, 64)
   out.addAll(v.slice(0, 32))
   var left = outLen - 32
@@ -153,11 +153,11 @@ fun argonHash(input: List<u8>, outLen: i64): List<u8> {
 }
 
 // a block as 128 words, from 1024 bytes
-fun wordsOf(bytes: List<u8>, into: MutableList<u64>, at: i64) {
+fun wordsOf(bytes: List<u8>, into: *List<u64>, at: i64) {
   loop (i in 0..<128) {
     var w: u64 = 0
     loop (j in 0..<8) {
-      w |= (bytes.at(i * 8 + j) ?: 0).toU64() << (8 * j)
+      w |= (bytes.get(i * 8 + j) ?: 0).toU64() << (8 * j)
     }
     into.set(at + i, w)
   }
@@ -177,43 +177,43 @@ fun argon2(kind: Argon2Type, password: List<u8>, salt: List<u8>, memoryKiB: i64,
   val typeCode = argon2TypeCode(kind)
 
   // H0: everything the parameters and inputs are, hashed once
-  val seed: MutableList<u8> = []
-  le32(seed, lanes)
-  le32(seed, tagLen)
-  le32(seed, memoryKiB)
-  le32(seed, passes)
-  le32(seed, argonVersion)
-  le32(seed, typeCode)
-  le32(seed, password.len())
+  val seed: List<u8> = []
+  le32(&seed, lanes)
+  le32(&seed, tagLen)
+  le32(&seed, memoryKiB)
+  le32(&seed, passes)
+  le32(&seed, argonVersion)
+  le32(&seed, typeCode)
+  le32(&seed, password.len())
   seed.addAll(password)
-  le32(seed, salt.len())
+  le32(&seed, salt.len())
   seed.addAll(salt)
-  le32(seed, secret.len())
+  le32(&seed, secret.len())
   seed.addAll(secret)
-  le32(seed, data.len())
+  le32(&seed, data.len())
   seed.addAll(data)
   val h0 = blake2b(seed, 64)
 
   // the matrix: `lanes` rows of `columns` blocks, a block being 128 words
   val columns = (memoryKiB / (4 * lanes)) * 4
   val segment = columns / 4
-  val mem: MutableList<u64> = MutableList<u64>.repeat(0, lanes * columns * 128)
+  val mem: List<u64> = List<u64>.repeat(0, lanes * columns * 128)
   loop (l in 0..<lanes) loop (c in 0..<2) {
-    val start: MutableList<u8> = []
+    val start: List<u8> = []
     start.addAll(h0)
-    le32(start, c)
-    le32(start, l)
-    wordsOf(argonHash(start, 1024), mem, (l * columns + c) * 128)
+    le32(&start, c)
+    le32(&start, l)
+    wordsOf(argonHash(start, 1024), &mem, (l * columns + c) * 128)
   }
 
   val rows = buildRows()
   val cols = buildCols()
-  val rr: MutableList<u64> = MutableList<u64>.repeat(0, 128)
-  val z: MutableList<u64> = MutableList<u64>.repeat(0, 128)
-  val zero: MutableList<u64> = MutableList<u64>.repeat(0, 128)
-  val input: MutableList<u64> = MutableList<u64>.repeat(0, 128)
-  val addr: MutableList<u64> = MutableList<u64>.repeat(0, 128)
-  val tmp: MutableList<u64> = MutableList<u64>.repeat(0, 128)
+  val rr: List<u64> = List<u64>.repeat(0, 128)
+  val z: List<u64> = List<u64>.repeat(0, 128)
+  val zero: List<u64> = List<u64>.repeat(0, 128)
+  val input: List<u64> = List<u64>.repeat(0, 128)
+  val addr: List<u64> = List<u64>.repeat(0, 128)
+  val tmp: List<u64> = List<u64>.repeat(0, 128)
 
   loop (pass in 0..<passes) loop (slice in 0..<4) loop (lane in 0..<lanes) {
     // addresses that do not depend on the data: Argon2i always, Argon2id in the first half of the first pass
@@ -233,7 +233,7 @@ fun argon2(kind: Argon2Type, password: List<u8>, salt: List<u8>, memoryKiB: i64,
     if (pass == 0 && slice == 0) {
       // the first two blocks of the lane are made; the address stream starts at its first block
       first = 2
-      if (independent) argonNext(input, tmp, addr, zero, rr, z, rows, cols)
+      if (independent) argonNext(&input, &tmp, &addr, &zero, &rr, &z, rows, cols)
     }
     loop (idx in first..<segment) {
       val col = slice * segment + idx
@@ -243,7 +243,7 @@ fun argon2(kind: Argon2Type, password: List<u8>, salt: List<u8>, memoryKiB: i64,
       var pseudo: u64 = 0
       if (independent) {
         // a fresh block of 128 addresses every 128 references
-        if (idx % 128 == 0) argonNext(input, tmp, addr, zero, rr, z, rows, cols)
+        if (idx % 128 == 0) argonNext(&input, &tmp, &addr, &zero, &rr, &z, rows, cols)
         pseudo = addr.wordAt(idx % 128)
       } else {
         pseudo = mem.wordAt(prev)
@@ -275,19 +275,19 @@ fun argon2(kind: Argon2Type, password: List<u8>, salt: List<u8>, memoryKiB: i64,
       val refCol = (startPos + zz.wrapI64()) % columns
       val ref = (refLane * columns + refCol) * 128
       // from the second pass on, the new block is mixed with the one it replaces
-      argonG(mem, cur, mem, prev, mem, ref, pass > 0, rr, z, rows, cols)
+      argonG(&mem, cur, &mem, prev, &mem, ref, pass > 0, &rr, &z, rows, cols)
     }
   }
 
   // the tag: the last block of every lane xored together, stretched to the length wanted
-  val last: MutableList<u64> = MutableList<u64>.repeat(0, 128)
+  val last: List<u64> = List<u64>.repeat(0, 128)
   loop (l in 0..<lanes) {
     val at = (l * columns + columns - 1) * 128
     loop (k in 0..<128) {
       last.set(k, last.wordAt(k) ^ mem.wordAt(at + k))
     }
   }
-  val bytes: MutableList<u8> = []
+  val bytes: List<u8> = []
   loop (w in last) loop (j in 0..<8) {
     bytes.push((w >> (8 * j)).wrapU8())
   }

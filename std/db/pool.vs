@@ -9,7 +9,7 @@ use time
 /// (and the task that looks after it) sees alike.
 struct PoolState {
   // connections waiting for a statement, with when each was put back
-  idle: Mutex<MutableList<Idle>>
+  idle: Mutex<List<Idle>>
   // one permit per connection in use: the pool's `size`
   slots:  Semaphore
   closed: Atomic<bool>
@@ -20,8 +20,8 @@ struct Idle {
   since: i64
 }
 
-fun newIdleList(): Mutex<MutableList<Idle>> {
-  val empty: MutableList<Idle> = []
+fun newIdleList(): Mutex<List<Idle>> {
+  val empty: List<Idle> = []
   Mutex(value: empty)
 }
 
@@ -56,7 +56,7 @@ public struct Pool {
   /// The first row of a statement as `T`, or `null` when there is none.
   public fun queryOne<T: Decodable>(statement: Sql, timeout: Duration? = null): T? suspends throws DbError | DecodeError {
     val all = try this.query<T>(statement, timeout)
-    all.at(0)
+    all.get(0)
   }
 
   /// A statement whose rows are not wanted — insert, update, delete, DDL —
@@ -126,7 +126,7 @@ public struct Pool {
     fun close() {
       this.state.closed.store(true)
       val all = this.state.idle.withLock(list => {
-        val taken = list.toList()
+        val taken = *list
         list.clear()
         taken
       })
@@ -187,7 +187,7 @@ public struct Tx {
   /// The first row as `T`, or `null`.
   public fun queryOne<T: Decodable>(statement: Sql, timeout: Duration? = null): T? suspends throws DbError | DecodeError {
     val all = try this.query<T>(statement, timeout)
-    all.at(0)
+    all.get(0)
   }
 
   /// A statement whose rows are not wanted; the number of rows it affected.
@@ -236,7 +236,7 @@ public struct Tx {
 fun runTraced(conn: Conn, statement: Sql, timeout: Duration): Rows suspends throws DbError {
   if (!otel.active()) return try conn.run(statement, timeout)
   val text = statement.text()
-  val verb = (text.trim().split(" ").at(0) ?: "").toUpper()
+  val verb = (text.trim().split(" ").get(0) ?: "").toUpper()
   with span = otel.span(if (verb.isEmpty()) "db" else verb, attrs: [otel.attr("db.system.name", "postgresql"), otel.attr("db.query.text", text), otel.attr("server.address", conn.target)], kind: otel.SpanKind.Client)
   when (conn.run(statement, timeout)) {
     is Ok(rows) => {
@@ -296,7 +296,7 @@ fun maintain(state: PoolState, every: Duration, idleTimeout: Duration) suspends 
     if (state.closed.load()) return
     val now = time.monotonicNanos()
     val entries = state.idle.withLock(list => {
-      val taken = list.toList()
+      val taken = *list
       list.clear()
       taken
     })

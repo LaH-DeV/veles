@@ -145,16 +145,9 @@ implement<T: Encodable> Encodable for List<T> {
     try to.endList()
   }
 }
-implement<T: Encodable> Encodable for MutableList<T> {
-  fun encode(to: Encoder) throws EncodeError => try this.toList().encode(to)
-}
 implement<T: Decodable> Decodable for List<T> {
-  static fun decode(from: Decoder): List<T> throws DecodeError => try MutableList<T>.decode(from).toList()
-  override static fun schema(format: string, keys: Case): Schema => Schema.list(T.schema(format, keys))
-}
-implement<T: Decodable> Decodable for MutableList<T> {
-  static fun decode(from: Decoder): MutableList<T> throws DecodeError {
-    val out: MutableList<T> = []
+  static fun decode(from: Decoder): List<T> throws DecodeError {
+    val out: List<T> = []
     try from.beginList()
     loop (try from.hasNext()) out.push(try T.decode(from))
     try from.endList()
@@ -192,16 +185,9 @@ implement<V: Encodable> Encodable for Map<string, V> {
     try to.endObject()
   }
 }
-implement<V: Encodable> Encodable for MutableMap<string, V> {
-  fun encode(to: Encoder) throws EncodeError => try this.toMap().encode(to)
-}
 implement<V: Decodable> Decodable for Map<string, V> {
-  static fun decode(from: Decoder): Map<string, V> throws DecodeError => try MutableMap<string, V>.decode(from).toMap()
-  override static fun schema(format: string, keys: Case): Schema => Schema.unsupported("a Map")
-}
-implement<V: Decodable> Decodable for MutableMap<string, V> {
-  static fun decode(from: Decoder): MutableMap<string, V> throws DecodeError {
-    val out: MutableMap<string, V> = [:]
+  static fun decode(from: Decoder): Map<string, V> throws DecodeError {
+    val out: Map<string, V> = [:]
     try from.beginObject()
     loop (val k = try from.nextKey()) {
       out.set(k, try V.decode(from))

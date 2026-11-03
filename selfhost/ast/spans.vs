@@ -3,12 +3,12 @@
 /// Every span of the tree, one line each: `Node.field start end` — what the
 /// span gate compares with the bootstrap parser's tree.
 fun spans(file: SourceFile): List<string> {
-  val out: MutableList<string> = []
-  spansOfSourceFile(file, out)
-  out.toList()
+  val out: List<string> = []
+  spansOfSourceFile(file, &out)
+  out
 }
 
-fun spansOfType(node: Type, out: MutableList<string>) {
+fun spansOfType(node: Type, out: *List<string>) {
   when (node) {
     is NamedType      => spansOfNamedType(node, out)
     is NullableType   => spansOfNullableType(node, out)
@@ -22,7 +22,7 @@ fun spansOfType(node: Type, out: MutableList<string>) {
   }
 }
 
-fun spansOfDecl(node: Decl, out: MutableList<string>) {
+fun spansOfDecl(node: Decl, out: *List<string>) {
   when (node) {
     is UseDecl          => spansOfUseDecl(node, out)
     is FunDeclNode      => spansOfFunDeclNode(node, out)
@@ -43,7 +43,7 @@ fun spansOfDecl(node: Decl, out: MutableList<string>) {
   }
 }
 
-fun spansOfStmt(node: Stmt, out: MutableList<string>) {
+fun spansOfStmt(node: Stmt, out: *List<string>) {
   when (node) {
     is BlockStmt        => spansOfBlockStmt(node, out)
     is ValStmt          => spansOfValStmt(node, out)
@@ -63,7 +63,7 @@ fun spansOfStmt(node: Stmt, out: MutableList<string>) {
   }
 }
 
-fun spansOfExpr(node: Expr, out: MutableList<string>) {
+fun spansOfExpr(node: Expr, out: *List<string>) {
   when (node) {
     is IntLit         => spansOfIntLit(node, out)
     is FloatLit       => spansOfFloatLit(node, out)
@@ -110,7 +110,7 @@ fun spansOfExpr(node: Expr, out: MutableList<string>) {
   }
 }
 
-fun spansOfPattern(node: Pattern, out: MutableList<string>) {
+fun spansOfPattern(node: Pattern, out: *List<string>) {
   when (node) {
     is WildcardPat => spansOfWildcardPat(node, out)
     is BindPat     => spansOfBindPat(node, out)
@@ -123,17 +123,17 @@ fun spansOfPattern(node: Pattern, out: MutableList<string>) {
   }
 }
 
-fun spansOfIdent(node: Ident, out: MutableList<string>) {
+fun spansOfIdent(node: Ident, out: *List<string>) {
   out.push("Ident.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfSourceFile(node: SourceFile, out: MutableList<string>) {
+fun spansOfSourceFile(node: SourceFile, out: *List<string>) {
   loop (x2 in node.decls) {
     spansOfDecl(x2, out)
   }
 }
 
-fun spansOfNamedType(node: NamedType, out: MutableList<string>) {
+fun spansOfNamedType(node: NamedType, out: *List<string>) {
   loop (x1 in node.path) {
     spansOfIdent(x1, out)
   }
@@ -143,17 +143,17 @@ fun spansOfNamedType(node: NamedType, out: MutableList<string>) {
   out.push("NamedType.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfNullableType(node: NullableType, out: MutableList<string>) {
+fun spansOfNullableType(node: NullableType, out: *List<string>) {
   spansOfType(*node.elem, out)
   out.push("NullableType.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfPointerType(node: PointerType, out: MutableList<string>) {
+fun spansOfPointerType(node: PointerType, out: *List<string>) {
   spansOfType(*node.elem, out)
   out.push("PointerType.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfTupleType(node: TupleType, out: MutableList<string>) {
+fun spansOfTupleType(node: TupleType, out: *List<string>) {
   loop (x1 in node.elems) {
     spansOfType(x1, out)
   }
@@ -163,7 +163,7 @@ fun spansOfTupleType(node: TupleType, out: MutableList<string>) {
   out.push("TupleType.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfFunType(node: FunType, out: MutableList<string>) {
+fun spansOfFunType(node: FunType, out: *List<string>) {
   if (val x1 = node.on) spansOfType(*x1, out)
   loop (x2 in node.params) {
     spansOfType(x2, out)
@@ -173,46 +173,46 @@ fun spansOfFunType(node: FunType, out: MutableList<string>) {
   out.push("FunType.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfConstType(node: ConstType, out: MutableList<string>) {
+fun spansOfConstType(node: ConstType, out: *List<string>) {
   spansOfExpr(*node.x, out)
   out.push("ConstType.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfSelfType(node: SelfType, out: MutableList<string>) {
+fun spansOfSelfType(node: SelfType, out: *List<string>) {
   out.push("SelfType.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfAssocType(node: AssocType, out: MutableList<string>) {
+fun spansOfAssocType(node: AssocType, out: *List<string>) {
   spansOfType(*node.base, out)
   spansOfIdent(node.name, out)
   out.push("AssocType.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfErrorUnionType(node: ErrorUnionType, out: MutableList<string>) {
+fun spansOfErrorUnionType(node: ErrorUnionType, out: *List<string>) {
   loop (x1 in node.members) {
     spansOfType(x1, out)
   }
   out.push("ErrorUnionType.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfEffects(node: Effects, out: MutableList<string>) {
+fun spansOfEffects(node: Effects, out: *List<string>) {
   out.push("Effects.suspendsSpan ${node.suspendsSpan.start} ${node.suspendsSpan.end}")
   out.push("Effects.throwsSpan ${node.throwsSpan.start} ${node.throwsSpan.end}")
   if (val x5 = node.error) spansOfType(*x5, out)
 }
 
-fun spansOfUseDecl(node: UseDecl, out: MutableList<string>) {
+fun spansOfUseDecl(node: UseDecl, out: *List<string>) {
   loop (x1 in node.specs) {
     spansOfUseSpec(x1, out)
   }
   out.push("UseDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfFunDeclNode(node: FunDeclNode, out: MutableList<string>) {
+fun spansOfFunDeclNode(node: FunDeclNode, out: *List<string>) {
   spansOfFunDecl(node.decl, out)
 }
 
-fun spansOfStructDecl(node: StructDecl, out: MutableList<string>) {
+fun spansOfStructDecl(node: StructDecl, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
   }
@@ -249,7 +249,7 @@ fun spansOfStructDecl(node: StructDecl, out: MutableList<string>) {
   out.push("StructDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfTraitDecl(node: TraitDecl, out: MutableList<string>) {
+fun spansOfTraitDecl(node: TraitDecl, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
   }
@@ -272,7 +272,7 @@ fun spansOfTraitDecl(node: TraitDecl, out: MutableList<string>) {
   out.push("TraitDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfImplDecl(node: ImplDecl, out: MutableList<string>) {
+fun spansOfImplDecl(node: ImplDecl, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
   }
@@ -290,7 +290,7 @@ fun spansOfImplDecl(node: ImplDecl, out: MutableList<string>) {
   out.push("ImplDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfValDecl(node: ValDecl, out: MutableList<string>) {
+fun spansOfValDecl(node: ValDecl, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
   }
@@ -300,14 +300,14 @@ fun spansOfValDecl(node: ValDecl, out: MutableList<string>) {
   out.push("ValDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfExternBlock(node: ExternBlock, out: MutableList<string>) {
+fun spansOfExternBlock(node: ExternBlock, out: *List<string>) {
   loop (x2 in node.funs) {
     spansOfFunDecl(x2, out)
   }
   out.push("ExternBlock.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfExecutorDecl(node: ExecutorDecl, out: MutableList<string>) {
+fun spansOfExecutorDecl(node: ExecutorDecl, out: *List<string>) {
   spansOfIdent(node.name, out)
   loop (x5 in node.args) {
     spansOfArg(x5, out)
@@ -322,7 +322,7 @@ fun spansOfExecutorDecl(node: ExecutorDecl, out: MutableList<string>) {
   out.push("ExecutorDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfErrorAliasDecl(node: ErrorAliasDecl, out: MutableList<string>) {
+fun spansOfErrorAliasDecl(node: ErrorAliasDecl, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
   }
@@ -331,7 +331,7 @@ fun spansOfErrorAliasDecl(node: ErrorAliasDecl, out: MutableList<string>) {
   out.push("ErrorAliasDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfTypeAliasDecl(node: TypeAliasDecl, out: MutableList<string>) {
+fun spansOfTypeAliasDecl(node: TypeAliasDecl, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
   }
@@ -343,7 +343,7 @@ fun spansOfTypeAliasDecl(node: TypeAliasDecl, out: MutableList<string>) {
   out.push("TypeAliasDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfEnumDecl(node: EnumDecl, out: MutableList<string>) {
+fun spansOfEnumDecl(node: EnumDecl, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
   }
@@ -355,7 +355,7 @@ fun spansOfEnumDecl(node: EnumDecl, out: MutableList<string>) {
   out.push("EnumDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfTestDecl(node: TestDecl, out: MutableList<string>) {
+fun spansOfTestDecl(node: TestDecl, out: *List<string>) {
   loop (x2 in node.attrs) {
     spansOfAttribute(x2, out)
   }
@@ -367,7 +367,7 @@ fun spansOfTestDecl(node: TestDecl, out: MutableList<string>) {
   out.push("TestDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfSuiteDecl(node: SuiteDecl, out: MutableList<string>) {
+fun spansOfSuiteDecl(node: SuiteDecl, out: *List<string>) {
   loop (x2 in node.attrs) {
     spansOfAttribute(x2, out)
   }
@@ -379,20 +379,20 @@ fun spansOfSuiteDecl(node: SuiteDecl, out: MutableList<string>) {
   out.push("SuiteDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfSkipDecl(node: SkipDecl, out: MutableList<string>) {
+fun spansOfSkipDecl(node: SkipDecl, out: *List<string>) {
   spansOfExpr(*node.call, out)
   out.push("SkipDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfStaticAssertDecl(node: StaticAssertDecl, out: MutableList<string>) {
+fun spansOfStaticAssertDecl(node: StaticAssertDecl, out: *List<string>) {
   spansOfStaticAssert(node.assert, out)
 }
 
-fun spansOfBadDecl(node: BadDecl, out: MutableList<string>) {
+fun spansOfBadDecl(node: BadDecl, out: *List<string>) {
   out.push("BadDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfAttribute(node: Attribute, out: MutableList<string>) {
+fun spansOfAttribute(node: Attribute, out: *List<string>) {
   spansOfIdent(node.qual, out)
   spansOfIdent(node.name, out)
   loop (x3 in node.args) {
@@ -401,7 +401,7 @@ fun spansOfAttribute(node: Attribute, out: MutableList<string>) {
   out.push("Attribute.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfAnnotationInfo(node: AnnotationInfo, out: MutableList<string>) {
+fun spansOfAnnotationInfo(node: AnnotationInfo, out: *List<string>) {
   loop (x1 in node.targets) {
     spansOfIdent(x1, out)
   }
@@ -414,7 +414,7 @@ fun spansOfAnnotationInfo(node: AnnotationInfo, out: MutableList<string>) {
   out.push("AnnotationInfo.wrapperPos ${node.wrapperPos.start} ${node.wrapperPos.end}")
 }
 
-fun spansOfUseSpec(node: UseSpec, out: MutableList<string>) {
+fun spansOfUseSpec(node: UseSpec, out: *List<string>) {
   loop (x1 in node.path) {
     spansOfIdent(x1, out)
   }
@@ -434,7 +434,7 @@ fun spansOfUseSpec(node: UseSpec, out: MutableList<string>) {
   out.push("UseSpec.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfUseName(node: UseName, out: MutableList<string>) {
+fun spansOfUseName(node: UseName, out: *List<string>) {
   spansOfIdent(node.name, out)
   if (val x2 = node.alias) {
     spansOfIdent(x2, out)
@@ -442,7 +442,7 @@ fun spansOfUseName(node: UseName, out: MutableList<string>) {
   out.push("UseName.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfTypeParam(node: TypeParam, out: MutableList<string>) {
+fun spansOfTypeParam(node: TypeParam, out: *List<string>) {
   spansOfIdent(node.name, out)
   loop (x2 in node.bounds) {
     spansOfType(x2, out)
@@ -451,7 +451,7 @@ fun spansOfTypeParam(node: TypeParam, out: MutableList<string>) {
   if (val x6 = node.of) spansOfType(*x6, out)
 }
 
-fun spansOfParam(node: Param, out: MutableList<string>) {
+fun spansOfParam(node: Param, out: *List<string>) {
   spansOfIdent(node.name, out)
   if (val x2 = node.typ) spansOfType(*x2, out)
   if (val x3 = node.defaultValue) spansOfExpr(*x3, out)
@@ -462,7 +462,7 @@ fun spansOfParam(node: Param, out: MutableList<string>) {
   out.push("Param.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfFunDecl(node: FunDecl, out: MutableList<string>) {
+fun spansOfFunDecl(node: FunDecl, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
   }
@@ -483,7 +483,7 @@ fun spansOfFunDecl(node: FunDecl, out: MutableList<string>) {
   out.push("FunDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfField(node: Field, out: MutableList<string>) {
+fun spansOfField(node: Field, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
   }
@@ -493,7 +493,7 @@ fun spansOfField(node: Field, out: MutableList<string>) {
   out.push("Field.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfAssocTypeDecl(node: AssocTypeDecl, out: MutableList<string>) {
+fun spansOfAssocTypeDecl(node: AssocTypeDecl, out: *List<string>) {
   spansOfIdent(node.name, out)
   loop (x2 in node.bounds) {
     spansOfType(x2, out)
@@ -501,12 +501,12 @@ fun spansOfAssocTypeDecl(node: AssocTypeDecl, out: MutableList<string>) {
   out.push("AssocTypeDecl.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfAssocTypeBinding(node: AssocTypeBinding, out: MutableList<string>) {
+fun spansOfAssocTypeBinding(node: AssocTypeBinding, out: *List<string>) {
   spansOfIdent(node.name, out)
   if (val x2 = node.typ) spansOfType(*x2, out)
 }
 
-fun spansOfEnumMember(node: EnumMember, out: MutableList<string>) {
+fun spansOfEnumMember(node: EnumMember, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
   }
@@ -515,17 +515,17 @@ fun spansOfEnumMember(node: EnumMember, out: MutableList<string>) {
   out.push("EnumMember.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfStaticAssert(node: StaticAssert, out: MutableList<string>) {
+fun spansOfStaticAssert(node: StaticAssert, out: *List<string>) {
   spansOfExpr(*node.cond, out)
   if (val x2 = node.reason) spansOfExpr(*x2, out)
   out.push("StaticAssert.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfBlockStmt(node: BlockStmt, out: MutableList<string>) {
+fun spansOfBlockStmt(node: BlockStmt, out: *List<string>) {
   spansOfBlock(node.block, out)
 }
 
-fun spansOfValStmt(node: ValStmt, out: MutableList<string>) {
+fun spansOfValStmt(node: ValStmt, out: *List<string>) {
   spansOfBinding(node.binding, out)
   if (val x3 = node.pattern) spansOfPattern(*x3, out)
   if (val x4 = node.value) spansOfExpr(*x4, out)
@@ -535,45 +535,45 @@ fun spansOfValStmt(node: ValStmt, out: MutableList<string>) {
   out.push("ValStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfExprStmt(node: ExprStmt, out: MutableList<string>) {
+fun spansOfExprStmt(node: ExprStmt, out: *List<string>) {
   spansOfExpr(*node.x, out)
 }
 
-fun spansOfAssignStmt(node: AssignStmt, out: MutableList<string>) {
+fun spansOfAssignStmt(node: AssignStmt, out: *List<string>) {
   spansOfExpr(*node.target, out)
   spansOfExpr(*node.value, out)
   out.push("AssignStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfReturnStmt(node: ReturnStmt, out: MutableList<string>) {
+fun spansOfReturnStmt(node: ReturnStmt, out: *List<string>) {
   if (val x1 = node.value) spansOfExpr(*x1, out)
   out.push("ReturnStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfThrowStmt(node: ThrowStmt, out: MutableList<string>) {
+fun spansOfThrowStmt(node: ThrowStmt, out: *List<string>) {
   if (val x1 = node.value) spansOfExpr(*x1, out)
   out.push("ThrowStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfBreakStmt(node: BreakStmt, out: MutableList<string>) {
+fun spansOfBreakStmt(node: BreakStmt, out: *List<string>) {
   if (val x1 = node.label) {
     spansOfIdent(x1, out)
   }
   out.push("BreakStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfContinueStmt(node: ContinueStmt, out: MutableList<string>) {
+fun spansOfContinueStmt(node: ContinueStmt, out: *List<string>) {
   if (val x1 = node.label) {
     spansOfIdent(x1, out)
   }
   out.push("ContinueStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfCedeStmt(node: CedeStmt, out: MutableList<string>) {
+fun spansOfCedeStmt(node: CedeStmt, out: *List<string>) {
   out.push("CedeStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfLoopStmt(node: LoopStmt, out: MutableList<string>) {
+fun spansOfLoopStmt(node: LoopStmt, out: *List<string>) {
   if (val x2 = node.label) {
     spansOfIdent(x2, out)
   }
@@ -586,38 +586,38 @@ fun spansOfLoopStmt(node: LoopStmt, out: MutableList<string>) {
   out.push("LoopStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfWithStmt(node: WithStmt, out: MutableList<string>) {
+fun spansOfWithStmt(node: WithStmt, out: *List<string>) {
   spansOfWithBinding(node.binding, out)
   out.push("WithStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfScopeStmt(node: ScopeStmt, out: MutableList<string>) {
+fun spansOfScopeStmt(node: ScopeStmt, out: *List<string>) {
   if (val x1 = node.on) spansOfExpr(*x1, out)
   if (val x2 = node.workers) spansOfExpr(*x2, out)
   spansOfBlock(node.body, out)
   out.push("ScopeStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfFunStmt(node: FunStmt, out: MutableList<string>) {
+fun spansOfFunStmt(node: FunStmt, out: *List<string>) {
   spansOfFunDecl(*node.decl, out)
 }
 
-fun spansOfStaticAssertStmt(node: StaticAssertStmt, out: MutableList<string>) {
+fun spansOfStaticAssertStmt(node: StaticAssertStmt, out: *List<string>) {
   spansOfStaticAssert(node.assert, out)
 }
 
-fun spansOfBadStmt(node: BadStmt, out: MutableList<string>) {
+fun spansOfBadStmt(node: BadStmt, out: *List<string>) {
   out.push("BadStmt.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfBlock(node: Block, out: MutableList<string>) {
+fun spansOfBlock(node: Block, out: *List<string>) {
   loop (x1 in node.stmts) {
     spansOfStmt(x1, out)
   }
   out.push("Block.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfBinding(node: Binding, out: MutableList<string>) {
+fun spansOfBinding(node: Binding, out: *List<string>) {
   if (val x1 = node.name) {
     spansOfIdent(x1, out)
   }
@@ -628,7 +628,7 @@ fun spansOfBinding(node: Binding, out: MutableList<string>) {
   out.push("Binding.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfHandler(node: Handler, out: MutableList<string>) {
+fun spansOfHandler(node: Handler, out: *List<string>) {
   if (val x1 = node.err) {
     spansOfIdent(x1, out)
   }
@@ -636,60 +636,60 @@ fun spansOfHandler(node: Handler, out: MutableList<string>) {
   out.push("Handler.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfWithBinding(node: WithBinding, out: MutableList<string>) {
+fun spansOfWithBinding(node: WithBinding, out: *List<string>) {
   spansOfIdent(node.name, out)
   spansOfExpr(*node.value, out)
 }
 
-fun spansOfIntLit(node: IntLit, out: MutableList<string>) {
+fun spansOfIntLit(node: IntLit, out: *List<string>) {
   out.push("IntLit.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfFloatLit(node: FloatLit, out: MutableList<string>) {
+fun spansOfFloatLit(node: FloatLit, out: *List<string>) {
   out.push("FloatLit.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfStringLit(node: StringLit, out: MutableList<string>) {
+fun spansOfStringLit(node: StringLit, out: *List<string>) {
   loop (x1 in node.parts) {
     spansOfStringPart(x1, out)
   }
   out.push("StringLit.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfTemplateExpr(node: TemplateExpr, out: MutableList<string>) {
+fun spansOfTemplateExpr(node: TemplateExpr, out: *List<string>) {
   spansOfExpr(*node.tag, out)
   spansOfStringLit(node.lit, out)
   out.push("TemplateExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfCharLit(node: CharLit, out: MutableList<string>) {
+fun spansOfCharLit(node: CharLit, out: *List<string>) {
   out.push("CharLit.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfRegexLit(node: RegexLit, out: MutableList<string>) {
+fun spansOfRegexLit(node: RegexLit, out: *List<string>) {
   out.push("RegexLit.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfBoolLit(node: BoolLit, out: MutableList<string>) {
+fun spansOfBoolLit(node: BoolLit, out: *List<string>) {
   out.push("BoolLit.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfNullLit(node: NullLit, out: MutableList<string>) {
+fun spansOfNullLit(node: NullLit, out: *List<string>) {
   out.push("NullLit.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfThisExpr(node: ThisExpr, out: MutableList<string>) {
+fun spansOfThisExpr(node: ThisExpr, out: *List<string>) {
   out.push("ThisExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfNameExpr(node: NameExpr, out: MutableList<string>) {
+fun spansOfNameExpr(node: NameExpr, out: *List<string>) {
   loop (x2 in node.typeArgs) {
     spansOfType(x2, out)
   }
   out.push("NameExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfMemberExpr(node: MemberExpr, out: MutableList<string>) {
+fun spansOfMemberExpr(node: MemberExpr, out: *List<string>) {
   spansOfExpr(*node.x, out)
   spansOfIdent(node.name, out)
   loop (x4 in node.typeArgs) {
@@ -698,13 +698,13 @@ fun spansOfMemberExpr(node: MemberExpr, out: MutableList<string>) {
   out.push("MemberExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfIndexExpr(node: IndexExpr, out: MutableList<string>) {
+fun spansOfIndexExpr(node: IndexExpr, out: *List<string>) {
   spansOfExpr(*node.x, out)
   spansOfExpr(*node.index, out)
   out.push("IndexExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfCallExpr(node: CallExpr, out: MutableList<string>) {
+fun spansOfCallExpr(node: CallExpr, out: *List<string>) {
   spansOfExpr(*node.callee, out)
   loop (x2 in node.typeArgs) {
     spansOfType(x2, out)
@@ -715,24 +715,24 @@ fun spansOfCallExpr(node: CallExpr, out: MutableList<string>) {
   out.push("CallExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfUnaryExpr(node: UnaryExpr, out: MutableList<string>) {
+fun spansOfUnaryExpr(node: UnaryExpr, out: *List<string>) {
   spansOfExpr(*node.x, out)
   out.push("UnaryExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfBinaryExpr(node: BinaryExpr, out: MutableList<string>) {
+fun spansOfBinaryExpr(node: BinaryExpr, out: *List<string>) {
   spansOfExpr(*node.left, out)
   spansOfExpr(*node.right, out)
   out.push("BinaryExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfOrFailExpr(node: OrFailExpr, out: MutableList<string>) {
+fun spansOfOrFailExpr(node: OrFailExpr, out: *List<string>) {
   spansOfExpr(*node.left, out)
   spansOfExpr(*node.right, out)
   out.push("OrFailExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfCoalesceExpr(node: CoalesceExpr, out: MutableList<string>) {
+fun spansOfCoalesceExpr(node: CoalesceExpr, out: *List<string>) {
   spansOfExpr(*node.left, out)
   if (val x2 = node.right) spansOfExpr(*x2, out)
   if (val x3 = node.handler) {
@@ -741,7 +741,7 @@ fun spansOfCoalesceExpr(node: CoalesceExpr, out: MutableList<string>) {
   out.push("CoalesceExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfCatchExpr(node: CatchExpr, out: MutableList<string>) {
+fun spansOfCatchExpr(node: CatchExpr, out: *List<string>) {
   if (val x1 = node.body) {
     spansOfBlock(x1, out)
   }
@@ -750,19 +750,19 @@ fun spansOfCatchExpr(node: CatchExpr, out: MutableList<string>) {
   out.push("CatchExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfElvisExpr(node: ElvisExpr, out: MutableList<string>) {
+fun spansOfElvisExpr(node: ElvisExpr, out: *List<string>) {
   spansOfExpr(*node.left, out)
   spansOfExpr(*node.right, out)
   out.push("ElvisExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfRangeExpr(node: RangeExpr, out: MutableList<string>) {
+fun spansOfRangeExpr(node: RangeExpr, out: *List<string>) {
   spansOfExpr(*node.lo, out)
   spansOfExpr(*node.hi, out)
   out.push("RangeExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfLambdaExpr(node: LambdaExpr, out: MutableList<string>) {
+fun spansOfLambdaExpr(node: LambdaExpr, out: *List<string>) {
   loop (x1 in node.params) {
     spansOfParam(x1, out)
   }
@@ -771,7 +771,7 @@ fun spansOfLambdaExpr(node: LambdaExpr, out: MutableList<string>) {
   out.push("LambdaExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfTupleExpr(node: TupleExpr, out: MutableList<string>) {
+fun spansOfTupleExpr(node: TupleExpr, out: *List<string>) {
   loop (x1 in node.elems) {
     spansOfExpr(x1, out)
   }
@@ -781,21 +781,21 @@ fun spansOfTupleExpr(node: TupleExpr, out: MutableList<string>) {
   out.push("TupleExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfListLit(node: ListLit, out: MutableList<string>) {
+fun spansOfListLit(node: ListLit, out: *List<string>) {
   loop (x1 in node.elems) {
     spansOfExpr(x1, out)
   }
   out.push("ListLit.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfMapLit(node: MapLit, out: MutableList<string>) {
+fun spansOfMapLit(node: MapLit, out: *List<string>) {
   loop (x1 in node.entries) {
     spansOfMapEntry(x1, out)
   }
   out.push("MapLit.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfIfExpr(node: IfExpr, out: MutableList<string>) {
+fun spansOfIfExpr(node: IfExpr, out: *List<string>) {
   spansOfExpr(*node.cond, out)
   spansOfBlock(node.then, out)
   if (val x3 = node.orElse) {
@@ -804,13 +804,13 @@ fun spansOfIfExpr(node: IfExpr, out: MutableList<string>) {
   out.push("IfExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfLetCond(node: LetCond, out: MutableList<string>) {
+fun spansOfLetCond(node: LetCond, out: *List<string>) {
   spansOfIdent(node.name, out)
   spansOfExpr(*node.value, out)
   out.push("LetCond.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfWhenExpr(node: WhenExpr, out: MutableList<string>) {
+fun spansOfWhenExpr(node: WhenExpr, out: *List<string>) {
   if (val x1 = node.subject) spansOfExpr(*x1, out)
   if (val x2 = node.bind) {
     spansOfIdent(x2, out)
@@ -821,59 +821,59 @@ fun spansOfWhenExpr(node: WhenExpr, out: MutableList<string>) {
   out.push("WhenExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfBlockExpr(node: BlockExpr, out: MutableList<string>) {
+fun spansOfBlockExpr(node: BlockExpr, out: *List<string>) {
   spansOfBlock(node.block, out)
 }
 
-fun spansOfTryExpr(node: TryExpr, out: MutableList<string>) {
+fun spansOfTryExpr(node: TryExpr, out: *List<string>) {
   spansOfExpr(*node.x, out)
   out.push("TryExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfAwaitExpr(node: AwaitExpr, out: MutableList<string>) {
+fun spansOfAwaitExpr(node: AwaitExpr, out: *List<string>) {
   spansOfExpr(*node.x, out)
   out.push("AwaitExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfIsExpr(node: IsExpr, out: MutableList<string>) {
+fun spansOfIsExpr(node: IsExpr, out: *List<string>) {
   spansOfExpr(*node.x, out)
   spansOfTypePat(node.pat, out)
   out.push("IsExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfInExpr(node: InExpr, out: MutableList<string>) {
+fun spansOfInExpr(node: InExpr, out: *List<string>) {
   spansOfExpr(*node.x, out)
   spansOfExpr(*node.c, out)
   out.push("InExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfImplementsExpr(node: ImplementsExpr, out: MutableList<string>) {
+fun spansOfImplementsExpr(node: ImplementsExpr, out: *List<string>) {
   spansOfType(*node.typ, out)
   spansOfType(*node.traitType, out)
   out.push("ImplementsExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfCastExpr(node: CastExpr, out: MutableList<string>) {
+fun spansOfCastExpr(node: CastExpr, out: *List<string>) {
   spansOfExpr(*node.x, out)
   spansOfType(*node.typ, out)
   out.push("CastExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfGatherExpr(node: GatherExpr, out: MutableList<string>) {
+fun spansOfGatherExpr(node: GatherExpr, out: *List<string>) {
   if (val x1 = node.on) spansOfExpr(*x1, out)
   if (val x2 = node.workers) spansOfExpr(*x2, out)
   spansOfBlock(node.body, out)
   out.push("GatherExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfScopeExpr(node: ScopeExpr, out: MutableList<string>) {
+fun spansOfScopeExpr(node: ScopeExpr, out: *List<string>) {
   if (val x1 = node.on) spansOfExpr(*x1, out)
   if (val x2 = node.workers) spansOfExpr(*x2, out)
   spansOfBlock(node.body, out)
   out.push("ScopeExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfRaceExpr(node: RaceExpr, out: MutableList<string>) {
+fun spansOfRaceExpr(node: RaceExpr, out: *List<string>) {
   if (val x1 = node.body) {
     spansOfBlock(x1, out)
   }
@@ -883,19 +883,19 @@ fun spansOfRaceExpr(node: RaceExpr, out: MutableList<string>) {
   out.push("RaceExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfSelectExpr(node: SelectExpr, out: MutableList<string>) {
+fun spansOfSelectExpr(node: SelectExpr, out: *List<string>) {
   loop (x1 in node.arms) {
     spansOfRaceArm(x1, out)
   }
   out.push("SelectExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfUnsafeExpr(node: UnsafeExpr, out: MutableList<string>) {
+fun spansOfUnsafeExpr(node: UnsafeExpr, out: *List<string>) {
   spansOfBlock(node.body, out)
   out.push("UnsafeExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfWithExpr(node: WithExpr, out: MutableList<string>) {
+fun spansOfWithExpr(node: WithExpr, out: *List<string>) {
   loop (x1 in node.bindings) {
     spansOfWithBinding(x1, out)
   }
@@ -903,32 +903,32 @@ fun spansOfWithExpr(node: WithExpr, out: MutableList<string>) {
   out.push("WithExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfControlExpr(node: ControlExpr, out: MutableList<string>) {
+fun spansOfControlExpr(node: ControlExpr, out: *List<string>) {
   spansOfStmt(*node.stmt, out)
 }
 
-fun spansOfBadExpr(node: BadExpr, out: MutableList<string>) {
+fun spansOfBadExpr(node: BadExpr, out: *List<string>) {
   out.push("BadExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfStringPart(node: StringPart, out: MutableList<string>) {
+fun spansOfStringPart(node: StringPart, out: *List<string>) {
   if (val x2 = node.expr) spansOfExpr(*x2, out)
   out.push("StringPart.specPos ${node.specPos.start} ${node.specPos.end}")
 }
 
-fun spansOfArg(node: Arg, out: MutableList<string>) {
+fun spansOfArg(node: Arg, out: *List<string>) {
   if (val x1 = node.name) {
     spansOfIdent(x1, out)
   }
   spansOfExpr(*node.value, out)
 }
 
-fun spansOfMapEntry(node: MapEntry, out: MutableList<string>) {
+fun spansOfMapEntry(node: MapEntry, out: *List<string>) {
   spansOfExpr(*node.key, out)
   spansOfExpr(*node.value, out)
 }
 
-fun spansOfWhenArm(node: WhenArm, out: MutableList<string>) {
+fun spansOfWhenArm(node: WhenArm, out: *List<string>) {
   loop (x1 in node.patterns) {
     spansOfPattern(x1, out)
   }
@@ -938,7 +938,7 @@ fun spansOfWhenArm(node: WhenArm, out: MutableList<string>) {
   out.push("WhenArm.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfRaceArm(node: RaceArm, out: MutableList<string>) {
+fun spansOfRaceArm(node: RaceArm, out: *List<string>) {
   if (val x1 = node.binding) {
     spansOfBinding(x1, out)
   }
@@ -950,24 +950,24 @@ fun spansOfRaceArm(node: RaceArm, out: MutableList<string>) {
   out.push("RaceArm.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfWildcardPat(node: WildcardPat, out: MutableList<string>) {
+fun spansOfWildcardPat(node: WildcardPat, out: *List<string>) {
   out.push("WildcardPat.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfBindPat(node: BindPat, out: MutableList<string>) {
+fun spansOfBindPat(node: BindPat, out: *List<string>) {
   spansOfIdent(node.name, out)
 }
 
-fun spansOfLiteralPat(node: LiteralPat, out: MutableList<string>) {
+fun spansOfLiteralPat(node: LiteralPat, out: *List<string>) {
   spansOfExpr(*node.value, out)
 }
 
-fun spansOfRangePat(node: RangePat, out: MutableList<string>) {
+fun spansOfRangePat(node: RangePat, out: *List<string>) {
   spansOfRangeExpr(node.range, out)
   out.push("RangePat.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfTypePat(node: TypePat, out: MutableList<string>) {
+fun spansOfTypePat(node: TypePat, out: *List<string>) {
   spansOfType(*node.typ, out)
   loop (x2 in node.fields) {
     spansOfFieldPat(x2, out)
@@ -975,28 +975,28 @@ fun spansOfTypePat(node: TypePat, out: MutableList<string>) {
   out.push("TypePat.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfTuplePat(node: TuplePat, out: MutableList<string>) {
+fun spansOfTuplePat(node: TuplePat, out: *List<string>) {
   loop (x1 in node.elems) {
     spansOfPattern(x1, out)
   }
   out.push("TuplePat.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfListPat(node: ListPat, out: MutableList<string>) {
+fun spansOfListPat(node: ListPat, out: *List<string>) {
   loop (x1 in node.elems) {
     spansOfPattern(x1, out)
   }
   out.push("ListPat.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfRestPat(node: RestPat, out: MutableList<string>) {
+fun spansOfRestPat(node: RestPat, out: *List<string>) {
   if (val x1 = node.name) {
     spansOfIdent(x1, out)
   }
   out.push("RestPat.pos ${node.pos.start} ${node.pos.end}")
 }
 
-fun spansOfFieldPat(node: FieldPat, out: MutableList<string>) {
+fun spansOfFieldPat(node: FieldPat, out: *List<string>) {
   spansOfIdent(node.name, out)
   if (val x2 = node.pat) spansOfPattern(*x2, out)
 }

@@ -27,14 +27,14 @@ struct Page {
   fun bump() {
     this.used += 1
   }
-  fun total(): i64 => this.bytes.at(0) + this.used
+  fun total(): i64 => this.bytes.get(0) + this.used
   fun bumpGet(): i64 {
     this.used += 1
     this.used
   }
 }
 
-fun read(p: Page): i64 => p.bytes.at(0) * 100 + p.used
+fun read(p: Page): i64 => p.bytes.get(0) * 100 + p.used
 
 fun twice(a: Page, b: Page): i64 => read(a) + read(b)
 
@@ -217,20 +217,20 @@ fun main() {
   println("tuple $tup $tup0")
   val arr: Array<List<i64>, 2>? = [[1], [2]]
   val arr0: Array<List<i64>, 2>? = null
-  println("array ${arr?.at(1)} ${arr0 == null}")
+  println("array ${arr?.get(1)} ${arr0 == null}")
   val bm = maybeBig(5)
   val bn = maybeBig(-1)
   println("big ${bm?.xs} ${bn == null} ${(bm ?: big(0)).a}")
-  val bigs: MutableList<Big?> = [big(1), null, big(3)]
+  val bigs: List<Big?> = [big(1), null, big(3)]
   val popped = bigs.pop()
-  println("big list ${bigs.len()} ${popped?.a} ${bigs.at(1)} ${bigs.at(0)?.a}")
-  val ids: MutableList<Ident?> = [maybe("x"), null]
+  println("big list ${bigs.len()} ${popped?.a} ${bigs.get(1)} ${bigs.get(0)?.a}")
+  val ids: List<Ident?> = [maybe("x"), null]
   println("pop ${ids.pop()} ${ids.pop()?.name} ${ids.pop()}")
-  val byName: MutableMap<string, Ident?> = [:]
+  val byName: Map<string, Ident?> = [:]
   byName.set("k", maybe("k"))
   byName.set("z", null)
   println("map ${byName.get("k")} ${byName.get("z")} ${byName.get("nope")}")
-  val set: MutableSet<Ident?> = MutableSet<Ident?>()
+  val set: Set<Ident?> = Set<Ident?>()
   set.add(maybe("s"))
   set.add(null)
   set.add(maybe("s"))
@@ -346,15 +346,15 @@ fun main() {
   val q = Pair<i64, u8>(small: 9, big: 10)
   println("pairs ${p.small} ${p.big} ${q.small} ${q.big} $p")
   println("${describe(Ev.Hit(tag: 1, stamp: 2, size: 3))} ${describe(Ev.Big(a: 4, b: 5, c: 6, d: [7]))} ${describe(Ev.Done())}")
-  val list: MutableList<Sample> = [s, b]
+  val list: List<Sample> = [s, b]
   val sorted = list.sortedBy((x) => -x.n.toI64())
-  println("sorted ${sorted.at(0)?.n} ${sorted.at(1)?.n}")
+  println("sorted ${sorted.get(0)?.n} ${sorted.get(1)?.n}")
   val maybe: Sample? = s
   println("nullable ${maybe?.name}")
 }
 
 fun setOf(a: Sample, b: Sample): i64 {
-  val st = MutableSet<Sample>()
+  val st = Set<Sample>()
   st.add(a)
   st.add(b)
   st.add(a)
@@ -529,18 +529,18 @@ extern "C" {
 val shared = Counter(hits: 1)
 
 fun main() {
-  val sizes: MutableList<i64> = MutableList.repeat(0, 7)
+  val sizes: List<i64> = List.repeat(0, 7)
   // SAFETY: c_sizes writes seven i64s
   sizes.withRaw(p => unsafe { c_sizes(p) })
   io.println("C ${sizes}")
 
-  val events: MutableList<EpollEvent> = MutableList.make(3, i => EpollEvent(events: 0, data: EpollData(fd: 0)))
+  val events: List<EpollEvent> = List.make(3, i => EpollEvent(events: 0, data: EpollData(fd: 0)))
   // SAFETY: three events of C's layout
   events.withRaw(p => unsafe { c_fill_events(p, 3) })
   // SAFETY: the u64 field is what C wrote
-  val second = unsafe { events.at(1)?.data.u64 ?: 0 }
-  io.println("events ${events.at(0)?.events} ${events.at(2)?.events} ${second}")
-  var mine = events.at(2) ?: EpollEvent(events: 0, data: EpollData(fd: 0))
+  val second = unsafe { events.get(1)?.data.u64 ?: 0 }
+  io.println("events ${events.get(0)?.events} ${events.get(2)?.events} ${second}")
+  var mine = events.get(2) ?: EpollEvent(events: 0, data: EpollData(fd: 0))
   mine.events = 9
   // SAFETY: writing the field C reads
   unsafe { mine.data.fd = 5 }
@@ -552,10 +552,10 @@ fun main() {
   val stride = events.withRaw(p => unsafe { (p + 1).cast<*raw u8>() - p.cast<*raw u8>() })
   io.println("event stride ${stride}")
 
-  val aligned: MutableList<Aligned> = MutableList.repeat(Aligned(a: 0, b: 0, c: 0), 2)
+  val aligned: List<Aligned> = List.repeat(Aligned(a: 0, b: 0, c: 0), 2)
   // SAFETY: two Aligned of C's layout
   aligned.withRaw(p => unsafe { c_fill_aligned(p, 2) })
-  val one = aligned.at(1) ?: Aligned(a: 0, b: 0, c: 0)
+  val one = aligned.get(1) ?: Aligned(a: 0, b: 0, c: 0)
   // SAFETY: by value, both sides agree on the class
   io.println("aligned ${one.a} ${one.b} ${one.c} ${unsafe { c_aligned_by_value(one) }}")
   // SAFETY: as for events
@@ -567,14 +567,14 @@ fun main() {
 
   var local = Counter(hits: 2)
   local.hits = local.hits + shared.hits
-  val counters: MutableList<Counter> = [Counter(hits: 1), local]
-  val first = counters.ref(0) ?: return
-  val last = counters.ref(1) ?: return
+  val counters: List<Counter> = [Counter(hits: 1), local]
+  val first = counters.at(0) ?: return
+  val last = counters.at(1) ?: return
   // SAFETY: only the addresses are read
   val listMod = unsafe { c_address_mod(first.cast<*raw u8>(), 64) + c_address_mod(last.cast<*raw u8>(), 64) }
   // SAFETY: as above
   val localMod = unsafe { c_address_mod((&local).cast<*raw u8>(), 64) }
-  io.println("counters ${counters.at(1)?.hits} ${listMod} ${localMod}")
+  io.println("counters ${counters.get(1)?.hits} ${listMod} ${localMod}")
 }
 `
 	write := func(name, text string) {

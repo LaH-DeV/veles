@@ -22,18 +22,18 @@ func TestUncheckedAccess(t *testing.T) {
 		"atUnchecked": {`use io
 
 fun main() {
-  val xs: MutableList<i64> = [1, 2, 3]
+  val xs: List<i64> = [1, 2, 3]
   xs.reserve(8)
   val n = xs.len()
   // SAFETY: deliberately one past the end, inside the reserved capacity
-  val x = unsafe { xs.atUnchecked(n) }
+  val x = unsafe { xs.getUnchecked(n) }
   io.println("read ${x == x}")
 }
 `, "panic: unchecked index 3 out of bounds for list of length 3\n  at main.vs:8:20"},
 		"setUnchecked": {`use io
 
 fun main() {
-  val xs: MutableList<i64> = [1, 2, 3]
+  val xs: List<i64> = [1, 2, 3]
   xs.reserve(8)
   val n = xs.len()
   // SAFETY: deliberately one past the end, inside the reserved capacity

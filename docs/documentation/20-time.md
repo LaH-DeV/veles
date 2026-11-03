@@ -112,8 +112,8 @@ use json
 use time
 
 struct Note {
-  public id: i64
-  public createdAt: time.Timestamp
+  id:        i64
+  createdAt: time.Timestamp
   implement Codable
 }
 

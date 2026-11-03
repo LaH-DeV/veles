@@ -127,7 +127,7 @@ test "stat reports size, kind and a recent write time" {
 
 // everything a stream holds, read through the trait object
 test fun drain(s: io.Stream): List<u8> throws IoError {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   loop {
     val chunk = try s.read(3)
     if (chunk.isEmpty()) break
@@ -137,7 +137,7 @@ test fun drain(s: io.Stream): List<u8> throws IoError {
 }
 
 test fun readLines<S: io.Stream>(s: S, max: i64): List<string> throws IoError | io.TooLong {
-  val out: MutableList<string> = []
+  val out: List<string> = []
   loop {
     val line = try s.readLine(max)
     if (line == null) break
@@ -306,14 +306,14 @@ test "writeAtomic into a missing directory fails and leaves nothing" {
 test "copy reproduces a file bigger than one piece, and replaces the target" {
   val from = scratch("copy-from.bin")
   val to = scratch("copy-to.bin")
-  val data: MutableList<u8> = []
+  val data: List<u8> = []
   loop (i in 0..<200000) {
     data.push((i % 251).wrapU8())
   }
-  try writeBytes(from, data.toList())
+  try writeBytes(from, data)
   try writeFile(to, "old contents that are much shorter than the new")
   try copy(from, to)
-  expect(try readBytes(to) == data.toList())
+  expect(try readBytes(to) == data)
   try copy(from, from)
   expect(try readBytes(from) == data)
   expect(copy(scratch("missing.bin"), to) is Err)
@@ -324,11 +324,11 @@ test "copy reproduces a file bigger than one piece, and replaces the target" {
 test "lines hands out a file one line at a time" {
   val p = scratch("lines-iter.txt")
   try writeFile(p, "one\r\ntwo\n\nlast")
-  val got: MutableList<string> = []
+  val got: List<string> = []
   loop (line in try lines(p, max: 64)) {
     got.push(try line)
   }
-  expect(got.toList() == ["one", "two", "", "last"])
+  expect(got == ["one", "two", "", "last"])
   // the adapters work on it, and an empty file has no lines
   expect((try lines(p, max: 64)).map(r => r catch (e) {
     "?"
@@ -341,7 +341,7 @@ test "lines hands out a file one line at a time" {
 test "a line past max is an error item and ends the lines" {
   val p = scratch("lines-long.txt")
   try writeFile(p, "ok\n" + "x".repeat(100) + "\nnever seen\n")
-  val seen: MutableList<string> = []
+  val seen: List<string> = []
   var failure = ""
   loop (line in try lines(p, max: 10)) {
     when (line) {
@@ -349,7 +349,7 @@ test "a line past max is an error item and ends the lines" {
       is Err(e)   => failure = e.message()
     }
   }
-  expect(seen.toList() == ["ok"])
+  expect(seen == ["ok"])
   expect(failure.contains("longer than 10 bytes"))
   try remove(p)
 }

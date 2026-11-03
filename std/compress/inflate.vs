@@ -46,24 +46,24 @@ fun corrupt(why: string): CompressError =>
 // the result is maxLen. An entry is `symbol << 4 | length`, indexed by the
 // next maxLen input bits (DEFLATE sends codes starting from their top bit,
 // so the index is the code reversed); 0 marks a code nobody has.
-fun buildTable(lengths: MutableList<i64>, from: i64, n: i64, table: MutableList<i64>): i64 throws CompressError {
-  val counts: MutableList<i64> = MutableList.repeat(0, 16)
+fun buildTable(lengths: List<i64>, from: i64, n: i64, table: *List<i64>): i64 throws CompressError {
+  val counts: List<i64> = List.repeat(0, 16)
   var maxLen = 0
   loop (i in 0..<n) {
-    val len = lengths.at(from + i) ?: 0
+    val len = lengths.get(from + i) ?: 0
     counts.incrementAt(len)
     if (len > maxLen) maxLen = len
   }
   var left = 1
   loop (len in 1..15) {
-    left = (left << 1) - (counts.at(len) ?: 0)
+    left = (left << 1) - (counts.get(len) ?: 0)
     if (left < 0) throw corrupt("a Huffman code over-subscribes its lengths")
   }
   counts.set(0, 0)
-  val next: MutableList<i64> = MutableList.repeat(0, 17)
+  val next: List<i64> = List.repeat(0, 17)
   var code = 0
   loop (len in 1..15) {
-    code = (code + (counts.at(len - 1) ?: 0)) << 1
+    code = (code + (counts.get(len - 1) ?: 0)) << 1
     next.set(len, code)
   }
   if (maxLen == 0) {
@@ -76,9 +76,9 @@ fun buildTable(lengths: MutableList<i64>, from: i64, n: i64, table: MutableList<
     table.push(0)
   }
   loop (sym in 0..<n) {
-    val len = lengths.at(from + sym) ?: 0
+    val len = lengths.get(from + sym) ?: 0
     if (len == 0) continue
-    val canonical = next.at(len) ?: 0
+    val canonical = next.get(len) ?: 0
     next.set(len, canonical + 1)
     // reverse the code's bits: the stream delivers its top bit first
     var reversed = 0
@@ -99,7 +99,7 @@ fun buildTable(lengths: MutableList<i64>, from: i64, n: i64, table: MutableList<
 
 /// Decodes a DEFLATE stream a piece at a time.
 struct Inflater {
-  private var input: MutableList<u8> = []
+  private var input: List<u8> = []
   private var pos:   i64 = 0
   private var bits:  i64 = 0
   private var count: i64 = 0
@@ -107,7 +107,7 @@ struct Inflater {
 
   // the output: `dropped` bytes were handed out and discarded before this
   // list starts; `delivered` of the list were handed out and kept as window
-  private var out:       MutableList<u8> = []
+  private var out:       List<u8> = []
   private var dropped:   i64 = 0
   private var delivered: i64 = 0
   private var limit:     i64
@@ -116,10 +116,10 @@ struct Inflater {
   private var last:       bool = false
   private var storedLeft: i64 = 0
 
-  private var lengths:   MutableList<i64> = MutableList.repeat(0, 320)
-  private var litTable:  MutableList<i64> = []
+  private var lengths:   List<i64> = List.repeat(0, 320)
+  private var litTable:  List<i64> = []
   private var litBits:   i64 = 0
-  private var distTable: MutableList<i64> = []
+  private var distTable: List<i64> = []
   private var distBits:  i64 = 0
 
   init(limit: i64) {
@@ -166,7 +166,7 @@ struct Inflater {
     this.delivered = upto
     val cut = this.delivered - WINDOW
     if (cut > WINDOW) {
-      this.out = this.out.drop(cut).toMutable()
+      this.out = this.out.drop(cut)
       this.dropped += cut
       this.delivered -= cut
     }
@@ -177,14 +177,14 @@ struct Inflater {
   fun take(): List<u8> => this.takeUpTo(this.pending())
 
   /// Everything produced, for a stream decoded in one go: nothing was taken.
-  fun all(): List<u8> => this.out.toList()
+  fun all(): List<u8> => this.out
 
   private fun need(n: i64): bool {
     loop (this.count < n) {
       if (this.pos >= this.input.len()) return false
       // SAFETY: pos < len was just checked
       val b = unsafe {
-        this.input.atUnchecked(this.pos)
+        this.input.getUnchecked(this.pos)
       }
       this.bits |= b.toI64() << this.count
       this.pos += 1
@@ -201,11 +201,11 @@ struct Inflater {
   }
 
   // the next symbol of a table, -1 when the input ends inside it
-  private fun symbol(table: MutableList<i64>, width: i64): i64 throws CompressError {
+  private fun symbol(table: List<i64>, width: i64): i64 throws CompressError {
     val enough = this.need(width)
     // SAFETY: the index has `width` bits and the table has 2^width entries
     val entry = unsafe {
-      table.atUnchecked(this.bits & ((1 << width) - 1))
+      table.getUnchecked(this.bits & ((1 << width) - 1))
     }
     val len = entry & 15
     if (len == 0) {
@@ -294,8 +294,8 @@ struct Inflater {
       loop (i in 0..<30) {
         this.lengths.set(288 + i, 5)
       }
-      this.litBits = try buildTable(this.lengths, 0, 288, this.litTable)
-      this.distBits = try buildTable(this.lengths, 288, 30, this.distTable)
+      this.litBits = try buildTable(this.lengths, 0, 288, &this.litTable)
+      this.distBits = try buildTable(this.lengths, 288, 30, &this.distTable)
       this.state = IN_CODES
       return true
     }
@@ -311,15 +311,15 @@ struct Inflater {
     }
     loop (i in 0..<clens) {
       if (!this.need(3)) return false
-      this.lengths.set(CLEN_ORDER.at(i) ?: 0, this.eat(3))
+      this.lengths.set(CLEN_ORDER.get(i) ?: 0, this.eat(3))
     }
     // the code-length code lives in the tail of `lengths`, past the others
-    val shifted: MutableList<i64> = MutableList.repeat(0, 19)
+    val shifted: List<i64> = List.repeat(0, 19)
     loop (i in 0..<19) {
-      shifted.set(i, this.lengths.at(i) ?: 0)
+      shifted.set(i, this.lengths.get(i) ?: 0)
     }
-    val clenTable: MutableList<i64> = []
-    val clenBits = try buildTable(shifted, 0, 19, clenTable)
+    val clenTable: List<i64> = []
+    val clenBits = try buildTable(shifted, 0, 19, &clenTable)
     val total = literals + distances
     var i = 0
     var previous = 0
@@ -353,9 +353,9 @@ struct Inflater {
       }
       previous = value
     }
-    if ((this.lengths.at(256) ?: 0) == 0) throw corrupt("a block without an end-of-block code")
-    this.litBits = try buildTable(this.lengths, 0, literals, this.litTable)
-    this.distBits = try buildTable(this.lengths, literals, distances, this.distTable)
+    if ((this.lengths.get(256) ?: 0) == 0) throw corrupt("a block without an end-of-block code")
+    this.litBits = try buildTable(this.lengths, 0, literals, &this.litTable)
+    this.distBits = try buildTable(this.lengths, literals, distances, &this.distTable)
     this.state = IN_CODES
     true
   }
@@ -375,7 +375,7 @@ struct Inflater {
       loop (k in 0..<n) {
         // SAFETY: pos + k < len, as n <= available
         this.out.push(unsafe {
-          this.input.atUnchecked(this.pos + k)
+          this.input.getUnchecked(this.pos + k)
         })
       }
       this.pos += n
@@ -391,10 +391,11 @@ struct Inflater {
   }
 
   private fun checkLimit() throws CompressError {
-    if (this.dropped + this.out.len() > this.limit) {
-      throw CompressError(message: "decompressed data is larger than the ${this.limit} bytes allowed", kind: CompressKind.TooLarge)
-    }
+    if (this.dropped + this.out.len() > this.limit) throw this.tooLarge()
   }
+
+  private fun tooLarge(): CompressError =>
+    CompressError(message: "decompressed data is larger than the ${this.limit} bytes allowed", kind: CompressKind.TooLarge)
 
   // The block's symbols. The hot loop: the bit buffer lives in locals, is
   // topped up to 48 bits at each symbol (so a whole length/distance pair is
@@ -406,7 +407,7 @@ struct Inflater {
     var pos = this.pos
     val input = this.input
     val end = input.len()
-    val out = this.out
+    val out = &this.out  // the decoded bytes go to the field itself (D231)
     val lit = this.litTable
     val dist = this.distTable
     val litMask = (1 << this.litBits) - 1
@@ -422,7 +423,7 @@ struct Inflater {
       loop (count <= 48 && pos < end) {
         // SAFETY: pos < end was just checked
         bits = bits | (unsafe {
-          input.atUnchecked(pos)
+          input.getUnchecked(pos)
         }.toI64() << count)
         pos += 1
         count += 8
@@ -430,7 +431,7 @@ struct Inflater {
       // SAFETY: each index is masked to its table's size, and the tables hold
       // 2^width entries (buildTable)
       val entry = unsafe {
-        lit.atUnchecked(bits & litMask)
+        lit.getUnchecked(bits & litMask)
       }
       val len = entry & 15
       var b = bits >> len
@@ -460,7 +461,7 @@ struct Inflater {
       val slot = sym - 257
       // SAFETY: slot is 0..28 (sym was checked to be at most 285)
       val extra = unsafe {
-        LENGTH_EXTRA.atUnchecked(slot)
+        LENGTH_EXTRA.getUnchecked(slot)
       }
       if (c < extra) {
         this.bits = bits
@@ -470,13 +471,13 @@ struct Inflater {
       }
       // SAFETY: as above
       val length = unsafe {
-        LENGTH_BASE.atUnchecked(slot)
+        LENGTH_BASE.getUnchecked(slot)
       } + (b & ((1 << extra) - 1))
       b >>= extra
       c -= extra
       // SAFETY: masked index, as for lit
       val dentry = unsafe {
-        dist.atUnchecked(b & distMask)
+        dist.getUnchecked(b & distMask)
       }
       val dlen = dentry & 15
       if (dlen == 0 || c < dlen) {
@@ -492,7 +493,7 @@ struct Inflater {
       if (dsym > 29) throw corrupt("a distance symbol past 29")
       // SAFETY: dsym is 0..29
       val dextra = unsafe {
-        DIST_EXTRA.atUnchecked(dsym)
+        DIST_EXTRA.getUnchecked(dsym)
       }
       if (c < dextra) {
         this.bits = bits
@@ -502,7 +503,7 @@ struct Inflater {
       }
       // SAFETY: as above
       val distance = unsafe {
-        DIST_BASE.atUnchecked(dsym)
+        DIST_BASE.getUnchecked(dsym)
       } + (b & ((1 << dextra) - 1))
       b >>= dextra
       c -= dextra
@@ -513,7 +514,7 @@ struct Inflater {
       loop (_ in 0..<length) {
         // SAFETY: from < len: distance >= 1, and every push grows the list
         out.push(unsafe {
-          out.atUnchecked(from)
+          out.getUnchecked(from)
         })
         from += 1
       }
@@ -521,7 +522,9 @@ struct Inflater {
         this.bits = bits
         this.count = count
         this.pos = pos
-        try this.checkLimit()
+        // a throw, not 'try this.checkLimit()': the call is then on the way
+        // out, so 'out' stays unique for the loop (sema/uniqueptr.go)
+        throw this.tooLarge()
       }
     }
   }

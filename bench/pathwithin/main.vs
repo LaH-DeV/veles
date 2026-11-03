@@ -4,7 +4,7 @@ use path
 use time
 
 fun main() {
-  val operations = os.args().at(0)?.toInt() ?: 200000
+  val operations = os.args().get(0)?.toInt() ?: 200000
   if (operations < 1) panic("pathwithin benchmark: operations must be positive")
   val (sum, elapsed) = time.measure(() => {
     var sum: i64 = 0

@@ -105,15 +105,15 @@ extern "C" {
 }
 
 fun main() {
-  val sizes: MutableList<i64> = MutableList.repeat(0, 7)
+  val sizes: List<i64> = List.repeat(0, 7)
   // SAFETY: c_sizes writes seven i64s
   sizes.withRaw(p => unsafe { c_sizes(p) })
   io.println("C ${sizes}")
 
-  val socks: MutableList<SockAddr> = MutableList.make(2, i => SockAddr(family: 0, port: 0, addr: 0, zero: Array.make(0)))
+  val socks: List<SockAddr> = List.make(2, i => SockAddr(family: 0, port: 0, addr: 0, zero: Array.make(0)))
   // SAFETY: two SockAddr of C's layout
   socks.withRaw(p => unsafe { c_fill_sock(p, 2) })
-  val s = socks.at(1) ?: return
+  val s = socks.get(1) ?: return
   io.println("sock ${s.family} ${s.port} ${s.addr} ${s.zero}")
   // SAFETY: by value, both sides agree on the class
   io.println("sum ${unsafe { c_sock_sum(s) }}")
@@ -140,7 +140,7 @@ fun main() {
   val w = unsafe { c_make_wide(100) }
   // SAFETY: as above
   val wsum = unsafe { c_wide_sum(w) }
-  io.println("wide ${w.v.at(9)} ${wsum}")
+  io.println("wide ${w.v.get(9)} ${wsum}")
 
   val g = Grid(rows: [[1, 2, 3], [4, 5, 6]])
   // SAFETY: an array of arrays is C's two-dimensional array
@@ -154,7 +154,7 @@ fun main() {
   mine.v.set(0, 1)
   // SAFETY: as above
   val msum = unsafe { c_huge_sum(mine) }
-  io.println("huge ${huge.v.at(39)} ${hsum} ${msum}")
+  io.println("huge ${huge.v.get(39)} ${hsum} ${msum}")
 }
 `
 	write := func(name, text string) {

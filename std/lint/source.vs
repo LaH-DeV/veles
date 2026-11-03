@@ -13,7 +13,7 @@ public struct File {
   /// Reads the line table of `content`. Lines end at `\n`; a `\r` before it
   /// belongs to the line (`line` drops it).
   public static fun of(path: string, content: string): File {
-    val starts: MutableList<i64> = [0]
+    val starts: List<i64> = [0]
     loop (i in 0..<content.len()) {
       if (content.byteAt(i) == '\n') starts.push(i + 1)
     }
@@ -24,7 +24,7 @@ public struct File {
   /// counts on from the last line's start.
   public fun position(offset: i64): (i64, i64) {
     val i = (this.lineStarts.partitionPoint(start => start <= offset) - 1).max(0)
-    val start = this.lineStarts.at(i) ?: 0  // i is in range: partitionPoint is at most the length, and 0 when empty
+    val start = this.lineStarts.get(i) ?: 0  // i is in range: partitionPoint is at most the length, and 0 when empty
     (i + 1, offset - start + 1)
   }
 
@@ -34,8 +34,8 @@ public struct File {
   /// The text of line `n` (1-based) without its line break and any `\r`s
   /// before it; empty for a line that does not exist.
   public fun line(n: i64): string {
-    val start = this.lineStarts.at(n - 1) ?: return ""
-    val end = if (n < this.lineStarts.len()) (this.lineStarts.at(n) ?: 0) - 1 else this.content.len()
+    val start = this.lineStarts.get(n - 1) ?: return ""
+    val end = if (n < this.lineStarts.len()) (this.lineStarts.get(n) ?: 0) - 1 else this.content.len()
     // both ends are at a line start or a `\n`, so the cut cannot split a character
     var text = this.content.slice(start, end)
     loop (text.endsWith("\r")) text = text.slice(0, text.len() - 1)

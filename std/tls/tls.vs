@@ -141,15 +141,15 @@ struct Session {
 }
 
 // index of the first `b` at or after `from`, or -1
-fun findByte(xs: *MutableList<u8>, b: u8, from: i64): i64 {
+fun findByte(xs: *List<u8>, b: u8, from: i64): i64 {
   loop (i in from..<xs.len()) {
-    if (xs.at(i) == b) return i
+    if (xs.get(i) == b) return i
   }
   -1
 }
 
-fun newBuffer(): Mutex<MutableList<u8>> {
-  val empty: MutableList<u8> = []
+fun newBuffer(): Mutex<List<u8>> {
+  val empty: List<u8> = []
   Mutex(value: empty)
 }
 
@@ -161,7 +161,7 @@ public struct Conn {
   session: Session
   address: string
   // plaintext read ahead for readLine/readExact, as in net.Conn
-  buffer: Mutex<MutableList<u8>> = newBuffer()
+  buffer: Mutex<List<u8>> = newBuffer()
   // one task at a time turns bytes into records and sends them, or the
   // records could reach the peer out of order
   sendLock: Semaphore = Semaphore(permits: 1)
@@ -351,7 +351,7 @@ public struct Conn {
           if (nl > max) throw this.tooLong("line", max)
           val line = this.buffer.withLock(b => {
             var end = nl
-            if (end > 0 && b.at(end - 1) == 13) end -= 1
+            if (end > 0 && b.get(end - 1) == 13) end -= 1
             val line = b.take(end)
             b.dropFront(nl + 1)
             line
@@ -649,7 +649,7 @@ fun watch(cert: Certificate, certPath: string, keyPath: string, seen: string, ev
   }
 }
 
-extend<T> MutableList<T> {
+extend<T> List<T> {
   // drops the first n elements
   fun dropFront(n: i64) {
     if (n <= 0) return

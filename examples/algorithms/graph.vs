@@ -1,15 +1,16 @@
 // Graph algorithms over an adjacency list. Nodes are 0..<n; `Graph` is a
-// value struct holding a reference-typed list (D25), so a `val` graph can
-// still grow through `addEdge` — see the note in the spec on D22/D25.
+// value struct, and so is its list of lists (D231): `addEdge` reaches the
+// node's own list with `ref` and pushes into it, and a `val` graph can still
+// grow that way, since `val` only stops rebinding.
 // The queues are the prelude's Deque; the priority queue in Dijkstra is
 // the prelude's PriorityQueue.
 
 struct Graph {
   n:   i64
-  adj: MutableList<MutableList<i64>>
+  adj: List<List<i64>>
 
   static fun withNodes(n: i64): Graph =>
-    Graph(n, adj: MutableList<MutableList<i64>>.make(n, _ => []))
+    Graph(n, adj: List<List<i64>>.make(n, _ => []))
 
   fun addEdge(a: i64, b: i64) {
     if (b < 0 || b >= this.n) panic("graph: node $b is not in 0..<${this.n}")
@@ -22,12 +23,12 @@ struct Graph {
     this.addEdge(b, a)
   }
 
-  fun neighbours(v: i64): List<i64> => slot(this.adj, v).toList()
+  fun neighbours(v: i64): List<i64> => slot(this.adj, v)
 
   /// Breadth-first order from `start`.
   fun bfs(start: i64): List<i64> {
     val seen = this.flags()
-    val order: MutableList<i64> = []
+    val order: List<i64> = []
     val queue = Deque<i64>()
     queue.addLast(start)
     seen.set(start, true)
@@ -45,22 +46,22 @@ struct Graph {
   /// Depth-first order from `start`, recursive.
   fun dfs(start: i64): List<i64> {
     val seen = this.flags()
-    val order: MutableList<i64> = []
-    this.dfsFrom(start, seen, order)
-    order.toList()
+    val order: List<i64> = []
+    this.dfsFrom(start, &seen, &order)
+    order
   }
 
-  fun dfsFrom(v: i64, seen: MutableList<bool>, order: MutableList<i64>) {
+  fun dfsFrom(v: i64, seen: *List<bool>, order: *List<i64>) {
     seen.set(v, true)
     order.push(v)
     loop (w in this.neighbours(v)) {
-      if (!slot(seen, w)) this.dfsFrom(w, seen, order)
+      if (!slot(*seen, w)) this.dfsFrom(w, seen, order)
     }
   }
 
   /// Fewest edges from `start` to every node; null where unreachable.
   fun distances(start: i64): List<i64?> {
-    val dist = MutableList<i64?>.repeat(null, this.n)
+    val dist = List<i64?>.repeat(null, this.n)
     dist.set(start, 0)
     val queue = Deque<i64>()
     queue.addLast(start)
@@ -77,7 +78,7 @@ struct Graph {
 
   /// Kahn's algorithm; null when the graph has a cycle.
   fun topologicalOrder(): List<i64>? {
-    val indegree = MutableList<i64>.repeat(0, this.n)
+    val indegree = List<i64>.repeat(0, this.n)
     loop (v in 0..<this.n) {
       loop (w in this.neighbours(v)) indegree.set(w, slot(indegree, w) + 1)
     }
@@ -85,7 +86,7 @@ struct Graph {
     loop (v in 0..<this.n) {
       if (slot(indegree, v) == 0) ready.addLast(v)
     }
-    val order: MutableList<i64> = []
+    val order: List<i64> = []
     loop (val v = ready.removeFirst()) {
       order.push(v)
       loop (w in this.neighbours(v)) {
@@ -104,18 +105,18 @@ struct Graph {
     loop (v in 0..<this.n) {
       if (slot(seen, v)) continue
       count += 1
-      val order: MutableList<i64> = []
-      this.dfsFrom(v, seen, order)
+      val order: List<i64> = []
+      this.dfsFrom(v, &seen, &order)
     }
     count
   }
 
-  fun flags(): MutableList<bool> => MutableList<bool>.repeat(false, this.n)
+  fun flags(): List<bool> => List<bool>.repeat(false, this.n)
 }
 
 /// Entry `v` of a table with one slot per node. Every node an edge names is
 /// in `0..<n` — `addEdge` checks it — so this cannot fail.
-fun slot<T>(table: MutableList<T>, v: i64): T => table.at(v) ?: panic("graph: every node is in 0..<n")
+fun slot<T>(table: List<T>, v: i64): T => table.get(v) ?: panic("graph: every node is in 0..<n")
 
 /// A pending step for Dijkstra, ordered by distance so the priority queue
 /// yields the closest node first.
@@ -133,13 +134,13 @@ struct Hop {
 /// a shorter path to its node was found is stale and skipped when it comes
 /// out.
 fun dijkstra(n: i64, edges: List<(i64, i64, i64)>, start: i64): List<i64?> {
-  val adj = MutableList<MutableList<(i64, i64)>>.make(n, _ => [])
+  val adj = List<List<(i64, i64)>>.make(n, _ => [])
   loop ((from, to, weight) in edges) {
     if (to < 0 || to >= n) panic("dijkstra: an edge goes to $to, outside 0..<$n")
     val out = adj.at(from) ?: panic("dijkstra: an edge comes from $from, outside 0..<$n")
     out.push((to, weight))
   }
-  val dist = MutableList<i64?>.repeat(null, n)
+  val dist = List<i64?>.repeat(null, n)
   dist.set(start, 0)
   val pending = PriorityQueue<Hop>.natural()
   pending.push(Hop(dist: 0, node: start))

@@ -14,7 +14,7 @@ struct Page {
 fun sum<const N: i64>(a: Array<i64, N>): i64 {
   var s = 0
   loop (i in a.indices()) {
-    s += a.at(i)
+    s += a.get(i)
   }
   s
 }
@@ -33,7 +33,7 @@ fun main() {
   var small: Array<i64, 4> = [1, 2, 3, 4]
   small.set(1, 20)
   val far = 7
-  println("${sum(small)} ${small.at(far)} ${K.at(2)} ${K.at(small.len() - 1)}")
+  println("${sum(small)} ${small.get(far)} ${K.get(2)} ${K.get(small.len() - 1)}")
   var page = Page(bytes: filled(1), used: 3)
   val copy = page
   page.bytes.set(0, 9)

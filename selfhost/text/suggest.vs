@@ -106,7 +106,7 @@ fun isPlainName(name: string): bool {
 }
 
 fun codePoints(text: string): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   var at: i64 = 0
   loop (at < text.len()) {
     val rune = utf8.decode(text, at) ?: break
@@ -124,7 +124,7 @@ fun commonSubsequence(a: string, b: string): i64 {
   var current = Row.zeros(right.len() + 1)
   loop (i in 1..left.len()) {
     loop (j in 1..right.len()) {
-      val value = if (left.at(i - 1) == right.at(j - 1)) previous.at(j - 1) + 1 else previous.at(j).max(current.at(j - 1))
+      val value = if (left.get(i - 1) == right.get(j - 1)) previous.at(j - 1) + 1 else previous.at(j).max(current.at(j - 1))
       current.set(j, value)
     }
     (previous, current) = (current, previous)
@@ -147,9 +147,9 @@ fun editDistance(a: string, b: string, stop: i64): i64 {
     current.set(0, i)
     var rowMinimum = i
     loop (j in 1..right.len()) {
-      val cost = if (left.at(i - 1) == right.at(j - 1)) 0 else 1
+      val cost = if (left.get(i - 1) == right.get(j - 1)) 0 else 1
       var best = (previous.at(j) + 1).min(current.at(j - 1) + 1).min(previous.at(j - 1) + cost)
-      val swapped = i > 1 && j > 1 && left.at(i - 1) == right.at(j - 2) && left.at(i - 2) == right.at(j - 1)
+      val swapped = i > 1 && j > 1 && left.get(i - 1) == right.get(j - 2) && left.get(i - 2) == right.get(j - 1)
       if (swapped) best = best.min(beforePrevious.at(j - 2) + 1)
       current.set(j, best)
       rowMinimum = rowMinimum.min(best)
@@ -162,11 +162,11 @@ fun editDistance(a: string, b: string, stop: i64): i64 {
 
 /// One row of a dynamic-programming table, read with in-range indices only.
 struct Row {
-  cells: MutableList<i64>
+  cells: List<i64>
 
-  static fun zeros(width: i64): Row => Row(cells: MutableList<i64>.repeat(0, width))
+  static fun zeros(width: i64): Row => Row(cells: List<i64>.repeat(0, width))
 
-  fun at(i: i64): i64 => this.cells.at(i) ?: panic("Row: the algorithms stay inside the row")
+  fun at(i: i64): i64 => this.cells.get(i) ?: panic("Row: the algorithms stay inside the row")
 
   fun set(i: i64, value: i64) {
     this.cells.set(i, value)

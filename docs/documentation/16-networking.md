@@ -110,7 +110,7 @@ The handler owns the connection from then on; the accept loop is back to
 use io
 use net
 
-fun handle(conn: net.Conn, store: Mutex<MutableMap<string, string>>) throws IoError | io.TooLong {
+fun handle(conn: net.Conn, store: Mutex<Map<string, string>>) throws IoError | io.TooLong {
   with c = conn
   loop {
     val line = try c.readLine(max: 4096) ?: break
@@ -127,7 +127,7 @@ fun handle(conn: net.Conn, store: Mutex<MutableMap<string, string>>) throws IoEr
 }
 
 fun server(listener: net.Listener, connections: i64) throws IoError | io.TooLong {
-  val store = Mutex(value: MutableMap<string, string>())
+  val store = Mutex(value: Map<string, string>())
   scope {
     loop (_ in 0..<connections) {
       val conn = try listener.accept()
@@ -138,7 +138,7 @@ fun server(listener: net.Listener, connections: i64) throws IoError | io.TooLong
 
 fun ask(port: i64, commands: List<string>): List<string> throws IoError | io.TooLong {
   with conn = try net.connect("127.0.0.1", port)
-  var replies: MutableList<string> = []
+  var replies: List<string> = []
   loop (cmd in commands) {
     try conn.writeText("$cmd\n")
     replies.push(try conn.readLine(max: 4096) ?: "closed")
@@ -173,7 +173,7 @@ Two things carry over to any server you write. The connection is passed
 to `async handle(conn, ...)`, so `Conn` had to be Sendable — it is, which
 is why its read-ahead buffer sits behind a `Mutex` inside. And shared
 state between handlers (the `store`) is a `Mutex` too; the compiler would
-refuse a bare `MutableMap` at the `async` ([chapter 12](12-concurrency.md)).
+refuse a bare `Map` at the `async` ([chapter 12](12-concurrency.md)).
 This server stops after a fixed number of connections so the program
 ends; a real one loops forever and is stopped by cancelling its task.
 

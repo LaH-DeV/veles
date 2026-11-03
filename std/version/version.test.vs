@@ -40,8 +40,8 @@ test refusals "what is not a version says why" {
 test precedence "the order semver.org gives" {
   val ordered = ["1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.0.1", "1.1.0", "2.0.0", "10.0.0"]
   loop (i in 0..<ordered.len() - 1) {
-    val low = v(ordered.at(i) ?: "")
-    val high = v(ordered.at(i + 1) ?: "")
+    val low = v(ordered.get(i) ?: "")
+    val high = v(ordered.get(i + 1) ?: "")
     expect(low < high)
     expect(high > low)
     expect(low.compareTo(high) == Ordering.Less)
@@ -78,7 +78,7 @@ test bumps "the next version" {
 test equality "versions are values" {
   expect(v("1.2.3") == v("v1.2.3"))
   expect(v("1.2.3-a") != v("1.2.3"))
-  val seen: MutableSet<Version> = []
+  val seen: Set<Version> = []
   seen.add(v("1.2.3"))
   expect(seen.contains(v("v1.2.3")))
 }

@@ -86,7 +86,7 @@ fun main() {
   println("$op ${x * y}")
 
   // the names are copies taken at the match: a later push does not reach them
-  var live: MutableList<i64> = [1, 2, 3]
+  var live: List<i64> = [1, 2, 3]
   val [head, ..tail] = live else return
   live.push(4)
   live.set(0, 100)

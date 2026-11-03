@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
+	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
 )
 
@@ -214,4 +215,24 @@ func (f *fnCtx) wrapTo(recv Expr, from types.Type, typeArgs []types.Type, e *ast
 		return bad()
 	}
 	return &Cast{exprBase{to}, recv}
+}
+
+// srcTextSpan is span's source text, or fallback when it has none.
+func srcTextSpan(span source.Span, fallback string) string {
+	if t := spanText(span); t != "" {
+		return t
+	}
+	return fallback
+}
+
+// isSimpleOperand reports whether text can take `.m()` without parentheses.
+func isSimpleOperand(text string) bool {
+	for _, r := range text {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '.', r == '(', r == ')', r == '"':
+		default:
+			return false
+		}
+	}
+	return true
 }

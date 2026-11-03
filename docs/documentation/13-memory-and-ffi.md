@@ -97,7 +97,7 @@ constants are static data. The heap is used at a few places the compiler
 decides, and it can show you each of them (D213):
 
 - a collection literal or the result of a collection operation (`map`,
-  `filter`, `keys`, `split`, …), and a mutable collection's storage, which
+  `filter`, `keys`, `split`, …), and an empty collection's storage, which
   comes with its first write (`reserve(n)` sizes it once);
 - string building — interpolation and `+` — except where one piece is the
   whole result;
@@ -125,8 +125,10 @@ to the allocation calls in the generated code of every example.
 
 ## Values versus pointers
 
-A struct is a value: assigning copies it, passing it copies it (D7).
-`&x` gives a pointer, `*T`, to a heap copy of `x` — or to `x` itself when
+A struct is a value: assigning copies it, passing it copies it (D7). So
+are lists, maps and sets (D231): a copy shares the elements until one of
+the two changes, so copying is O(1) however large the collection is
+(chapter 4, "A list is a value"). `&x` gives a pointer, `*T`, to a heap copy of `x` — or to `x` itself when
 `x` is a local whose address is taken, in which case the compiler quietly
 moves that local to the heap so the pointer stays valid after the
 function returns (D10).
@@ -158,9 +160,10 @@ Output:
 6 6 106
 ```
 
-Rule of thumb: values for small data and anything you want to copy
-freely; pointers for identity (two places must see the same object) and
-for recursive structures.
+Rule of thumb: values for data, collections included — a large list
+passed around as a value costs nothing until someone changes a copy;
+pointers for identity (two places must see the same object, or a function
+must change its caller's list: `*List<T>`) and for recursive structures.
 
 ## Field order and compact structs
 
@@ -382,13 +385,15 @@ use io
 struct Res {
   name: string
   implement Closeable {
-    fun close() { io.println("close ${this.name}") }
+    fun close() {
+      io.println("close ${this.name}")
+    }
   }
 }
 
 fun deep(i: i64): i64 {
-  await sleep(Duration.zero)          // a suspension point: the panic below unwinds through it
-  [10, 20].at(i) ?: panic("deep: index $i is out of range")  // the panic continues in the caller
+  await sleep(Duration.zero)  // a suspension point: the panic below unwinds through it
+  [10, 20].get(i) ?: panic("deep: index $i is out of range")  // the panic continues in the caller
 }
 
 fun risky(i: i64): i64 => with (a = Res(name: "a"), b = Res(name: "b")) {
@@ -397,7 +402,9 @@ fun risky(i: i64): i64 => with (a = Res(name: "a"), b = Res(name: "b")) {
 
 fun main() {
   loop (i in [1, 5]) {
-    when (gather { async risky(i) }) {
+    when (gather {
+      async risky(i)
+    }) {
       is Ok(v)  => io.println("value $v")
       is Err(p) => io.println("panicked: ${p.message()}")
     }
@@ -665,8 +672,8 @@ in a release build (D114):
 
 | Access                     | On                    | Checked spelling |
 | -------------------------- | --------------------- | ---------------- |
-| `xs.atUnchecked(i): T`     | `List`, `MutableList` | `xs.at(i)`       |
-| `xs.setUnchecked(i, v)`    | `MutableList`         | `xs.set(i, v)`   |
+| `xs.getUnchecked(i): T`     | `List`                | `xs.get(i)`      |
+| `xs.setUnchecked(i, v)`    | `List`                | `xs.set(i, v)`   |
 | `s.byteAtUnchecked(i): u8` | `string`              | `s.byteAt(i)`    |
 
 They are allowed only inside `unsafe`, and `i` is the plain offset
@@ -680,12 +687,12 @@ use io
 
 fun digits(s: string): i64 {
   var n = 0
-  var i = 0
-  loop (i < s.len()) {
+  loop (i in 0..<s.len()) {
     // SAFETY: i < s.len() by the loop condition
-    val b = unsafe { s.byteAtUnchecked(i) }
+    val b = unsafe {
+      s.byteAtUnchecked(i)
+    }
     if (b >= '0' && b <= '9') n += 1
-    i += 1
   }
   n
 }
@@ -936,13 +943,18 @@ crosses one of three ways:
   `ffi.readString(p)` and `ffi.readBytes(p, n)` copy out of C memory; they
   trust the pointer, so they are `unsafe fun`s.
 - **Lent for the length of a call** — `xs.withRaw(p => ...)` hands C a
-  pointer to the list's own elements, no copy. The elements must be
-  `CLayout`: numbers, `bool`, raw pointers and `extern struct`s — what C
-  reads as it lies in memory. The pointer is good only inside the lambda.
+  pointer to the list's elements for **reading**, no copy;
+  `xs.withRawMut(p => ...)` hands it the list's own elements for
+  **writing**, after making the list the only holder of its storage (a
+  list is a value whose storage its copies may share, D231 — a shared one
+  is copied then, once). The elements must be `CLayout`: numbers, `bool`,
+  raw pointers and `extern struct`s — what C reads as it lies in memory.
+  The pointer is good only inside the lambda.
 - **A value C hands back** — `ffi.handle(value)` gives C an opaque
-  `void *` for a callback's `userdata`; the callback gets the value back
-  with `ffi.Handle<T>.from(p)`. The value stays alive while the handle is
-  open.
+  `void *` for a callback's `userdata`. The handle holds a copy of the
+  value: a callback reaches it with `ffi.Handle<T>.from(p)`, a `*raw T` it
+  reads and changes it through in `unsafe`, and `h.value()` reads it back
+  afterwards. The value stays alive while the handle is open.
 
 A Veles function C can call is declared `extern "C" fun` with a body.
 `&name` is its address, of type `extern fun(...)` — a C function pointer:
@@ -968,9 +980,9 @@ extern "C" fun ascending(a: *raw u8, b: *raw u8): i32 {
 }
 
 fun main() throws ffi.NulByte {
-  val xs: MutableList<i64> = [42, 7, 19, 3]
+  val xs: List<i64> = [42, 7, 19, 3]
   // SAFETY: qsort sorts xs.len() elements of 8 bytes inside the lent storage
-  xs.withRaw(p => unsafe {
+  xs.withRawMut(p => unsafe {
     qsort(p.cast<*raw u8>(), xs.len().wrapU64(), 8, &ascending)
   })
   with s = try ffi.CString.of("hello")
@@ -1010,9 +1022,9 @@ fun main() throws ffi.NulByte {
   with format = try ffi.CString.of("%d items, %.1f%% full, %s")
   with name = try ffi.CString.of("queue")
   val fill: f32 = 37.5
-  val buf: MutableList<u8> = MutableList.repeat(0, 64)
+  val buf: List<u8> = List.repeat(0, 64)
   // SAFETY: the format names exactly the three arguments; snprintf writes at most 64 bytes
-  buf.withRaw(p => unsafe { snprintf(p, 64, format.ptr(), 12, fill, name.ptr()) })
+  buf.withRawMut(p => unsafe { snprintf(p, 64, format.ptr(), 12, fill, name.ptr()) })
   // SAFETY: snprintf ended the text with a NUL inside the buffer
   io.println(buf.withRaw(p => unsafe { ffi.readString(p) }))
 }

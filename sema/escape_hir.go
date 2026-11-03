@@ -22,8 +22,8 @@ import "github.com/LaH-DeV/veles/types"
 var stackOps = map[string][]int{
 	"list.len": {0}, "list.get": {0}, "list.ref": {0}, "list.refUnchecked": {0},
 	"list.push": {0}, "list.pop": {0}, "list.clear": {0}, "list.reserve": {0},
-	"list.copy": {0}, "list.slice": {0}, "list.touch": {0}, "list.mods": {0}, "list.checkMods": {0},
-	"list.joinText": {0}, "list.appendText": {0}, "list.trimText": {0}, "list.asciiCase": {0}, "list.replaceText": {0}, "list.insertText": {0}, "list.takeText": {0}, "list.move": {0}, "list.sortedNative": {0}, "list.toArray": {0}, "list.rawData": {0},
+	"list.copy": {0}, "list.slice": {0}, "list.touch": {0}, "list.mods": {0}, "list.checkMods": {0}, "list.lend": {0}, "list.unlend": {0},
+	"list.joinText": {0}, "list.appendText": {0}, "list.trimText": {0}, "list.asciiCase": {0}, "list.replaceText": {0}, "list.insertText": {0}, "list.takeText": {0}, "list.move": {0}, "list.sortedNative": {0}, "list.toArray": {0}, "list.rawData": {0}, "list.readData": {0},
 	"list.addAll":   {0, 1},
 	"list.isFrozen": {0}, "map.isFrozen": {0},
 	"map.len": {0}, "map.get": {0}, "map.ref": {0}, "map.refOrPanic": {0}, "map.contains": {0},
@@ -32,20 +32,20 @@ var stackOps = map[string][]int{
 	"set.add": {0},
 }
 
-// stackCandidate reports whether e builds an empty-or-literal mutable
-// collection a fresh header of which nobody else holds.
+// stackCandidate reports whether e builds a collection — a literal, empty
+// or not — a fresh header of which nobody else holds.
 func stackCandidate(e Expr) bool {
 	switch e := e.(type) {
 	case *ListLit:
-		lt, ok := e.Type().(*types.List)
-		return ok && lt.Mutable
+		_, ok := e.Type().(*types.List)
+		return ok
 	case *MapLit:
-		mt, ok := e.Type().(*types.Map)
-		return ok && mt.Mutable
+		_, ok := e.Type().(*types.Map)
+		return ok
 	case *Builtin:
 		if e.Op == "set.new" {
-			st, ok := e.Type().(*types.Set)
-			return ok && st.Mutable
+			_, ok := e.Type().(*types.Set)
+			return ok
 		}
 	}
 	return false

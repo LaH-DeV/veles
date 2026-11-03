@@ -48,10 +48,10 @@ fun readVersion(text: string): Version throws VersionError {
   if (core.contains("+")) throw VersionError(message: "$shown: build metadata ('+…') is not used in versions")
   val parts = core.split(".")
   if (parts.len() != 3) throw VersionError(message: "$shown is not a version: write major.minor.patch, e.g. 1.4.2")
-  val numbers: MutableList<i64> = []
+  val numbers: List<i64> = []
   loop (part in parts) {
     numbers.push(readNumber(part) ?: throw VersionError(message: "$shown is not a version: ${quoted(part)} is not a number without leading zeros"))
   }
-  val [major, minor, patch] = numbers.toList() else throw VersionError(message: "$shown is not a version")
+  val [major, minor, patch] = numbers else throw VersionError(message: "$shown is not a version")
   Version(major, minor, patch, pre)
 }

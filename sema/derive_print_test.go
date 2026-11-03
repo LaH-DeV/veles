@@ -60,7 +60,7 @@ func TestDumpDerivedIsVeles(t *testing.T) {
 		// per-format @key, and the default as text
 		"static fun schema(format: string, keys: Case): Schema {",
 		"schema: i64.schema(format, keys), required: true, nullable: false, fallback: null)",
-		"  Schema.object(\"Note\", $fields.toList())",
+		"  Schema.object(\"Note\", $fields)",
 		"fallback: defaultText(<default of Note.tags>, format, keys))",
 		"    val k = try from.nextKey() ?: break",
 		"      when (i64.decode(from)) {",

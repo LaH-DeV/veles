@@ -29,7 +29,7 @@ public const fun encode(bytes: List<u8>): string => write(bytes, upper: false)
 public const fun encodeUpper(bytes: List<u8>): string => write(bytes, upper: true)
 
 const fun write(bytes: List<u8>, upper: bool): string {
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   loop (b in bytes) {
     out.push(digit(b >> 4, upper))
     out.push(digit(b & 15, upper))
@@ -48,7 +48,7 @@ public fun decode(text: string): List<u8> throws Invalid {
   if (n % 2 != 0) {
     throw Invalid(message: "hex: an odd number of digits ($n); a byte is two", position: n)
   }
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   var i = 0
   loop (i < n) {
     val hi = try nibbleAt(text, i)
@@ -69,7 +69,7 @@ fun nibbleAt(text: string, at: i64): u8 throws Invalid {
 /// printable ASCII, `0x0a` when it is not.
 fun describe(b: u8): string {
   if (b in 32..<127) {
-    val one: MutableList<u8> = [b]
+    val one: List<u8> = [b]
     return "'${one.decodeUtf8() ?: "?"}'"
   }
   val d = "0123456789abcdef"

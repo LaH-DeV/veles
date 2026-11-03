@@ -41,14 +41,14 @@ fun limit(n: i64): i64 throws ParseError {
 }
 
 fun main() {
-  val tokens: MutableList<Token> = []
+  val tokens: List<Token> = []
   loop (i in 0..200) {
     tokens.push(Number(value: i, at: i))
     tokens.push(Word(at: i, text: "w${i}"))
     tokens.push(Names(names: ["ab", "c${i}"]))
   }
   io.println("${tokens.map(token => weigh(token)).sum()}")
-  val failures: MutableList<Failure> = []
+  val failures: List<Failure> = []
   loop (n in [5, -1, 5000]) {
     limit(n) catch (e) {
       when (e) {

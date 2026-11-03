@@ -23,7 +23,7 @@ struct Tokens {
   items: List<string>
 
   fun next(): string? {
-    val t = this.items.at(this.i)
+    val t = this.items.get(this.i)
     this.i += 1
     t
   }

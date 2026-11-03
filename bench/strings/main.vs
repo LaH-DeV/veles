@@ -10,7 +10,7 @@ fun main() {
       // not reserving the capacity here, to test the StringBuilder growth logic
       loop (i in 0..<200000) sb.append("item-$i,")
       val parts = sb.toString().split(",")
-      val part = parts.at(123456) ?: panic("strings: the text has 200000 parts")
+      val part = parts.get(123456) ?: panic("strings: the text has 200000 parts")
       check += parts.len() + part.len()
     }
     check

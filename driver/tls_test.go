@@ -160,11 +160,11 @@ fun drain(conn: tls.Conn): string suspends throws IoError {
 fun echoed(port: i64): string suspends throws IoError {
   with conn = try tls.connect("127.0.0.1", port, tls.Options(roots: ca))
   with reader = async drain(conn)
-  val block: MutableList<u8> = []
+  val block: List<u8> = []
   loop (i in 0..<65536) {
     block.push((i * 7 % 251).wrapU8())
   }
-  val data = block.toList()
+  val data = block
   loop (_ in 0..<16) {
     try conn.write(data)
   }

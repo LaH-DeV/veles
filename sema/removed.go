@@ -10,7 +10,7 @@ import (
 
 // D62 C: `atOrPanic`, `getOrPanic` and `refOrPanic` are gone. A read that
 // can only fail through a bug says why it cannot, where it is written:
-// `xs.at(i) ?: panic("the header always has three parts")` — or it is
+// `xs.get(i) ?: panic("the header always has three parts")` — or it is
 // written so the checker can prove it (a list pattern, an index loop).
 // `panic(` is then the one spelling of every panic in Veles code.
 
@@ -19,10 +19,10 @@ import (
 const panicReasonTODO = "TODO: say why this cannot fail"
 
 // orPanicReplacement maps a removed method to the checked one it becomes.
-var orPanicReplacement = map[string]string{"atOrPanic": "at", "getOrPanic": "get", "refOrPanic": "ref"}
+var orPanicReplacement = map[string]string{"atOrPanic": "get", "getOrPanic": "get", "refOrPanic": "at"}
 
 // removedOrPanic reports a call of a removed `…OrPanic` method, with a
-// fix to `(x.at(i) ?: panic("…"))`. The caller goes on to lower the call
+// fix to `(x.get(i) ?: panic("…"))`. The caller goes on to lower the call
 // as before, so nothing else cascades from it.
 func (f *fnCtx) removedOrPanic(e *ast.CallExpr, name string) {
 	checked := orPanicReplacement[name]
@@ -229,4 +229,49 @@ func typeHead(t types.Type) string {
 		return t.Name
 	}
 	return t.String()
+}
+
+// D231: lists, maps and sets are values copied on their first change, so
+// the mutable twins are gone — a `List` can be changed, and a function that
+// should change the caller's takes `*List<T>`.
+var removedMutable = map[string]string{"MutableList": "List", "MutableMap": "Map", "MutableSet": "Set"}
+
+// removedMutableType reports a `MutableList`/`MutableMap`/`MutableSet` in a
+// type position, with a fix to the plain name; the caller resolves it as the
+// plain type, so nothing cascades.
+func (c *Checker) removedMutableType(t *ast.NamedType, name string) {
+	plain := removedMutable[name]
+	id := t.Path[len(t.Path)-1]
+	c.errorFix(id.Pos, fixReplace("Replace with '"+plain+"'", id.Pos, plain),
+		"'%s' was removed (D231): a '%s' is a value that can be changed in place; write '%s' (and '*%s<…>' where a function should change the caller's)", name, plain, plain, plain)
+}
+
+// removedToMutable reports `.toMutable()`: a copy that can be changed is
+// any copy now. On a collection the fix drops the call (binding the value
+// copies it); elsewhere (an array, a range) it becomes conv, `toList`.
+func (f *fnCtx) removedToMutable(e *ast.CallExpr, conv string) {
+	m, _ := e.Fun.(*ast.MemberExpr)
+	if m == nil {
+		f.errorf(e.Pos, "'toMutable' was removed (D231): every copy of a collection can be changed")
+		return
+	}
+	repl := srcText(m.X)
+	if conv != "" {
+		repl += "." + conv + "()"
+	}
+	f.c.errorFix(e.Pos, fixReplace("Replace with '"+repl+"'", e.Pos, repl),
+		"'toMutable' was removed (D231): a copy of a collection can be changed in place, so '%s' is the copy", repl)
+}
+
+// removedFreeze reports `.freeze()` and `.isFrozen()`: a collection is a
+// value, so no name can change another's (D231). freeze's fix drops it.
+func (f *fnCtx) removedFreeze(e *ast.CallExpr, name string) {
+	m, _ := e.Fun.(*ast.MemberExpr)
+	if name != "freeze" || m == nil {
+		f.errorf(e.Pos, "'%s' was removed (D231): a collection is a value, which no other name can change", name)
+		return
+	}
+	repl := srcText(m.X)
+	f.c.errorFix(e.Pos, fixReplace("Replace with '"+repl+"'", e.Pos, repl),
+		"'freeze' was removed (D231): a collection is a value, which no other name can change; '%s' is enough", repl)
 }

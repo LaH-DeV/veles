@@ -21,7 +21,7 @@ fun within(base: string, file: string): bool => file.startsWith(base) && !file.c
 
 fun parsePort(text: string): i64 => text.toInt() ?: 0
 
-fun bump(counter: MutableList<i64>): i64 {
+fun bump(counter: *List<i64>): i64 {
   counter.push(1)
   counter.len()
 }
@@ -59,8 +59,8 @@ test "comparison" {
 }
 
 test "once" {
-  val counter = MutableList<i64>()
-  expect(bump(counter) == 2)
+  val counter = List<i64>()
+  expect(bump(&counter) == 2)
   expect(counter.len() == 1)
 }
 
@@ -108,12 +108,12 @@ test "message" {
 		"      right: 0",
 		`      input: "x"`,
 		// bump ran once: counter holds one element, and the second
-		// expectation, which reads it, passes
+		// expectation, which reads it, passes; a pointer argument is not
+		// shown as a part
 		"test once ... FAILED",
-		"  main.vs:46:3: expect(bump(counter) == 2)",
-		"      left:    1",
-		"      right:   2",
-		"      counter: [1]",
+		"  main.vs:46:3: expect(bump(&counter) == 2)",
+		"      left:  1",
+		"      right: 2",
 		"test facts ... FAILED",
 		"  main.vs:52:3: expect(s != null && s.len() == 3)",
 		"      s.len(): 4",

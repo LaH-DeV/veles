@@ -55,7 +55,7 @@ func (f *fnCtx) lintStaleRefs(stmts []ast.Stmt) {
 	}
 }
 
-// refSource recognises `<coll>.ref(...)`, also as `<coll>.ref(...) ?: panic(…)`
+// refSource recognises `<coll>.at(...)`, also as `<coll>.at(...) ?: panic(…)`
 // (D62), and returns the collection's source text.
 func refSource(e ast.Expr) (string, bool) {
 	if el, isElvis := e.(*ast.ElvisExpr); isElvis {
@@ -66,7 +66,7 @@ func refSource(e ast.Expr) (string, bool) {
 		return "", false
 	}
 	m, ok := call.Fun.(*ast.MemberExpr)
-	if !ok || m.Name.Name != "ref" {
+	if !ok || m.Name.Name != "at" {
 		return "", false
 	}
 	coll := srcText(m.X)

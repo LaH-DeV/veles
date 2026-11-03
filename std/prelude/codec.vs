@@ -174,7 +174,7 @@ public fun joinPath(base: string, rel: string): string => when {
 /// A problem list a decoder keeps: `record` adds one at a path, `list`
 /// hands them out, and `cap` stops a hostile document growing it forever.
 public struct Problems {
-  private items: MutableList<Problem> = []
+  private items: List<Problem> = []
   public cap:    i64 = 100
 
   /// A list that keeps at most `cap` problems.
@@ -185,7 +185,7 @@ public struct Problems {
   }
 
   public fun isEmpty(): bool => this.items.isEmpty()
-  public fun list(): List<Problem> => this.items.toList()
+  public fun list(): List<Problem> => this.items
 }
 
 /// The decoded value, or the problems found: what `json.decode` and every

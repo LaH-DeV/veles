@@ -5,7 +5,11 @@ use io
 
 struct Res {
   n: i64
-  implement Closeable { fun close() { io.println("closed ${this.n}") } }
+  implement Closeable {
+    fun close() {
+      io.println("closed ${this.n}")
+    }
+  }
   fun get(): i64 => this.n
 }
 
@@ -14,15 +18,17 @@ struct Holder {
 }
 
 fun make(n: i64): Res => Res(n)
-fun consume(r: Res) { r.close() }
+fun consume(r: Res) {
+  r.close()
+}
 
 fun leaks(): i64 {
-  val r = make(1) // warning: 'r' is never closed: bind it with 'with r = …' so it is closed at the end of the block, close it, or hand it on (D115)
+  val r = make(1)  // warning: 'r' is never closed: bind it with 'with r = …' so it is closed at the end of the block, close it, or hand it on (D115)
   r.get() + r.n
 }
 
 fun leaksAConstructed(): i64 {
-  val r = Res(n: 2) // warning: 'r' is never closed
+  val r = Res(n: 2)  // warning: 'r' is never closed
   r.get()
 }
 
@@ -43,7 +49,7 @@ fun passes() {
   consume(r)
 }
 
-fun stores(sink: MutableList<Res>): Holder {
+fun stores(sink: *List<Res>): Holder {
   val r = make(6)
   sink.push(r)
   val s = make(7)
@@ -72,14 +78,15 @@ fun withBound(): i64 {
 }
 
 fun discards() {
-  make(11) // warning: the 'Res' this returns is never closed: bind it with 'with', or discard it on purpose with 'val _ = …' (D115)
+  make(11)  // warning: the 'Res' this returns is never closed: bind it with 'with', or discard it on purpose with 'val _ = …' (D115)
   val _ = make(12)
 }
 
 fun main() {
   io.println("${leaks()} ${leaksAConstructed()} ${closes()} ${returns().get()} ${withBound()}")
   passes()
-  val h = stores([])
+  val sink: List<Res> = []
+  val h = stores(&sink)
   io.println("${captures()()} ${borrowed(h)}")
   aliases()
   discards()

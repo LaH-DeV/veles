@@ -24,11 +24,11 @@ func TestConditionalSuspension(t *testing.T) {
 	src := `use io
 
 fun mapS<T, U, E>(xs: List<T>, f: fun(T): U suspends throws E): List<U> throws E {
-  val out = MutableList<U>()
+  val out = List<U>()
   loop (x in xs) {
     out.push(try f(x))
   }
-  out.toList()
+  out
 }
 
 // passes its parameter on, and captures it in a lambda passed on
@@ -49,7 +49,7 @@ struct Totals {
   }
 }
 
-fun next(counter: MutableList<i64>): i64 {
+fun next(counter: *List<i64>): i64 {
   counter.push(1)
   counter.len()
 }
@@ -69,9 +69,9 @@ fun main() {
     x
   })) catch (e) { [] }
   io.println("cancelled inside the lambda: ${waited.isEmpty()}")
-  val counter = MutableList<i64>()
+  val counter = List<i64>()
   val f: fun(i64): i64 suspends = n => slow(n)
-  io.println("through a value: ${f(next(counter))}, argument evaluated ${counter.len()} time(s)")
+  io.println("through a value: ${f(next(&counter))}, argument evaluated ${counter.len()} time(s)")
 }
 `
 	want := "under withLock: [6, 7, 8]\n" +

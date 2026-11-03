@@ -21,7 +21,7 @@ fun main() {
   val (total, elapsed) = time.measure(() => {
     var total: i64 = 0
     scope {
-      val sums: MutableList<Task<i64>> = []
+      val sums: List<Task<i64>> = []
       sums.reserve(8)
       loop (_ in 0..<8) {
         val ch = Channel<i64>(capacity: 64)

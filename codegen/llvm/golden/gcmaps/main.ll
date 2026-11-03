@@ -19,8 +19,8 @@ entry:
   %a11 = alloca i64
   %a19 = alloca %str
   %a28 = alloca ptr
-  %a30 = alloca ptr
   %a36 = alloca ptr
+  %a42 = alloca ptr
   store %V.main.Token %p1, ptr %a1
   %t3 = load %V.main.Token, ptr %a1
   store %V.main.Token %t3, ptr %a4
@@ -66,35 +66,48 @@ when.bind.11:
   %t26 = getelementptr inbounds %S.main.Names, ptr %t25, i32 0, i32 0
   %t27 = load ptr, ptr %t26
   store ptr %t27, ptr %a28
+  %t29 = icmp eq ptr %t27, null
+  br i1 %t29, label %share.done.14, label %share.test.12
+share.test.12:
+  %t30 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t27, i32 0, i32 6
+  %t31 = load i64, ptr %t30
+  %t32 = and i64 %t31, 4
+  %t33 = icmp ne i64 %t32, 0
+  br i1 %t33, label %share.done.14, label %share.call.13
+share.call.13:
+  %t34 = call ptr @veles_list_share(ptr %t27, ptr null)
+  store ptr %t34, ptr %a28
+  br label %share.done.14
+share.done.14:
+  %t35 = load ptr, ptr %a28
+  store ptr %t35, ptr %a36
   br label %when.body.10
 when.body.10:
-  %t29 = load ptr, ptr %a28
-  store ptr %t29, ptr %a30
-  %t31 = insertvalue { ptr, ptr } undef, ptr @v_main.weigh.lambda1.plain, 0
-  %t32 = insertvalue { ptr, ptr } %t31, ptr null, 1
-  %t33 = extractvalue %str { ptr @.str.1, i64 17 }, 0
-  %t34 = extractvalue %str { ptr @.str.1, i64 17 }, 1
-  call void @veles_call_push(ptr %t33)
-  %t35 = call ptr @v_std.prelude.extend.List_T.map_T_string_i64_Never.plain(ptr %a30, { ptr, ptr } %t32)
+  %t37 = insertvalue { ptr, ptr } undef, ptr @v_main.weigh.lambda1.plain, 0
+  %t38 = insertvalue { ptr, ptr } %t37, ptr null, 1
+  %t39 = extractvalue %str { ptr @.str.1, i64 17 }, 0
+  %t40 = extractvalue %str { ptr @.str.1, i64 17 }, 1
+  call void @veles_call_push(ptr %t39)
+  %t41 = call ptr @v_std.prelude.extend.List_T.map_T_string_i64_Never.plain(ptr %a36, { ptr, ptr } %t38)
   call void @veles_call_pop()
-  store ptr %t35, ptr %a36
-  %t37 = extractvalue %str { ptr @.str.2, i64 17 }, 0
-  %t38 = extractvalue %str { ptr @.str.2, i64 17 }, 1
-  call void @veles_call_push(ptr %t37)
-  %t39 = call i64 @v_std.prelude.extend.List_i64.sum(ptr %a36)
+  store ptr %t41, ptr %a42
+  %t43 = extractvalue %str { ptr @.str.2, i64 17 }, 0
+  %t44 = extractvalue %str { ptr @.str.2, i64 17 }, 1
+  call void @veles_call_push(ptr %t43)
+  %t45 = call i64 @v_std.prelude.extend.List_i64.sum(ptr %a42)
   call void @veles_call_pop()
-  store i64 %t39, ptr %a2
+  store i64 %t45, ptr %a2
   br label %when.end.1
 when.arm.9:
-  %t40 = extractvalue %str { ptr @.str.3, i64 33 }, 0
-  %t41 = extractvalue %str { ptr @.str.3, i64 33 }, 1
-  %t42 = extractvalue %str { ptr @.str.4, i64 13 }, 0
-  %t43 = extractvalue %str { ptr @.str.4, i64 13 }, 1
-  call void @veles_panic_at(ptr %t40, i64 %t41, ptr %t42, i64 %t43)
+  %t46 = extractvalue %str { ptr @.str.3, i64 33 }, 0
+  %t47 = extractvalue %str { ptr @.str.3, i64 33 }, 1
+  %t48 = extractvalue %str { ptr @.str.4, i64 13 }, 0
+  %t49 = extractvalue %str { ptr @.str.4, i64 13 }, 1
+  call void @veles_panic_at(ptr %t46, i64 %t47, ptr %t48, i64 %t49)
   unreachable
 when.end.1:
-  %t44 = load i64, ptr %a2
-  ret i64 %t44
+  %t50 = load i64, ptr %a2
+  ret i64 %t50
 }
 
 define i64 @v_main.weigh.lambda1.plain(ptr %env, %str %p1) {
@@ -172,555 +185,618 @@ if.end.4:
 
 define void @v_main.main() {
 entry:
-  %a2 = alloca ptr
-  %a6 = alloca { i64, i64, i1 }
-  %a9 = alloca i64
-  %a12 = alloca i64
-  %a13 = alloca i1
-  %a14 = alloca i64
-  %a15 = alloca i1
-  %a17 = alloca i1
-  %a28 = alloca i64
-  %a42 = alloca i1
-  %a44 = alloca i1
-  %a59 = alloca i64
-  %a65 = alloca %V.main.Token
-  %a83 = alloca %V.main.Token
-  %a87 = alloca [21 x i8]
-  %a91 = alloca %str
-  %a99 = alloca %V.main.Token
-  %a117 = alloca %V.main.Token
-  %a120 = alloca %str
-  %a122 = alloca [21 x i8]
-  %a126 = alloca %str
-  %a133 = alloca %V.main.Token
-  %a151 = alloca %V.main.Token
-  %a152 = alloca i1
-  %a164 = alloca ptr
-  %a170 = alloca ptr
-  %a174 = alloca [21 x i8]
-  %a178 = alloca %str
-  %a179 = alloca [1 x %str]
-  %a184 = alloca { ptr, i64, i64, i64, ptr, i64, i64 }
-  %a187 = alloca ptr
-  %a189 = alloca i64
-  %a190 = alloca ptr
-  %a191 = alloca i64
-  %a207 = alloca i64
-  %a212 = alloca %V._prelude_.Result_i64_main.Malformed_main.Overflow_
+  %a1 = alloca ptr
+  %a5 = alloca { i64, i64, i1 }
+  %a8 = alloca i64
+  %a11 = alloca i64
+  %a12 = alloca i1
+  %a13 = alloca i64
+  %a14 = alloca i1
+  %a16 = alloca i1
+  %a27 = alloca i64
+  %a41 = alloca i1
+  %a43 = alloca i1
+  %a58 = alloca i64
+  %a70 = alloca %V.main.Token
+  %a88 = alloca %V.main.Token
+  %a98 = alloca [21 x i8]
+  %a102 = alloca %str
+  %a110 = alloca %V.main.Token
+  %a128 = alloca %V.main.Token
+  %a137 = alloca %str
+  %a139 = alloca [21 x i8]
+  %a143 = alloca %str
+  %a150 = alloca %V.main.Token
+  %a168 = alloca %V.main.Token
+  %a169 = alloca i1
+  %a185 = alloca ptr
+  %a189 = alloca [21 x i8]
+  %a193 = alloca %str
+  %a194 = alloca [1 x %str]
+  %a199 = alloca { ptr, i64, i64, i64, ptr, i64, i64 }
+  %a202 = alloca ptr
+  %a203 = alloca { ptr, i64, i64, i64, ptr, i64, i64 }
+  %a206 = alloca i64
+  %a207 = alloca ptr
   %a213 = alloca i64
-  %a220 = alloca %U.main.Malformed_main.Overflow
-  %a222 = alloca %U.main.Malformed_main.Overflow
-  %a227 = alloca %U.main.Malformed_main.Overflow
-  %a231 = alloca [21 x i8]
-  %a235 = alloca %str
-  %a247 = alloca %U.main.Malformed_main.Overflow
-  %a251 = alloca %str
-  %a280 = alloca %S.main.Failure
-  %a286 = alloca [21 x i8]
-  %a290 = alloca %str
-  %a305 = alloca [21 x i8]
-  %a309 = alloca %str
-  %t1 = call ptr @veles_list_new(ptr @adesc.main.Token, i64 0)
-  store ptr %t1, ptr %a2
-  %t3 = insertvalue { i64, i64, i1 } undef, i64 0, 0
-  %t4 = insertvalue { i64, i64, i1 } %t3, i64 200, 1
-  %t5 = insertvalue { i64, i64, i1 } %t4, i1 true, 2
-  store { i64, i64, i1 } %t5, ptr %a6
-  %t7 = getelementptr inbounds { i64, i64, i1 }, ptr %a6, i32 0, i32 0
-  %t8 = load i64, ptr %t7
-  store i64 %t8, ptr %a9
-  %t10 = getelementptr inbounds { i64, i64, i1 }, ptr %a6, i32 0, i32 1
-  %t11 = load i64, ptr %t10
-  store i64 %t11, ptr %a12
-  store i1 false, ptr %a13
-  store i64 0, ptr %a14
+  %a216 = alloca i64
+  %a217 = alloca i64
+  %a233 = alloca i64
+  %a238 = alloca %V._prelude_.Result_i64_main.Malformed_main.Overflow_
+  %a239 = alloca i64
+  %a246 = alloca %U.main.Malformed_main.Overflow
+  %a248 = alloca %U.main.Malformed_main.Overflow
+  %a253 = alloca %U.main.Malformed_main.Overflow
+  %a257 = alloca [21 x i8]
+  %a261 = alloca %str
+  %a273 = alloca %U.main.Malformed_main.Overflow
+  %a277 = alloca %str
+  %a306 = alloca %S.main.Failure
+  %a312 = alloca [21 x i8]
+  %a316 = alloca %str
+  %a337 = alloca [21 x i8]
+  %a341 = alloca %str
+  store ptr @const.empty.list.0, ptr %a1
+  %t2 = insertvalue { i64, i64, i1 } undef, i64 0, 0
+  %t3 = insertvalue { i64, i64, i1 } %t2, i64 200, 1
+  %t4 = insertvalue { i64, i64, i1 } %t3, i1 true, 2
+  store { i64, i64, i1 } %t4, ptr %a5
+  %t6 = getelementptr inbounds { i64, i64, i1 }, ptr %a5, i32 0, i32 0
+  %t7 = load i64, ptr %t6
+  store i64 %t7, ptr %a8
+  %t9 = getelementptr inbounds { i64, i64, i1 }, ptr %a5, i32 0, i32 1
+  %t10 = load i64, ptr %t9
+  store i64 %t10, ptr %a11
+  store i1 false, ptr %a12
+  store i64 0, ptr %a13
   br label %chunk.cond.1
 chunk.cond.1:
-  %t16 = load i1, ptr %a13
-  br i1 %t16, label %if.then.8, label %if.else.10
+  %t15 = load i1, ptr %a12
+  br i1 %t15, label %if.then.8, label %if.else.10
 if.then.8:
-  store i1 false, ptr %a15
+  store i1 false, ptr %a14
   br label %if.end.9
 if.else.10:
-  %t18 = getelementptr inbounds { i64, i64, i1 }, ptr %a6, i32 0, i32 2
-  %t19 = load i1, ptr %t18
-  br i1 %t19, label %if.then.11, label %if.else.13
+  %t17 = getelementptr inbounds { i64, i64, i1 }, ptr %a5, i32 0, i32 2
+  %t18 = load i1, ptr %t17
+  br i1 %t18, label %if.then.11, label %if.else.13
 if.then.11:
-  %t20 = load i64, ptr %a9
-  %t21 = load i64, ptr %a12
-  %t22 = icmp sle i64 %t20, %t21
-  store i1 %t22, ptr %a17
+  %t19 = load i64, ptr %a8
+  %t20 = load i64, ptr %a11
+  %t21 = icmp sle i64 %t19, %t20
+  store i1 %t21, ptr %a16
   br label %if.end.12
 if.else.13:
-  %t23 = load i64, ptr %a9
-  %t24 = load i64, ptr %a12
-  %t25 = icmp slt i64 %t23, %t24
-  store i1 %t25, ptr %a17
+  %t22 = load i64, ptr %a8
+  %t23 = load i64, ptr %a11
+  %t24 = icmp slt i64 %t22, %t23
+  store i1 %t24, ptr %a16
   br label %if.end.12
 if.end.12:
-  %t26 = load i1, ptr %a17
-  store i1 %t26, ptr %a15
+  %t25 = load i1, ptr %a16
+  store i1 %t25, ptr %a14
   br label %if.end.9
 if.end.9:
-  %t27 = load i1, ptr %a15
-  br i1 %t27, label %chunk.start.7, label %chunk.end.3
+  %t26 = load i1, ptr %a14
+  br i1 %t26, label %chunk.start.7, label %chunk.end.3
 chunk.start.7:
-  %t29 = load i64, ptr %a9
-  %t30 = icmp sgt i64 %t29, 9223372036854775543
-  br i1 %t30, label %if.then.14, label %if.else.16
+  %t28 = load i64, ptr %a8
+  %t29 = icmp sgt i64 %t28, 9223372036854775543
+  br i1 %t29, label %if.then.14, label %if.else.16
 if.then.14:
-  store i64 9223372036854775807, ptr %a28
+  store i64 9223372036854775807, ptr %a27
   br label %if.end.15
 if.else.16:
-  %t31 = load i64, ptr %a9
-  %t33 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t31, i64 264)
-  %t34 = extractvalue { i64, i1 } %t33, 0
-  %t35 = extractvalue { i64, i1 } %t33, 1
-  br i1 %t35, label %overflow.17, label %arith.ok.18
+  %t30 = load i64, ptr %a8
+  %t32 = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %t30, i64 264)
+  %t33 = extractvalue { i64, i1 } %t32, 0
+  %t34 = extractvalue { i64, i1 } %t32, 1
+  br i1 %t34, label %overflow.17, label %arith.ok.18
 overflow.17:
-  %t36 = extractvalue %str { ptr @.str.6, i64 16 }, 0
-  %t37 = extractvalue %str { ptr @.str.6, i64 16 }, 1
-  %t38 = extractvalue %str { ptr @.str.7, i64 0 }, 0
-  %t39 = extractvalue %str { ptr @.str.7, i64 0 }, 1
-  call void @veles_panic_at(ptr %t36, i64 %t37, ptr %t38, i64 %t39)
+  %t35 = extractvalue %str { ptr @.str.6, i64 16 }, 0
+  %t36 = extractvalue %str { ptr @.str.6, i64 16 }, 1
+  %t37 = extractvalue %str { ptr @.str.7, i64 0 }, 0
+  %t38 = extractvalue %str { ptr @.str.7, i64 0 }, 1
+  call void @veles_panic_at(ptr %t35, i64 %t36, ptr %t37, i64 %t38)
   unreachable
 arith.ok.18:
-  store i64 %t34, ptr %a28
+  store i64 %t33, ptr %a27
   br label %if.end.15
 if.end.15:
-  %t40 = load i64, ptr %a28
-  store i64 %t40, ptr %a14
+  %t39 = load i64, ptr %a27
+  store i64 %t39, ptr %a13
   br label %chunk.body.5
 chunk.inner.4:
-  %t43 = load i1, ptr %a13
-  br i1 %t43, label %if.then.19, label %if.else.21
+  %t42 = load i1, ptr %a12
+  br i1 %t42, label %if.then.19, label %if.else.21
 if.then.19:
-  store i1 false, ptr %a42
+  store i1 false, ptr %a41
   br label %if.end.20
 if.else.21:
-  %t45 = getelementptr inbounds { i64, i64, i1 }, ptr %a6, i32 0, i32 2
-  %t46 = load i1, ptr %t45
-  br i1 %t46, label %if.then.22, label %if.else.24
+  %t44 = getelementptr inbounds { i64, i64, i1 }, ptr %a5, i32 0, i32 2
+  %t45 = load i1, ptr %t44
+  br i1 %t45, label %if.then.22, label %if.else.24
 if.then.22:
-  %t47 = load i64, ptr %a9
-  %t48 = load i64, ptr %a12
-  %t49 = icmp sle i64 %t47, %t48
-  store i1 %t49, ptr %a44
+  %t46 = load i64, ptr %a8
+  %t47 = load i64, ptr %a11
+  %t48 = icmp sle i64 %t46, %t47
+  store i1 %t48, ptr %a43
   br label %if.end.23
 if.else.24:
-  %t50 = load i64, ptr %a9
-  %t51 = load i64, ptr %a12
-  %t52 = icmp slt i64 %t50, %t51
-  store i1 %t52, ptr %a44
+  %t49 = load i64, ptr %a8
+  %t50 = load i64, ptr %a11
+  %t51 = icmp slt i64 %t49, %t50
+  store i1 %t51, ptr %a43
   br label %if.end.23
 if.end.23:
-  %t53 = load i1, ptr %a44
-  store i1 %t53, ptr %a42
+  %t52 = load i1, ptr %a43
+  store i1 %t52, ptr %a41
   br label %if.end.20
 if.end.20:
-  %t54 = load i1, ptr %a42
-  %t55 = load i64, ptr %a9
-  %t56 = load i64, ptr %a14
-  %t57 = icmp slt i64 %t55, %t56
-  %t41 = and i1 %t54, %t57
-  br i1 %t41, label %chunk.body.5, label %chunk.looked.6
+  %t53 = load i1, ptr %a41
+  %t54 = load i64, ptr %a8
+  %t55 = load i64, ptr %a13
+  %t56 = icmp slt i64 %t54, %t55
+  %t40 = and i1 %t53, %t56
+  br i1 %t40, label %chunk.body.5, label %chunk.looked.6
 chunk.body.5:
-  %t58 = load i64, ptr %a9
-  store i64 %t58, ptr %a59
-  %t60 = load ptr, ptr %a2
-  %t61 = load i64, ptr %a59
-  %t62 = load i64, ptr %a59
-  %t63 = insertvalue %S.main.Number undef, i64 %t61, 0
-  %t64 = insertvalue %S.main.Number %t63, i64 %t62, 1
-  store %V.main.Token zeroinitializer, ptr %a65
-  %t66 = getelementptr inbounds %V.main.Token, ptr %a65, i32 0, i32 0
-  store i32 0, ptr %t66
-  %t67 = getelementptr inbounds %V.main.Token, ptr %a65, i32 0, i32 1
-  store %S.main.Number %t64, ptr %t67
-  %t68 = load %V.main.Token, ptr %a65
-  %t69 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t60, i32 0, i32 1
-  %t70 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t60, i32 0, i32 2
-  %t71 = load i64, ptr %t69
-  %t72 = load i64, ptr %t70
-  %t73 = icmp slt i64 %t71, %t72
-  br i1 %t73, label %push.fast.25, label %push.grow.26, !prof !{!"branch_weights", i32 2000, i32 1}
-push.fast.25:
-  %t74 = load ptr, ptr %t60
-  %t75 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t60, i32 0, i32 3
-  %t76 = load i64, ptr %t75
-  %t77 = mul i64 %t76, %t71
-  %t78 = getelementptr inbounds i8, ptr %t74, i64 %t77
-  store %V.main.Token %t68, ptr %t78
-  %t79 = add i64 %t71, 1
-  store i64 %t79, ptr %t69
-  %t80 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t60, i32 0, i32 5
+  %t57 = load i64, ptr %a8
+  store i64 %t57, ptr %a58
+  %t59 = load ptr, ptr %a1
+  %t60 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t59, i32 0, i32 6
+  %t61 = load i64, ptr %t60
+  %t62 = and i64 %t61, 12
+  %t63 = icmp ne i64 %t62, 0
+  br i1 %t63, label %cow.copy.25, label %cow.done.26, !prof !{!"branch_weights", i32 1, i32 2000}
+cow.copy.25:
+  %t64 = call ptr @veles_list_unique_grow(ptr %t59, ptr @share.main.Token)
+  store ptr %t64, ptr %a1
+  br label %cow.done.26
+cow.done.26:
+  %t65 = load ptr, ptr %a1
+  %t66 = load i64, ptr %a58
+  %t67 = load i64, ptr %a58
+  %t68 = insertvalue %S.main.Number undef, i64 %t66, 0
+  %t69 = insertvalue %S.main.Number %t68, i64 %t67, 1
+  store %V.main.Token zeroinitializer, ptr %a70
+  %t71 = getelementptr inbounds %V.main.Token, ptr %a70, i32 0, i32 0
+  store i32 0, ptr %t71
+  %t72 = getelementptr inbounds %V.main.Token, ptr %a70, i32 0, i32 1
+  store %S.main.Number %t69, ptr %t72
+  %t73 = load %V.main.Token, ptr %a70
+  %t74 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t65, i32 0, i32 1
+  %t75 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t65, i32 0, i32 2
+  %t76 = load i64, ptr %t74
+  %t77 = load i64, ptr %t75
+  %t78 = icmp slt i64 %t76, %t77
+  br i1 %t78, label %push.fast.27, label %push.grow.28, !prof !{!"branch_weights", i32 2000, i32 1}
+push.fast.27:
+  %t79 = load ptr, ptr %t65
+  %t80 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t65, i32 0, i32 3
   %t81 = load i64, ptr %t80
-  %t82 = add i64 %t81, 1
-  store i64 %t82, ptr %t80
-  br label %push.done.27
-push.grow.26:
-  store %V.main.Token %t68, ptr %a83
-  call void @veles_list_push(ptr %t60, ptr %a83)
-  br label %push.done.27
-push.done.27:
-  %t84 = load ptr, ptr %a2
-  %t85 = load i64, ptr %a59
-  %t86 = load i64, ptr %a59
-  %t88 = call i64 @veles_i64_format(ptr %a87, i64 %t86)
-  %t89 = insertvalue %str undef, ptr %a87, 0
-  %t90 = insertvalue %str %t89, i64 %t88, 1
-  %t92 = extractvalue %str { ptr @.str.8, i64 1 }, 0
-  %t93 = extractvalue %str { ptr @.str.8, i64 1 }, 1
-  %t94 = extractvalue %str %t90, 0
-  %t95 = extractvalue %str %t90, 1
-  call void @veles_string_concat(ptr %a91, ptr %t92, i64 %t93, ptr %t94, i64 %t95)
-  %t96 = load %str, ptr %a91
-  %t97 = insertvalue %S.main.Word undef, i64 %t85, 0
-  %t98 = insertvalue %S.main.Word %t97, %str %t96, 1
-  store %V.main.Token zeroinitializer, ptr %a99
-  %t100 = getelementptr inbounds %V.main.Token, ptr %a99, i32 0, i32 0
-  store i32 1, ptr %t100
-  %t101 = getelementptr inbounds %V.main.Token, ptr %a99, i32 0, i32 1
-  store %S.main.Word %t98, ptr %t101
-  %t102 = load %V.main.Token, ptr %a99
-  %t103 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t84, i32 0, i32 1
-  %t104 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t84, i32 0, i32 2
-  %t105 = load i64, ptr %t103
-  %t106 = load i64, ptr %t104
-  %t107 = icmp slt i64 %t105, %t106
-  br i1 %t107, label %push.fast.28, label %push.grow.29, !prof !{!"branch_weights", i32 2000, i32 1}
-push.fast.28:
-  %t108 = load ptr, ptr %t84
-  %t109 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t84, i32 0, i32 3
-  %t110 = load i64, ptr %t109
-  %t111 = mul i64 %t110, %t105
-  %t112 = getelementptr inbounds i8, ptr %t108, i64 %t111
-  store %V.main.Token %t102, ptr %t112
-  %t113 = add i64 %t105, 1
-  store i64 %t113, ptr %t103
-  %t114 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t84, i32 0, i32 5
-  %t115 = load i64, ptr %t114
-  %t116 = add i64 %t115, 1
-  store i64 %t116, ptr %t114
-  br label %push.done.30
-push.grow.29:
-  store %V.main.Token %t102, ptr %a117
-  call void @veles_list_push(ptr %t84, ptr %a117)
-  br label %push.done.30
-push.done.30:
-  %t118 = load ptr, ptr %a2
-  %t119 = call ptr @veles_list_new(ptr @adesc.string, i64 2)
-  store %str { ptr @.str.9, i64 2 }, ptr %a120
-  call void @veles_list_push(ptr %t119, ptr %a120)
-  %t121 = load i64, ptr %a59
-  %t123 = call i64 @veles_i64_format(ptr %a122, i64 %t121)
-  %t124 = insertvalue %str undef, ptr %a122, 0
-  %t125 = insertvalue %str %t124, i64 %t123, 1
-  %t127 = extractvalue %str { ptr @.str.10, i64 1 }, 0
-  %t128 = extractvalue %str { ptr @.str.10, i64 1 }, 1
-  %t129 = extractvalue %str %t125, 0
-  %t130 = extractvalue %str %t125, 1
-  call void @veles_string_concat(ptr %a126, ptr %t127, i64 %t128, ptr %t129, i64 %t130)
-  %t131 = load %str, ptr %a126
-  store %str %t131, ptr %a120
-  call void @veles_list_push(ptr %t119, ptr %a120)
-  %t132 = insertvalue %S.main.Names undef, ptr %t119, 0
-  store %V.main.Token zeroinitializer, ptr %a133
-  %t134 = getelementptr inbounds %V.main.Token, ptr %a133, i32 0, i32 0
-  store i32 2, ptr %t134
-  %t135 = getelementptr inbounds %V.main.Token, ptr %a133, i32 0, i32 1
-  store %S.main.Names %t132, ptr %t135
-  %t136 = load %V.main.Token, ptr %a133
-  %t137 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t118, i32 0, i32 1
-  %t138 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t118, i32 0, i32 2
-  %t139 = load i64, ptr %t137
-  %t140 = load i64, ptr %t138
-  %t141 = icmp slt i64 %t139, %t140
-  br i1 %t141, label %push.fast.31, label %push.grow.32, !prof !{!"branch_weights", i32 2000, i32 1}
-push.fast.31:
-  %t142 = load ptr, ptr %t118
-  %t143 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t118, i32 0, i32 3
-  %t144 = load i64, ptr %t143
-  %t145 = mul i64 %t144, %t139
-  %t146 = getelementptr inbounds i8, ptr %t142, i64 %t145
-  store %V.main.Token %t136, ptr %t146
-  %t147 = add i64 %t139, 1
-  store i64 %t147, ptr %t137
-  %t148 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t118, i32 0, i32 5
-  %t149 = load i64, ptr %t148
-  %t150 = add i64 %t149, 1
-  store i64 %t150, ptr %t148
-  br label %push.done.33
-push.grow.32:
-  store %V.main.Token %t136, ptr %a151
-  call void @veles_list_push(ptr %t118, ptr %a151)
-  br label %push.done.33
-push.done.33:
+  %t82 = mul i64 %t81, %t76
+  %t83 = getelementptr inbounds i8, ptr %t79, i64 %t82
+  store %V.main.Token %t73, ptr %t83
+  %t84 = add i64 %t76, 1
+  store i64 %t84, ptr %t74
+  %t85 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t65, i32 0, i32 5
+  %t86 = load i64, ptr %t85
+  %t87 = add i64 %t86, 1
+  store i64 %t87, ptr %t85
+  br label %push.done.29
+push.grow.28:
+  store %V.main.Token %t73, ptr %a88
+  call void @veles_list_push(ptr %t65, ptr %a88)
+  br label %push.done.29
+push.done.29:
+  %t89 = load ptr, ptr %a1
+  %t90 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t89, i32 0, i32 6
+  %t91 = load i64, ptr %t90
+  %t92 = and i64 %t91, 12
+  %t93 = icmp ne i64 %t92, 0
+  br i1 %t93, label %cow.copy.30, label %cow.done.31, !prof !{!"branch_weights", i32 1, i32 2000}
+cow.copy.30:
+  %t94 = call ptr @veles_list_unique_grow(ptr %t89, ptr @share.main.Token)
+  store ptr %t94, ptr %a1
+  br label %cow.done.31
+cow.done.31:
+  %t95 = load ptr, ptr %a1
+  %t96 = load i64, ptr %a58
+  %t97 = load i64, ptr %a58
+  %t99 = call i64 @veles_i64_format(ptr %a98, i64 %t97)
+  %t100 = insertvalue %str undef, ptr %a98, 0
+  %t101 = insertvalue %str %t100, i64 %t99, 1
+  %t103 = extractvalue %str { ptr @.str.8, i64 1 }, 0
+  %t104 = extractvalue %str { ptr @.str.8, i64 1 }, 1
+  %t105 = extractvalue %str %t101, 0
+  %t106 = extractvalue %str %t101, 1
+  call void @veles_string_concat(ptr %a102, ptr %t103, i64 %t104, ptr %t105, i64 %t106)
+  %t107 = load %str, ptr %a102
+  %t108 = insertvalue %S.main.Word undef, i64 %t96, 0
+  %t109 = insertvalue %S.main.Word %t108, %str %t107, 1
+  store %V.main.Token zeroinitializer, ptr %a110
+  %t111 = getelementptr inbounds %V.main.Token, ptr %a110, i32 0, i32 0
+  store i32 1, ptr %t111
+  %t112 = getelementptr inbounds %V.main.Token, ptr %a110, i32 0, i32 1
+  store %S.main.Word %t109, ptr %t112
+  %t113 = load %V.main.Token, ptr %a110
+  %t114 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t95, i32 0, i32 1
+  %t115 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t95, i32 0, i32 2
+  %t116 = load i64, ptr %t114
+  %t117 = load i64, ptr %t115
+  %t118 = icmp slt i64 %t116, %t117
+  br i1 %t118, label %push.fast.32, label %push.grow.33, !prof !{!"branch_weights", i32 2000, i32 1}
+push.fast.32:
+  %t119 = load ptr, ptr %t95
+  %t120 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t95, i32 0, i32 3
+  %t121 = load i64, ptr %t120
+  %t122 = mul i64 %t121, %t116
+  %t123 = getelementptr inbounds i8, ptr %t119, i64 %t122
+  store %V.main.Token %t113, ptr %t123
+  %t124 = add i64 %t116, 1
+  store i64 %t124, ptr %t114
+  %t125 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t95, i32 0, i32 5
+  %t126 = load i64, ptr %t125
+  %t127 = add i64 %t126, 1
+  store i64 %t127, ptr %t125
+  br label %push.done.34
+push.grow.33:
+  store %V.main.Token %t113, ptr %a128
+  call void @veles_list_push(ptr %t95, ptr %a128)
+  br label %push.done.34
+push.done.34:
+  %t129 = load ptr, ptr %a1
+  %t130 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t129, i32 0, i32 6
+  %t131 = load i64, ptr %t130
+  %t132 = and i64 %t131, 12
+  %t133 = icmp ne i64 %t132, 0
+  br i1 %t133, label %cow.copy.35, label %cow.done.36, !prof !{!"branch_weights", i32 1, i32 2000}
+cow.copy.35:
+  %t134 = call ptr @veles_list_unique_grow(ptr %t129, ptr @share.main.Token)
+  store ptr %t134, ptr %a1
+  br label %cow.done.36
+cow.done.36:
+  %t135 = load ptr, ptr %a1
+  %t136 = call ptr @veles_list_new(ptr @adesc.string, i64 2)
+  store %str { ptr @.str.9, i64 2 }, ptr %a137
+  call void @veles_list_push(ptr %t136, ptr %a137)
+  %t138 = load i64, ptr %a58
+  %t140 = call i64 @veles_i64_format(ptr %a139, i64 %t138)
+  %t141 = insertvalue %str undef, ptr %a139, 0
+  %t142 = insertvalue %str %t141, i64 %t140, 1
+  %t144 = extractvalue %str { ptr @.str.10, i64 1 }, 0
+  %t145 = extractvalue %str { ptr @.str.10, i64 1 }, 1
+  %t146 = extractvalue %str %t142, 0
+  %t147 = extractvalue %str %t142, 1
+  call void @veles_string_concat(ptr %a143, ptr %t144, i64 %t145, ptr %t146, i64 %t147)
+  %t148 = load %str, ptr %a143
+  store %str %t148, ptr %a137
+  call void @veles_list_push(ptr %t136, ptr %a137)
+  %t149 = insertvalue %S.main.Names undef, ptr %t136, 0
+  store %V.main.Token zeroinitializer, ptr %a150
+  %t151 = getelementptr inbounds %V.main.Token, ptr %a150, i32 0, i32 0
+  store i32 2, ptr %t151
+  %t152 = getelementptr inbounds %V.main.Token, ptr %a150, i32 0, i32 1
+  store %S.main.Names %t149, ptr %t152
+  %t153 = load %V.main.Token, ptr %a150
+  %t154 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t135, i32 0, i32 1
+  %t155 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t135, i32 0, i32 2
+  %t156 = load i64, ptr %t154
+  %t157 = load i64, ptr %t155
+  %t158 = icmp slt i64 %t156, %t157
+  br i1 %t158, label %push.fast.37, label %push.grow.38, !prof !{!"branch_weights", i32 2000, i32 1}
+push.fast.37:
+  %t159 = load ptr, ptr %t135
+  %t160 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t135, i32 0, i32 3
+  %t161 = load i64, ptr %t160
+  %t162 = mul i64 %t161, %t156
+  %t163 = getelementptr inbounds i8, ptr %t159, i64 %t162
+  store %V.main.Token %t153, ptr %t163
+  %t164 = add i64 %t156, 1
+  store i64 %t164, ptr %t154
+  %t165 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t135, i32 0, i32 5
+  %t166 = load i64, ptr %t165
+  %t167 = add i64 %t166, 1
+  store i64 %t167, ptr %t165
+  br label %push.done.39
+push.grow.38:
+  store %V.main.Token %t153, ptr %a168
+  call void @veles_list_push(ptr %t135, ptr %a168)
+  br label %push.done.39
+push.done.39:
   br label %chunk.post.2
 chunk.post.2:
-  %t153 = getelementptr inbounds { i64, i64, i1 }, ptr %a6, i32 0, i32 2
-  %t154 = load i1, ptr %t153
-  store i1 %t154, ptr %a152
-  br i1 %t154, label %sc.rhs.34, label %sc.end.35
-sc.rhs.34:
-  %t155 = load i64, ptr %a9
-  %t156 = load i64, ptr %a12
-  %t157 = icmp eq i64 %t155, %t156
-  store i1 %t157, ptr %a152
-  br label %sc.end.35
-sc.end.35:
-  %t158 = load i1, ptr %a152
-  br i1 %t158, label %if.then.36, label %if.else.38
-if.then.36:
-  store i1 true, ptr %a13
-  br label %if.end.37
-if.else.38:
-  %t159 = load i64, ptr %a9
-  %t160 = add i64 %t159, 1
-  store i64 %t160, ptr %a9
-  br label %if.end.37
-if.end.37:
+  %t170 = getelementptr inbounds { i64, i64, i1 }, ptr %a5, i32 0, i32 2
+  %t171 = load i1, ptr %t170
+  store i1 %t171, ptr %a169
+  br i1 %t171, label %sc.rhs.40, label %sc.end.41
+sc.rhs.40:
+  %t172 = load i64, ptr %a8
+  %t173 = load i64, ptr %a11
+  %t174 = icmp eq i64 %t172, %t173
+  store i1 %t174, ptr %a169
+  br label %sc.end.41
+sc.end.41:
+  %t175 = load i1, ptr %a169
+  br i1 %t175, label %if.then.42, label %if.else.44
+if.then.42:
+  store i1 true, ptr %a12
+  br label %if.end.43
+if.else.44:
+  %t176 = load i64, ptr %a8
+  %t177 = add i64 %t176, 1
+  store i64 %t177, ptr %a8
+  br label %if.end.43
+if.end.43:
   br label %chunk.inner.4
 chunk.looked.6:
-  %t161 = load volatile i32, ptr @veles_attention_line, align 64
-  %t162 = icmp ne i32 %t161, 0
-  br i1 %t162, label %safepoint.39, label %safepoint.on.40, !prof !{!"branch_weights", i32 1, i32 100000}
-safepoint.39:
+  %t178 = load volatile i32, ptr @veles_attention_line, align 64
+  %t179 = icmp ne i32 %t178, 0
+  br i1 %t179, label %safepoint.45, label %safepoint.on.46, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.45:
   call void @veles_backedge_plain()
-  br label %safepoint.on.40
-safepoint.on.40:
+  br label %safepoint.on.46
+safepoint.on.46:
   br label %chunk.cond.1
 chunk.end.3:
-  %t163 = load ptr, ptr %a2
-  store ptr %t163, ptr %a164
-  %t165 = insertvalue { ptr, ptr } undef, ptr @v_main.main.lambda2.plain, 0
-  %t166 = insertvalue { ptr, ptr } %t165, ptr null, 1
-  %t167 = extractvalue %str { ptr @.str.11, i64 17 }, 0
-  %t168 = extractvalue %str { ptr @.str.11, i64 17 }, 1
-  call void @veles_call_push(ptr %t167)
-  %t169 = call ptr @v_std.prelude.extend.List_T.map_T_main.Token_i64_Never.plain(ptr %a164, { ptr, ptr } %t166)
-  call void @veles_call_pop()
-  store ptr %t169, ptr %a170
-  %t171 = extractvalue %str { ptr @.str.12, i64 17 }, 0
-  %t172 = extractvalue %str { ptr @.str.12, i64 17 }, 1
-  call void @veles_call_push(ptr %t171)
-  %t173 = call i64 @v_std.prelude.extend.List_i64.sum(ptr %a170)
-  call void @veles_call_pop()
-  %t175 = call i64 @veles_i64_format(ptr %a174, i64 %t173)
-  %t176 = insertvalue %str undef, ptr %a174, 0
-  %t177 = insertvalue %str %t176, i64 %t175, 1
-  %t180 = getelementptr [1 x %str], ptr %a179, i64 0, i64 0
-  store %str %t177, ptr %t180
-  call void @veles_string_concat_n(ptr %a178, ptr %a179, i64 1)
-  %t181 = load %str, ptr %a178
-  %t182 = extractvalue %str { ptr @.str.13, i64 20 }, 0
-  %t183 = extractvalue %str { ptr @.str.13, i64 20 }, 1
+  %t180 = insertvalue { ptr, ptr } undef, ptr @v_main.main.lambda2.plain, 0
+  %t181 = insertvalue { ptr, ptr } %t180, ptr null, 1
+  %t182 = extractvalue %str { ptr @.str.11, i64 17 }, 0
+  %t183 = extractvalue %str { ptr @.str.11, i64 17 }, 1
   call void @veles_call_push(ptr %t182)
-  call void @v_std.io.println(%str %t181)
+  %t184 = call ptr @v_std.prelude.extend.List_T.map_T_main.Token_i64_Never.plain(ptr %a1, { ptr, ptr } %t181)
   call void @veles_call_pop()
-  store { ptr, i64, i64, i64, ptr, i64, i64 } zeroinitializer, ptr %a184
-  %t185 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %a184, i32 0, i32 3
-  store i64 24, ptr %t185
-  %t186 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %a184, i32 0, i32 4
-  store ptr @adesc.main.Failure, ptr %t186
-  store ptr %a184, ptr %a187
-  %t188 = call ptr @veles_list_new(ptr @adesc.i64, i64 3)
-  store i64 5, ptr %a189
-  call void @veles_list_push(ptr %t188, ptr %a189)
-  store i64 -1, ptr %a189
-  call void @veles_list_push(ptr %t188, ptr %a189)
-  store i64 5000, ptr %a189
-  call void @veles_list_push(ptr %t188, ptr %a189)
-  store ptr %t188, ptr %a190
-  store i64 0, ptr %a191
-  br label %loop.cond.41
-loop.cond.41:
-  %t192 = load i64, ptr %a191
-  %t193 = load ptr, ptr %a190
-  %t194 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t193, i32 0, i32 1
-  %t195 = load i64, ptr %t194
-  %t196 = icmp slt i64 %t192, %t195
-  br i1 %t196, label %loop.body.44, label %loop.end.43
-loop.body.44:
-  %t197 = load ptr, ptr %a190
-  %t198 = load i64, ptr %a191
-  %t199 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t197, i32 0, i32 1
-  %t200 = load i64, ptr %t199
-  %t201 = icmp ult i64 %t198, %t200
-  br i1 %t201, label %idx.ok.45, label %idx.bad.46, !prof !{!"branch_weights", i32 2000, i32 1}
-idx.bad.46:
-  %t202 = extractvalue %str { ptr @.str.14, i64 12 }, 0
-  %t203 = extractvalue %str { ptr @.str.14, i64 12 }, 1
-  call void @veles_list_index_panic(ptr %t197, i64 %t198, ptr %t202, i64 %t203)
+  store ptr %t184, ptr %a185
+  %t186 = extractvalue %str { ptr @.str.12, i64 17 }, 0
+  %t187 = extractvalue %str { ptr @.str.12, i64 17 }, 1
+  call void @veles_call_push(ptr %t186)
+  %t188 = call i64 @v_std.prelude.extend.List_i64.sum(ptr %a185)
+  call void @veles_call_pop()
+  %t190 = call i64 @veles_i64_format(ptr %a189, i64 %t188)
+  %t191 = insertvalue %str undef, ptr %a189, 0
+  %t192 = insertvalue %str %t191, i64 %t190, 1
+  %t195 = getelementptr [1 x %str], ptr %a194, i64 0, i64 0
+  store %str %t192, ptr %t195
+  call void @veles_string_concat_n(ptr %a193, ptr %a194, i64 1)
+  %t196 = load %str, ptr %a193
+  %t197 = extractvalue %str { ptr @.str.13, i64 20 }, 0
+  %t198 = extractvalue %str { ptr @.str.13, i64 20 }, 1
+  call void @veles_call_push(ptr %t197)
+  call void @v_std.io.println(%str %t196)
+  call void @veles_call_pop()
+  store { ptr, i64, i64, i64, ptr, i64, i64 } zeroinitializer, ptr %a199
+  %t200 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %a199, i32 0, i32 3
+  store i64 24, ptr %t200
+  %t201 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %a199, i32 0, i32 4
+  store ptr @adesc.main.Failure, ptr %t201
+  store ptr %a199, ptr %a202
+  store { ptr, i64, i64, i64, ptr, i64, i64 } zeroinitializer, ptr %a203
+  %t204 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %a203, i32 0, i32 3
+  store i64 8, ptr %t204
+  %t205 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %a203, i32 0, i32 4
+  store ptr @adesc.i64, ptr %t205
+  call void @veles_list_reserve(ptr %a203, i64 3)
+  store i64 5, ptr %a206
+  call void @veles_list_push(ptr %a203, ptr %a206)
+  store i64 -1, ptr %a206
+  call void @veles_list_push(ptr %a203, ptr %a206)
+  store i64 5000, ptr %a206
+  call void @veles_list_push(ptr %a203, ptr %a206)
+  store ptr %a203, ptr %a207
+  %t208 = load ptr, ptr %a207
+  %t209 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t208, i32 0, i32 6
+  %t210 = load i64, ptr %t209
+  %t211 = and i64 %t210, 12
+  %t212 = icmp eq i64 %t211, 0
+  store i64 0, ptr %a213
+  br i1 %t212, label %lend.set.47, label %lend.done.48
+lend.set.47:
+  %t214 = or i64 %t210, 8
+  store i64 %t214, ptr %t209
+  store i64 1, ptr %a213
+  br label %lend.done.48
+lend.done.48:
+  %t215 = load i64, ptr %a213
+  store i64 %t215, ptr %a216
+  store i64 0, ptr %a217
+  br label %loop.cond.49
+loop.cond.49:
+  %t218 = load i64, ptr %a217
+  %t219 = load ptr, ptr %a207
+  %t220 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t219, i32 0, i32 1
+  %t221 = load i64, ptr %t220
+  %t222 = icmp slt i64 %t218, %t221
+  br i1 %t222, label %loop.body.52, label %loop.end.51
+loop.body.52:
+  %t223 = load ptr, ptr %a207
+  %t224 = load i64, ptr %a217
+  %t225 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t223, i32 0, i32 1
+  %t226 = load i64, ptr %t225
+  %t227 = icmp ult i64 %t224, %t226
+  br i1 %t227, label %idx.ok.53, label %idx.bad.54, !prof !{!"branch_weights", i32 2000, i32 1}
+idx.bad.54:
+  %t228 = extractvalue %str { ptr @.str.14, i64 12 }, 0
+  %t229 = extractvalue %str { ptr @.str.14, i64 12 }, 1
+  call void @veles_list_index_panic(ptr %t223, i64 %t224, ptr %t228, i64 %t229)
   unreachable
-idx.ok.45:
-  %t204 = load ptr, ptr %t197
-  %t205 = getelementptr inbounds [8 x i8], ptr %t204, i64 %t198
-  %t206 = load i64, ptr %t205
-  store i64 %t206, ptr %a207
-  %t208 = load i64, ptr %a207
-  %t209 = extractvalue %str { ptr @.str.15, i64 18 }, 0
-  %t210 = extractvalue %str { ptr @.str.15, i64 18 }, 1
-  call void @veles_call_push(ptr %t209)
-  %t211 = call %V._prelude_.Result_i64_main.Malformed_main.Overflow_ @v_main.limit(i64 %t208)
+idx.ok.53:
+  %t230 = load ptr, ptr %t223
+  %t231 = getelementptr inbounds [8 x i8], ptr %t230, i64 %t224
+  %t232 = load i64, ptr %t231
+  store i64 %t232, ptr %a233
+  %t234 = load i64, ptr %a233
+  %t235 = extractvalue %str { ptr @.str.15, i64 18 }, 0
+  %t236 = extractvalue %str { ptr @.str.15, i64 18 }, 1
+  call void @veles_call_push(ptr %t235)
+  %t237 = call %V._prelude_.Result_i64_main.Malformed_main.Overflow_ @v_main.limit(i64 %t234)
   call void @veles_call_pop()
-  store %V._prelude_.Result_i64_main.Malformed_main.Overflow_ %t211, ptr %a212
-  %t214 = load %V._prelude_.Result_i64_main.Malformed_main.Overflow_, ptr %a212
-  %t215 = extractvalue %V._prelude_.Result_i64_main.Malformed_main.Overflow_ %t214, 0
-  %t216 = icmp eq i32 %t215, 1
-  br i1 %t216, label %if.then.47, label %if.else.49
-if.then.47:
-  %t217 = getelementptr inbounds %V._prelude_.Result_i64_main.Malformed_main.Overflow_, ptr %a212, i32 0, i32 1
-  %t218 = getelementptr inbounds %S._prelude_.Err_i64_main.Malformed_main.Overflow_, ptr %t217, i32 0, i32 0
-  %t219 = load %U.main.Malformed_main.Overflow, ptr %t218
-  store %U.main.Malformed_main.Overflow %t219, ptr %a220
-  %t221 = load %U.main.Malformed_main.Overflow, ptr %a220
-  store %U.main.Malformed_main.Overflow %t221, ptr %a222
-  br label %when.arm.51
-when.arm.51:
-  %t223 = load %U.main.Malformed_main.Overflow, ptr %a222
-  %t224 = extractvalue %U.main.Malformed_main.Overflow %t223, 0
-  %t225 = icmp eq i32 %t224, 1
-  br i1 %t225, label %when.bind.54, label %when.arm.52
-when.bind.54:
-  br label %when.body.53
-when.body.53:
-  %t226 = load %U.main.Malformed_main.Overflow, ptr %a220
-  store %U.main.Malformed_main.Overflow %t226, ptr %a227
-  %t228 = getelementptr inbounds %U.main.Malformed_main.Overflow, ptr %a227, i32 0, i32 1
-  %t229 = load %S.main.Overflow, ptr %t228
-  %t230 = extractvalue %S.main.Overflow %t229, 1
-  %t232 = call i64 @veles_i64_format(ptr %a231, i64 %t230)
-  %t233 = insertvalue %str undef, ptr %a231, 0
-  %t234 = insertvalue %str %t233, i64 %t232, 1
-  %t236 = extractvalue %str { ptr @.str.16, i64 9 }, 0
-  %t237 = extractvalue %str { ptr @.str.16, i64 9 }, 1
-  %t238 = extractvalue %str %t234, 0
-  %t239 = extractvalue %str %t234, 1
-  call void @veles_string_concat(ptr %a235, ptr %t236, i64 %t237, ptr %t238, i64 %t239)
-  %t240 = load %str, ptr %a235
-  %t241 = extractvalue %str { ptr @.str.17, i64 21 }, 0
-  %t242 = extractvalue %str { ptr @.str.17, i64 21 }, 1
-  call void @veles_call_push(ptr %t241)
-  call void @v_std.io.println(%str %t240)
+  store %V._prelude_.Result_i64_main.Malformed_main.Overflow_ %t237, ptr %a238
+  %t240 = load %V._prelude_.Result_i64_main.Malformed_main.Overflow_, ptr %a238
+  %t241 = extractvalue %V._prelude_.Result_i64_main.Malformed_main.Overflow_ %t240, 0
+  %t242 = icmp eq i32 %t241, 1
+  br i1 %t242, label %if.then.55, label %if.else.57
+if.then.55:
+  %t243 = getelementptr inbounds %V._prelude_.Result_i64_main.Malformed_main.Overflow_, ptr %a238, i32 0, i32 1
+  %t244 = getelementptr inbounds %S._prelude_.Err_i64_main.Malformed_main.Overflow_, ptr %t243, i32 0, i32 0
+  %t245 = load %U.main.Malformed_main.Overflow, ptr %t244
+  store %U.main.Malformed_main.Overflow %t245, ptr %a246
+  %t247 = load %U.main.Malformed_main.Overflow, ptr %a246
+  store %U.main.Malformed_main.Overflow %t247, ptr %a248
+  br label %when.arm.59
+when.arm.59:
+  %t249 = load %U.main.Malformed_main.Overflow, ptr %a248
+  %t250 = extractvalue %U.main.Malformed_main.Overflow %t249, 0
+  %t251 = icmp eq i32 %t250, 1
+  br i1 %t251, label %when.bind.62, label %when.arm.60
+when.bind.62:
+  br label %when.body.61
+when.body.61:
+  %t252 = load %U.main.Malformed_main.Overflow, ptr %a246
+  store %U.main.Malformed_main.Overflow %t252, ptr %a253
+  %t254 = getelementptr inbounds %U.main.Malformed_main.Overflow, ptr %a253, i32 0, i32 1
+  %t255 = load %S.main.Overflow, ptr %t254
+  %t256 = extractvalue %S.main.Overflow %t255, 1
+  %t258 = call i64 @veles_i64_format(ptr %a257, i64 %t256)
+  %t259 = insertvalue %str undef, ptr %a257, 0
+  %t260 = insertvalue %str %t259, i64 %t258, 1
+  %t262 = extractvalue %str { ptr @.str.16, i64 9 }, 0
+  %t263 = extractvalue %str { ptr @.str.16, i64 9 }, 1
+  %t264 = extractvalue %str %t260, 0
+  %t265 = extractvalue %str %t260, 1
+  call void @veles_string_concat(ptr %a261, ptr %t262, i64 %t263, ptr %t264, i64 %t265)
+  %t266 = load %str, ptr %a261
+  %t267 = extractvalue %str { ptr @.str.17, i64 21 }, 0
+  %t268 = extractvalue %str { ptr @.str.17, i64 21 }, 1
+  call void @veles_call_push(ptr %t267)
+  call void @v_std.io.println(%str %t266)
   call void @veles_call_pop()
-  br label %when.end.50
-when.arm.52:
-  %t243 = load %U.main.Malformed_main.Overflow, ptr %a222
-  %t244 = extractvalue %U.main.Malformed_main.Overflow %t243, 0
-  %t245 = icmp eq i32 %t244, 0
-  br i1 %t245, label %when.bind.57, label %when.arm.55
-when.bind.57:
-  br label %when.body.56
-when.body.56:
-  %t246 = load %U.main.Malformed_main.Overflow, ptr %a220
-  store %U.main.Malformed_main.Overflow %t246, ptr %a247
-  %t248 = getelementptr inbounds %U.main.Malformed_main.Overflow, ptr %a247, i32 0, i32 1
-  %t249 = load %S.main.Malformed, ptr %t248
-  %t250 = extractvalue %S.main.Malformed %t249, 0
-  %t252 = extractvalue %str { ptr @.str.18, i64 10 }, 0
-  %t253 = extractvalue %str { ptr @.str.18, i64 10 }, 1
-  %t254 = extractvalue %str %t250, 0
-  %t255 = extractvalue %str %t250, 1
-  call void @veles_string_concat_shared(ptr %a251, ptr %t252, i64 %t253, ptr %t254, i64 %t255)
-  %t256 = load %str, ptr %a251
-  %t257 = extractvalue %str { ptr @.str.19, i64 21 }, 0
-  %t258 = extractvalue %str { ptr @.str.19, i64 21 }, 1
-  call void @veles_call_push(ptr %t257)
-  call void @v_std.io.println(%str %t256)
+  br label %when.end.58
+when.arm.60:
+  %t269 = load %U.main.Malformed_main.Overflow, ptr %a248
+  %t270 = extractvalue %U.main.Malformed_main.Overflow %t269, 0
+  %t271 = icmp eq i32 %t270, 0
+  br i1 %t271, label %when.bind.65, label %when.arm.63
+when.bind.65:
+  br label %when.body.64
+when.body.64:
+  %t272 = load %U.main.Malformed_main.Overflow, ptr %a246
+  store %U.main.Malformed_main.Overflow %t272, ptr %a273
+  %t274 = getelementptr inbounds %U.main.Malformed_main.Overflow, ptr %a273, i32 0, i32 1
+  %t275 = load %S.main.Malformed, ptr %t274
+  %t276 = extractvalue %S.main.Malformed %t275, 0
+  %t278 = extractvalue %str { ptr @.str.18, i64 10 }, 0
+  %t279 = extractvalue %str { ptr @.str.18, i64 10 }, 1
+  %t280 = extractvalue %str %t276, 0
+  %t281 = extractvalue %str %t276, 1
+  call void @veles_string_concat_shared(ptr %a277, ptr %t278, i64 %t279, ptr %t280, i64 %t281)
+  %t282 = load %str, ptr %a277
+  %t283 = extractvalue %str { ptr @.str.19, i64 21 }, 0
+  %t284 = extractvalue %str { ptr @.str.19, i64 21 }, 1
+  call void @veles_call_push(ptr %t283)
+  call void @v_std.io.println(%str %t282)
   call void @veles_call_pop()
-  br label %when.end.50
-when.arm.55:
-  %t259 = extractvalue %str { ptr @.str.3, i64 33 }, 0
-  %t260 = extractvalue %str { ptr @.str.3, i64 33 }, 1
-  %t261 = extractvalue %str { ptr @.str.20, i64 12 }, 0
-  %t262 = extractvalue %str { ptr @.str.20, i64 12 }, 1
-  call void @veles_panic_at(ptr %t259, i64 %t260, ptr %t261, i64 %t262)
+  br label %when.end.58
+when.arm.63:
+  %t285 = extractvalue %str { ptr @.str.3, i64 33 }, 0
+  %t286 = extractvalue %str { ptr @.str.3, i64 33 }, 1
+  %t287 = extractvalue %str { ptr @.str.20, i64 12 }, 0
+  %t288 = extractvalue %str { ptr @.str.20, i64 12 }, 1
+  call void @veles_panic_at(ptr %t285, i64 %t286, ptr %t287, i64 %t288)
   unreachable
-when.end.50:
-  %t263 = load ptr, ptr %a187
-  %t264 = load %U.main.Malformed_main.Overflow, ptr %a220
-  %t265 = insertvalue %S.main.Failure undef, %U.main.Malformed_main.Overflow %t264, 0
-  %t266 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t263, i32 0, i32 1
-  %t267 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t263, i32 0, i32 2
-  %t268 = load i64, ptr %t266
-  %t269 = load i64, ptr %t267
-  %t270 = icmp slt i64 %t268, %t269
-  br i1 %t270, label %push.fast.58, label %push.grow.59, !prof !{!"branch_weights", i32 2000, i32 1}
-push.fast.58:
-  %t271 = load ptr, ptr %t263
-  %t272 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t263, i32 0, i32 3
-  %t273 = load i64, ptr %t272
-  %t274 = mul i64 %t273, %t268
-  %t275 = getelementptr inbounds i8, ptr %t271, i64 %t274
-  store %S.main.Failure %t265, ptr %t275
-  %t276 = add i64 %t268, 1
-  store i64 %t276, ptr %t266
-  %t277 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t263, i32 0, i32 5
-  %t278 = load i64, ptr %t277
-  %t279 = add i64 %t278, 1
-  store i64 %t279, ptr %t277
-  br label %push.done.60
-push.grow.59:
-  store %S.main.Failure %t265, ptr %a280
-  call void @veles_list_push(ptr %t263, ptr %a280)
-  br label %push.done.60
-push.done.60:
-  br label %loop.post.42
-if.else.49:
-  %t281 = getelementptr inbounds %V._prelude_.Result_i64_main.Malformed_main.Overflow_, ptr %a212, i32 0, i32 1
-  %t282 = getelementptr inbounds %S._prelude_.Ok_i64_main.Malformed_main.Overflow_, ptr %t281, i32 0, i32 0
-  %t283 = load i64, ptr %t282
-  store i64 %t283, ptr %a213
-  br label %if.end.48
-if.end.48:
-  %t284 = load i64, ptr %a213
-  %t285 = load i64, ptr %a207
-  %t287 = call i64 @veles_i64_format(ptr %a286, i64 %t285)
-  %t288 = insertvalue %str undef, ptr %a286, 0
-  %t289 = insertvalue %str %t288, i64 %t287, 1
-  %t291 = extractvalue %str { ptr @.str.21, i64 5 }, 0
-  %t292 = extractvalue %str { ptr @.str.21, i64 5 }, 1
-  %t293 = extractvalue %str %t289, 0
-  %t294 = extractvalue %str %t289, 1
-  call void @veles_string_concat(ptr %a290, ptr %t291, i64 %t292, ptr %t293, i64 %t294)
-  %t295 = load %str, ptr %a290
-  %t296 = extractvalue %str { ptr @.str.22, i64 20 }, 0
-  %t297 = extractvalue %str { ptr @.str.22, i64 20 }, 1
-  call void @veles_call_push(ptr %t296)
-  call void @v_std.io.println(%str %t295)
-  call void @veles_call_pop()
-  br label %loop.post.42
-loop.post.42:
-  %t298 = load i64, ptr %a191
-  %t299 = add i64 %t298, 1
-  store i64 %t299, ptr %a191
-  %t300 = load volatile i32, ptr @veles_attention_line, align 64
-  %t301 = icmp ne i32 %t300, 0
-  br i1 %t301, label %safepoint.61, label %safepoint.on.62, !prof !{!"branch_weights", i32 1, i32 100000}
-safepoint.61:
-  call void @veles_backedge_plain()
-  br label %safepoint.on.62
-safepoint.on.62:
-  br label %loop.cond.41
-loop.end.43:
-  %t302 = load ptr, ptr %a187
-  %t303 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t302, i32 0, i32 1
+when.end.58:
+  %t289 = load ptr, ptr %a202
+  %t290 = load %U.main.Malformed_main.Overflow, ptr %a246
+  %t291 = insertvalue %S.main.Failure undef, %U.main.Malformed_main.Overflow %t290, 0
+  %t292 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t289, i32 0, i32 1
+  %t293 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t289, i32 0, i32 2
+  %t294 = load i64, ptr %t292
+  %t295 = load i64, ptr %t293
+  %t296 = icmp slt i64 %t294, %t295
+  br i1 %t296, label %push.fast.66, label %push.grow.67, !prof !{!"branch_weights", i32 2000, i32 1}
+push.fast.66:
+  %t297 = load ptr, ptr %t289
+  %t298 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t289, i32 0, i32 3
+  %t299 = load i64, ptr %t298
+  %t300 = mul i64 %t299, %t294
+  %t301 = getelementptr inbounds i8, ptr %t297, i64 %t300
+  store %S.main.Failure %t291, ptr %t301
+  %t302 = add i64 %t294, 1
+  store i64 %t302, ptr %t292
+  %t303 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t289, i32 0, i32 5
   %t304 = load i64, ptr %t303
-  %t306 = call i64 @veles_i64_format(ptr %a305, i64 %t304)
-  %t307 = insertvalue %str undef, ptr %a305, 0
-  %t308 = insertvalue %str %t307, i64 %t306, 1
-  %t310 = extractvalue %str %t308, 0
-  %t311 = extractvalue %str %t308, 1
-  %t312 = extractvalue %str { ptr @.str.23, i64 7 }, 0
-  %t313 = extractvalue %str { ptr @.str.23, i64 7 }, 1
-  call void @veles_string_concat(ptr %a309, ptr %t310, i64 %t311, ptr %t312, i64 %t313)
-  %t314 = load %str, ptr %a309
-  %t315 = extractvalue %str { ptr @.str.24, i64 20 }, 0
-  %t316 = extractvalue %str { ptr @.str.24, i64 20 }, 1
-  call void @veles_call_push(ptr %t315)
-  call void @v_std.io.println(%str %t314)
+  %t305 = add i64 %t304, 1
+  store i64 %t305, ptr %t303
+  br label %push.done.68
+push.grow.67:
+  store %S.main.Failure %t291, ptr %a306
+  call void @veles_list_push(ptr %t289, ptr %a306)
+  br label %push.done.68
+push.done.68:
+  br label %loop.post.50
+if.else.57:
+  %t307 = getelementptr inbounds %V._prelude_.Result_i64_main.Malformed_main.Overflow_, ptr %a238, i32 0, i32 1
+  %t308 = getelementptr inbounds %S._prelude_.Ok_i64_main.Malformed_main.Overflow_, ptr %t307, i32 0, i32 0
+  %t309 = load i64, ptr %t308
+  store i64 %t309, ptr %a239
+  br label %if.end.56
+if.end.56:
+  %t310 = load i64, ptr %a239
+  %t311 = load i64, ptr %a233
+  %t313 = call i64 @veles_i64_format(ptr %a312, i64 %t311)
+  %t314 = insertvalue %str undef, ptr %a312, 0
+  %t315 = insertvalue %str %t314, i64 %t313, 1
+  %t317 = extractvalue %str { ptr @.str.21, i64 5 }, 0
+  %t318 = extractvalue %str { ptr @.str.21, i64 5 }, 1
+  %t319 = extractvalue %str %t315, 0
+  %t320 = extractvalue %str %t315, 1
+  call void @veles_string_concat(ptr %a316, ptr %t317, i64 %t318, ptr %t319, i64 %t320)
+  %t321 = load %str, ptr %a316
+  %t322 = extractvalue %str { ptr @.str.22, i64 20 }, 0
+  %t323 = extractvalue %str { ptr @.str.22, i64 20 }, 1
+  call void @veles_call_push(ptr %t322)
+  call void @v_std.io.println(%str %t321)
+  call void @veles_call_pop()
+  br label %loop.post.50
+loop.post.50:
+  %t324 = load i64, ptr %a217
+  %t325 = add i64 %t324, 1
+  store i64 %t325, ptr %a217
+  %t326 = load volatile i32, ptr @veles_attention_line, align 64
+  %t327 = icmp ne i32 %t326, 0
+  br i1 %t327, label %safepoint.69, label %safepoint.on.70, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.69:
+  call void @veles_backedge_plain()
+  br label %safepoint.on.70
+safepoint.on.70:
+  br label %loop.cond.49
+loop.end.51:
+  %t328 = load ptr, ptr %a207
+  %t329 = load i64, ptr %a216
+  %t330 = icmp ne i64 %t329, 0
+  br i1 %t330, label %unlend.clear.71, label %unlend.done.72
+unlend.clear.71:
+  %t331 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t328, i32 0, i32 6
+  %t332 = load i64, ptr %t331
+  %t333 = and i64 %t332, -9
+  store i64 %t333, ptr %t331
+  br label %unlend.done.72
+unlend.done.72:
+  %t334 = load ptr, ptr %a202
+  %t335 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t334, i32 0, i32 1
+  %t336 = load i64, ptr %t335
+  %t338 = call i64 @veles_i64_format(ptr %a337, i64 %t336)
+  %t339 = insertvalue %str undef, ptr %a337, 0
+  %t340 = insertvalue %str %t339, i64 %t338, 1
+  %t342 = extractvalue %str %t340, 0
+  %t343 = extractvalue %str %t340, 1
+  %t344 = extractvalue %str { ptr @.str.23, i64 7 }, 0
+  %t345 = extractvalue %str { ptr @.str.23, i64 7 }, 1
+  call void @veles_string_concat(ptr %a341, ptr %t342, i64 %t343, ptr %t344, i64 %t345)
+  %t346 = load %str, ptr %a341
+  %t347 = extractvalue %str { ptr @.str.24, i64 20 }, 0
+  %t348 = extractvalue %str { ptr @.str.24, i64 20 }, 1
+  call void @veles_call_push(ptr %t347)
+  call void @v_std.io.println(%str %t346)
   call void @veles_call_pop()
   ret void
 }
@@ -731,9 +807,13 @@ entry:
   %a2 = alloca { ptr, ptr }
   %a4 = alloca ptr
   %a12 = alloca ptr
-  %a13 = alloca i64
-  %a29 = alloca %V.main.Token
-  %a50 = alloca i64
+  %a18 = alloca i64
+  %a21 = alloca i64
+  %a22 = alloca i64
+  %a38 = alloca %V.main.Token
+  %a40 = alloca %V.main.Token
+  %a46 = alloca %V.main.Token
+  %a63 = alloca i64
   store ptr %p0, ptr %a1
   store { ptr, ptr } %p1, ptr %a2
   %t3 = call ptr @veles_list_new(ptr @adesc.i64, i64 0)
@@ -747,79 +827,111 @@ entry:
   %t10 = load ptr, ptr %a1
   %t11 = load ptr, ptr %t10
   store ptr %t11, ptr %a12
-  store i64 0, ptr %a13
-  br label %loop.cond.1
-loop.cond.1:
-  %t14 = load i64, ptr %a13
-  %t15 = load ptr, ptr %a12
-  %t16 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t15, i32 0, i32 1
-  %t17 = load i64, ptr %t16
-  %t18 = icmp slt i64 %t14, %t17
-  br i1 %t18, label %loop.body.4, label %loop.end.3
-loop.body.4:
-  %t19 = load ptr, ptr %a12
-  %t20 = load i64, ptr %a13
-  %t21 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t19, i32 0, i32 1
-  %t22 = load i64, ptr %t21
-  %t23 = icmp ult i64 %t20, %t22
-  br i1 %t23, label %idx.ok.5, label %idx.bad.6, !prof !{!"branch_weights", i32 2000, i32 1}
-idx.bad.6:
-  %t24 = extractvalue %str { ptr @.str.25, i64 28 }, 0
-  %t25 = extractvalue %str { ptr @.str.25, i64 28 }, 1
-  call void @veles_list_index_panic(ptr %t19, i64 %t20, ptr %t24, i64 %t25)
+  %t13 = load ptr, ptr %a12
+  %t14 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t13, i32 0, i32 6
+  %t15 = load i64, ptr %t14
+  %t16 = and i64 %t15, 12
+  %t17 = icmp eq i64 %t16, 0
+  store i64 0, ptr %a18
+  br i1 %t17, label %lend.set.1, label %lend.done.2
+lend.set.1:
+  %t19 = or i64 %t15, 8
+  store i64 %t19, ptr %t14
+  store i64 1, ptr %a18
+  br label %lend.done.2
+lend.done.2:
+  %t20 = load i64, ptr %a18
+  store i64 %t20, ptr %a21
+  store i64 0, ptr %a22
+  br label %loop.cond.3
+loop.cond.3:
+  %t23 = load i64, ptr %a22
+  %t24 = load ptr, ptr %a12
+  %t25 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t24, i32 0, i32 1
+  %t26 = load i64, ptr %t25
+  %t27 = icmp slt i64 %t23, %t26
+  br i1 %t27, label %loop.body.6, label %loop.end.5
+loop.body.6:
+  %t28 = load ptr, ptr %a12
+  %t29 = load i64, ptr %a22
+  %t30 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t28, i32 0, i32 1
+  %t31 = load i64, ptr %t30
+  %t32 = icmp ult i64 %t29, %t31
+  br i1 %t32, label %idx.ok.7, label %idx.bad.8, !prof !{!"branch_weights", i32 2000, i32 1}
+idx.bad.8:
+  %t33 = extractvalue %str { ptr @.str.25, i64 28 }, 0
+  %t34 = extractvalue %str { ptr @.str.25, i64 28 }, 1
+  call void @veles_list_index_panic(ptr %t28, i64 %t29, ptr %t33, i64 %t34)
   unreachable
-idx.ok.5:
-  %t26 = load ptr, ptr %t19
-  %t27 = getelementptr inbounds [32 x i8], ptr %t26, i64 %t20
-  %t28 = load %V.main.Token, ptr %t27
-  store %V.main.Token %t28, ptr %a29
-  %t30 = load ptr, ptr %a4
-  %t31 = load { ptr, ptr }, ptr %a2
-  %t32 = extractvalue { ptr, ptr } %t31, 0
-  %t33 = extractvalue { ptr, ptr } %t31, 1
-  %t34 = load %V.main.Token, ptr %a29
-  %t35 = call i64 %t32(ptr %t33, %V.main.Token %t34)
-  %t36 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t30, i32 0, i32 1
-  %t37 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t30, i32 0, i32 2
-  %t38 = load i64, ptr %t36
-  %t39 = load i64, ptr %t37
-  %t40 = icmp slt i64 %t38, %t39
-  br i1 %t40, label %push.fast.7, label %push.grow.8, !prof !{!"branch_weights", i32 2000, i32 1}
-push.fast.7:
-  %t41 = load ptr, ptr %t30
-  %t42 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t30, i32 0, i32 3
-  %t43 = load i64, ptr %t42
-  %t44 = mul i64 %t43, %t38
-  %t45 = getelementptr inbounds i8, ptr %t41, i64 %t44
-  store i64 %t35, ptr %t45
-  %t46 = add i64 %t38, 1
-  store i64 %t46, ptr %t36
-  %t47 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t30, i32 0, i32 5
-  %t48 = load i64, ptr %t47
-  %t49 = add i64 %t48, 1
-  store i64 %t49, ptr %t47
-  br label %push.done.9
-push.grow.8:
-  store i64 %t35, ptr %a50
-  call void @veles_list_push(ptr %t30, ptr %a50)
-  br label %push.done.9
-push.done.9:
-  br label %loop.post.2
-loop.post.2:
-  %t51 = load i64, ptr %a13
-  %t52 = add i64 %t51, 1
-  store i64 %t52, ptr %a13
-  %t53 = load volatile i32, ptr @veles_attention_line, align 64
-  %t54 = icmp ne i32 %t53, 0
-  br i1 %t54, label %safepoint.10, label %safepoint.on.11, !prof !{!"branch_weights", i32 1, i32 100000}
-safepoint.10:
+idx.ok.7:
+  %t35 = load ptr, ptr %t28
+  %t36 = getelementptr inbounds [32 x i8], ptr %t35, i64 %t29
+  %t37 = load %V.main.Token, ptr %t36
+  store %V.main.Token %t37, ptr %a38
+  call void @share.main.Token(ptr %a38)
+  %t39 = load %V.main.Token, ptr %a38
+  store %V.main.Token %t39, ptr %a40
+  %t41 = load ptr, ptr %a4
+  %t42 = load { ptr, ptr }, ptr %a2
+  %t43 = extractvalue { ptr, ptr } %t42, 0
+  %t44 = extractvalue { ptr, ptr } %t42, 1
+  %t45 = load %V.main.Token, ptr %a40
+  store %V.main.Token %t45, ptr %a46
+  call void @share.main.Token(ptr %a46)
+  %t47 = load %V.main.Token, ptr %a46
+  %t48 = call i64 %t43(ptr %t44, %V.main.Token %t47)
+  %t49 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t41, i32 0, i32 1
+  %t50 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t41, i32 0, i32 2
+  %t51 = load i64, ptr %t49
+  %t52 = load i64, ptr %t50
+  %t53 = icmp slt i64 %t51, %t52
+  br i1 %t53, label %push.fast.9, label %push.grow.10, !prof !{!"branch_weights", i32 2000, i32 1}
+push.fast.9:
+  %t54 = load ptr, ptr %t41
+  %t55 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t41, i32 0, i32 3
+  %t56 = load i64, ptr %t55
+  %t57 = mul i64 %t56, %t51
+  %t58 = getelementptr inbounds i8, ptr %t54, i64 %t57
+  store i64 %t48, ptr %t58
+  %t59 = add i64 %t51, 1
+  store i64 %t59, ptr %t49
+  %t60 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t41, i32 0, i32 5
+  %t61 = load i64, ptr %t60
+  %t62 = add i64 %t61, 1
+  store i64 %t62, ptr %t60
+  br label %push.done.11
+push.grow.10:
+  store i64 %t48, ptr %a63
+  call void @veles_list_push(ptr %t41, ptr %a63)
+  br label %push.done.11
+push.done.11:
+  br label %loop.post.4
+loop.post.4:
+  %t64 = load i64, ptr %a22
+  %t65 = add i64 %t64, 1
+  store i64 %t65, ptr %a22
+  %t66 = load volatile i32, ptr @veles_attention_line, align 64
+  %t67 = icmp ne i32 %t66, 0
+  br i1 %t67, label %safepoint.12, label %safepoint.on.13, !prof !{!"branch_weights", i32 1, i32 100000}
+safepoint.12:
   call void @veles_backedge_plain()
-  br label %safepoint.on.11
-safepoint.on.11:
-  br label %loop.cond.1
-loop.end.3:
-  %t55 = load ptr, ptr %a4
-  ret ptr %t55
+  br label %safepoint.on.13
+safepoint.on.13:
+  br label %loop.cond.3
+loop.end.5:
+  %t68 = load ptr, ptr %a12
+  %t69 = load i64, ptr %a21
+  %t70 = icmp ne i64 %t69, 0
+  br i1 %t70, label %unlend.clear.14, label %unlend.done.15
+unlend.clear.14:
+  %t71 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t68, i32 0, i32 6
+  %t72 = load i64, ptr %t71
+  %t73 = and i64 %t72, -9
+  store i64 %t73, ptr %t71
+  br label %unlend.done.15
+unlend.done.15:
+  %t74 = load ptr, ptr %a4
+  ret ptr %t74
 }
 
 define i64 @v_main.main.lambda2.plain(ptr %env, %V.main.Token %p1) {
@@ -835,6 +947,40 @@ entry:
   %t6 = call i64 @v_main.weigh(%V.main.Token %t3)
   call void @veles_call_pop()
   ret i64 %t6
+}
+
+define internal void @share.main.Token(ptr %p) {
+entry:
+  %a7 = alloca ptr
+  %t2 = getelementptr inbounds %V.main.Token, ptr %p, i32 0, i32 0
+  %t1 = load i32, ptr %t2
+  %t3 = getelementptr inbounds %V.main.Token, ptr %p, i32 0, i32 1
+  %t4 = icmp eq i32 %t1, 2
+  br i1 %t4, label %share.variant.2, label %share.next.3
+share.variant.2:
+  %t5 = getelementptr inbounds %S.main.Names, ptr %t3, i32 0, i32 0
+  %t6 = load ptr, ptr %t5
+  store ptr %t6, ptr %a7
+  %t8 = icmp eq ptr %t6, null
+  br i1 %t8, label %share.done.6, label %share.test.4
+share.test.4:
+  %t9 = getelementptr inbounds { ptr, i64, i64, i64, ptr, i64, i64 }, ptr %t6, i32 0, i32 6
+  %t10 = load i64, ptr %t9
+  %t11 = and i64 %t10, 4
+  %t12 = icmp ne i64 %t11, 0
+  br i1 %t12, label %share.done.6, label %share.call.5
+share.call.5:
+  %t13 = call ptr @veles_list_share(ptr %t6, ptr null)
+  store ptr %t13, ptr %a7
+  br label %share.done.6
+share.done.6:
+  %t14 = load ptr, ptr %a7
+  store ptr %t14, ptr %t5
+  br label %share.done.1
+share.next.3:
+  br label %share.done.1
+share.done.1:
+  ret void
 }
 
 @.str.1 = private unnamed_addr constant [18 x i8] c"main.vs:34:23\00map\00"

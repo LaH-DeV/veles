@@ -69,7 +69,7 @@ public error StartError {
 // ---------------------------------------------------------------------------
 // logs
 
-val logQueue: Mutex<MutableList<LogData>> = newQueue<LogData>()
+val logQueue: Mutex<List<LogData>> = newQueue<LogData>()
 
 /// What `std/log` hands over for each line it writes; `severity` is
 /// OpenTelemetry's number (5 debug, 9 info, 13 warn, 17 error). Nothing
@@ -202,7 +202,7 @@ fun exportLoop(exporter: Exporter, resource: List<Attr>, interval: Duration) {
 fun flushAll(exporter: Exporter, resource: List<Attr>): bool suspends {
   var ok = true
   val spans = spanQueue.withLock(q => {
-    val all = q.toList()
+    val all = *q
     q.clear()
     all
   })
@@ -211,7 +211,7 @@ fun flushAll(exporter: Exporter, resource: List<Attr>): bool suspends {
     lost.update(n => n + spans.len())
   }
   val logs = logQueue.withLock(q => {
-    val all = q.toList()
+    val all = *q
     q.clear()
     all
   })

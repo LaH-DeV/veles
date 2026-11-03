@@ -5,8 +5,8 @@ use io { println }
 use time
 
 struct Interner {
-  ids:   MutableMap<string, i64> = [:]
-  names: MutableList<string> = []
+  ids:   Map<string, i64> = [:]
+  names: List<string> = []
 
   fun intern(name: string): i64 {
     val known = this.ids.get(name)
@@ -20,15 +20,15 @@ struct Interner {
 
 fun main() {
   // the spellings are built before the clock starts
-  val pool: MutableList<string> = []
+  val pool: List<string> = []
   loop (i in 0..<50000) pool.push("sym_${i * 7919 % 100003}_x")
-  val stream: MutableList<string> = []
+  val stream: List<string> = []
   var x: i64 = 88172645463325252
   loop (_ in 0..<1000000) {
     x ^= x << 13
     x ^= x >> 7
     x ^= x << 17
-    stream.push(pool.at((x & 0x7fffffff) % 50000) ?: "")
+    stream.push(pool.get((x & 0x7fffffff) % 50000) ?: "")
   }
 
   val (check, elapsed) = time.measure(() => {

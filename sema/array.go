@@ -46,6 +46,7 @@ func (f *fnCtx) arrayMethod(recv Expr, at *types.Array, name string, e *ast.Call
 		return &BlockExpr{exprBase{value.Type()}, &Block{Stmts: pre, Value: value, Type: value.Type()}}
 	}
 	lenOf := func(x Expr) Expr { return &Builtin{exprBase{types.TI64}, "list.len", []Expr{x}, span} }
+	name = f.accessName(e, name)
 	switch name {
 	case "len":
 		if !need(0) {
@@ -64,15 +65,44 @@ func (f *fnCtx) arrayMethod(recv Expr, at *types.Array, name string, e *ast.Call
 		// the valid indexes, `0..<N`: a range the bounds facts know (D62)
 		return &RangeLit{exprBase{&types.Range{Elem: types.TI64}}, i64c(0), i64c(uint64(n)), false}
 	case "toList", "toMutable":
+		if name == "toMutable" {
+			f.removedToMutable(e, "toList")
+		}
 		if !need(0) {
 			return bad()
 		}
-		return &Builtin{exprBase{&types.List{Elem: at.Elem, Mutable: name == "toMutable"}}, "array.toList", []Expr{recv}, span}
-	case "at":
+		return &Builtin{exprBase{&types.List{Elem: at.Elem}}, "array.toList", []Expr{recv}, span}
+	case "get":
 		if !need(1) {
 			return bad()
 		}
 		return f.arrayAt(recv, at, e)
+	case "at":
+		// a pointer to the element in the array's own storage, `(*T)?`: null
+		// out of range (D231); like `set`, it needs a place that may change
+		m, isMember := e.Fun.(*ast.MemberExpr)
+		if !isMember || !need(1) {
+			return bad()
+		}
+		place, _ := f.checkLValue(m.X, true)
+		if place == nil {
+			f.checkArgsLoosely(e.Args)
+			return bad()
+		}
+		pt := &types.Pointer{Elem: at.Elem}
+		rt := &types.Nullable{Elem: pt}
+		idx := f.newTemp(types.TI64)
+		pre := []Stmt{&VarDecl{Var: idx, Init: f.indexValue(e.Args[0].Value)}}
+		fromEnd := &Assign{Target: ref(idx), Value: &Binary{exprBase{types.TI64}, OpWrapAdd, ref(idx), i64c(uint64(n)), span}}
+		pre = append(pre, &ExprStmt{X: &If{exprBase{types.TUnit},
+			&Binary{exprBase{types.TBool}, OpLt, ref(idx), i64c(0), span},
+			&Block{Stmts: []Stmt{fromEnd}, Type: types.TUnit}, nil}})
+		inRange := &Binary{exprBase{types.TBool}, OpAnd,
+			&Binary{exprBase{types.TBool}, OpGe, ref(idx), i64c(0), span},
+			&Binary{exprBase{types.TBool}, OpLt, ref(idx), i64c(uint64(n)), span}, span}
+		elem := &Builtin{exprBase{at.Elem}, "list.ref", []Expr{place, ref(idx)}, span}
+		some := &SomeWrap{exprBase{rt}, &AddrOf{exprBase{pt}, elem}}
+		return wrap(pre, &If{exprBase{rt}, inRange, &Block{Value: some, Type: rt}, &Block{Value: &NullConst{exprBase{rt}}, Type: rt}})
 	case "first", "last":
 		if !need(0) {
 			return bad()
@@ -102,14 +132,14 @@ func (f *fnCtx) arrayMethod(recv Expr, at *types.Array, name string, e *ast.Call
 		}
 		var target Expr
 		if name == "set" {
-			target = f.listElemPlace(place, &types.List{Elem: at.Elem, Mutable: true}, e.Args[0].Value, span, true)
+			target = f.listElemPlace(place, &types.List{Elem: at.Elem}, e.Args[0].Value, span, true)
 		} else {
 			idx := f.checkExprTo(e.Args[0].Value, types.TI64)
 			target = &Builtin{exprBase{at.Elem}, "list.refUnchecked", []Expr{place, idx}, span}
 		}
 		v := f.checkExprTo(e.Args[1].Value, at.Elem)
 		return &BlockExpr{exprBase{types.TUnit}, &Block{Stmts: []Stmt{&Assign{Target: target, Value: v}}, Value: &UnitConst{exprBase{types.TUnit}}, Type: types.TUnit}}
-	case "atUnchecked":
+	case "getUnchecked":
 		f.requireUnsafeIndex(span, name)
 		if !need(1) {
 			return bad()
@@ -117,7 +147,7 @@ func (f *fnCtx) arrayMethod(recv Expr, at *types.Array, name string, e *ast.Call
 		idx := f.checkExprTo(e.Args[0].Value, types.TI64)
 		return &Builtin{exprBase{at.Elem}, "list.refUnchecked", []Expr{recv, idx}, span}
 	case "push", "pop", "clear", "reserve", "addFirst", "addLast", "insert", "remove", "removeAt":
-		f.errorf(span, "an Array has a fixed length, so '%s' has nothing to do; a MutableList grows and shrinks (D121)", name)
+		f.errorf(span, "an Array has a fixed length, so '%s' has nothing to do; a List grows and shrinks (D121)", name)
 		f.checkArgsLoosely(e.Args)
 		return bad()
 	}
@@ -133,7 +163,7 @@ func (f *fnCtx) arrayMethod(recv Expr, at *types.Array, name string, e *ast.Call
 	return f.listAdapter(recv, lt, name, e)
 }
 
-// arrayAt is `a.at(i)`: `T?`, null when out of range, a negative index
+// arrayAt is `a.get(i)`: `T?`, null when out of range, a negative index
 // counting from the end; `T` when the index is a constant in range.
 func (f *fnCtx) arrayAt(recv Expr, at *types.Array, e *ast.CallExpr) Expr {
 	span := e.Pos
@@ -163,7 +193,7 @@ func (f *fnCtx) arrayAt(recv Expr, at *types.Array, e *ast.CallExpr) Expr {
 			i += n
 		}
 		if !k.V.IsInt64() || i < 0 || i >= n {
-			f.errorf(arg.Span(), "index %s is out of range for '%s', so 'at' is always null (D121)", k.V, at)
+			f.errorf(arg.Span(), "index %s is out of range for '%s', so 'get' is always null (D121)", k.V, at)
 			return bad()
 		}
 		get := &Builtin{exprBase{at.Elem}, "list.get", []Expr{x, i64c(uint64(i))}, span}
@@ -208,7 +238,7 @@ func (f *fnCtx) arrayLoop(s *ast.LoopStmt, iter Expr, it *types.Array, lp *Loop,
 			return nil
 		}
 		if root != nil {
-			root.AddrTaken = true
+			root.heapPromote()
 			f.invalidatePaths(root)
 		}
 		ptrT := &types.Pointer{Elem: it}
@@ -261,9 +291,9 @@ func (f *fnCtx) arrayMake(at *types.Array, args []ast.Arg, span source.Span) Exp
 // array's elements are read from a copy of the array (D121).
 func (f *fnCtx) listTemp(recv Expr, lt *types.List) *Var {
 	if at, ok := recv.Type().(*types.Array); ok {
-		return f.newTemp(at)
+		return f.newLentTemp(at)
 	}
-	return f.newTemp(lt)
+	return f.newLentTemp(lt)
 }
 
 // arrayMakeCall is `Array<T, N>.make(value)`, or `Array.make(value)` where

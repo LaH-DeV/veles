@@ -11,7 +11,7 @@ import (
 // functions its `extend` clause brings — and there is none where the use
 // brings none.
 func TestExtensionHintFollowsTheExtendClause(t *testing.T) {
-	strx := "public extend string with fun shout(): string => this.toUpper()\n\npublic extend<T> List<T> with fun second(): T? => this.at(1)\n"
+	strx := "public extend string with fun shout(): string => this.toUpper()\n\npublic extend<T> List<T> with fun second(): T? => this.get(1)\n"
 	cases := []struct {
 		use  string
 		want string // "" when there is no hint at all

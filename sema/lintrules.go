@@ -399,7 +399,7 @@ type ruleCall struct {
 
 // walk calls every callback of every rule on the nodes of v, parents before
 // children.
-func (h *ruleHost) walk(ev *constEval, v reflect.Value, sets []*ruleSet, ctx ConstVal, reports *CList, onReport func(*ruleSet, ConstVal)) {
+func (h *ruleHost) walk(ev *constEval, v reflect.Value, sets []*ruleSet, ctx ConstVal, reports func() *CList, onReport func(*ruleSet, ConstVal)) {
 	switch v.Kind() {
 	case reflect.Interface:
 		if !v.IsNil() {
@@ -426,7 +426,7 @@ func (h *ruleHost) walk(ev *constEval, v reflect.Value, sets []*ruleSet, ctx Con
 	}
 }
 
-func (h *ruleHost) visit(ev *constEval, node, st reflect.Value, sets []*ruleSet, ctx ConstVal, reports *CList, onReport func(*ruleSet, ConstVal)) {
+func (h *ruleHost) visit(ev *constEval, node, st reflect.Value, sets []*ruleSet, ctx ConstVal, reports func() *CList, onReport func(*ruleSet, ConstVal)) {
 	name := st.Type().Name()
 	if n, ok := ruleGoName[name]; ok {
 		name = n
@@ -443,9 +443,9 @@ func (h *ruleHost) visit(ev *constEval, node, st reflect.Value, sets []*ruleSet,
 				return
 			}
 		}
-		before := len(reports.Elems)
+		before := len(reports().Elems)
 		ev.invokeWith(call.fn.Fn, []ConstVal{arg, ctx}, source.Span{}, call.fn)
-		for _, r := range reports.Elems[before:] {
+		for _, r := range reports().Elems[before:] {
 			onReport(set, r)
 		}
 	}
@@ -563,11 +563,15 @@ func (c *Checker) runLibraryLints(m *Module, lintMod *Module) (out []source.Diag
 		h := &ruleHost{c: c, lint: lintMod, file: f.Source, files: map[*source.File]ConstVal{}, back: map[*CStruct]*source.File{}, memo: map[ruleKey]ConstVal{}}
 		ev := c.newConstEval(source.Span{}, false)
 		ev.budget = budget
-		reports := &CList{T: &types.List{Elem: h.structT("Report")}, Elems: nil}
+		// the reports live behind a pointer (D231): every copy of the
+		// Context a rule is handed reports into the same list
+		listT := &types.List{Elem: h.structT("Report")}
+		var held ConstVal = &CList{T: listT, Elems: nil}
+		reports := func() *CList { return held.(*CList) }
 		ctxT := h.structT("Context")
 		ctx := &CStruct{T: ctxT, Fields: make([]ConstVal, len(ctxT.Fields))}
 		ctx.Fields[ruleField(ctxT, "file")] = h.fileVal(f.Source)
-		ctx.Fields[ruleField(ctxT, "reports")] = reports
+		ctx.Fields[ruleField(ctxT, "reported")] =&CPtr{T: &types.Pointer{Elem: listT}, get: func() ConstVal { return held }, set: func(v ConstVal) { held = v }}
 		ruleT := h.structT("Rule")
 		visT := h.structT("Visitor")
 		var sets []*ruleSet

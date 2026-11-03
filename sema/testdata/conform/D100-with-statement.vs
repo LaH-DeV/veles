@@ -23,7 +23,7 @@ struct Cache {
 
   fun keep() {
     with r = open(1)
-    this.last = r // error: 'r' cannot be stored in 'this.last', which outlives the block
+    this.last = r  // error: 'r' cannot be stored in 'this.last', which outlives the block
   }
 }
 
@@ -48,62 +48,64 @@ fun call(f: fun(): i64): i64 => f()
 
 fun lastStatement() {
   io.println("x")
-  with r = open(1) // warning: 'r' is closed as soon as it is opened
+  with r = open(1)  // warning: 'r' is closed as soon as it is opened
 }
 
 fun notCloseable() {
-  with r = NoClose(n: 1) // error: 'NoClose' is not Closeable
+  with r = NoClose(n: 1)  // error: 'NoClose' is not Closeable
   io.println("${r.n}")
 }
 
 fun returned(): Res {
   with r = open(1)
-  return r // error: 'r' cannot be returned: it is closed when its 'with' block ends
+  return r  // error: 'r' cannot be returned: it is closed when its 'with' block ends
 }
 
 fun blockValue(): Res {
   with r = open(1)
-  r // error: 'r' cannot be the value of its block
+  r  // error: 'r' cannot be the value of its block
 }
 
-fun blockFormValue(): Res => with (r = open(1)) { r } // error: 'r' cannot be the value of its block
+fun blockFormValue(): Res => with (r = open(1)) {
+  r  // error: 'r' cannot be the value of its block
+}
 
 fun aliased(): Res {
   with r = open(1)
   val again = r
-  return again // error: 'again' cannot be returned: it holds 'r'
+  return again  // error: 'again' cannot be returned: it holds 'r'
 }
 
 fun storedOutside() {
   var outer = open(0)
   with r = open(1)
-  outer = r // error: 'r' cannot be stored in 'outer', which outlives the block
+  outer = r  // error: 'r' cannot be stored in 'outer', which outlives the block
   io.println("${outer.n}")
 }
 
 fun storedInside() {
   with r = open(1)
   var inner = open(0)
-  inner = r // declared inside the block: it ends with the resource
+  inner = r  // declared inside the block: it ends with the resource
   io.println("${inner.n}")
 }
 
 fun inStruct(): Holder {
   with r = open(1)
-  return Holder(r) // error: 'r' cannot be returned
+  return Holder(r)  // error: 'r' cannot be returned
 }
 
-fun inCollection(list: MutableList<Res>) {
+fun inCollection(list: List<Res>) {
   with r = open(1)
-  list.push(r) // error: 'r' cannot be stored in a collection or sent on a channel
+  list.push(r)  // error: 'r' cannot be stored in a collection or sent on a channel
 }
 
-fun lambdaKept(fns: MutableList<fun(): i64>) {
+fun lambdaKept(fns: List<fun(): i64>) {
   with r = open(1)
-  fns.push(() => r.n) // error: this lambda captures 'r', which is closed when its 'with' block ends, so the lambda cannot be stored in a collection
+  fns.push(() => r.n)  // error: this lambda captures 'r', which is closed when its 'with' block ends, so the lambda cannot be stored in a collection
 }
 
-fun lambdaLent(xs: MutableList<i64>) {
+fun lambdaLent(xs: List<i64>) {
   with r = open(1)
   // a method that only calls what it is given, for the call: a hand-off
   xs.sortWith((a, b) => if (a + r.n < b) Ordering.Less else Ordering.Greater)
@@ -112,7 +114,7 @@ fun lambdaLent(xs: MutableList<i64>) {
 
 fun lambdaReturned(): fun(): i64 {
   with r = open(1)
-  return () => r.n // error: this lambda captures 'r', which is closed when its 'with' block ends, so the lambda cannot be returned
+  return () => r.n  // error: this lambda captures 'r', which is closed when its 'with' block ends, so the lambda cannot be returned
 }
 
 fun background(): i64 {
@@ -124,18 +126,18 @@ fun background(): i64 {
 
 fun taskReturned(): Task<i64> {
   with t = async work(1)
-  return t // error: 't' cannot be returned: it is cancelled when its 'with' block ends
+  return t  // error: 't' cannot be returned: it is cancelled when its 'with' block ends
 }
 
 fun bareAsync() {
   with t = async work(1)
-  val u = async work(2) // error: 'u' is not awaited on every path to the end of its block
+  val u = async work(2)  // error: 'u' is not awaited on every path to the end of its block
 }
 
 fun taskNotStartedHere() {
   scope {
     val t = async work(1)
-    with (u = t) { } // error: a task is a 'with' resource only where 'with' starts it
+    with (u = t) { }  // error: a task is a 'with' resource only where 'with' starts it
   }
 }
 
@@ -143,24 +145,27 @@ fun taskNotStartedHere() {
 fun closedByHand() {
   with r = open(1)
   io.println("${r.n}")
-  r.close() // error: 'r' is closed when its 'with' block ends; closing it here would close it twice
+  r.close()  // error: 'r' is closed when its 'with' block ends; closing it here would close it twice
 }
 
 fun closedThroughAlias() {
   with (r = open(1)) {
     val same = r
-    call(() => { same.close(); 0 }) // error: closing it here would close it twice
+    call(() => {
+      same.close()  // error: closing it here would close it twice
+      0
+    })
   }
 }
 
 fun closedPlain() {
-  val r = open(1) // not a `with`: closing it is the program's own business
+  val r = open(1)  // not a `with`: closing it is the program's own business
   r.close()
 }
 
 fun stoppedEarly() {
   with t = async work(1)
-  t.cancel() // a with-task may be stopped early; the block's end joins it
+  t.cancel()  // a with-task may be stopped early; the block's end joins it
 }
 
 fun inScope() {

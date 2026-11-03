@@ -258,20 +258,14 @@ func (f *fnCtx) closeTaskBlock() {
 // keep an argument: the element, key, value or the function making one.
 var storingMethods = map[string]bool{
 	"push": true, "set": true, "setUnchecked": true, "insert": true, "addAll": true, "fill": true,
-	"add": true, "getOrPut": true, "send": true, "trySend": true, "addFirst": true, "addLast": true,
+	"add": true, "atOrPut": true, "send": true, "trySend": true, "addFirst": true, "addLast": true,
 }
 
 func storesArguments(t types.Type) bool {
 	switch t := t.(type) {
 	case *types.Pointer:
 		return storesArguments(t.Elem)
-	case *types.List:
-		return t.Mutable
-	case *types.Map:
-		return t.Mutable
-	case *types.Set:
-		return t.Mutable
-	case *types.Channel:
+	case *types.List, *types.Map, *types.Set, *types.Channel:
 		return true
 	case *types.Struct:
 		return t.Module == "std.prelude" && (t.Name == "Deque" || t.Name == "PriorityQueue")

@@ -47,7 +47,7 @@ struct Res {
 }
 
 // --- a lone task: it goes on, once, at the next statement
-fun level(n: i64, trail: MutableList<i64>): i64 {
+fun level(n: i64, trail: *List<i64>): i64 {
   val mine = n * 10
   cede
   if (n == 0) return mine
@@ -58,14 +58,14 @@ fun level(n: i64, trail: MutableList<i64>): i64 {
 }
 
 fun churn(rounds: i64): string {
-  val keep: MutableList<string> = []
+  val keep: List<string> = []
   loop (i in 0..<rounds) {
     keep.push("item $i")
-    val junk = MutableList<i64>.make(64, j => j * i)
+    val junk = List<i64>.make(64, j => j * i)
     if (junk.len() != 64) panic("churn: a list of 64 has ${junk.len()}")
     cede
   }
-  "${keep.len()} ${keep.at(rounds - 1) ?: "none"}"
+  "${keep.len()} ${keep.get(rounds - 1) ?: "none"}"
 }
 
 // --- a peer runs: no loop here, so only cede can give the thread up
@@ -195,8 +195,8 @@ fun outcome<T>(r: Result<T, Timeout>): string => when (r) {
 
 fun main() {
   io.println("1. a lone task:")
-  val trail: MutableList<i64> = []
-  io.println("  ${level(5, trail)} $trail")
+  val trail: List<i64> = []
+  io.println("  ${level(5, &trail)} $trail")
   io.println("  ${churn(2000)}")
   cede
   cede;

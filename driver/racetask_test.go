@@ -139,9 +139,9 @@ fun main() throws Down {
 
   val many = Atomic(value: 0)
   val before = started.load()
-  val inputs: MutableList<i64> = []
+  val inputs: List<i64> = []
   loop (i in 0..<200) inputs.push(i)
-  val results = inputs.toList().mapConcurrent(i => pair(i, many), workers: 16)
+  val results = inputs.mapConcurrent(i => pair(i, many), workers: 16)
   println("pairs ${results.filter(r => r == "fast").len()}, every started loser cleaned ${many.load() == started.load() - before}")
 }
 `

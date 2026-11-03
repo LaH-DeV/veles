@@ -16,14 +16,14 @@ struct Settings {
 
 val settings = Mutex(value: Settings())
 
-val spanQueue: Mutex<MutableList<SpanData>> = newQueue<SpanData>()
+val spanQueue: Mutex<List<SpanData>> = newQueue<SpanData>()
 
 // how many items were dropped because a queue was full or the collector
 // could not be reached
 val lost = Atomic(value: 0)
 
-fun newQueue<T>(): Mutex<MutableList<T>> {
-  val empty: MutableList<T> = []
+fun newQueue<T>(): Mutex<List<T>> {
+  val empty: List<T> = []
   Mutex(value: empty)
 }
 
@@ -44,23 +44,23 @@ fun randomBytes(n: i64): List<u8> {
 
 fun hexOf(bytes: List<u8>): string {
   val digits = "0123456789abcdef".bytes()
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   loop (b in bytes) {
-    out.push(digits.at(b.toI64() / 16) ?: '0')
-    out.push(digits.at(b.toI64() % 16) ?: '0')
+    out.push(digits.get(b.toI64() / 16) ?: '0')
+    out.push(digits.get(b.toI64() % 16) ?: '0')
   }
-  out.toList().decodeUtf8() ?: ""
+  out.decodeUtf8() ?: ""
 }
 
 // lower-case hexadecimal of exactly `digits` characters, as bytes; null for anything else
 fun bytesOfHex(text: string, digits: i64): List<u8>? {
   if (text.len() != digits) return null
-  val out: MutableList<u8> = []
+  val out: List<u8> = []
   val chars = text.bytes()
   var i: i64 = 0
   loop (i < chars.len()) {
-    val hi = hexNibble(chars.at(i))
-    val lo = hexNibble(chars.at(i + 1) ?: return null)
+    val hi = hexNibble(chars.get(i))
+    val lo = hexNibble(chars.get(i + 1) ?: return null)
     if (hi < 0 || lo < 0) return null
     out.push((hi * 16 + lo).wrapU8())
     i += 2
@@ -99,15 +99,15 @@ public struct SpanContext {
   public static fun parse(text: string): SpanContext? {
     val parts = text.split("-")
     if (parts.len() < 4) return null
-    val version = bytesOfHex(parts.at(0), 2) ?: return null
-    if (version.at(0) == 255) return null
+    val version = bytesOfHex(parts.get(0), 2) ?: return null
+    if (version.get(0) == 255) return null
     // version 00 is exactly four fields; a later version may add more
-    if (version.at(0) == 0 && parts.len() != 4) return null
-    val traceId = bytesOfHex(parts.at(1), 32) ?: return null
-    val spanId = bytesOfHex(parts.at(2), 16) ?: return null
-    val flags = bytesOfHex(parts.at(3), 2) ?: return null
+    if (version.get(0) == 0 && parts.len() != 4) return null
+    val traceId = bytesOfHex(parts.get(1), 32) ?: return null
+    val spanId = bytesOfHex(parts.get(2), 16) ?: return null
+    val flags = bytesOfHex(parts.get(3), 2) ?: return null
     if (traceId.all(b => b == 0) || spanId.all(b => b == 0)) return null
-    SpanContext(traceId, spanId, sampled: ((flags.at(0) ?: 0) & 1) == 1)
+    SpanContext(traceId, spanId, sampled: ((flags.get(0) ?: 0) & 1) == 1)
   }
 }
 
@@ -118,7 +118,7 @@ fun sampleTrace(traceId: List<u8>, ratio: f64): bool {
   if (ratio <= 0.0) return false
   var bits: u64 = 0
   loop (i in 0..<8) {
-    bits = (bits << 8) | (traceId.at(8 + i) ?: 0).toU64()
+    bits = (bits << 8) | (traceId.get(8 + i) ?: 0).toU64()
   }
   ((bits >> 11).toF64() / 9007199254740992.0) < ratio
 }

@@ -42,7 +42,7 @@ func secretHolds(t types.Type) bool {
 		return true
 	}
 	l, ok := t.(*types.List)
-	return ok && !l.Mutable && types.Identical(l.Elem, types.TU8)
+	return ok && types.Identical(l.Elem, types.TU8)
 }
 
 // checkSecretArg refuses Secret<T> for any T but text or bytes (D112),

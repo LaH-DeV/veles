@@ -57,9 +57,9 @@ struct NotePatch {
 /// the methods, which keep `next` and `items` consistent.
 struct Notes {
   private var next: i64 = 1
-  private items:    MutableList<Note> = []
+  private items:    List<Note> = []
 
-  fun all(): List<Note> => this.items.toList()
+  fun all(): List<Note> => this.items
 
   fun find(id: i64): Note? => this.items.find(x => x.id == id)
 
@@ -72,7 +72,7 @@ struct Notes {
   }
 
   /// Removes the note with that id; false when there is none. (`items` is a
-  /// MutableList — a handle — so it changes through its methods while the
+  /// List — a handle — so it changes through its methods while the
   /// field itself stays bare, D22/D25.)
   fun remove(id: i64): bool {
     val at = this.items.indexOfFirst(x => x.id == id) ?: return false

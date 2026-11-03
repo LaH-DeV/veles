@@ -59,9 +59,9 @@ test "a bad line is a problem and the others are read" {
   val found = parseDotenv("GOOD=1\nnot a variable\n1BAD=2\nALSO=\"open\nSTILL=3\n")
   expect(found.vars.get("GOOD") == "1")
   expect(found.problems.len() >= 3)
-  expect(found.problems.at(0) == "line 2: expected NAME=value")
-  expect(found.problems.at(1) == "line 3: '1BAD' is not a variable name")
-  expect(found.problems.at(2) == "line 4: the quote opened here is never closed")
+  expect(found.problems.get(0) == "line 2: expected NAME=value")
+  expect(found.problems.get(1) == "line 3: '1BAD' is not a variable name")
+  expect(found.problems.get(2) == "line 4: the quote opened here is never closed")
 }
 
 test "text after a closing quote is a problem" {

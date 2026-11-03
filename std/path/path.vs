@@ -77,12 +77,12 @@ public fun clean(p: string): string {
   if (p.isEmpty()) return "."
   val root = rootOf(p)
   if (cleanBody(p, root.len())) return p
-  var parts: MutableList<string> = []
+  var parts: List<string> = []
   loop (seg in p.substring(root.len(), p.len())?.replace("\\", "/")?.split("/") ?: []) {
     when {
       seg.isEmpty() || seg == "." => continue
       seg != ".." => parts.push(seg)
-      !parts.isEmpty() && parts.at(-1) != ".." => parts.pop()
+      !parts.isEmpty() && parts.get(-1) != ".." => parts.pop()
       root.isEmpty() => parts.push("..")
     }
   }

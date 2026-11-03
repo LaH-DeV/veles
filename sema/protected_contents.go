@@ -6,11 +6,11 @@ import (
 	"github.com/LaH-DeV/veles/types"
 )
 
-// D87: `protected` on a field whose type is a mutable collection also makes
-// the collection's contents the owning type's. Outside the type's own
-// declarations the field may only be looked at — the receiver of an
-// immutable-form method, a loop head, an interpolated value — never taken
-// (bound, passed, returned) and never changed through a mutating method.
+// D87: `protected` on a field whose type is a collection also makes the
+// collection's contents the owning type's: outside the type's own
+// declarations it is never changed through a method that changes it. Since
+// D231 a collection is a value, so taking it (binding, passing, returning)
+// is a copy and allowed; only the change in place is refused.
 
 // lookedField is a protected collection field read in a place D87 allows.
 type lookedField struct {
@@ -19,19 +19,15 @@ type lookedField struct {
 	span source.Span
 }
 
-// isMutableCollection reports whether t is a MutableList, MutableMap or
-// MutableSet, or a nullable one.
+// isMutableCollection reports whether t is a list, map or set, or a
+// nullable one: a collection that can be changed in place (D231).
 func isMutableCollection(t types.Type) bool {
 	if n, ok := t.(*types.Nullable); ok {
 		t = n.Elem
 	}
-	switch t := t.(type) {
-	case *types.List:
-		return t.Mutable
-	case *types.Map:
-		return t.Mutable
-	case *types.Set:
-		return t.Mutable
+	switch t.(type) {
+	case *types.List, *types.Map, *types.Set:
+		return true
 	}
 	return false
 }
@@ -45,17 +41,15 @@ func (f *fnCtx) lookOnly(e ast.Expr) {
 }
 
 // guardProtectedContents is called for every read of a field. Outside the
-// type, a protected mutable collection read anywhere but a look-only place
-// is refused; in one it is remembered, for the method that follows.
+// type, a protected collection read as a method's receiver is remembered,
+// for the method that follows; any other read is a copy (D231).
 func (f *fnCtx) guardProtectedContents(st *types.Struct, fld *types.Field, span source.Span) {
 	if !fld.Protected || !isMutableCollection(fld.Type) || f.insideType(st) {
 		return
 	}
 	if f.lookAt == span {
 		f.looked = &lookedField{st, fld, span}
-		return
 	}
-	f.errorf(span, "cannot take '%s.%s' out of '%s': the field is 'protected var', so only '%s' changes or hands out its contents (D87); read it with an immutable method, loop over it or interpolate it, or copy it with '.toList()'", st.Name, fld.Name, st.Name, st.Name)
 }
 
 // takeLooked returns the protected field the last look-only check saw, once.
@@ -71,14 +65,19 @@ func (f *fnCtx) refuseContentsChange(l *lookedField, method string, span source.
 	f.errorf(span, "cannot call '%s' on '%s.%s': the field is 'protected var', so only '%s' changes its contents (D87); call a method of '%s' that does", method, l.st.Name, l.fld.Name, l.st.Name, l.st.Name)
 }
 
-// mutatesCollection reports whether a built-in method changes its receiver:
-// the catalogue lists the mutable family's own methods apart from the
-// immutable form's.
+// changingMethods are, per collection, the built-in and prelude methods
+// that change it in place (D231).
+var changingMethods = map[string]map[string]bool{
+	"List": {"push": true, "addAll": true, "reserve": true, "set": true, "setUnchecked": true, "at": true, "pop": true,
+		"clear": true, "insert": true, "removeAt": true, "sort": true, "sortWith": true, "swap": true, "fill": true,
+		"updateAt": true, "incrementAt": true, "pushI": true, "pushU": true, "pushIsizeBe": true, "pushIsizeLe": true,
+		"pushUsizeBe": true, "pushUsizeLe": true},
+	"Map": {"set": true, "reserve": true, "at": true, "remove": true, "clear": true, "atOrPut": true},
+	"Set": {"add": true, "reserve": true, "remove": true, "clear": true},
+}
+
+// mutatesCollection reports whether a built-in or prelude method changes
+// its receiver.
 func mutatesCollection(rt types.Type, name string) bool {
-	if name == "isFrozen" {
-		return false // a question about the collection, documented on the mutable family only (D188)
-	}
-	family := builtinFamily(rt)
-	d := lookupBuiltinDoc(family, name)
-	return d != nil && d.Recv == family
+	return changingMethods[builtinFamily(rt)][name]
 }

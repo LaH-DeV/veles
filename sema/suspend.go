@@ -67,6 +67,9 @@ func (w susp) call(e *Call) bool {
 // argSuspends reports whether a function value passed for a
 // suspend-parameter suspends when it is called.
 func (w susp) argSuspends(a Expr) bool {
+	if cl := LambdaOf(a); cl != nil {
+		return cl.Fn.suspends || w.block(cl.Fn.Body)
+	}
 	switch v := FuncValueOf(a).(type) {
 	case *Closure:
 		return v.Fn.suspends || w.block(v.Fn.Body)
@@ -103,6 +106,29 @@ func FuncValueOf(x Expr) Expr {
 			return x
 		}
 	}
+}
+
+// LambdaOf is the lambda an argument passes: through FuncValueOf, and
+// through the block the share pass wraps a sendable lambda in to mark its
+// captured collections shared (sharer.closure) — marks that never suspend.
+// Without it a lambda capturing a list made its caller suspend (D116 lost
+// the plain instance: bench/adapters, D231).
+func LambdaOf(x Expr) *Closure {
+	x = FuncValueOf(x)
+	if b, ok := x.(*BlockExpr); ok && b.Block != nil {
+		for _, s := range b.Block.Stmts {
+			a, isAssign := s.(*Assign)
+			if !isAssign {
+				return nil
+			}
+			if _, isShare := a.Value.(*Share); !isShare {
+				return nil
+			}
+		}
+		x = FuncValueOf(b.Block.Value)
+	}
+	cl, _ := x.(*Closure)
+	return cl
 }
 
 // indirect reports whether a call of a function value suspends here.

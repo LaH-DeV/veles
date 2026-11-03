@@ -126,6 +126,7 @@ type Func struct {
 	bodyErrors     bool // checking the body reported an error: the evaluator does not run it
 	suspends       bool // directly contains a suspension point
 	raised         bool // an error reached recordError: something in the body can throw
+	shared         bool // the share pass ran over the body (share.go, D231)
 
 	// Suspends is the inferred effect (D2): set by the suspension pass.
 	Suspends bool
@@ -163,6 +164,31 @@ type Var struct {
 	// ReadOnly: a parameter whose place the body never writes or lends (the
 	// receiver pass), so a large argument can be the caller's own value
 	ReadOnly bool
+	// PtrKept: a pointer parameter the function may keep beyond the call —
+	// stores, returns, captures or passes it where it is kept (the receiver
+	// pass); a `&place` passed for one that is not kept is lent, not an
+	// escape of the place (D231)
+	PtrKept bool
+	// FnKept: a function-typed parameter the function may keep beyond the
+	// call — anything but calling it or passing it to a parameter that is
+	// not kept either (the receiver pass). A lambda passed for one that is
+	// not kept lives only for the call, so what it captures is lent (D233)
+	FnKept bool
+	// Lent: a compiler temporary holding a collection only to read it while
+	// the lowered statement runs (newLentTemp): its initialiser is lent, not
+	// marked copied (D231)
+	Lent bool
+	// LentFor: the loop a Lent temporary is the subject of. When the loop's
+	// body may change the collection it was read from, the share pass copies
+	// it instead (marked shared), so the loop walks the collection as it was
+	// when it began (D231 addendum)
+	LentFor *Loop
+	// AddrLent: AddrTaken, but only by `&place` pointers that are read at once
+	// or lent to a call that keeps none (lentAddrPass): the storage stays in
+	// the frame instead of a heap cell. addrForced: the address was taken
+	// another way (a capture, an escaping receiver, a by-reference loop).
+	AddrLent   bool
+	addrForced bool
 
 	InitText string // a local binding's initializer as written, for the hover
 	ErrPoly  bool   // a parameter declared `fun(..) throws E` with E a type parameter of the enclosing function
@@ -179,6 +205,17 @@ type Var struct {
 	// noInit: a local `var` declared without a value, unreadable until it
 	// is assigned on every path (D214)
 	noInit bool
+}
+
+// HeapCell: the variable lives in a heap cell its frame holds the address of
+// (D10), rather than in the frame itself.
+func (v *Var) HeapCell() bool { return v.AddrTaken && !v.AddrLent }
+
+// heapPromote takes v's address for a reason other than a `&place` the
+// lent-address pass can follow.
+func (v *Var) heapPromote() {
+	v.AddrTaken = true
+	v.addrForced = true
 }
 
 type Global struct {
@@ -677,7 +714,17 @@ type UnionCast struct {
 	Member types.Type
 }
 
-// ListLit constructs a List/MutableList from elements.
+// Share is a copy of X kept apart from where X still lives (D231): the
+// collections in the value are marked shared, so the first change through
+// either copy copies the storage first. The share pass puts it wherever a
+// value read from a place is stored, passed or returned; `toList()` writes
+// it. A collection with a pointer into its storage is copied here at once.
+type Share struct {
+	exprBase
+	X Expr
+}
+
+// ListLit constructs a List from elements.
 type ListLit struct {
 	exprBase
 	Elems []Expr
@@ -814,12 +861,22 @@ type LazyRead struct {
 
 // Box coerces a value to a trait object (D9): the value is copied to the
 // heap and paired with the vtable of its impl. Methods lists the concrete
-// functions in the trait's method order.
+// functions in the trait's method order. Ref: X is a pointer `&x`, which
+// the object holds instead of a copy, so its methods change x (D232).
 type Box struct {
 	exprBase
 	X       Expr
 	Trait   *types.Trait
 	Methods []*Func
+	Ref     bool
+}
+
+// Boxed is the type of the value the object stands for.
+func (b *Box) Boxed() types.Type {
+	if b.Ref {
+		return b.X.Type().(*types.Pointer).Elem
+	}
+	return b.X.Type()
 }
 
 // CallVirtual invokes a trait method through a trait object's vtable.

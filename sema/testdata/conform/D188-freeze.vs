@@ -1,43 +1,24 @@
-// D188: freeze() makes a mutable collection immutable in place; an immutable
-// one has nothing to freeze, and the error says so.
+// D188, superseded by D231: a collection is a value, so `freeze()` and
+// `isFrozen()` are gone; each is an error with a fix that drops the call.
 use io
 
-fun frozenList() {
+fun lists(): List<i64> {
   val xs: List<i64> = [1]
-  val _ = xs.freeze() // error: 'freeze' needs a MutableList: a List is already immutable
+  xs.freeze()  // error: 'freeze' was removed (D231): a collection is a value, which no other name can change; 'xs' is enough
+  xs
 }
 
-fun frozenMap() {
+fun maps(): bool {
   val m: Map<string, i64> = ["a": 1]
-  val _ = m.freeze() // error: 'freeze' needs a MutableMap: a Map is already immutable
+  m.isFrozen()  // error: 'isFrozen' was removed (D231)
 }
 
-fun frozenSet() {
+fun sets(): Set<i64> {
   val s: Set<i64> = [1]
-  val _ = s.freeze() // error: 'freeze' needs a MutableSet: a Set is already immutable
-}
-
-fun askedList() {
-  val xs: List<i64> = [1]
-  val _ = xs.isFrozen() // error: 'isFrozen' needs a MutableList: a List is immutable by its type
-}
-
-fun askedMap() {
-  val m: Map<string, i64> = ["a": 1]
-  val _ = m.isFrozen() // error: 'isFrozen' needs a MutableMap: a Map is immutable by its type
-}
-
-fun askedSet() {
-  val s: Set<i64> = [1]
-  val _ = s.isFrozen() // error: 'isFrozen' needs a MutableSet: a Set is immutable by its type
+  s.freeze()  // error: 'freeze' was removed (D231)
+  s
 }
 
 fun main() {
-  frozenList()
-  frozenMap()
-  frozenSet()
-  askedList()
-  askedMap()
-  askedSet()
-  io.println("done")
+  io.println("${lists()} ${maps()} ${sets()}")
 }

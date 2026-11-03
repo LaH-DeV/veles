@@ -14,6 +14,10 @@ import (
 
 // fnCtx is the per-function checking state.
 type fnCtx struct {
+	// reachableLists are the list types bounds facts are recorded with for
+	// a list a call can reach (a global, `this`): a call drops those facts
+	// (bounds.go, D231)
+	reachableLists map[*types.List]bool
 	// exec: this is the code of an executor (D150) — one of its functions,
 	// a state initializer, or a lambda in them that does not leave it
 	exec *execInfo
@@ -63,9 +67,6 @@ type fnCtx struct {
 	// bodyAST is the body being checked (a Block or an expression), for the
 	// whole-function look D63's move check takes.
 	bodyAST any
-	// callWant: the type the method call being dispatched is expected to
-	// produce, for lintRedundantCopy (escape.go)
-	callWant types.Type
 	// loopIters is the checked type of each `loop (x in iter)` head, for lints
 	// that look at the loop after it was checked (lint_count.go).
 	loopIters      map[*ast.LoopStmt]types.Type
@@ -94,9 +95,9 @@ type fnCtx struct {
 	captureList []*Var        // outer variables in environment order
 	paramInit   []Stmt        // lambda: statements destructuring tuple-pattern parameters
 	isLambda    bool
-	onBlock     bool // a lambda that runs on a receiver: `this` is its first parameter (D207)
-	recvStack   []*Var // the `this` of each receiver block being checked in place, innermost last (D207)
-	blockLoops  []int  // len(loops) where each of those blocks began: a jump may not leave one
+	onBlock     bool              // a lambda that runs on a receiver: `this` is its first parameter (D207)
+	recvStack   []*Var            // the `this` of each receiver block being checked in place, innermost last (D207)
+	blockLoops  []int             // len(loops) where each of those blocks began: a jump may not leave one
 	pending     []Stmt            // statements hoisted by adapter lowering
 	boundPlace  map[ast.Expr]Expr // receiver of a `?.` assignment, already lowered to its place (check_safe.go)
 	scopes      []*ScopeBlock
@@ -165,6 +166,15 @@ func (f *fnCtx) newVar(name string, t types.Type, mutable bool, span source.Span
 func (f *fnCtx) newTemp(t types.Type) *Var {
 	f.c.nextTmp++
 	return f.newVar("$tmp"+itoa(f.c.nextTmp), t, true, source.Span{})
+}
+
+// newLentTemp is a temporary that holds a collection only to read it while
+// the lowered statement runs (a loop's subject, an adapter's receiver): the
+// share pass lends it its initialiser instead of marking it copied (D231).
+func (f *fnCtx) newLentTemp(t types.Type) *Var {
+	v := f.newTemp(t)
+	v.Lent = true
+	return v
 }
 
 func itoa(n int) string {
@@ -1295,7 +1305,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		if !isPlaceSyntax(e.X) {
 			// an rvalue such as a call result: a field behind a pointer it
 			// returns is writable (`ptrOf(h).n = 5`); a value is a temporary
-			// — `xs.at(i)` included, which reads a copy (D25, v0.27)
+			// — `xs.get(i)` included, which reads a copy (D25, v0.27)
 			base = f.checkExpr(e.X, nil)
 			if types.IsInvalid(base.Type()) {
 				return nil, nil
@@ -1381,7 +1391,7 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		}
 	}
 	if repl, ok := elemReadCall(e); ok && !strings.Contains(repl, "?.") {
-		// `xs.at(i) += 1`: the read is a copy; the element's storage is
+		// `xs.get(i) += 1`: the read is a copy; the element's storage is
 		// behind `xs.ref(i)`, a nullable pointer (D25 v0.27, D62)
 		f.checkExpr(e, nil) // so the names in it count as used
 		repl = "*(" + repl + " ?: panic(\"" + panicReasonTODO + "\"))"
@@ -1536,16 +1546,17 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 	}
 
 	var pre []Stmt
+	var post []Stmt // after the loop: undoing what its start set up (list.unlend)
 	f.pushScope()
 	defer f.popScope()
 	switch {
 	case s.Var != nil:
-		if !hasRefBinding(s.Var) {
-			f.lookOnly(s.Iter) // D87: a value loop only looks
-		}
+		f.lookOnly(s.Iter)            // D87: a value loop only looks; one by reference changes
 		f.allowHeld(s.Iter, heldWith) // D156: the loop receives a value holding tasks
 		iter := f.checkExpr(s.Iter, nil)
-		f.takeLooked()
+		if look := f.takeLooked(); look != nil && hasRefBinding(s.Var) {
+			f.errorf(s.Var.Pos, "cannot walk '%s.%s' by reference: the field is 'protected var', so only '%s' changes its contents (D87); loop over the values, or call a method of '%s' that changes them", look.st.Name, look.fld.Name, look.st.Name, look.st.Name)
+		}
 		if _, bare := iter.Type().(*types.Task); !bare && heldCall(s.Iter) != nil && f.c.taskHolding(iter.Type()) {
 			return f.loopHeld(s, iter)
 		}
@@ -1558,7 +1569,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 		case *types.Range:
 			// var i = lo; val hi = hi; loop (i < hi) { val x = i; body; post: i += 1 }
 			if hasRefBinding(s.Var) {
-				f.errorf(s.Var.Pos, "'&' binds an element of a MutableList or a value of a MutableMap in place; a range yields values (D42)")
+				f.errorf(s.Var.Pos, "'&' binds an element of a list or a value of a map in place; a range yields values (D42)")
 			}
 			if !types.IsInteger(it.Elem) {
 				f.errorf(s.Iter.Span(), "cannot iterate a range of '%s'", it.Elem)
@@ -1605,16 +1616,27 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			if !byRef && hasRefBinding(s.Var) {
 				f.errorf(s.Var.Pos, "'&' binds a list element as a whole: 'loop (&x in xs)' (D42)")
 			}
-			if byRef && !it.Mutable {
-				f.errorf(s.Var.Pos, "'loop (&x in xs)' needs a MutableList: it changes the elements in place, and a List is read-only (D25, D42)")
+			if byRef {
+				pre = append(pre, f.ownForWrite(iter, s.Iter, s.Var.Pos))
 			}
-			listTmp := f.newTemp(it)
+			listTmp := f.newLentTemp(it)
+			if !byRef {
+				listTmp.LentFor = lp // a snapshot when the body may change the list (share.go)
+			}
 			pre = append(pre, &VarDecl{Var: listTmp, Init: iter})
 			var guard []Stmt
-			if it.Mutable {
+			if byRef {
+				// the loop walks the list itself: a change through a path
+				// the compiler cannot see is caught when it next steps (D102)
 				decl, check := f.modsGuard(listTmp, false, s)
 				pre = append(pre, decl)
 				guard = []Stmt{check}
+			} else {
+				// the loop walks the list as it was (D102 addendum): lent for
+				// the loop, so a change through any other path copies it
+				lent := f.newTemp(types.TI64)
+				pre = append(pre, &VarDecl{Var: lent, Init: &Builtin{exprBase{types.TI64}, "list.lend", []Expr{&VarRef{exprBase{it}, listTmp}}, s.Pos}})
+				post = append(post, &ExprStmt{X: &Builtin{exprBase{types.TUnit}, "list.unlend", []Expr{&VarRef{exprBase{it}, listTmp}, &VarRef{exprBase{types.TI64}, lent}}, s.Pos}})
 			}
 			idx := f.newTemp(types.TI64)
 			pre = append(pre, &VarDecl{Var: idx, Init: &IntConst{exprBase{types.TI64}, 0, false}})
@@ -1655,7 +1677,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 				op, elem = "map.keys", it.(*types.Set).Elem
 			}
 			listT := &types.List{Elem: elem}
-			collTmp := f.newTemp(it)
+			collTmp := f.newLentTemp(it)
 			snapshot := &Builtin{exprBase{listT}, op, []Expr{&VarRef{exprBase{it}, collTmp}}, s.Pos}
 			copy := *s
 			if hasRefBinding(s.Var) {
@@ -1665,22 +1687,14 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 			sv, decl := f.hidden("snapshot", snapshot, false)
 			copy.Iter = nameOf(sv, s.Iter.Span())
 			inner := f.checkLoop(&copy)
+			// the loop walks a snapshot of the entries or members, so the
+			// body may change the map or set: the loop goes on over what was
+			// there when it began (D231 addendum; D102's guard is gone)
 			out := []Stmt{&VarDecl{Var: collTmp, Init: iter}}
-			if mutableColl(it) {
-				// the snapshot is walked safely; a change to the map itself is
-				// still refused, at run time as at compile time (D102)
-				mods, check := f.modsGuard(collTmp, true, s)
-				out = append(out, mods)
-				if n := len(inner); n > 0 {
-					if ilp, ok := inner[n-1].(*Loop); ok && ilp.Body != nil {
-						ilp.Body.Stmts = append([]Stmt{check}, ilp.Body.Stmts...)
-					}
-				}
-			}
 			return append(append(out, decl), inner...)
 		default:
 			if hasRefBinding(s.Var) && !types.IsInvalid(iter.Type()) {
-				f.errorf(s.Var.Pos, "'&' binds an element of a MutableList or a value of a MutableMap in place; an iterator yields values (D42)")
+				f.errorf(s.Var.Pos, "'&' binds an element of a list or a value of a map in place; an iterator yields values (D42)")
 			}
 			if stmts, handled := f.iteratorLoop(s, iter, lp, label); handled {
 				return stmts
@@ -1720,7 +1734,7 @@ func (f *fnCtx) checkLoop(s *ast.LoopStmt) []Stmt {
 		kw := source.Span{File: s.Pos.File, Start: s.Pos.Start, End: s.Pos.Start + len("loop")}
 		f.warnf(kw, "this loop never repeats: every path through its body leaves it (break, return or throw); drop the 'loop' or add a condition")
 	}
-	return append(pre, lp)
+	return append(append(pre, lp), post...)
 }
 
 // withoutRefs is a copy of a binding with every `&` dropped.
@@ -1753,14 +1767,13 @@ func hasRefBinding(b *ast.Binding) bool {
 // body changes the entry where it lives (D42). An entry removed by the
 // body is skipped; one added is not visited.
 func (f *fnCtx) mapRefLoop(s *ast.LoopStmt, m Expr, mt *types.Map, lp *Loop, label string) []Stmt {
-	if !mt.Mutable {
-		f.errorf(s.Var.Pos, "'loop ((k, &v) in m)' needs a MutableMap: it changes the values in place, and a Map is read-only (D25, D42)")
-	}
-	mapTmp := f.newTemp(mt)
+	own := f.ownForWrite(m, s.Iter, s.Var.Pos)
+	mapTmp := f.newLentTemp(mt)
 	keysT := &types.List{Elem: mt.Key}
 	keys := f.newTemp(keysT)
 	idx := f.newTemp(types.TI64)
 	pre := []Stmt{
+		own,
 		&VarDecl{Var: mapTmp, Init: m},
 		&VarDecl{Var: keys, Init: &Builtin{exprBase{keysT}, "map.keys", []Expr{ref(mapTmp)}, s.Pos}},
 		&VarDecl{Var: idx, Init: i64c(0)},

@@ -8,9 +8,9 @@ fun main() {
   random.seed(2026)
   val dice: List<i64> = (1..5).iter().map(i => random.range(1, 7)).toList()
   println("dice $dice")
-  val deck = mut ["A", "K", "Q", "J", "10"]
-  random.shuffle(deck)
-  println("shuffled $deck, pick ${random.pick(deck.toList())}")
+  val deck = ["A", "K", "Q", "J", "10"]
+  random.shuffle(&deck)
+  println("shuffled $deck, pick ${random.pick(deck)}")
   println("float ${random.float().toFixed(3)} coin ${random.boolean()}")
 
   var rng = random.Rng.seeded(7)

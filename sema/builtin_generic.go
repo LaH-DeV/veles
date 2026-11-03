@@ -8,13 +8,17 @@ import (
 // builtinGeneric resolves a built-in generic named in a type position —
 // `List<T>`, `Array<T, N>`, `Map<K, V>`, … — or is nil when name is not one.
 func (c *Checker) builtinGeneric(env *typeEnv, t *ast.NamedType, name string) types.Type {
+	if plain, ok := removedMutable[name]; ok {
+		c.removedMutableType(t, name)
+		name = plain
+	}
 	switch name {
-	case "List", "MutableList":
+	case "List":
 		if len(t.Args) != 1 {
 			c.errorf(t.Pos, "%s takes exactly one type argument", name)
 			return types.TInvalid
 		}
-		return &types.List{Elem: c.resolveType(env, t.Args[0]), Mutable: name == "MutableList"}
+		return &types.List{Elem: c.resolveType(env, t.Args[0])}
 	case "Array":
 		if len(t.Args) != 2 {
 			c.errorf(t.Pos, "Array takes an element type and a length: 'Array<u8, 16>' (D121)")
@@ -33,14 +37,14 @@ func (c *Checker) builtinGeneric(env *typeEnv, t *ast.NamedType, name string) ty
 			return types.TInvalid
 		}
 		return &types.Nullable{Elem: c.resolveType(env, t.Args[0])}
-	case "Map", "MutableMap":
+	case "Map":
 		if len(t.Args) != 2 {
 			c.errorf(t.Pos, "%s takes two type arguments", name)
 			return types.TInvalid
 		}
 		k := c.resolveType(env, t.Args[0])
 		c.checkHashable(k, t.Args[0].Span())
-		return &types.Map{Key: k, Value: c.resolveType(env, t.Args[1]), Mutable: name == "MutableMap"}
+		return &types.Map{Key: k, Value: c.resolveType(env, t.Args[1])}
 	case "Channel":
 		if len(t.Args) != 1 {
 			c.errorf(t.Pos, "Channel takes one type argument")
@@ -53,14 +57,14 @@ func (c *Checker) builtinGeneric(env *typeEnv, t *ast.NamedType, name string) ty
 			return types.TInvalid
 		}
 		return &types.Task{Result: c.resolveType(env, t.Args[0])}
-	case "Set", "MutableSet":
+	case "Set":
 		if len(t.Args) != 1 {
 			c.errorf(t.Pos, "%s takes one type argument", name)
 			return types.TInvalid
 		}
 		k := c.resolveType(env, t.Args[0])
 		c.checkHashable(k, t.Args[0].Span())
-		return &types.Set{Elem: k, Mutable: name == "MutableSet"}
+		return &types.Set{Elem: k}
 	}
 	return nil
 }

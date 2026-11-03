@@ -17,10 +17,10 @@ struct Cell {
 test fun wide(n: i64): Wide => Wide(name: "item-$n", count: n, more: n * 3)
 
 test "addAll grows a list of structs to hold every element, and neighbours are untouched" {
-  val cells: MutableList<Cell> = []
+  val cells: List<Cell> = []
   var wrong: i64 = 0
   loop (round in 0..<3000) {
-    val out: MutableList<Wide> = []
+    val out: List<Wide> = []
     out.addAll([wide(1), wide(2), wide(3), wide(4), wide(5)])
     out.addAll([wide(6), wide(7)])
     // small objects allocated around the grown buffer
@@ -28,11 +28,11 @@ test "addAll grows a list of structs to hold every element, and neighbours are u
       cells.push(Cell(v: round.toI64() * 10 + k))
     }
     if (out.len() != 7) wrong += 1
-    val last = out.at(6) ?: wide(0)
+    val last = out.get(6) ?: wide(0)
     if (last.name != "item-7" || last.more != 21) wrong += 1
   }
   loop (i in 0..<cells.len()) {
-    val c = cells.at(i) ?: Cell(v: -1)
+    val c = cells.get(i)
     if (c.v != (i / 4).toI64() * 10 + (i % 4).toI64()) wrong += 1
   }
   expect(wrong == 0)
@@ -42,12 +42,12 @@ test "concat of lists of wide elements keeps every element" {
   val base: List<Wide> = [wide(1), wide(2), wide(3), wide(4), wide(5)]
   val joined = base.concat([wide(6), wide(7), wide(8)]).concat([])
   expect(joined.len() == 8)
-  expect((joined.at(7) ?: wide(0)).name == "item-8")
-  expect((joined.at(0) ?: wide(0)).count == 1)
+  expect((joined.get(7) ?: wide(0)).name == "item-8")
+  expect((joined.get(0) ?: wide(0)).count == 1)
 }
 
 test "addAll of eight-byte elements past the capacity" {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (_ in 0..<2000) {
     out.addAll([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
   }
@@ -56,16 +56,22 @@ test "addAll of eight-byte elements past the capacity" {
 }
 
 test "incrementAt updates an element and checks its index" {
-  val counts: MutableList<i64> = [0, 2, 0]
+  val counts: List<i64> = [0, 2, 0]
   counts.incrementAt(1)
   counts.incrementAt(-1)
-  expect(counts.toList() == [0, 3, 1])
-  expectPanics(() => MutableList<i64>.repeat(0, 0).incrementAt(0))
-  expectPanics(() => MutableList<i64>.repeat(0, 0).incrementAt(-1))
+  expect(counts == [0, 3, 1])
+  expectPanics(() => {
+    val empty: List<i64> = []
+    empty.incrementAt(0)
+  })
+  expectPanics(() => {
+    val empty: List<i64> = []
+    empty.incrementAt(-1)
+  })
 }
 
 test "updateAt transforms once, stores and returns the new value" {
-  val values: MutableList<i64> = [3, 5]
+  val values: List<i64> = [3, 5]
   var calls = 0
   val updated = values.updateAt(-1, value => {
     calls += 1
@@ -73,12 +79,12 @@ test "updateAt transforms once, stores and returns the new value" {
   })
   expect(updated == 10)
   expect(calls == 1)
-  expect(values.toList() == [3, 10])
+  expect(values == [3, 10])
 
-  val words: MutableList<string> = ["veles"]
+  val words: List<string> = ["veles"]
   expect(words.updateAt(0, word => word.toUpper()) == "VELES")
-  expect(words.toList() == ["VELES"])
-  expectPanics(() => MutableList<i64>.repeat(0, 0).updateAt(0, value => value + 1))
+  expect(words == ["VELES"])
+  expectPanics(() => List<i64>.repeat(0, 0).updateAt(0, value => value + 1))
 }
 
 test "eager list adapters preserve order and stop after a callback error" {
@@ -86,14 +92,14 @@ test "eager list adapters preserve order and stop after a callback error" {
   expect(source.map(value => value * 10) == [10, 20, 30])
   expect(source.filter(value => value % 2 == 1) == [1, 3])
   expect(source.fold("", (text, value) => "$text$value") == "123")
-  val visited: MutableList<i64> = []
+  val visited: List<i64> = []
   val failed = source.map(value => {
     visited.push(value)
     if (value == 2) throw AdapterStop()
     value * 10
   })
   expect(failed is Err)
-  expect(visited.toList() == [1, 2])
+  expect(visited == [1, 2])
   expect(source == [1, 2, 3])
 }
 

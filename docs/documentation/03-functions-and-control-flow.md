@@ -302,7 +302,7 @@ fun kind(c: u8): string {
 }
 
 fun main() {
-  val queue: MutableList<string> = ["a", "bb", "ccc"]
+  val queue: List<string> = ["a", "bb", "ccc"]
   var seen = 0
   loop (val item = queue.pop()) { seen += item.len() }
   var flags: u32 = 0b1010
@@ -328,10 +328,10 @@ than *how*:
 use io
 
 fun main() {
-  var marked: MutableList<i64> = []
+  var marked: List<i64> = []
   val p = 3
   loop (m in (p * p..30).step(p)) marked.push(m)   // multiples of 3 from 9
-  var down: MutableList<i64> = []
+  var down: List<i64> = []
   loop (i in (0..<5).reversed()) down.push(i)
   io.println("$marked $down")
 }
@@ -347,10 +347,10 @@ condition form and update at the end of the body — and remember that a
 `continue` skips that update.
 
 The loop variable is a copy of the element, like every read (`val`, so
-`x.n += 1` is an error). To change the elements of a `MutableList` write
+`x.n += 1` is an error). To change the elements of a `List` write
 `loop (&x in xs)`: `x` is then a pointer to the element and `x.bump()` or
 `*x += 1` updates the list; `loop ((k, &v) in m)` does the same for the
-values of a `MutableMap`. [Chapter 4](04-collections.md#updating-elements-in-place)
+values of a `Map`. [Chapter 4](04-collections.md#updating-elements-in-place)
 has the full rule.
 
 `break` leaves the loop and `continue` skips to the next iteration. To
@@ -450,7 +450,7 @@ cost:
 ```veles
 use io
 
-fun first<T>(xs: List<T>, fallback: T): T => xs.at(0) ?: fallback
+fun first<T>(xs: List<T>, fallback: T): T => xs.get(0) ?: fallback
 
 fun main() {
   io.println("${first([3, 4], 0)} ${first([], "none")}")

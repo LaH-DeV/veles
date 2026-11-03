@@ -608,8 +608,8 @@ const monthNames = [
 /// Always this form, always GMT — it is the only one a sender may use.
 public fun formatHttp(t: Timestamp): string {
   val d = t.utc()
-  val day = dayNames.atOrDefault(d.weekday().value - 1, "Mon")
-  val mon = monthNames.atOrDefault(d.month - 1, "Jan")
+  val day = dayNames.getOrDefault(d.weekday().value - 1, "Mon")
+  val mon = monthNames.getOrDefault(d.month - 1, "Jan")
   "$day, ${pad(d.day, 2)} $mon ${pad(d.year, 4)} ${d.time()} GMT"
 }
 
@@ -639,7 +639,7 @@ public fun parseHttp(s: string): Timestamp? {
 /// The whitespace-separated fields of `s`, with runs of spaces collapsed —
 /// asctime pads a one-digit day with one.
 fun fieldsOf(s: string): List<string> {
-  val out: MutableList<string> = []
+  val out: List<string> = []
   var i: i64 = 0
   loop (i < s.len()) {
     loop (i < s.len() && isHttpSpace(s.byteAt(i))) {
@@ -658,7 +658,7 @@ fun isHttpSpace(b: u8): bool => b in [' ', '\t']
 
 fun monthIndex(name: string): i64 {
   loop (i in 0..<monthNames.len()) {
-    if (monthNames.atOrDefault(i, "") == name) return i + 1
+    if (monthNames.getOrDefault(i, "") == name) return i + 1
   }
   -1
 }
@@ -684,26 +684,26 @@ fun buildUtc(year: i64, month: i64, day: i64, clock: (i64, i64, i64)): Timestamp
 
 /// `24 Sep 2026 09:15:02 GMT`
 fun parseImf(f: List<string>): Timestamp? {
-  if (f.len() != 5 || f.atOrDefault(4, "") != "GMT") return null
-  val day = f.atOrDefault(0, "")
+  if (f.len() != 5 || f.getOrDefault(4, "") != "GMT") return null
+  val day = f.getOrDefault(0, "")
   if (day.len() != 2) return null
   buildUtc(
-    f.atOrDefault(2, "").toInt() ?: return null,
-    monthIndex(f.atOrDefault(1, "")),
+    f.getOrDefault(2, "").toInt() ?: return null,
+    monthIndex(f.getOrDefault(1, "")),
     digitsAt(day, 0, 2) ?: return null,
-    clockOf(f.atOrDefault(3, "")) ?: return null,
+    clockOf(f.getOrDefault(3, "")) ?: return null,
   )
 }
 
 /// `24-Sep-26 09:15:02 GMT`
 fun parseRfc850(f: List<string>): Timestamp? {
-  if (f.atOrDefault(2, "") != "GMT") return null
-  val d = f.atOrDefault(0, "")
+  if (f.getOrDefault(2, "") != "GMT") return null
+  val d = f.getOrDefault(0, "")
   if (d.len() != 9 || d.byteAt(2) != '-' || d.byteAt(6) != '-') return null
   val day = digitsAt(d, 0, 2) ?: return null
   val month = monthIndex(d.substring(3, 6) ?: return null)
   val yy = digitsAt(d, 7, 2) ?: return null
-  buildUtc(fullYear(yy), month, day, clockOf(f.atOrDefault(1, "")) ?: return null)
+  buildUtc(fullYear(yy), month, day, clockOf(f.getOrDefault(1, "")) ?: return null)
 }
 
 /// `Thu Sep 24 09:15:02 2026` — the only form whose day name is not
@@ -711,10 +711,10 @@ fun parseRfc850(f: List<string>): Timestamp? {
 fun parseAsctime(f: List<string>): Timestamp? {
   if (f.len() != 5) return null
   buildUtc(
-    f.atOrDefault(4, "").toInt() ?: return null,
-    monthIndex(f.atOrDefault(1, "")),
-    f.atOrDefault(2, "").toInt() ?: return null,
-    clockOf(f.atOrDefault(3, "")) ?: return null,
+    f.getOrDefault(4, "").toInt() ?: return null,
+    monthIndex(f.getOrDefault(1, "")),
+    f.getOrDefault(2, "").toInt() ?: return null,
+    clockOf(f.getOrDefault(3, "")) ?: return null,
   )
 }
 

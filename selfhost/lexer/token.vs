@@ -154,7 +154,7 @@ const KEYWORDS: Map<string, Kind> = [
 ]
 
 const fun kindNames(): Map<Kind, string> {
-  val names: MutableMap<Kind, string> = [
+  val names: Map<Kind, string> = [
     Kind.EOF: "end of file", Kind.Illegal: "illegal token", Kind.Ident: "identifier",
     Kind.Int: "integer literal", Kind.Float: "float literal", Kind.String: "string literal",
     Kind.Char: "character literal", Kind.Regex: "regular expression literal", Kind.Semi: "newline", Kind.KwReserved: "reserved keyword",

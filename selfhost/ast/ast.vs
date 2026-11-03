@@ -673,13 +673,13 @@ sealed trait Expr {
     var labels: List<Ident> = []
     var pos:    Span = Span.none()
   }
-  /// `[a, b]`, `mut [a, b]` (D25).
+  /// `[a, b]`, `[a, b]` (D25).
   struct ListLit {
     var elems: List<Expr> = []
     var isMut: bool = false
     var pos:   Span = Span.none()
   }
-  /// `["k": v]`, `[:]`, `mut [...]`.
+  /// `["k": v]`, `[:]`, `[...]`.
   struct MapLit {
     var entries: List<MapEntry> = []
     var isMut:   bool = false

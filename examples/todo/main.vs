@@ -143,7 +143,7 @@ fun describeDue(due: string, today: string): string {
 
 struct TodoFile {
   file:  string
-  tasks: MutableList<Task> = []
+  tasks: List<Task> = []
 
   static fun open(file: string): TodoFile throws IoError {
     val t = TodoFile(file)
@@ -168,11 +168,11 @@ struct TodoFile {
 
   /// Task `n`, counting from 1. Every `n` comes from `number`, which accepts
   /// only `1..len`.
-  fun task(n: i64): *Task => this.tasks.ref(n - 1) ?: panic("todo: number() accepts only 1..len")
+  fun task(n: i64): *Task => this.tasks.at(n - 1) ?: panic("todo: number() accepts only 1..len")
 
   /// The numbered tasks, open ones first by priority, then by due date, then by number.
   fun listed(terms: List<string>, all: bool): List<(number: i64, task: Task)> {
-    val rows: MutableList<(number: i64, task: Task)> = []
+    val rows: List<(number: i64, task: Task)> = []
     loop ((i, t) in this.tasks.iter().enumerate()) {
       if ((all || !t.done) && t.matches(terms)) rows.push((i + 1, t))
     }
@@ -202,7 +202,7 @@ fun printRows(rows: List<(number: i64, task: Task)>, total: i64, width: i64) {
 }
 
 fun counts(tasks: List<Task>, pick: fun(Task): List<string>) {
-  val tally: MutableMap<string, i64> = [:]
+  val tally: Map<string, i64> = [:]
   loop (t in tasks) {
     if (t.done) continue
     loop (tag in pick(t).distinct()) {
@@ -285,7 +285,7 @@ fun run(args: List<string>) throws UsageError | IoError {
     }
     "pri"                  => {
       val n = try todo.number(rest.first() ?: "")
-      val p = (rest.at(1) ?: "").toUpper()
+      val p = (rest.get(1) ?: "").toUpper()
       if (!isPriority("($p)")) throw UsageError(message: "priority must be a letter A-Z, got '$p'")
       todo.task(n).priority = p
       try todo.save()
@@ -310,8 +310,8 @@ fun run(args: List<string>) throws UsageError | IoError {
       try todo.save()
       println("removed $n ${t.line()}")
     }
-    "projects"             => counts(todo.tasks.toList(), t => t.projects())
-    "contexts"             => counts(todo.tasks.toList(), t => t.contexts())
+    "projects"             => counts(todo.tasks, t => t.projects())
+    "contexts"             => counts(todo.tasks, t => t.contexts())
     "archive"              => {
       val done = todo.tasks.filter(t => t.done)
       if (done.isEmpty()) {

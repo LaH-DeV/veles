@@ -64,7 +64,7 @@ public struct Schema {
     Schema(kind: SchemaKind.Object, what, fields)
 
   /// The element of a `List`.
-  public fun element(): Schema? => this.inner.at(0)
+  public fun element(): Schema? => this.inner.get(0)
 
   /// The same schema, marked as a secret.
   public fun asSecret(): Schema => Schema(kind: this.kind, what: this.what, secret: true, fields: this.fields, inner: this.inner)

@@ -2,7 +2,12 @@ package lsp
 
 import (
 	"encoding/json"
+	"fmt"
+	"path/filepath"
 	"reflect"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
@@ -102,9 +107,11 @@ func (s *Server) inlayHints(params json.RawMessage) any {
 			}
 		}
 	}
-	for sp := range a.index.Moved {
-		if sp.File == f && in(sp.End) {
-			out = append(out, inlayHint{Position: offsetToPosition(f, sp.End), Label: "moved immutable", Kind: hintType, PaddingLeft: true})
+	if !s.noCopyHints {
+		for _, h := range copyHints(f, a.index.Copies) {
+			if in(positionToOffset(f, h.Position)) {
+				out = append(out, h)
+			}
 		}
 	}
 	return out
@@ -134,6 +141,161 @@ func allocHints(f *source.File, sites []sema.AllocSite) []inlayHint {
 			Tooltip: &markup{Kind: "markdown", Value: text}})
 	}
 	return out
+}
+
+// spanWhere names a position for a tooltip: its line, and its file when
+// that is not f.
+func spanWhere(f *source.File, sp source.Span) string {
+	if !sp.IsValid() {
+		return "elsewhere"
+	}
+	l, _ := sp.File.Position(sp.Start)
+	if sp.File != f {
+		return fmt.Sprintf("%s, line %d", filepath.Base(sp.File.Path), l)
+	}
+	return fmt.Sprintf("line %d", l)
+}
+
+// copyHints shows where a list, map or set shared since its last change is
+// copied (D231 choice 3, addendum 3), in two places. The statement that
+// shared it ends with what is copied and at which line —
+// `list2 copied at its first change, line 247` — and the change gets a
+// short marker, `copies list2`, with `once` when a loop repeats the change
+// but not the share (only the first round copies). The marker is left out
+// on the share's line and the line after, where the first hint is in
+// view. A parameter has no share site in its function: its change keeps
+// the whole hint, `copies bytes (a parameter)`. On by default; the
+// `veles.inlayHints.copies` setting turns them off.
+func copyHints(f *source.File, sites []sema.CopySite) []inlayHint {
+	var out []inlayHint
+	lineOf := func(sp source.Span) int {
+		l, _ := sp.File.Position(sp.Start)
+		return l
+	}
+	// the share sites: by line, each copied value with the lines its first
+	// change may be on
+	type copied struct {
+		name  string
+		lines []int
+		empty bool // every change of it is a clear()
+		loop  bool // a loop walks it as it was
+	}
+	shareLines := map[int][]*copied{}
+	var shareOrder []int
+	for _, s := range sites {
+		if s.At.File != f || s.Why == sema.WhyParam || s.Why == sema.WhyElsewhere || s.Why == sema.WhyCaller || !s.SharedAt.IsValid() || s.SharedAt.File != f {
+			continue
+		}
+		at, line := lineOf(s.SharedAt), lineOf(s.At)
+		if _, seen := shareLines[at]; !seen {
+			shareOrder = append(shareOrder, at)
+		}
+		var c *copied
+		for _, x := range shareLines[at] {
+			if x.name == s.Name {
+				c = x
+			}
+		}
+		if c == nil {
+			c = &copied{name: s.Name, empty: true}
+			shareLines[at] = append(shareLines[at], c)
+		}
+		if !slices.Contains(c.lines, line) {
+			c.lines = append(c.lines, line)
+		}
+		c.empty = c.empty && s.Empty
+		c.loop = c.loop || s.Why == sema.WhyLoop
+	}
+	for _, at := range shareOrder {
+		var parts, tips []string
+		for _, c := range shareLines[at] {
+			sort.Ints(c.lines)
+			lines := make([]string, len(c.lines))
+			for i, l := range c.lines {
+				lines[i] = strconv.Itoa(l)
+			}
+			where := "line " + strings.Join(lines, " or ")
+			if c.empty {
+				parts = append(parts, fmt.Sprintf("%s copied as empty at %s", c.name, where))
+				tips = append(tips, fmt.Sprintf("`clear()` on `%s` at %s copies none of its elements: the place gets an empty one of its own, with nothing allocated, and the other holder keeps its elements.", c.name, where))
+				continue
+			}
+			parts = append(parts, fmt.Sprintf("%s copied at its first change, %s", c.name, where))
+			why := "this statement made a second holder of it"
+			if c.loop {
+				why = "this loop walks it as it was when the loop began"
+			}
+			tips = append(tips, fmt.Sprintf("`%s` is shared here: %s. Its first change after this (%s) copies it into storage of its own, once, so the other holder keeps the value it had.", c.name, why, where))
+		}
+		tip := strings.Join(tips, "\n\n") + " A list, map or set is a value (D231); to share the changes instead, pass a pointer (`*List<T>`). `veles.inlayHints.copies` turns these hints off."
+		out = append(out, inlayHint{Position: offsetToPosition(f, lineEnd(f, at)), Label: strings.Join(parts, "; "), Kind: hintType, PaddingLeft: true,
+			Tooltip: &markup{Kind: "markdown", Value: tip}})
+	}
+	// the markers at the changes
+	for _, s := range sites {
+		if s.At.File != f {
+			continue
+		}
+		line := lineOf(s.At)
+		label := "copies " + s.Name
+		if s.Empty {
+			label += " as empty"
+		}
+		if s.Once {
+			label += " once"
+		}
+		var tip string
+		switch {
+		case s.Why == sema.WhyParam:
+			label += " (a parameter)"
+			tip = fmt.Sprintf("`%s` is a parameter: the function's own copy of the caller's value, which the caller may still hold. Its first change copies it into storage of its own, so the caller keeps what it had (D231).", s.Name)
+		case s.Why == sema.WhyElsewhere:
+			label += fmt.Sprintf(" (shared in %s)", s.By)
+			tip = fmt.Sprintf("`%s` may be shared when this runs: `%s` makes a second holder of this field (%s). The first change after that copies it into storage of its own, so the other holder keeps the value it had (D231).", s.Name, s.By, spanWhere(f, s.SharedAt))
+		case s.Why == sema.WhyCaller:
+			label += fmt.Sprintf(" (shared by the caller, %s)", s.By)
+			tip = fmt.Sprintf("`%s` points at a value `%s` had shared when it made this call (%s). The first change through the pointer copies it into storage of its own, so the other holder keeps the value it had (D231).", s.Name, s.By, spanWhere(f, s.SharedAt))
+		case s.SharedAt.IsValid() && s.SharedAt.File == f:
+			shared := lineOf(s.SharedAt)
+			if line == shared || line == shared+1 {
+				continue // the share's hint, on the line above or this one, says it
+			}
+			tip = fmt.Sprintf("`%s` was shared at line %d (see the hint there); this is its first change after that, which copies it into storage of its own", s.Name, shared)
+			if s.Once {
+				tip += " — once: only the loop's first round copies, the later ones change the copy in place"
+			}
+			tip += " (D231)."
+		default:
+			tip = fmt.Sprintf("`%s` may be shared here, and its first change copies it (D231).", s.Name)
+		}
+		if s.Empty {
+			tip += " A `clear()` copies none of the elements: the place gets an empty one of its own, with nothing allocated."
+		}
+		out = append(out, inlayHint{Position: offsetToPosition(f, s.At.End), Label: label, Kind: hintType, PaddingLeft: true,
+			Tooltip: &markup{Kind: "markdown", Value: tip + " `veles.inlayHints.copies` turns these hints off."}})
+	}
+	return out
+}
+
+// lineEnd is the offset at the end of line n (1-based) of f, before a
+// trailing carriage return or blanks.
+func lineEnd(f *source.File, n int) int {
+	start := 0
+	for i := 1; i < n; i++ {
+		nl := strings.IndexByte(f.Content[start:], '\n')
+		if nl < 0 {
+			return len(f.Content)
+		}
+		start += nl + 1
+	}
+	end := len(f.Content)
+	if nl := strings.IndexByte(f.Content[start:], '\n'); nl >= 0 {
+		end = start + nl
+	}
+	for end > start && (f.Content[end-1] == '\r' || f.Content[end-1] == ' ' || f.Content[end-1] == '\t') {
+		end--
+	}
+	return end
 }
 
 // extensionHints ends a `use` line with the types its `extend` clause adds

@@ -43,7 +43,7 @@ fun thrown(m: Mutex<i64>): i64 throws Oops {
 
 fun panics(m: Mutex<i64>) {
   with m.lock()
-  [1].at(5) ?: panic("boom")
+  [1].get(5) ?: panic("boom")
 }
 
 fun relock(m: Mutex<i64>) {

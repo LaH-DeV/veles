@@ -9,17 +9,17 @@ const IV1: List<u32> = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1
 /// this is here for the WebSocket handshake (RFC 6455) and for reading
 /// existing Git or Subversion object names, nothing else.
 public struct Sha1 {
-  private state:      MutableList<u32>
-  private buffer:     MutableList<u8>
-  private scratch:    MutableList<u32>
+  private state:      List<u32>
+  private buffer:     List<u8>
+  private scratch:    List<u32>
   private var total:  i64 = 0
   private var result: Digest? = null
 
   implement Hasher {
     static fun start(): Sha1 => Sha1(
-      state: IV1.toMutable(),
+      state: IV1,
       buffer: [],
-      scratch: MutableList<u32>.repeat(0, 80),
+      scratch: List<u32>.repeat(0, 80),
     )
 
     static fun algorithm(): string => "SHA-1"
@@ -36,9 +36,9 @@ public struct Sha1 {
       val done = this.result
       if (done != null) return done
       this.absorb(padding(this.buffer.len(), 64, 8, this.total))
-      val out: MutableList<u8> = []
+      val out: List<u8> = []
       loop (w in this.state) {
-        pushU32(out, w)
+        pushU32(&out, w)
       }
       val d = Digest.of(out)
       this.result = d
@@ -51,25 +51,25 @@ public struct Sha1 {
     var i = 0
     if (this.buffer.len() > 0) {
       loop (this.buffer.len() < 64 && i < n) {
-        this.buffer.push(data.at(i))
+        this.buffer.push(data.get(i))
         i = i + 1
       }
       if (this.buffer.len() < 64) return
-      compress1(this.state, this.buffer.toList(), 0, this.scratch)
+      compress1(&this.state, this.buffer, 0, &this.scratch)
       this.buffer.clear()
     }
     loop (i + 64 <= n) {
-      compress1(this.state, data, i, this.scratch)
+      compress1(&this.state, data, i, &this.scratch)
       i = i + 64
     }
     loop (i < n) {
-      this.buffer.push(data.at(i))
+      this.buffer.push(data.get(i))
       i = i + 1
     }
   }
 }
 
-fun compress1(state: MutableList<u32>, block: List<u8>, at: i64, w: MutableList<u32>) {
+fun compress1(state: *List<u32>, block: List<u8>, at: i64, w: *List<u32>) {
   var i = 0
   loop (i < 16) {
     w.set(i, beU32(block, at + i * 4))
@@ -126,4 +126,4 @@ fun compress1(state: MutableList<u32>, block: List<u8>, at: i64, w: MutableList<
 
 /// Word `i` of the message schedule. The rounds read only 0..<80, and
 /// `w` has 80 words, so this cannot fail.
-fun schedule1(w: MutableList<u32>, i: i64): u32 => w.at(i) ?: panic("sha1: the rounds read the 80-word schedule inside 0..<80")
+fun schedule1(w: *List<u32>, i: i64): u32 => w.get(i) ?: panic("sha1: the rounds read the 80-word schedule inside 0..<80")

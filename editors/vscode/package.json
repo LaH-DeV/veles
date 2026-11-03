@@ -54,6 +54,11 @@
           "default": false,
           "description": "Show a `heap` hint after each expression that allocates on the heap, with what it allocates and how to avoid it in its tooltip (D213)."
         },
+        "veles.inlayHints.copies": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a `copies` hint after each change that may copy a list, map or set shared since its last change, with where it was shared in its tooltip (D231)."
+        },
         "veles.trace.server": {
           "type": "string",
           "enum": [

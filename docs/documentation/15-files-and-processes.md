@@ -262,7 +262,7 @@ fun main() {
   println("${port.toBeBytes()} ${port.toLeBytes()} ${u16.fromBeBytes([31, 144])}")
 
   // a header: a magic number, a version and a length
-  val packet: MutableList<u8> = []
+  val packet: List<u8> = []
   packet.pushU32Be(0xCAFEBABE.wrapU32())
   packet.pushU16Le(2.wrapU16())
   packet.pushI64Be(-1)
@@ -285,7 +285,7 @@ The readers (`readU16Be`, `readI32Le`, `readU64Be`, … for 16, 32 and 64
 bits, signed and unsigned) are on `List<u8>` and return `null` for an
 offset that is negative or too close to the end: no panic, because the bytes
 come from outside. The writers (`pushU16Be`, `pushI64Le`, …) are on
-`MutableList<u8>`. `isize` and `usize` are eight bytes, as the targets are
+`List<u8>`. `isize` and `usize` are eight bytes, as the targets are
 64-bit. `examples/binfile` writes and reads a small file format with these
 and `writeAtomic`.
 
@@ -537,7 +537,7 @@ random.seed(42)                          // reproducible from here; unseeded, it
 val n = random.range(1, 7)               // 1..<7
 val x = random.float()                   // 0.0..<1.0
 val pick = random.pick(names)            // T?, null when empty
-random.shuffle(deck)                     // MutableList, in place
+random.shuffle(deck)                     // List, in place
 var rng = random.Rng.seeded(7)           // a generator of your own: the same methods, no lock
 ```
 

@@ -51,9 +51,9 @@ struct Scram {
     val clientKey = hmac(salted, "Client Key".bytes())
     val storedKey = crypto.sha256(clientKey).bytes()
     val signature = hmac(storedKey, authMessage)
-    val proof: MutableList<u8> = []
+    val proof: List<u8> = []
     loop ((i, k) in clientKey.enumerate()) {
-      proof.push(k ^ (signature.at(i) ?: 0))
+      proof.push(k ^ (signature.get(i) ?: 0))
     }
     val serverKey = hmac(salted, "Server Key".bytes())
     ("$withoutProof,p=${base64.encode(proof)}", hmac(serverKey, authMessage))
@@ -78,18 +78,18 @@ fun hmac(key: List<u8>, message: List<u8>): List<u8> {
 
 // PBKDF2-HMAC-SHA-256 with one block of output (RFC 2898; 32 bytes are all SCRAM wants).
 fun pbkdf2(password: List<u8>, salt: List<u8>, iterations: i64): List<u8> {
-  val first: MutableList<u8> = salt.toMutable()
+  val first: List<u8> = salt
   first.push(0)
   first.push(0)
   first.push(0)
   first.push(1)
   var u = hmac(password, first)
-  val result = u.toMutable()
+  val result = u
   var n: i64 = 1
   loop (n < iterations) {
     u = hmac(password, u)
     loop (i in 0..<result.len()) {
-      result.set(i, result.at(i) ^ (u.at(i) ?: 0))
+      result.set(i, result.get(i) ^ (u.get(i) ?: 0))
     }
     n += 1
   }

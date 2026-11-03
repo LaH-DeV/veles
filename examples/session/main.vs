@@ -27,7 +27,7 @@ struct Search {
 /// a demonstration and wrong for a real site: use `random` for those.
 struct Sessions {
   private var next: i64 = 1
-  private users:    MutableMap<string, string> = [:]
+  private users:    Map<string, string> = [:]
 
   fun start(user: string): string {
     val id = "s${this.next}"

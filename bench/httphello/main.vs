@@ -21,7 +21,7 @@ fun main() throws IoError | FetchError {
   val (total, elapsed) = try time.measure(() => {
     var total: i64 = 0
     scope {
-      val tasks: MutableList<Task<i64>> = []
+      val tasks: List<Task<i64>> = []
       tasks.reserve(64)
       loop (_ in 0..<64) tasks.push(async client(url))
       loop (t in tasks) total += await t

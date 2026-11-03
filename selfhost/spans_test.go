@@ -80,9 +80,9 @@ func spanWalker(t *testing.T) string {
 	b.WriteString("// Generated from ast/ast.vs by `go test ./selfhost -run SpanWalker -update`; edit the source, not this file.\n\n")
 	b.WriteString("/// Every span of the tree, one line each: `Node.field start end` — what the\n")
 	b.WriteString("/// span gate compares with the bootstrap parser's tree.\n")
-	b.WriteString("fun spans(file: SourceFile): List<string> {\n  val out: MutableList<string> = []\n  spansOfSourceFile(file, out)\n  out.toList()\n}\n")
+	b.WriteString("fun spans(file: SourceFile): List<string> {\n  val out: List<string> = []\n  spansOfSourceFile(file, &out)\n  out\n}\n")
 	for _, tr := range traitOrder {
-		fmt.Fprintf(&b, "\nfun spansOf%s(node: %s, out: MutableList<string>) {\n  when (node) {\n", tr, tr)
+		fmt.Fprintf(&b, "\nfun spansOf%s(node: %s, out: *List<string>) {\n  when (node) {\n", tr, tr)
 		for _, v := range traits[tr] {
 			fmt.Fprintf(&b, "    is %s => spansOf%s(node, out)\n", v, v)
 		}
@@ -132,7 +132,7 @@ func spanWalker(t *testing.T) string {
 		if body.Len() == 0 {
 			param = "_"
 		}
-		fmt.Fprintf(&b, "\nfun spansOf%s(%s: %s, out: MutableList<string>) {\n%s}\n", n.name, param, n.name, body.String())
+		fmt.Fprintf(&b, "\nfun spansOf%s(%s: %s, out: *List<string>) {\n%s}\n", n.name, param, n.name, body.String())
 	}
 	formatted, diags := format.Source(source.NewFile("selfhost/ast/spans.vs", b.String()), format.Default)
 	if diags.HasErrors() {

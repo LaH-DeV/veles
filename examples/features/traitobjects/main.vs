@@ -59,7 +59,7 @@ struct Console {
 }
 
 struct Buffered {
-  pending: MutableList<string> = []
+  pending: List<string> = []
 
   implement Sink {
     fun write(line: string) {

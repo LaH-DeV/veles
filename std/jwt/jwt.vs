@@ -175,7 +175,7 @@ public fun sign(
 ): string throws EncodeError {
   checkKey(key, algorithm, "jwt.sign")
 
-  val header: MutableMap<string, codec.Value> = [:]
+  val header: Map<string, codec.Value> = [:]
   header.set("alg", codec.VString(value: "$algorithm"))
   header.set("typ", codec.VString(value: "JWT"))
   val kid = keyId
@@ -188,7 +188,7 @@ public fun sign(
 }
 
 fun claimsToObject(claims: Claims): codec.Value {
-  val out: MutableMap<string, codec.Value> = [:]
+  val out: Map<string, codec.Value> = [:]
   loop ((name, v) in claims.extra) {
     out.set(name, v)
   }
@@ -320,7 +320,7 @@ fun readClaims(payload: codec.Value): Claims throws Invalid {
   var notBefore: i64? = null
   var issuedAt: i64? = null
   var who: List<string> = []
-  val extra: MutableMap<string, codec.Value> = [:]
+  val extra: Map<string, codec.Value> = [:]
   loop ((name, v) in fields) {
     when (name) {
       "iss" => issuer = try text(v, "iss")
@@ -360,7 +360,7 @@ fun audience(v: codec.Value): List<string> throws Invalid {
   if (one != null) return [one]
   when (v) {
     is codec.VList => {
-      val out: MutableList<string> = []
+      val out: List<string> = []
       loop (item in v.items) {
         out.push(item.asString() ?: throw Invalid(
           message: "jwt: 'aud' holds something that is not a string",

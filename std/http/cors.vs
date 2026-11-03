@@ -100,11 +100,11 @@ fun originAllowed(c: Cors, origin: string): bool {
 // `names` added to the response's `Vary`, once each
 fun withVary(resp: Response, names: List<string>): Response {
   val have = (resp.headers.get("vary") ?: "").split(",").map(s => s.trim().toLower()).filter(s => !s.isEmpty())
-  val all: MutableList<string> = have.toMutable()
+  val all: List<string> = have
   loop (n in names) {
     if (!all.contains(n)) all.push(n)
   }
-  resp.withHeader("vary", all.toList().join(", "))
+  resp.withHeader("vary", all.join(", "))
 }
 
 fun corsAnswer(c: Cors, next: Handler, req: Request): Response {
@@ -123,7 +123,7 @@ fun corsAnswer(c: Cors, next: Handler, req: Request): Response {
     if (!allowHeaders.isEmpty()) r = r.withHeader("access-control-allow-headers", allowHeaders)
     if (c.maxAge >= 0) r = r.withHeader("access-control-max-age", "${c.maxAge}")
     if (c.credentials) r = r.withHeader("access-control-allow-credentials", "true")
-    val names: MutableList<string> = []
+    val names: List<string> = []
     if (varies) names.push("origin")
     if (reflected) names.push("access-control-request-headers")
     return withVary(r, names)

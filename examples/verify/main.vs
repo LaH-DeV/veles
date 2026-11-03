@@ -30,7 +30,7 @@ struct Checked {
 }
 
 fun readManifest(file: string): List<Entry> throws IoError | UsageError {
-  val entries: MutableList<Entry> = []
+  val entries: List<Entry> = []
   var n = 0
   loop (line in (try fs.readFile(file)).lines()) {
     n += 1
@@ -67,13 +67,13 @@ struct Options {
   var workers:  i64 = 4
 
   static fun parse(args: List<string>): Options throws UsageError {
-    val paths: MutableList<string> = []
+    val paths: List<string> = []
     var opts = Options(dir: "", manifest: "")
     var i = 0
     loop (i < args.len()) {
-      val arg = args.at(i)
+      val arg = args.get(i)
       if (arg == "--workers") {
-        val value = args.at(i + 1)?.toInt() ?: throw UsageError(message: "--workers needs a number")
+        val value = args.get(i + 1)?.toInt() ?: throw UsageError(message: "--workers needs a number")
         if (value < 1) throw UsageError(message: "--workers must be at least 1")
         opts.workers = value
         i += 1
@@ -85,8 +85,8 @@ struct Options {
       i += 1
     }
     if (paths.len() != 2) throw UsageError(message: "usage: verify <dir> <manifest> [--workers N]")
-    opts.dir = paths.at(0)
-    opts.manifest = paths.at(1)
+    opts.dir = paths.get(0)
+    opts.manifest = paths.get(1)
     opts
   }
 }

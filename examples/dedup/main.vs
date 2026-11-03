@@ -92,10 +92,10 @@ fun run(opts: Options) throws UsageError | IoError {
   val hashed = outcomes.oks()
 
   // group by fingerprint; a group of one is not a duplicate
-  val groups: MutableMap<Fingerprint, MutableList<string>> = [:]
+  val groups: Map<Fingerprint, List<string>> = [:]
   loop (h in hashed) {
     if (h.size < opts.minSize) continue
-    groups.getOrPut(Fingerprint(size: h.size, hash: h.hash), () => []).push(h.file)
+    groups.atOrPut(Fingerprint(size: h.size, hash: h.hash), () => []).push(h.file)
   }
   val dupes = groups.entries()
     .filter(e => e.value.len() > 1)

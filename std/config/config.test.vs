@@ -66,7 +66,7 @@ test fun env(pairs: Map<string, string>): fun(string): string? => (name => pairs
 
 // the two variables nothing can default, and `extra` on top
 test fun minimal(extra: Map<string, string> = [:]): Map<string, string> {
-  val vars: MutableMap<string, string> = ["NAME": "svc", "DATABASE_URL": "postgres://u:p@h/db"]
+  val vars: Map<string, string> = ["NAME": "svc", "DATABASE_URL": "postgres://u:p@h/db"]
   loop ((name, value) in extra.entries()) {
     vars.set(name, value)
   }
@@ -270,22 +270,22 @@ test "a JSON file that is not an object is a problem" {
 
 test "describe lists the variables with their types, defaults and secrecy" {
   val vars = describe<Server>()
-  val port = vars.at(0) ?: panic("PORT")
+  val port = vars.get(0) ?: panic("PORT")
   expect(port.name == "PORT")
   expect(port.what == "an integer")
   expect(!port.required)
   expect(port.default == "8080")
-  val level = vars.at(4) ?: panic("LOG_LEVEL")
+  val level = vars.get(4) ?: panic("LOG_LEVEL")
   expect(level.what == "one of \"Debug\", \"Info\", \"Warn\"")
   expect(level.default == "Info")
-  val name = vars.at(10) ?: panic("NAME")
+  val name = vars.get(10) ?: panic("NAME")
   expect(name.required)
   expect(name.default == null)
-  val url = vars.at(11) ?: panic("DATABASE_URL")
+  val url = vars.get(11) ?: panic("DATABASE_URL")
   expect(url.name == "DATABASE_URL")
   expect(url.secret)
   expect(url.required)
-  val hosts = vars.at(6) ?: panic("HOSTS")
+  val hosts = vars.get(6) ?: panic("HOSTS")
   expect(hosts.default == "a,b")
 }
 

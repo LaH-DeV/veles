@@ -179,7 +179,7 @@ func (g *gen) debugParam(v *sema.Var, arg int) {
 	if !ok || v.Captured {
 		return
 	}
-	g.debugVar(v, st, arg, v.AddrTaken || v.IsSelf)
+	g.debugVar(v, st, arg, v.HeapCell() || v.IsSelf)
 }
 
 // debugType describes t to the debugger: numbers and bools as base types,

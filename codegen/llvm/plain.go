@@ -105,8 +105,7 @@ func (g *gen) callee(e *sema.Call) *sema.Func {
 // lambdaArg is the lambda an argument is, through what passes a function
 // value on unchanged.
 func lambdaArg(a sema.Expr) *sema.Closure {
-	cl, _ := sema.FuncValueOf(a).(*sema.Closure)
-	return cl
+	return sema.LambdaOf(a)
 }
 
 // lambdaFn is the function a lambda's value points to in this instance.

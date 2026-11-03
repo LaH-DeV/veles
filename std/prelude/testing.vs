@@ -44,33 +44,33 @@ const fun testIndent(text: string, column: i64): string {
 const fun lineDiff(left: List<string>, right: List<string>, leftName: string, rightName: string): string {
   // the equal lines at both ends need no table
   var head = 0
-  loop (head < left.len() && head < right.len() && left.at(head) == right.at(head)) head += 1
+  loop (head < left.len() && head < right.len() && left.get(head) == right.get(head)) head += 1
   var tail = 0
-  loop (tail < left.len() - head && tail < right.len() - head && left.at(left.len() - 1 - tail) == right.at(right.len() - 1 - tail)) tail += 1
+  loop (tail < left.len() - head && tail < right.len() - head && left.get(left.len() - 1 - tail) == right.get(right.len() - 1 - tail)) tail += 1
   val rows = left.len() - head - tail
   val cols = right.len() - head - tail
-  val out = MutableList<string>()
+  val out = List<string>()
   out.push("\n      diff (- ${leftName}, + ${rightName}):")
   val context = 2
   if (head > context) out.push("\n          ...")
-  loop (i in (if (head > context) head - context else 0)..<head) out.push("\n          " + (left.at(i) ?: ""))
+  loop (i in (if (head > context) head - context else 0)..<head) out.push("\n          " + (left.get(i) ?: ""))
   if (rows * cols > 40000) {
     // too long to align: everything between the equal ends, as removed and added
-    loop (i in head..<head + rows) out.push("\n        - " + (left.at(i) ?: ""))
-    loop (j in head..<head + cols) out.push("\n        + " + (right.at(j) ?: ""))
+    loop (i in head..<head + rows) out.push("\n        - " + (left.get(i) ?: ""))
+    loop (j in head..<head + cols) out.push("\n        + " + (right.get(j) ?: ""))
   } else {
     // common[i * (cols + 1) + j]: the longest common run of left[head + i..]
     // and right[head + j..]
     val width = cols + 1
-    val common = MutableList<i64>()
+    val common = List<i64>()
     loop (_ in 0..<(rows + 1) * width) common.push(0)
     loop (i in (0..<rows).reversed()) {
       loop (j in (0..<cols).reversed()) {
-        val here = if (left.at(head + i) == right.at(head + j)) {
-          (common.at((i + 1) * width + j + 1) ?: 0) + 1
+        val here = if (left.get(head + i) == right.get(head + j)) {
+          (common.get((i + 1) * width + j + 1) ?: 0) + 1
         } else {
-          val down = common.at((i + 1) * width + j) ?: 0
-          val across = common.at(i * width + j + 1) ?: 0
+          val down = common.get((i + 1) * width + j) ?: 0
+          val across = common.get(i * width + j + 1) ?: 0
           if (down > across) down else across
         }
         common.set(i * width + j, here)
@@ -80,24 +80,24 @@ const fun lineDiff(left: List<string>, right: List<string>, leftName: string, ri
     var j = 0
     loop (i < rows || j < cols) {
       when {
-        i < rows && j < cols && left.at(head + i) == right.at(head + j) => {
-          out.push("\n          " + (left.at(head + i) ?: ""))
+        i < rows && j < cols && left.get(head + i) == right.get(head + j) => {
+          out.push("\n          " + (left.get(head + i) ?: ""))
           i += 1
           j += 1
         }
-        i < rows && (j == cols || (common.at((i + 1) * width + j) ?: 0) >= (common.at(i * width + j + 1) ?: 0)) => {
-          out.push("\n        - " + (left.at(head + i) ?: ""))
+        i < rows && (j == cols || (common.get((i + 1) * width + j) ?: 0) >= (common.get(i * width + j + 1) ?: 0)) => {
+          out.push("\n        - " + (left.get(head + i) ?: ""))
           i += 1
         }
         else => {
-          out.push("\n        + " + (right.at(head + j) ?: ""))
+          out.push("\n        + " + (right.get(head + j) ?: ""))
           j += 1
         }
       }
     }
   }
   val end = left.len() - tail
-  loop (i in end..<(if (tail > context) end + context else left.len())) out.push("\n          " + (left.at(i) ?: ""))
+  loop (i in end..<(if (tail > context) end + context else left.len())) out.push("\n          " + (left.get(i) ?: ""))
   if (tail > context) out.push("\n          ...")
   out.join("")
 }

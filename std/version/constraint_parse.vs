@@ -25,7 +25,7 @@ struct Partial {
 
 /// Every set of a constraint.
 fun readConstraint(text: string): List<List<Comparator>> throws VersionError {
-  val sets: MutableList<List<Comparator>> = []
+  val sets: List<List<Comparator>> = []
   loop (written in text.split("||")) {
     sets.push(try readSet(written.trim(), text))
   }
@@ -37,7 +37,7 @@ fun readSet(written: string, whole: string): List<Comparator> throws VersionErro
   if (written.isEmpty()) {
     throw VersionError(message: "${quoted(whole)}: a constraint is a version, a bound like '>=1.2', or '*' for any version")
   }
-  val comparators: MutableList<Comparator> = []
+  val comparators: List<Comparator> = []
   loop (token in tokens(written)) {
     loop (comparator in try expand(token, whole)) comparators.push(comparator)
   }
@@ -47,7 +47,7 @@ fun readSet(written: string, whole: string): List<Comparator> throws VersionErro
 /// The words of a set, an operator on its own joined to the version after it
 /// (`>= 1.2` is one comparator).
 fun tokens(written: string): List<string> {
-  val out: MutableList<string> = []
+  val out: List<string> = []
   var pending = ""
   loop (word in written.replace(",", " ").split(" ")) {
     if (word.isEmpty()) continue
@@ -123,7 +123,7 @@ fun readPartial(written: string, whole: string): Partial throws VersionError {
   val pre: List<string> = if (text.contains("-")) try readPre(preText, whole) else []
   val parts = numbers.split(".")
   if (parts.len() > 3) throw VersionError(message: "${quoted(whole)}: ${quoted(written)} has more than three numbers")
-  val values: MutableList<i64?> = []
+  val values: List<i64?> = []
   var wild = false
   loop (part in parts) {
     if (isWildcard(part)) {
@@ -136,5 +136,5 @@ fun readPartial(written: string, whole: string): Partial throws VersionError {
   }
   if (wild && !pre.isEmpty()) throw VersionError(message: "${quoted(whole)}: ${quoted(written)} has a pre-release after an 'x'")
   if (!pre.isEmpty() && values.len() < 3) throw VersionError(message: "${quoted(whole)}: a pre-release goes with all three numbers, not ${quoted(written)}")
-  Partial(major: values.at(0) ?: null, minor: values.at(1) ?: null, patch: values.at(2) ?: null, pre)
+  Partial(major: values.get(0) ?: null, minor: values.get(1) ?: null, patch: values.get(2) ?: null, pre)
 }

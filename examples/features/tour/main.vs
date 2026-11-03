@@ -2,7 +2,7 @@ use io { println }
 
 // Labeled loops (§4b), subjectless when (D13), ranges (D29)
 fun primes(limit: i64): List<i64> {
-  var found: MutableList<i64> = []
+  var found: List<i64> = []
   loop :outer (n in 2..limit) {
     loop (p in found) {
       if (n % p == 0) continue outer

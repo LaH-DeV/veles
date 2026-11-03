@@ -1,11 +1,12 @@
 # 4. Collections
 
-Veles has three built-in collections — `List`, `Map` and `Set` — and each
-comes in an **immutable** and a **mutable** flavour. This split is the
-one idea to absorb in this chapter: `List<T>` never changes after it is
-built, `MutableList<T>` grows and shrinks, and converting between them
-copies (D25). The payoff comes later: an immutable collection can be
-shared between tasks without locks (D35).
+Veles has three built-in collections — `List`, `Map` and `Set` — and all
+three are **values**, like a struct (D231). That is the one idea to absorb
+in this chapter: `val b = a` gives `b` a list of its own, passing a list to
+a function gives the function its own, and changing one never changes
+another. Copying is cheap — the elements are copied only when one of the
+copies is first changed — and because nothing else can change a list you
+hold, a list can be handed to another task without a lock (D35).
 
 ## Lists
 
@@ -16,16 +17,16 @@ use io
 
 fun main() {
   val primes = [2, 3, 5, 7]  // List<i64>
-  io.println("${primes.len()} ${primes.at(0)} ${primes.at(10) ?: -1} ${primes.contains(5)}")
+  io.println("${primes.len()} ${primes.get(0)} ${primes.get(10) ?: -1} ${primes.contains(5)}")
 
-  val names = mut ["ann", "bob"]  // MutableList<string>
+  val names = ["ann", "bob"]  // List<string>
   names.push("cy")
   val last = names.pop()  // string?
   io.println("$names ${last ?: "-"} ${names.isEmpty()}")
 
-  val frozen = names.toList()  // copy into an immutable List
-  names.push("dee")            // does not affect `frozen`
-  io.println("$frozen $names")
+  val before = names  // a copy: lists are values
+  names.push("dee")   // does not affect `before`
+  io.println("$before $names")
 }
 ```
 
@@ -53,9 +54,9 @@ func main() {
 	}
 	fmt.Println(names, last, len(names) == 0)
 
-	frozen := slices.Clone(names) // `frozen := names` would share the array
+	before := slices.Clone(names) // `before := names` would share the array
 	names = append(names, "dee")
-	fmt.Println(frozen, names)
+	fmt.Println(before, names)
 }
 
 // 4 2 -1 true
@@ -72,9 +73,9 @@ names.push("cy");
 const last = names.pop(); // string | undefined
 console.log(`[${names.join(", ")}] ${last ?? "-"} ${names.length === 0}`);
 
-const frozen: readonly string[] = [...names]; // a copy
+const before: readonly string[] = [...names]; // a copy
 names.push("dee");
-console.log(`[${frozen.join(", ")}] [${names.join(", ")}]`);
+console.log(`[${before.join(", ")}] [${names.join(", ")}]`);
 ```
 
 ```swift [Swift]
@@ -86,9 +87,9 @@ names.append("cy")
 let last = names.popLast() // String?
 print("\(names) \(last ?? "-") \(names.isEmpty)")
 
-let frozen = names // arrays are values: this is already a copy
+let before = names // arrays are values: this is already a copy
 names.append("dee")
-print("\(frozen) \(names)")
+print("\(before) \(names)")
 
 // 4 2 -1 true
 // ["ann", "bob"] cy false
@@ -97,7 +98,7 @@ print("\(frozen) \(names)")
 
 ```kotlin [Kotlin]
 fun main() {
-    // List is a read-only view, not immutable: a MutableList passed
+    // List is a read-only view, not immutable: a List passed
     // as a List can still change under its reader
     val primes = listOf(2L, 3L, 5L, 7L)
     println("${primes.size} ${primes[0]} ${primes.getOrNull(10) ?: -1L} ${primes.contains(5)}")
@@ -107,9 +108,9 @@ fun main() {
     val last = names.removeLastOrNull() // String?
     println("$names ${last ?: "-"} ${names.isEmpty()}")
 
-    val frozen = names.toList() // a copy
+    val before = names.toList() // a copy
     names.add("dee")
-    println("$frozen $names")
+    println("$before $names")
 }
 ```
 
@@ -129,9 +130,9 @@ fn main() {
     let last = names.pop(); // Option<&str>
     println!("{names:?} {} {}", last.unwrap_or("-"), names.is_empty());
 
-    let frozen = names.clone(); // a copy
+    let before = names.clone(); // a copy
     names.push("dee");
-    println!("{frozen:?} {names:?}");
+    println!("{before:?} {names:?}");
 }
 
 // 4 2 -1 true
@@ -148,127 +149,183 @@ Output:
 [ann, bob] [ann, bob, dee]
 ```
 
-- `[a, b, c]` is a `List`; `mut [a, b, c]` is a `MutableList`. When the
-  expected type is known — an annotated binding, a parameter, a field, a
-  return — the literal takes it, mutability included, and `mut` is not
-  written: `var xs: MutableList<i64> = []`, `fill([1, 2])`. An **empty**
-  literal always needs such a type, because there is nothing to infer it
-  from; when a later line decides it (`var xs = []` then `xs.push(1)`),
-  the error comes with a fix that writes `var xs: MutableList<i64> = []`
-  for you (`veles check --fix`, or the editor's quick fix; D106). A list literal where a `Set` is expected builds a set:
-  `val seen: Set<i64> = [1, 2]`.
+- `[a, b, c]` is a `List`. When the expected type is known — an annotated
+  binding, a parameter, a field, a return — the literal takes it:
+  `val xs: List<i64> = []`, `fill([1, 2])`. An **empty** literal always
+  needs such a type, because there is nothing to infer it from; when a
+  later line decides it (`val xs = []` then `xs.push(1)`), the error comes
+  with a fix that writes `val xs: List<i64> = []` for you (`veles check
+  --fix`, or the editor's quick fix; D106). A list literal where a `Set` is
+  expected builds a set: `val seen: Set<i64> = [1, 2]`.
 - Reading is a method, never brackets — `[...]` only ever builds a literal.
-  `xs.at(i)` returns `T?`: null when `i` is out of range. Where the
-  compiler can **see** that `i` is in range, it returns `T` instead (see
-  below). Where you know better than the compiler, say why:
-  `xs.at(i) ?: panic("the header always has three parts")`.
-  `xs.atOrDefault(i, d)` is `xs.at(i) ?: d`. A negative index counts from
-  the end: `xs.at(-1)` is the last element.
-- `push`, `pop` and `clear` exist only on `MutableList`; calling them on a
-  `List` is a compile-time error, not a runtime one.
-- A `List` never changes, so a `MutableList` does not quietly become one.
-  `xs.toList()` copies it. The exception is a list you just built and
-  nobody else has seen: returning it, or passing it on as its last use,
-  hands it over without a copy (D63). "Nobody else" still holds while you
-  hand the list to a function that only reads or fills it (it does not
-  store it, return it or capture it), and for a field of a struct you
-  built in the same function and kept to yourself (D188) — also when you
-  call its methods, as long as they only fill and read the field and keep
-  neither it nor the struct, and none that reads the field runs after the
-  move (D201):
+  `xs.get(i)` returns a copy of the element, a `T?`: null when `i` is out
+  of range. Where the compiler can **see** that `i` is in range, it
+  returns `T` instead (see below). Where you know better than the
+  compiler, say why: `xs.get(i) ?: panic("the header always has three
+  parts")`. `xs.getOrDefault(i, d)` is `xs.get(i) ?: d`. A negative index
+  counts from the end: `xs.get(-1)` is the last element. Its partner
+  `xs.at(i)` reaches the element itself, to change it (see
+  [Updating elements in place](#updating-elements-in-place)).
+- `push`, `pop`, `set`, `clear` change the list where it lives. `val` only
+  means the name is never bound to another list — as for a struct, whose
+  methods may change it (D22) — so `val names = ["ann"]; names.push("bob")`
+  is fine. What cannot be changed is a module-level `val`: a constant every
+  task shares, and a change to it is a compile-time error.
+
+### A list is a value
+
+Everything that copies a struct copies a list: binding it, assigning it,
+passing it, returning it, storing it in a field or another collection,
+sending it on a channel. Afterwards the two are independent:
 
 ```veles
 use io
 
-struct Report {
-  lines: MutableList<string> = []
-
-  fun add(line: string) { this.lines.push(line) }
+struct Inventory {
+  items: List<string> = []
 }
 
-fun addLines(out: MutableList<string>, n: i64) {
-  loop (i in 0..<n) out.push("line $i")
-}
-
-fun report(n: i64): List<string> {
-  val out: MutableList<string> = []
-  addLines(out, n)  // only fills it: still nobody else's
-  out
-}
-
-fun summary(): List<string> {
-  var r = Report()
-  r.add("a")        // a method that only fills the field
-  r.lines.push("b")
-  r.lines  // a field of a struct built here
+fun withExtra(xs: List<string>): List<string> {
+  xs.push("extra")  // the function's own copy: the caller's list is untouched
+  xs
 }
 
 fun main() {
-  io.println("${report(2)} ${summary()}")
+  val a = ["x", "y"]
+  val b = a
+  b.push("z")
+  io.println("$a $b ${withExtra(a)} $a")
+
+  val shop = Inventory(items: ["pen"])
+  val copy = shop                // the struct's list is copied with it
+  copy.items.push("ink")
+  io.println("${shop.items} ${copy.items}")
+
+  val grid: List<List<i64>> = [[1], [2]]
+  val saved = grid
+  grid.at(0)?.push(10)        // the inner list itself, in place
+  io.println("$grid $saved")
 }
 ```
 
 Output:
 ```text
-[line 0, line 1] [a, b]
+[x, y] [x, y, z] [x, y, extra] [x, y]
+[pen] [pen, ink]
+[[1, 10], [2]] [[1], [2]]
 ```
 
-  Where the compiler cannot show that (the list is a parameter, or goes
-  through a method, a closure or a function that keeps it, or a method that
-  reads it runs after the move), the error says
-  so and `.toList()` is the copy. A `.toList()` on a list that is not used
-  afterwards is a warning (`redundant_copy`) with a fix: the move needs no
-  copy. The editor marks every move with an inlay hint after the
-  expression: `out` `moved immutable`.
-- When the compiler cannot show a move and a copy is too dear (a builder that
-  keeps its list in a field, a list a method hands over when it is done),
-  `xs.freeze()` makes the `MutableList` immutable **in place**: it returns the
-  same object as a `List`, with no copy (`MutableMap` and `MutableSet` have it
-  too). It is the one place this can panic: afterwards **any change through a
-  name that still sees it as mutable** (`push`, `set`, `clear`, a pointer from
-  `ref`, ...) panics with "was frozen by freeze()", and freezing twice panics.
-  Reading through those names still works. A pointer you took into the list
-  with `ref` or `loop (&x in xs)` before the freeze cannot reach the frozen
-  contents: the list remembers that a pointer was made and copies its elements
-  once at the freeze (D188). Prefer returning the local (a move) or
-  `.toList()`; use `freeze()` only when neither fits.
+**What it costs.** A list is one pointer to a header (where its elements
+are, how many, how many fit). Copying a list copies that pointer and marks
+the header *shared*; the elements are not touched, so a copy is O(1) however
+long the list is. The first change made through a shared header copies the
+elements into storage of its own — O(n), once — and from then on that list
+changes in place again. So the cost lands on the **first change after a
+copy**, not where the copy is written:
 
 ```veles
 use io
 
-struct Report {
-  protected var lines: MutableList<string> = []
-
-  // false once the report is finished, instead of a panic
-  fun add(line: string): bool {
-    if (this.lines.isFrozen()) return false
-    this.lines.push(line)
-    true
-  }
-
-  // the report is finished: its lines become a List without a copy
-  fun finish(): List<string> => this.lines.freeze()
-}
-
 fun main() {
-  val r = Report()
-  r.add("first")
-  r.add("second")
-  val done = r.finish()
-  val late = r.add("third")
-  io.println("$done ${done.len()} $late")
+  val log: List<string> = []
+  loop (i in 0..<3) log.push("line $i")  // no copy: nobody else holds `log`
+  val snapshot = log                      // O(1): the header is marked shared
+  log.push("line 3")                      // O(n) once: `log` gets its own elements
+  log.push("line 4")                      // in place again
+  io.println("${snapshot.len()} ${log.len()}")
 }
 ```
 
 Output:
 ```text
-[first, second] 2 false
+3 5
 ```
 
-  `xs.isFrozen()` (on the three mutable types) asks whether that has
-  happened, for code that may be handed a finished collection. The usual
-  answer is to refuse or report an error, as `add` does; quietly skipping
-  the change is usually a bug hiding.
+The compiler leaves the mark out where no second holder can exist: a
+list that was just built (a literal, a call's result), a local returned at
+the end of its function (it moves to the caller), and a local passed to a
+parameter the function only reads (it is lent for the call). A copy
+therefore costs something only where the program really keeps two lists
+and then changes one. The mark is not undone: once two holders existed,
+the first of them to change copies, even if the other is gone — at most one
+copy per sharing. An empty `[]` is one shared constant per element type, so
+it allocates nothing until its first `push`. `clear()` on a shared list (or
+map, or set) copies none of the elements it would drop: the list takes that
+empty constant, and the other holder keeps its elements.
+
+**Seeing where it copies.** The copy happens at the first change, not
+where the second holder was made, so the editor shows both ends. The
+statement that made the second holder ends with what will be copied and
+where: in the example above, `val snapshot = log` is followed by
+`log copied at its first change, line 7`. A change two or more lines further
+on gets a short marker of its own, `copies log`; inside a loop that repeats
+the change but not the copy that shared the list, it says `copies log
+once`, because only the first round copies and the others change the copy
+in place:
+
+```veles
+// fragment
+val more = list                     // « more copied at its first change, line 4 »
+loop (x in list) {
+  more.push(x * 2)                  // « copies more once »
+}
+```
+
+A loop over a list its body changes says so on its first line
+(`xs copied at its first change, line …`); the first change to a list
+parameter says `copies xs (a parameter)`; a `clear()` of a shared list says
+`copied as empty`. Making a changed copy this way costs one copy of the
+elements, and the copy is made with room to grow, so the pushes that follow
+do not copy them again. A share in another function is followed too: a
+field a method returns (`fun all(): List<string> => this.items`) makes the
+next change of it in any method say `copies this.items (shared in
+Shelf.all)`, and a change through a pointer parameter whose caller had
+shared the value says `copies into (shared by the caller, main)`. The hints
+are on by default; the
+`veles.inlayHints.copies` setting turns them off.
+
+**Changing someone else's list** is spelled with a pointer, the same way as
+for a struct (D10): the function takes `*List<T>`, the caller passes `&xs`.
+The sharing is in the signature, where a reader sees it:
+
+```veles
+use io
+
+fun fill(into: *List<i64>, n: i64) {
+  loop (i in 0..<n) into.push(i * i)
+}
+
+fun main() {
+  val squares: List<i64> = []
+  fill(&squares, 4)
+  io.println("$squares")
+}
+```
+
+Output:
+```text
+[0, 1, 4, 9]
+```
+
+A function that changes a list parameter it took by value changes its own
+copy, and the caller never sees the change — unless it returns the list,
+as `withExtra` does. That is a warning (`param_copy`) naming the change and
+the fix (take `*List<T>`, or return the value). So is the other half of the
+same mistake: binding a copy of a field or an element and changing the
+copy, `val edges = this.adj.get(a) ?: …; edges.push(b)` (`copy_changed`):
+the change was meant for the element, which `at` reaches.
+
+Two places copy where it is easy to miss:
+
+- a **trait object** holds its own copy of the value boxed into it (D9) —
+  a struct passed where an `Encoder` is expected writes into that copy, so
+  a type that is meant to be handed around that way keeps what it
+  accumulates behind a pointer (std's `JsonEncoder` keeps its output in a
+  `*EncodeState`);
+- an **element read** (`xs.get(i)`, `m.get(k)`, the variable of
+  `loop (x in xs)`) is a copy of the element — for a list of lists, of the
+  inner list; `at` and `loop (&x in xs)` reach the element itself (see
+  [Updating elements in place](#updating-elements-in-place)).
 
 ### When the index is known to be in range
 
@@ -281,18 +338,18 @@ use io
 fun sum(xs: List<i64>): i64 {
   var total: i64 = 0
   loop (i in xs.indices()) {
-    total += xs.at(i)  // i64: i is one of xs's indexes
+    total += xs.get(i)  // i64: i is one of xs's indexes
   }
   total
 }
 
 fun ends(xs: List<i64>): i64 {
   if (xs.len() < 2) return 0
-  xs.at(0) + xs.at(-1)  // i64: the length was checked above
+  xs.get(0) + xs.get(-1)  // i64: the length was checked above
 }
 
 fun build(n: i64): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   out.reserve(n)  // room for all n: the pushes below never grow it
   loop (i in 0..<n) out.push(i * i)
   out  // handed over as a List, not copied
@@ -313,9 +370,9 @@ Output:
   only counts up, or `i >= 0`); a constant index after `xs.len() >= n`,
   `xs.len() == n` or `!xs.isEmpty()`. `first()` and `last()` are `T` once
   the list is known not to be empty.
-- What ends it: assigning the list or the index. For a `MutableList`,
+- What ends it: assigning the list or the index. For a `List`,
   also any function call, because the call might shrink the list through
-  another name. Index arithmetic such as `xs.at(i + 1)` is not tracked.
+  another name. Index arithmetic such as `xs.get(i + 1)` is not tracked.
 - When a proof is lost, for example because a refactor moved a call
   between the check and the read, the read goes back to `T?` and the
   compiler reports it. A `?:` after a read that became `T` is a warning
@@ -376,7 +433,7 @@ ann at example.com
   cover every list, and the compiler names any lengths you missed. An arm
   with a literal element, such as `["help"]`, covers nothing on its own.
 - The names are copies taken when the match runs, so changing a
-  `MutableList` afterwards does not change them.
+  `List` afterwards does not change them.
 
 ### Transforming lists
 
@@ -456,17 +513,19 @@ wrong, never a panic.
 
 ### Updating elements in place
 
-Every read is a **value**: `xs.at(i)`, `xs.first()`, `xs.find(p)` and
+Every read is a **value**: `xs.get(i)`, `xs.first()`, `xs.find(p)` and
 the loop variable of `loop (x in xs)` all hand you a copy of a struct
-element, exactly as `val t = xs.at(i)` does. So a change to what you
+element, exactly as `val t = xs.get(i)` does. So a change to what you
 read never reaches the list — and the compiler says so rather than
-letting it vanish: `xs.at(i)?.bump()` is an error ("a copy of the
+letting it vanish: `xs.get(i)?.bump()` is an error ("a copy of the
 element").
 
-To change an element, ask for a **reference** to it. `ref(i)` is a
+To change an element, reach it **at** its place. `xs.at(i)` is a
 pointer to the element, `(*T)?`: null when `i` is out of range, and a
 plain `*T` where the index is known to be in range. `loop (&x in xs)`
-visits every element by reference. A read and a write then never look alike:
+visits every element by reference. The pair is spelled the same on
+`List`, `Array` and `Map` — `at` reaches the element, `get` copies it
+(D231) — so a read and a write never look alike:
 
 ```veles
 use io
@@ -481,21 +540,21 @@ struct Counter {
 }
 
 fun main() {
-  val counters: MutableList<Counter> = [Counter(name: "a"), Counter(name: "b")]
-  var copy = counters.at(0) ?: panic("two counters")  // a copy: `var` because we change it
+  val counters: List<Counter> = [Counter(name: "a"), Counter(name: "b")]
+  var copy = counters.get(0) ?: panic("two counters")  // a copy: `var` because we change it
   copy.n = 100
-  counters.ref(0)?.bump()            // the element itself
-  counters.ref(1)?.n = 5             // in range: written; out of range: skipped
-  counters.ref(7)?.n = 5
-  val p = counters.ref(1) ?: panic("two counters")  // a pointer may sit in a `val`
+  counters.at(0)?.bump()  // the element itself
+  counters.at(1)?.n = 5   // in range: written; out of range: skipped
+  counters.at(7)?.n = 5
+  val p = counters.at(1) ?: panic("two counters")  // a pointer may sit in a `val`
   p.bump()
-  loop (&c in counters) c.n *= 10    // every element, in place
+  loop (&c in counters) c.n *= 10  // every element, in place
   io.println("${copy.n} ${counters.map(c => c.n)}")
 
-  val nums: MutableList<i64> = [1, 2, 3]
-  if (nums.len() > 0) *nums.ref(0) += 10  // a primitive: write through the pointer
+  val nums: List<i64> = [1, 2, 3]
+  if (nums.len() > 0) *nums.at(0) += 10  // a primitive: write through the pointer
   loop (&n in nums) *n += 1
-  nums.set(2, 0)                     // or replace the element outright
+  nums.set(2, 0)  // or replace the element outright
   io.println("$nums")
 }
 ```
@@ -506,61 +565,81 @@ Output:
 [12, 3, 0]
 ```
 
-`ref` exists only on `MutableList` and `MutableMap`; `m.ref(k)` and
-`loop ((k, &v) in m)` reach map values. Two things to know about a reference: it is a pointer
-into the collection's storage, so keep it short-lived — after the list
-grows (`push`) an old reference points at the old buffer; and `&` in a
-loop head means the same as `ref`, so `loop (&x in xs)` on a read-only
-`List` is an error.
+On a map, `m.at(k)`, `m.atOrPut(k, make)` and `loop ((k, &v) in m)` reach
+the stored values. A reference is a pointer into the
+collection's own storage, so taking one first makes that storage the
+list's alone — a list that was shared is copied then, once — and a copy of
+the list taken while the pointer lives gets storage of its own, so the
+pointer never reaches the copy (D231). Keep a reference short-lived: after
+the list grows (`push`) an old reference points at the old buffer.
 
 ### Changing a collection while a loop walks it
 
-A loop over a `MutableList`, `MutableMap`, `MutableSet` or `Deque` walks
-the collection as it is, so the body may not change its length or order
-(D102): `loop (x in xs) { if (x < 3) xs.push(x) }` is an error naming the
-call and the loop. Replacing an element in place is fine — `xs.set(i, v)`,
-`*x = v` in `loop (&x in xs)`, `m.set(k, v)` for the key being visited.
-To change the collection, loop over a copy (`xs.toList()`, the quick fix)
-or collect the changes and apply them after the loop; to grow a worklist
-while walking it, loop over its indices or a range, which walks no
-collection:
+A loop over a `List`, `Map` or `Set` walks the collection **as it was when
+the loop began** (D231). The body may change it — push, remove, clear — and
+the loop goes on over the original elements; the changes are there after
+the loop:
 
 ```veles
 use io
 
 fun main() {
-  val work: MutableList<i64> = [3]
-  var i = 0
-  loop (i < work.len()) {          // a condition loop: the list may grow
-    val n = work.at(i) ?: 0
-    if (n > 1) work.push(n - 1)
-    i += 1
+  val xs = [1, -2, 3]
+  loop (x in xs) {
+    if (x > 0) xs.push(-x)   // the loop still sees [1, -2, 3]
   }
-  val evens: MutableList<i64> = []
-  loop (n in work) {
-    if (n % 2 == 0) evens.push(n)  // another list: fine
-  }
-  io.println("$work $evens")
+  io.println("$xs")
 }
 ```
 
 Output:
 ```text
-[3, 2, 1] [2]
+[1, -2, 3, -1, -3]
 ```
 
-A change the compiler cannot see — a function handed the same list —
-is caught when the loop next steps: the program panics with
-`'xs' changed while a loop walked it` at the loop's line, in debug and
-release builds alike.
+This is the value rule again: the loop holds a copy of the list. A copy
+costs nothing until something changes: the loop marks the list as being
+walked, and the first change made while it runs — in the body, or anywhere
+else, through a pointer a called function holds — copies the elements
+once, so the change lands in the variable and the loop keeps the original.
+A loop during which nothing changes the list copies nothing (D102
+addendum). Changing an element in place through `loop (&x in xs)` changes
+the list itself — that loop walks the list's own storage, so a change to
+its length from the body is refused, and one made elsewhere panics when
+the loop next steps.
+
+To grow a worklist and visit the new elements too, loop with an index, not
+over the list:
+
+```veles
+use io
+
+fun main() {
+  val work: List<i64> = [3]
+  var i = 0
+  loop (i < work.len()) {  // reads the length every step: sees growth
+    val n = work.get(i)
+    if (n > 1) work.push(n - 1)
+    i += 1
+  }
+  io.println("$work")
+}
+```
+
+Output:
+```text
+[3, 2, 1]
+```
+
+A `Deque` is not a value — it is a queue shared by reference — so a loop
+over one still refuses a change to its length while it walks it (D102).
 
 ### Comparing collections
 
 Two lists are equal when they hold equal elements in the same order; two
 maps when they hold the same keys with equal values; two sets when they
-hold the same elements — order never matters for a map or a set. The
-mutable and immutable kinds compare with each other, and anything built
-from comparable parts is comparable: a `List<List<i64>>`, a struct with a
+hold the same elements — order never matters for a map or a set. Anything
+built from comparable parts is comparable: a `List<List<i64>>`, a struct with a
 `List` field, a `Map<string, Set<i64>>`. What is *not* comparable is a
 value with no meaningful equality — a function.
 
@@ -574,14 +653,14 @@ struct Row {
 
 fun main() {
   val a = [1, 2, 3]
-  var b: MutableList<i64> = []
+  var b: List<i64> = []
   b.push(1); b.push(2); b.push(3)
   io.println("${a == b} ${a == [3, 2, 1]} ${[[1], [2]] == [[1], [2]]}")
   io.println("${["x": 1, "y": 2] == ["y": 2, "x": 1]} ${[1, 2].contains(2)} ${[[1, 2], [3]].indexOf([3])}")
   val s1: Set<i64> = [1, 2]
   val s2: Set<i64> = [2, 1, 1]
   io.println("${s1 == s2} ${Row(name: "a", scores: [1]) == Row(name: "a", scores: [1])}")
-  var byScores: MutableMap<List<i64>, string> = [:]
+  var byScores: Map<List<i64>, string> = [:]
   byScores.set([9, 9], "perfect")
   io.println("${byScores.get([9, 9])} ${byScores.get([9, 8])}")
 }
@@ -682,7 +761,7 @@ fun main() {
   val ages = ["ann": 41, "bob": 29]  // Map<string, i64>
   io.println("${ages.get("ann") ?: 0} ${ages.get("zed") ?: 0} ${ages.containsKey("bob")} ${ages.len()}")
 
-  var stock = mut ["apples": 3]  // MutableMap<string, i64>
+  var stock = ["apples": 3]  // Map<string, i64>
   stock.set("pears", 5)
   stock.set("apples", (stock.get("apples") ?: 0) + 1)
   stock.remove("pears")
@@ -706,20 +785,42 @@ bob is 29
 reads above carry `?: 0`. This is the honest type: a lookup can fail.
 For a key you know is there, say why: `m.get(key) ?: panic("…")`;
 `m.getOrDefault(key, d)` is `m.get(key) ?: d`.
-Writing `m.set(key, value)` requires a `MutableMap` and inserts or
+Writing `m.set(key, value)` requires a `Map` and inserts or
 replaces. There is no bracket form: `[...]` only ever builds a literal.
 A read is a copy of the value; to change the stored value ask for a
-reference: `m.ref(key)?.bump()` and `m.ref(key)?.n += 1` update the
+reference: `m.at(key)?.bump()` and `m.at(key)?.n += 1` update the
 entry in the map, and `loop ((k, &v) in m)` visits every value by
 reference (see [Updating elements in place](#updating-elements-in-place)
 above; chapter 6 has the `?.` side).
 
 Keys must be **hashable**: numbers, strings, booleans, tuples of those,
 structs whose fields are (structs get equality and hashing for free),
-and immutable lists, maps and sets of hashable elements — `m.get([1, 2])`
+and lists, maps and sets of hashable elements — `m.get([1, 2])`
 finds a key stored as `[1, 2]`, because collections compare by content
-(`[1, 2] == [1, 2]` is true; a set or map ignores insertion order). A
-`MutableList` cannot be a key: it could change after it was stored.
+(`[1, 2] == [1, 2]` is true; a set or map ignores insertion order). A key
+is a copy, like any stored value, so changing the list you stored it from
+does not change the key.
+
+Grouping is `atOrPut`: the value stored under a key, as a pointer to
+change it, made with the function you pass when there is none yet:
+
+```veles
+use io
+
+fun main() {
+  val words = ["apple", "avocado", "banana", "blueberry", "cherry"]
+  val byLetter: Map<string, List<string>> = [:]
+  loop (w in words) {
+    byLetter.atOrPut(w.substring(0, 1) ?: "", () => []).push(w)
+  }
+  io.println("$byLetter")
+}
+```
+
+Output:
+```text
+{a: [apple, avocado], b: [banana, blueberry], c: [cherry]}
+```
 
 ## Sets
 
@@ -727,7 +828,7 @@ finds a key stored as `[1, 2]`, because collections compare by content
 use io
 
 fun main() {
-  var seen = MutableSet<i64>()
+  var seen = Set<i64>()
   loop (x in [3, 1, 3, 2, 1]) {
     if (!seen.add(x)) io.println("duplicate $x")
   }
@@ -742,8 +843,9 @@ duplicate 1
 {3, 1, 2} true 3 [3, 1, 2]
 ```
 
-`add` returns whether the element was new. There is no set literal of its
-own: construct with `MutableSet<T>()` or `Set<T>()`, convert a list, or
+`add` returns whether the element was new; `toList()` gives the members as
+a list, in the order they were added. There is no set literal of its
+own: construct with `Set<T>()`, convert a list with `xs.toSet()`, or
 write a list literal where a set type is expected — `val s: Set<i64> =
 [1, 2, 2]` has two elements.
 
@@ -759,8 +861,10 @@ name[16]` is:
 use io
 
 struct Sha {
-  var state: Array<u32, 8> = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-                              0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+  var state: Array<u32, 8> = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ]
 }
 
 fun main() {
@@ -770,13 +874,13 @@ fun main() {
   a.set(0, 7)
   io.println("$a $b ${a.len()}")
   val far = 9
-  io.println("${a.at(1)} ${a.at(far)} ${a.fold(0, (s, x) => s + x)}")
+  io.println("${a.get(1)} ${a.get(far)} ${a.fold(0, (s, x) => s + x)}")
   loop (&x in a) {
     *x = *x + 1
   }
   var sha = Sha()
   sha.state.set(0, 1)
-  io.println("$a ${sha.state.at(0)} ${Array<i64, 3>.make(5)}")
+  io.println("$a ${sha.state.get(0)} ${Array<i64, 3>.make(5)}")
 }
 ```
 
@@ -790,16 +894,16 @@ Output:
 A `[…]` literal is an array where an array type is expected, and its length
 must be `N`. An array is a **value**, like a struct: `val b = a` and passing
 `a` to a function copy it, and `a.set(i, v)` changes the variable it is
-called on, which must be a `var`. Reading is a list's — `a.at(i)` is a `T?`,
-null when `i` is out of range, and a negative `i` counts from the end — with
-one difference: where the index is a constant in range, `a.at(3)` is a plain
-`T` and compiles to a load, so a table needs no `?:`; a constant out of range
+called on, which must be a `var`. Reading is a list's — `a.get(i)` is a `T?`,
+null when `i` is out of range, a negative `i` counts from the end, and
+`a.at(i)` is a pointer to the element — with one difference: where the
+index is a constant in range, `a.get(3)` is a plain `T` and compiles to a load, so a table needs no `?:`; a constant out of range
 is an error. The bounds facts of [the earlier section](#when-the-index-is-known-to-be-in-range)
-work too: `loop (i in a.indices())` and `loop (i in 0..<4)` make `a.at(i)` a
-`T`. `loop (x in a)` walks a copy; `loop (&x in a)` walks the array itself
+work too: `loop (i in a.indices())` and `loop (i in 0..<4)` make `a.get(i)`
+a `T`. `loop (x in a)` walks a copy; `loop (&x in a)` walks the array itself
 and lets the body change it. `a.len()` is the constant `N`.
 
-An array never grows or shrinks, so it has none of a `MutableList`'s
+An array never grows or shrinks, so it has none of a `List`'s
 `push` and `pop`; every read-only `List` method does work on it. `map`,
 `filter`, `forEach`, `fold`, `any`, `all` and `find` read the array where it
 lies; the others — `contains`, `sorted`, `join`, `sum`, `zip`, … — work over
@@ -821,9 +925,9 @@ const SQUARES: Array<i64, 5> = [0, 1, 4, 9, 16]
 fun main() {
   var total = 0
   loop (i in SQUARES.indices()) {
-    total += SQUARES.at(i)
+    total += SQUARES.get(i)
   }
-  io.println("$total ${SQUARES.at(3)} ${[3, 1, 2].toArray<3>() == [3, 1, 2]}")
+  io.println("$total ${SQUARES.get(3)} ${[3, 1, 2].toArray<3>() == [3, 1, 2]}")
 }
 ```
 
@@ -867,10 +971,10 @@ Output:
 
 ## Queues and priority queues
 
-A `MutableList` is already a stack (`push`, `pop`, `last`). For a queue,
+A `List` is already a stack (`push`, `pop`, `last`). For a queue,
 the prelude has `Deque<T>`, a ring buffer with O(1) work at both ends; for
 "smallest first", `PriorityQueue<T>`, a binary heap. Both are reference
-types like `MutableList`: a `val` binding can grow them, and a function
+types like `List`: a `val` binding can grow them, and a function
 that receives one shares it with the caller.
 
 ```veles
@@ -917,16 +1021,16 @@ deploy (5)
 9 4
 ```
 
-`removeFirst`, `removeLast`, `first`, `last`, `at(i)` and `pop`, `peek`
+`removeFirst`, `removeLast`, `first`, `last`, `get(i)` and `pop`, `peek`
 return `T?`: null when the container is empty, never a panic. To build a
-list of a known size up front, `MutableList.repeat(false, n)` gives
-`n` copies of a value (a `MutableList<bool>`: the type comes from the
-value, D137) and `MutableList<MutableList<i64>>.make(n, _ => [])`
+list of a known size up front, `List.repeat(false, n)` gives
+`n` copies of a value (a `List<bool>`: the type comes from the
+value, D137) and `List<List<i64>>.make(n, _ => [])`
 calls the function once per slot. `xs.fill(x)` overwrites every element of
-an existing list. On `MutableList<i64>`, `counts.incrementAt(i)` increments
+an existing list. On `List<i64>`, `counts.incrementAt(i)` increments
 one element in place; negative indexes count from the end and an invalid
 index panics. `repeat` and `fill` refuse an element type with shared
-mutable state — a mutable collection, a pointer, a closure — because every
+mutable state — a pointer, a closure — because every
 slot would alias the one value; `make` is the form for those.
 
 For a generic in-place transformation, use `updateAt`: it passes the current
@@ -938,7 +1042,7 @@ not mutate the same list:
 use io
 
 fun main() {
-  val values: MutableList<i64> = [3, 5]
+  val values: List<i64> = [3, 5]
   val updated = values.updateAt(-1, value => value * 2)
   io.println("$updated $values")
 }
@@ -953,11 +1057,11 @@ Output:
 
 | You need | Use |
 |---|---|
-| a fixed sequence, possibly shared | `List<T>` |
+| a sequence: to build, read, pass around, share with tasks | `List<T>` |
 | exactly `N` elements, inline, copied like a struct (a table, a hash state, a C buffer) | `Array<T, N>` |
-| to accumulate results | `MutableList<T>` then `.toList()` |
-| lookup by key, ordered | `Map<K, V>` / `MutableMap<K, V>` |
-| membership tests, no duplicates | `Set<T>` / `MutableSet<T>` |
+| a function that fills the caller's list | a `*List<T>` parameter, `&xs` at the call |
+| lookup by key, ordered | `Map<K, V>` |
+| membership tests, no duplicates | `Set<T>` |
 | a queue, a sliding window, a stack shared by reference | `Deque<T>` |
 | the smallest (or largest) element next | `PriorityQueue<T>` |
 | a few values together for a moment (several results, an entry) | a tuple, labelled: `(min: i64, max: i64)` |

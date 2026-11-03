@@ -6,17 +6,17 @@ test "blake2b: the RFC 7693 vector for abc, the empty message, and a key" {
   expect(hex.encode(blake2b([], 64)) == "786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce")
   expect(hex.encode(blake2b("abc".bytes(), 32)).len() == 64)
   // a message of exactly one block, and one of two blocks, exercise the last-block rule
-  val block: MutableList<u8> = MutableList<u8>.repeat(7, 128)
-  expect(blake2b(block.toList(), 64).len() == 64)
-  block.addAll(block.toList())
+  val block: List<u8> = List<u8>.repeat(7, 128)
+  expect(blake2b(block, 64).len() == 64)
+  block.addAll(block)
   expect(blake2b(block, 20).len() == 20)
 }
 
 test fun rfcInputs(kind: Argon2Type): List<u8> {
-  val password = MutableList<u8>.repeat(1, 32).toList()
-  val salt = MutableList<u8>.repeat(2, 16).toList()
-  val secret = MutableList<u8>.repeat(3, 8).toList()
-  val data = MutableList<u8>.repeat(4, 12).toList()
+  val password = List<u8>.repeat(1, 32)
+  val salt = List<u8>.repeat(2, 16)
+  val secret = List<u8>.repeat(3, 8)
+  val data = List<u8>.repeat(4, 12)
   argon2(kind, password, salt, 32, 3, 4, 32, secret, data)
 }
 
@@ -33,7 +33,7 @@ test "argon2id matches RFC 9106" {
 }
 
 test "argon2 refuses what the RFC forbids" {
-  val salt = MutableList<u8>.repeat(2, 16).toList()
+  val salt = List<u8>.repeat(2, 16)
   expectPanics(() => argon2(Argon2Type.Id, "p".bytes(), "short".bytes(), 32, 1, 1, 32))
   expectPanics(() => argon2(Argon2Type.Id, "p".bytes(), salt, 4, 1, 1, 32))
   expectPanics(() => argon2(Argon2Type.Id, "p".bytes(), salt, 32, 0, 1, 32))
@@ -46,8 +46,8 @@ test "a password hashes to a PHC string that verifies, and only for that passwor
   // salt and hash are written without base64's padding
   val parts = stored.split("$")
   expect(parts.len() == 6)
-  expect(!(parts.at(4) ?: "=").contains("="))
-  expect(!(parts.at(5) ?: "=").contains("="))
+  expect(!(parts.get(4) ?: "=").contains("="))
+  expect(!(parts.get(5) ?: "=").contains("="))
   expect(verifyPassword(Secret.of("correct horse battery staple"), stored))
   expect(!verifyPassword(Secret.of("correct horse battery stapl"), stored))
   expect(!verifyPassword(Secret.of(""), stored))

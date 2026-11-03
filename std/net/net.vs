@@ -203,9 +203,9 @@ public struct Listener {
 }
 
 // index of the first `b` at or after `from`, or -1
-fun findByte(xs: *MutableList<u8>, b: u8, from: i64): i64 {
+fun findByte(xs: *List<u8>, b: u8, from: i64): i64 {
   loop (i in from..<xs.len()) {
-    if (xs.at(i) == b) return i
+    if (xs.get(i) == b) return i
   }
   -1
 }
@@ -214,8 +214,8 @@ fun findByte(xs: *MutableList<u8>, b: u8, from: i64): i64 {
 // Conn is Sendable — an accept loop hands each connection to a task of its
 // own (`async serve(conn)`) — and every access to it is a short,
 // non-suspending critical section; the socket reads happen outside.
-fun newBuffer(): Mutex<MutableList<u8>> {
-  val empty: MutableList<u8> = []
+fun newBuffer(): Mutex<List<u8>> {
+  val empty: List<u8> = []
   Mutex(value: empty)
 }
 
@@ -234,7 +234,7 @@ fun peerOf(fd: i64): string {
 public struct Conn {
   fd:      Socket
   address: string
-  buffer:  Mutex<MutableList<u8>> = newBuffer()
+  buffer:  Mutex<List<u8>> = newBuffer()
 
   /// The peer's address, `host:port`.
   public fun peer(): string => this.address
@@ -307,7 +307,7 @@ public struct Conn {
           if (nl > max) throw this.tooLong("line", max)
           val line = this.buffer.withLock(b => {
             var end = nl
-            if (end > 0 && b.at(end - 1) == 13) end -= 1
+            if (end > 0 && b.get(end - 1) == 13) end -= 1
             val line = b.take(end)
             b.removePrefix(nl + 1)
             line
@@ -404,7 +404,7 @@ public struct Conn {
   })
 }
 
-extend<T> MutableList<T> {
+extend<T> List<T> {
   // drops the first n elements
   fun removePrefix(n: i64) {
     if (n <= 0) return

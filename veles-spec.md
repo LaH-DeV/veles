@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.130** — decisions D1–D230. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.136** — decisions D1–D233. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -445,6 +445,8 @@ The ownership rule is unchanged — `extend` names only a type declared in the s
 **Version the prelude against language editions from day one.** Adding a name to the prelude later can shadow a user's existing declaration; Rust ties its prelude to editions for exactly this reason, and retrofitting that is far harder than building it in.
 
 ### D25 — Collections: `List` / `MutableList` split, reference semantics
+
+_Superseded in part by D231 (v0.131): collections are values copied on their first change; there is one `List`, `Map` and `Set`. The reference semantics and the split below are kept for the record; insertion-ordered maps, methods-only element access and bracket literals stand._
 
 **Reference types, not values.** A `List<T>` is a header pointing at a heap buffer; as a value type, copying would share the buffer, which is precisely Go's slice-aliasing footgun where appending to a copy sometimes writes through and sometimes does not. Swift avoids this with copy-on-write, which needs cheap uniqueness checks that ARC provides and D1's tracing GC does not.
 
@@ -1509,6 +1511,8 @@ feature, its own decision); reasoning about index arithmetic (a solver,
 and errors nobody can predict).
 
 ### D63 — A MutableList becomes a List by moving or by copying (v0.38)
+
+_Superseded by D231 (v0.131): there is no `MutableList` to move; a last use still moves (no shared mark)._
 
 D35 made `List` genuinely immutable and `mutableList.toList()` a copy, but
 the checker still let a `MutableList` stand where a `List` was expected,
@@ -3304,6 +3308,52 @@ loops over the same collection: the inner change is refused for both.
 User, 2026-09-30, recommended of 4 (notes I3). Rejected: compile-time only
 (indirect changes stay unspecified); a snapshot (a copy per loop, or
 copy-on-write in the runtime); documenting the live-index behaviour.
+
+_Addendum (2026-11-02, v0.134) — a value loop walks the list as it was,
+however it is reached; the run-time guard stays only where the loop walks
+the list itself._ D231 made lists, maps and sets copy-on-write values, and
+its addendum 1 made a loop over a local walk a snapshot; a loop over a list
+reached through a pointer — every prelude adapter's `this`, a field behind
+`*Index` — still kept the guard above, so one loop had two rules, and the
+guard (a load, a compare and a branch per step) was the whole `adapters`
+benchmark gap (+8.5%; callgrind: 3 instructions per step, base count with
+the guard off). The new evidence against the 2026-09-30 rejection of a
+snapshot: copy-on-write exists now, and it is free until a change happens.
+The user chose, of three (recommended):
+
+```veles
+fun addDerived(index: *Index, tag: string) {
+  if (tag.startsWith("lang:")) index.tags.push("has-lang")
+}
+val p = &index
+loop (t in p.tags) {
+  addDerived(p, t)   // was a panic; now lands in index.tags after "lang:go", "draft"
+}
+```
+
+- **A value loop** over a list (a map or set loop walks a snapshot list
+  already) **lends** the header for the loop: when nothing else holds it,
+  a `lent` bit is set in its flags word next to `shared`; a change through
+  any path while it is set copies the list first, as for a shared one, so
+  the change lands in the variable and the loop keeps the original. The
+  loop clears the bit at its end (a `break` included). Two stores per loop,
+  nothing per step; no copy unless something changes the list meanwhile.
+- Edge cases: a `return`, `throw` or panic out of the loop leaves the bit
+  set — at most one copy at the next change, never a wrong result; nested
+  loops over one list: the outer sets and clears it; a header already
+  shared (or a read-only constant) is not marked — its writes copy anyway —
+  so two tasks never touch the bit; the compiler's evaluator copies on bind
+  and needs nothing.
+- **Unchanged:** `loop (&x in xs)` walks the list itself — a length change
+  from its body is refused at compile time, one through another path
+  panics when it next steps (the guard above); so do `Deque` loops and the
+  iterators `xs.iter()` hands out, which live too long to clear a bit.
+
+Rejected: keeping the guard for pointer-reached lists (two rules for one
+loop; 3 instructions per step on the most common high-level code); keeping
+it and emitting guard-free copies of the adapters where the compiler proves
+nothing the body calls can reach the list (covers locals only, two rules
+remain, more code).
 
 ### D103 — A one-task `gather` is its `Result`; `async` on a `sendable fun` value (v0.60)
 
@@ -7727,6 +7777,8 @@ Not done (checklist §11): a `MutableList`/`MutableMap` header is still a heap o
 
 ### D188 — A mutable collection becomes an immutable one: the proof grows, and `freeze()` is the explicit escape (v0.102)
 
+_Superseded by D231 (v0.131): `freeze()` is removed; the exposed mark lives on, making a share copy at once._
+
 2026-10-20. The user, after D187: "maybe we should have a possibility to copy mutable list to List and explicit it ... and another thing for moving mutable to List without copy?"; then, shown the options: "I want the changing of mutables to immutables as easy and as cheap as it can be. either freeze or move, compile time is tempting … maybe both would be the best (but freeze explicitly so users of the language understand they are using something that can panic in the runtime so documented as only when it is needed)."
 
 **The problem.** D63 moves a `MutableList` (also `MutableMap`, `MutableSet`) into a `List` without a copy only for a local built in the function, used as a receiver of the collection's own methods, at its last use. Two common shapes fail and cost a full copy (`'out' is a MutableList … copy it with '.toList()'`):
@@ -9237,6 +9289,298 @@ expectNear(0.2, mean, within: 1.0e-12)            // test code: expected first (
 
 Rejected: leaving it to `(a - b).abs() <= tolerance` (a relative tolerance is
 easy to get wrong by hand, and NaN slips through `!(… > tol)` forms).
+
+### D231 — Lists, maps and sets are values, copied on their first change (v0.131; supersedes D25's reference semantics, D35's split, D63, D188)
+
+2026-10-31. The user: "could we make everything be passed as a value/copy by
+default? the reference then would be explicit and visible", and "do we need
+MutableList if we'd reduce it to List"; then, shown the design: "Let's do it
+and compare and test with the current state. I'd want the 'copy hidden at the
+first mutation' to be visible in hints and documentation." The three choices
+below were the recommended ones of each.
+
+```veles
+fun encode(bytes: List<u8>): List<u8> {
+  val out: List<u8> = []
+  loop (b in bytes) out.push(b ^ 0x5A)
+  out
+}
+fun fill(into: *List<i64>, n: i64) {          // sharing is spelled: a pointer
+  loop (i in 0..<n) into.push(i * i)
+}
+fun main() {
+  val squares: List<i64> = []
+  fill(&squares, 4)
+  val before = squares                       // a copy: the handle, marked shared
+  squares.push(16)                           // the first change copies (hint: "copies squares")
+  io.println("$before $squares")             // [0, 1, 4, 9] [0, 1, 4, 9, 16]
+}
+```
+
+**The rule.** `List<T>`, `Map<K, V>` and `Set<T>` are values, as a struct is
+(D7): assignment, passing, returning, storing, capturing and sending copy.
+`MutableList`, `MutableMap`, `MutableSet` and the `mut [...]` literal are
+removed (an error with a fix to `List`/`Map`/`Set` and the plain literal);
+`toMutable()` and `freeze()` are removed with fixes; `toList()`/`toMap()`/
+`toSet()` on the same type are a copy, now O(1). Sharing a collection so that
+changes are seen is a pointer, `*List<T>`, made with `&xs` (D10), or a field of
+a struct reached through one, or a `Mutex<List<T>>`.
+
+1. **`val` stops rebinding only** (choice 1, A) — as for structs since v0.30:
+   `val out: List<u8> = []; out.push(1)` changes `out`. What value semantics
+   guarantee is that no other name can change it. Rejected: a deep `val` for
+   every value (Swift's `let`; changes struct code), or for collections only
+   (a field and a local would differ).
+2. **A parameter is the function's own copy** (choice 2, A) — it may be
+   changed; the copy happens at the first change. D7's addendum warning ("the
+   caller never sees the change") applies to collections as to structs.
+   Rejected: read-only parameters (struct parameters are not).
+3. **The copy is visible** (choice 3, A). The language server shows an inlay
+   hint on a change that may copy — "copies `xs` (shared at line 12)" — where
+   the checker sees that the value was shared since its last change; on by
+   default, with a setting to turn it off. The documentation says where
+   copies happen. Rejected: only behind D213's opt-in heap hints.
+
+**How it runs (copy on write without reference counts).** A collection is
+still one word, a pointer to a header. Copying a handle out of a place that
+stays alive marks the header **shared**; a change made through a shared header
+first copies it into a fresh, unshared one and writes that back to the place
+it was changed through (a local, a field, `*p`). A shared header is never
+written again, so tasks may read it at once: `List<T>` is `Sendable` when `T`
+is (D35 holds). The mark is conservative: once two handles exist, the first to
+change copies even if the other has died; at most one copy per share. Copying
+a header holds the elements' handles twice, so their headers are marked as
+they are copied (one level at a time). A header with a pointer into its storage
+(`ref`, `loop (&x in xs)`, D188's exposed mark) is copied at once when it is
+shared, so the pointer cannot reach the copy. A struct, tuple, nullable,
+sealed value or `Array` copied marks the collections inside it; generics are
+instantiated per type set, so the code that marks is always concrete.
+
+**When no mark is needed.** A fresh value (a literal, a call's result, a
+constructor) is not shared; a local at its last use is moved; and an argument
+whose parameter the callee neither changes nor keeps (stores, returns,
+captures, sends) is lent — only when the argument is a local or a field of
+one that no closure captures by reference and whose address is not taken.
+Calls through a function value or a trait object, and `async` calls, mark.
+
+Self-hosting: the compiler's shared tables become `*Map` parameters or fields
+of a struct passed by pointer — the sharing is visible in every signature.
+The low level keeps `ref`, `*List<T>` and `unsafe` raw access.
+
+Rejected: keeping the reference collections and the mutable/immutable split
+(D25/D35; six types, D63's move proof and `.toList()` copies); Swift's
+reference-counted uniqueness check (D1's tracing collector has no counts); an
+eager copy on every assignment (O(n) per pass).
+
+_Addendum (2026-11-02, v0.132) — four follow-ups._ The user, on `toList()`:
+"reads like dumb"; asked whether a changing `push` could throw an
+`Immutable` error instead: no — a held collection is always its holder's to
+change, so there is nothing to refuse at run time (a global `val` is refused
+at compile time), and a throwing `push` would put `try` on every change. The
+user chose, of options written out:
+
+1. **`toList()` / `toMap()` / `toSet()` on their own type are removed**
+   (recommended): binding the value is the copy. An error with a fix drops
+   the call. They stay where they convert — an iterator, a set's members, a
+   map's keys, an array. Rejected: keeping them as an explicit copy;
+   renaming them `copy()`.
+2. **A loop walks the list as it was when it began** (recommended; the user:
+   "we need to document that as well"). When the body may change the list,
+   the loop marks it shared as it starts, so the first change copies it and
+   the loop goes on over the original elements. D102's panic is gone for
+   lists, maps and sets: `loop (x in xs) { if (x > 0) xs.push(-x) }` pushes
+   once per positive element and ends. Rejected: panicking on any change
+   (checking the place every step); keeping today's panic, which fired only
+   when the list happened not to be shared.
+3. _(The names below are superseded by addendum 2: `at` reaches, `get`
+   copies, `atOrPut`.)_ ~~**Element access stays split, and the writing half
+   says so in its name**~~
+   (over the recommended "keep the names"): `xs.at(i)` / `m.get(k)` give a
+   copy; `xs.refAt(i)` / `m.refAt(k)` give a `(*T)?` to change the element in
+   place (was `ref`); `m.refOrPut(k, make)` gives a `*V`, the stored value or
+   `make()`'s stored first (was `getOrPut`, which returned a `V`): the
+   group-by idiom is `groups.refOrPut(key, () => []).push(file)`. `ref`
+   and `getOrPut` are removed with fixes. Rejected: `at` returning a pointer
+   (Veles has no read-only pointer, so a pointer into a list makes it unique:
+   every read of a shared list would copy it, and a constant read by many
+   tasks would race on its header).
+4. **FFI** (recommended): `ffi.Handle<T>` holds a copy of the value it lends;
+   `Handle<T>.from(p)` gives a `*raw T` a callback changes it through, in
+   `unsafe`, and `h.value()` reads it back. `withRaw` lends a list to C for
+   reading and never copies; `withRawMut` lends it for writing and makes it
+   unique first. Rejected: lending the caller's variable (`ffi.handle(&x)`);
+   one `withRaw` that may copy.
+
+_Addendum 2 (2026-11-02, v0.133) — `at` reaches, `get` copies; supersedes
+item 3's names._ The user, after addendum 1: "What if all of these types of
+data … would have methods like `at` and `get` that one would get ref and one
+of them the value copy. So these accessor methods would be the same on any
+of them and easy to remember", then: "both map and lists "at" gets a
+reference, "get" gets a copy. (sets contains is ok)". So on `List`, `Array`
+and `Map`:
+
+- `get(i)` / `get(k)` is the copy, `T?` (a `T` where the index is proven,
+  D62). It was `at` on lists and arrays.
+- `at(i)` / `at(k)` is a pointer to the element, `(*T)?`, which a write
+  goes through: `xs.at(i)?.bump()`, `*xs.at(0) += 1` where the index is
+  proven. It was `refAt` (addendum 1) and `ref` before.
+- The family follows: `atOrPut(k, make): *V` (was `refOrPut`, and
+  `getOrPut` before it), `getOrDefault` (was a list's `atOrDefault`),
+  `getUnchecked` (was `atUnchecked`; `setUnchecked` stays).
+- A set keeps `contains`; it has no elements to reach.
+- `Deque` keeps a copying `get(i)` only (was `at`); its buffer holds `T?`
+  slots, so a `*T` into it needs a primitive it does not have (checklist
+  §11).
+
+Addendum 1's reason for rejecting a pointer-returning `at` stands for
+reads, which is why reads are `get`: `at` needs a place the caller may
+change (a constant or a global `val` is refused), and makes a shared list
+unique as any write does. A read through it right away (`xs.at(i)?.n`)
+copies nothing: the compiler folds `*&place` back into the place.
+Migration: `ref`, `refAt`, `atOrDefault`, `atUnchecked`, `getOrPut` and
+`refOrPut` are errors with a fix to the new name. The old copying `at`
+cannot be told from the new one, so a program that used it either fails
+to type-check (a pointer where a value was expected) or now changes the
+element in place; the tree was migrated by the compiler itself
+(`VELES_MIGRATE_ACCESS=1 veles check --fix`, which reads the old `at` as
+`get` and rewrites it; the switch was removed on 2026-11-02, once nothing
+needed it — a branch still to migrate can take it from git history).
+
+_Note (2026-11-02) — how two changes run; no rule changes._ `clear()` on a
+shared (or loop-lent) list, map or set copies none of the elements it
+drops: the place takes the type's empty constant, so it allocates nothing,
+and the other holder keeps its elements; the editor's copy hint (choice 3)
+says `copies xs as empty`. Destructuring a fresh tuple
+(`val (d, n) = draft()`) moves its parts out: the temporary is read once per
+part and never again, so nothing is marked shared.
+
+_Addendum 3 (2026-11-02, v0.135) — where the copy hint goes; amends
+choice 3._ The user, on a hint inside a loop: "the inlay hint with copy
+info should be shown where the list is declared, so it does not confuse
+people like it would be copied per iteration"; asked whether the pattern
+should be a warning: "no warning, maybe we can optimize it behind the
+scenes?". Chose, of three placements (recommended):
+
+```veles
+val list2 = list                          // « list2 copied at its first change, line 3 »
+loop ((method, target, body) in list) {
+  list2.push(("GET", "/api/notes/2", ""))  // « copies list2 once »
+}
+```
+
+1. **Both places.** The statement that shared the value gets the full
+   hint — what is copied and at which line(s) its first change is
+   (`list2 copied at its first change, line 3`; several lines when either
+   holder, or more than one path, may copy; `copied as empty` for a
+   `clear()`). The change gets a short marker, `copies list2`, with `once`
+   when a loop repeats the change but not the share (only the first round
+   copies). The marker is left out when the change is on the share's line
+   or the line after it, where the share-site hint is in view. A parameter
+   has no share site in its function: its change keeps the whole hint
+   (`copies bytes (a parameter)`). Rejected: the change only (reads as a
+   copy per round), the share site only (the line that pays shows
+   nothing).
+2. **No warning** for copying a collection and then changing it: it is
+   how a changed copy is made. Instead a copy made for a change that grows
+   the list (`push`, `addAll`, `insert`, text appends) gets room to grow,
+   so the first push after a copy does not copy the elements a second
+   time. Rejected: a `copy_then_grow` lint.
+
+_Addendum 4 (2026-11-03, v0.136) — two std names the migration left._
+Asked with three options each (checklist §11 D231 items 14 and 15):
+
+1. **`std/lint`'s `Context` keeps its list private** (user: "maybe make
+   them private but add method that allows for getting the copy?"). The
+   list every copy of a Context reports into stays behind a pointer, now a
+   private field; `ctx.reports()` returns a copy of what was reported.
+   Rules are unchanged (`c.report(span, message, fix:)`). Rejected: rules
+   taking `*Context` (every rule's signature changes), leaving the public
+   `*List<Report>` field.
+2. **`Value.at(i)` is `Value.elementAt(i)`** (user, recommended of 3): a
+   codec `Value` read by index returns a copy, and `at` means "reaches" on
+   collections (addendum 2); `get(i)` cannot be had beside `get(key)`
+   (D179). Kotlin's name for a read by index. `v.get("a")?.elementAt(1)`.
+   The old name is an error with a fix. Rejected: `item(i)`, keeping `at`.
+
+_Addendum 5 (2026-11-03, v0.136) — `Deque.at`._ The user ("Yes, add
+Deque.at", recommended of 2): `Deque` has `at(i): (*T)?` like `List`,
+`Array` and `Map` — a pointer to the element where it lives, `null` out of
+range, a negative `i` from the back — beside the copying `get(i)`, so `at`
+reaches on every indexed container. Its ring holds `T?` slots; a
+std-only intrinsic, `slotPayload(p: *T?): (*T)?`, gives the pointer to an
+occupied slot's value (a stored `null` of a `Deque<U?>` is an occupied
+slot). Rejected: `get` only.
+
+### D232 — `&x` boxes as a trait object; boxing a copy that would be changed is an error (v0.136)
+
+2026-11-03, the user (recommended of 3), on checklist §11 D231 item 8 —
+std's codecs fell into it: a struct boxed into a trait object is a copy
+(D9), so the changes its methods make through the box are lost.
+
+```veles
+var out = Collect()               // implement Sink { fun put(b: u8) { this.bytes.push(b) } }
+writeAll(out, [1, 2, 3])          // error: the box gets a copy of 'out', and 'put' changes it;
+                                  //        pass '&out', or 'out.copy()' for a copy on purpose
+writeAll(&out, [1, 2, 3])         // the box holds the pointer: 'out' itself changes
+io.println("${out.bytes.len()}")  // 3
+```
+
+- **`&x` converts to a trait the type implements.** The trait object holds
+  the pointer instead of a boxed copy; its methods run on `x`. `x` lives
+  where a kept pointer needs it (a heap cell when it is a local, D10).
+- **Boxing a place whose implementation changes `this` is an error** when
+  the place is a named variable, a parameter or a field, with the fix
+  `&x`, or `x.copy()` (D164) for a copy on purpose. A temporary
+  (`writeAll(Collect(), …)`) stays fine: nothing else could see the change.
+  "Changes `this`" is the receiver pass's WritesSelf of any method of that
+  `implement`.
+- Go's rule (a type whose methods have pointer receivers satisfies the
+  interface only as a pointer); Rust needs `&mut out` for `&mut dyn Write`.
+- Rejected: a warning lint with no `&x` form (the fix stays "put the state
+  behind a pointer field"), leaving it documented.
+
+### D233 — A pointer handed to a function value is lent for the call (v0.136)
+
+2026-11-03, the user, on checklist §11 D231 item 9: the D231 migration
+wrote `notes.withLock(xs => xs)` several times, which hands the locked
+value's pointer out of the lock (fixed by hand with `*xs`). Of a lent
+callback parameter, "I'd say we do not use annotation if we can"; of the
+language-wide rule below (recommended of 3, measured first: 128 pointer
+parameters of lambdas in examples, benchmarks and selfhost, none returned,
+stored or captured — five passed it on to another function value, which
+the rule allows).
+
+```veles
+val leaked = notes.withLock(xs => xs)    // error: 'xs' is lent to this function only for the call;
+                                         //        returning it keeps it — copy the value: '*xs'
+val copy = notes.withLock(xs => *xs)     // the value, read under the lock
+```
+
+- **The rule.** A pointer parameter of a function *value* — a lambda, or a
+  named function used as a value — is lent: the body may read and write
+  through it, call methods on it and pass it to a parameter that keeps no
+  pointer (including another function value's), but may not return it,
+  store it, capture it or pass it where it is kept. The error names the
+  parameter, says what keeps it, and offers `*p` where a copy is what was
+  meant. A named function that keeps a pointer parameter cannot be used as
+  a value of a function type with a pointer parameter. A lambda written
+  directly as the argument for a function parameter the callee keeps no
+  hold of (it only calls it, or passes it on to one that does not) lives
+  only for that call, so capturing the pointer in it is lent too —
+  `total.withLock(t => eachTwice(xs, x => *t += x))` — unless its own body
+  keeps it; a lambda handed to a function that stores it keeps the pointer.
+- **What it covers.** `Mutex.withLock`, `RwLock.withRead`/`withWrite` and
+  every user API of that shape, with no annotation; a call through a
+  function value may in turn lend its pointer arguments (the caller's
+  `&local` stays in its frame, D231 item 5).
+- **The low-level way out.** A callback that must keep a pointer takes a
+  struct holding it, or a `*raw` pointer in `unsafe` code.
+- Rust's closures borrow their reference arguments for the call (elided
+  lifetimes) in the same way; Go and Kotlin do not check.
+- Rejected: an `@lent` annotation on the three std methods (other
+  callbacks could still keep their pointer), refusing a pointer only in the
+  result type (misses `saved = xs`), a `Sendable` bound on the result (it
+  would demand `T: Sendable` of `Mutex<T>.get()`).
 
 ### I1 — generators: investigated, not decided
 

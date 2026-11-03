@@ -31,18 +31,18 @@ extend Parser {
       }
       Kind.LParen => {
         this.next()
-        val elems: MutableList<ast.Pattern> = []
+        val elems: List<ast.Pattern> = []
         loop (!this.atAny(Kind.RParen, Kind.EOF)) {
           elems.push(this.parsePattern(true))
           if (!this.accept(Kind.Comma)) break
         }
         this.expect(Kind.RParen)
-        return ast.TuplePat(elems: elems.toList(), pos: this.spanFrom(start))
+        return ast.TuplePat(elems, pos: this.spanFrom(start))
       }
       Kind.LBracket => {
         // `[a, b]`, `[first, ..rest]`, `[.., last]` (D62)
         this.next()
-        val elems: MutableList<ast.Pattern> = []
+        val elems: List<ast.Pattern> = []
         loop (!this.atAny(Kind.RBracket, Kind.EOF)) {
           elems.push(if (this.at(Kind.Range)) this.parseRestPattern() else this.parsePattern(true))
           if (!this.accept(Kind.Comma)) break
@@ -102,7 +102,7 @@ extend Parser {
     var tp: ast.TypePat = ast.TypePat(typ: &t)
     if (this.accept(Kind.LParen)) {
       tp.hasArg = true
-      val fields: MutableList<ast.FieldPat> = []
+      val fields: List<ast.FieldPat> = []
       loop (!this.atAny(Kind.RParen, Kind.EOF)) {
         fields.push(this.parseFieldPattern())
         if (!this.accept(Kind.Comma)) break

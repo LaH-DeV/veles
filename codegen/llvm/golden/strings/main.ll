@@ -17,7 +17,7 @@ entry:
   %a78 = alloca %str
   %a82 = alloca %str
   %a83 = alloca [7 x %str]
-  %a96 = alloca %S.std.prelude.StringBuilder
+  %a95 = alloca %S.std.prelude.StringBuilder
   store %str { ptr @.str.1, i64 5 }, ptr %a1
   store i64 42, ptr %a2
   store double 0x4004000000000000, ptr %a3
@@ -151,28 +151,27 @@ byte.ok.1:
   call void @veles_call_push(ptr %t92)
   call void @v_std.io.println(%str %t91)
   call void @veles_call_pop()
-  %t94 = call ptr @veles_list_new(ptr @adesc.u8, i64 0)
-  %t95 = insertvalue %S.std.prelude.StringBuilder undef, ptr %t94, 0
-  store %S.std.prelude.StringBuilder %t95, ptr %a96
-  %t97 = extractvalue %str { ptr @.str.18, i64 19 }, 0
-  %t98 = extractvalue %str { ptr @.str.18, i64 19 }, 1
-  call void @veles_call_push(ptr %t97)
-  call void @v_std.prelude.StringBuilder.append(ptr %a96, %str { ptr @.str.19, i64 1 })
+  %t94 = insertvalue %S.std.prelude.StringBuilder undef, ptr @const.empty.list.0, 0
+  store %S.std.prelude.StringBuilder %t94, ptr %a95
+  %t96 = extractvalue %str { ptr @.str.18, i64 19 }, 0
+  %t97 = extractvalue %str { ptr @.str.18, i64 19 }, 1
+  call void @veles_call_push(ptr %t96)
+  call void @v_std.prelude.StringBuilder.append(ptr %a95, %str { ptr @.str.19, i64 1 })
   call void @veles_call_pop()
-  %t99 = extractvalue %str { ptr @.str.20, i64 23 }, 0
-  %t100 = extractvalue %str { ptr @.str.20, i64 23 }, 1
-  call void @veles_call_push(ptr %t99)
-  call void @v_std.prelude.StringBuilder.appendByte(ptr %a96, i8 121)
+  %t98 = extractvalue %str { ptr @.str.20, i64 23 }, 0
+  %t99 = extractvalue %str { ptr @.str.20, i64 23 }, 1
+  call void @veles_call_push(ptr %t98)
+  call void @v_std.prelude.StringBuilder.appendByte(ptr %a95, i8 121)
   call void @veles_call_pop()
-  %t101 = extractvalue %str { ptr @.str.21, i64 22 }, 0
-  %t102 = extractvalue %str { ptr @.str.21, i64 22 }, 1
-  call void @veles_call_push(ptr %t101)
-  %t103 = call %str @v_std.prelude.StringBuilder.toString(ptr %a96)
+  %t100 = extractvalue %str { ptr @.str.21, i64 22 }, 0
+  %t101 = extractvalue %str { ptr @.str.21, i64 22 }, 1
+  call void @veles_call_push(ptr %t100)
+  %t102 = call %str @v_std.prelude.StringBuilder.toString(ptr %a95)
   call void @veles_call_pop()
-  %t104 = extractvalue %str { ptr @.str.22, i64 20 }, 0
-  %t105 = extractvalue %str { ptr @.str.22, i64 20 }, 1
-  call void @veles_call_push(ptr %t104)
-  call void @v_std.io.println(%str %t103)
+  %t103 = extractvalue %str { ptr @.str.22, i64 20 }, 0
+  %t104 = extractvalue %str { ptr @.str.22, i64 20 }, 1
+  call void @veles_call_push(ptr %t103)
+  call void @v_std.io.println(%str %t102)
   call void @veles_call_pop()
   ret void
 }

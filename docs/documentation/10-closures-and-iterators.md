@@ -85,7 +85,7 @@ fun main() {
   next()
   io.println("third call: ${next()}")
 
-  val log: MutableList<string> = []
+  val log: List<string> = []
   val record = (msg: string) => log.push(msg)
   record("a")
   record("b")
@@ -455,7 +455,7 @@ Two functions on every type take a receiver block:
 
 - **`apply`** runs it on the value where it is held — a `var`, a `var`
   field, what a pointer points at, a temporary (the builder style above),
-  a mutable collection — and gives the value back. On a `val` it is an
+  a collection — and gives the value back. On a `val` it is an
   error whose fix writes `edit`: nothing is copied by surprise.
 - **`edit`** gives a changed copy and leaves the value alone, with one copy
   at most. The block runs on a `StringBuilder` for a string (with in-place

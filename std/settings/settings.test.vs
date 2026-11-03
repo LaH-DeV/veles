@@ -5,7 +5,7 @@ struct ToolOptions {
   var name:       string = ""
   var mode:       string = "safe"
   var labels:     List<string> = []
-  var extensions: MutableMap<string, string> = [:]
+  var extensions: Map<string, string> = [:]
 }
 
 test fun toolSchema(removed: List<(string, string)> = []): settings.Schema<ToolOptions> => settings.Schema(

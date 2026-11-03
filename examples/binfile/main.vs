@@ -19,7 +19,7 @@ struct Score {
 }
 
 fun encode(scores: List<Score>): List<u8> {
-  val out: MutableList<u8> = "SCOR".bytes().toMutable()
+  val out: List<u8> = "SCOR".bytes()
   out.pushU16Be(1.wrapU16())
   out.pushU32Be(scores.len().wrapU32())
   loop (s in scores) {
@@ -28,14 +28,14 @@ fun encode(scores: List<Score>): List<u8> {
     out.addAll(name)
     out.pushI64Be(s.score)
   }
-  out.toList()
+  out
 }
 
 // Every record, or null when the bytes are not this format.
 fun decode(bytes: List<u8>): List<Score>? {
   if (bytes.slice(0, 4) != "SCOR".bytes()) return null
   val count = bytes.readU32Be(6) ?: return null
-  val scores: MutableList<Score> = []
+  val scores: List<Score> = []
   var at = 10
   loop (_ in 0..<count.toI64()) {
     val length = (bytes.readU16Be(at) ?: return null).toI64()

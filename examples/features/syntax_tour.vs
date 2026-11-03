@@ -116,7 +116,7 @@ fun construct() {
   val c = Config(port: 8080, host: "localhost")
   val s = Stack<i32>()
   val p: (*User)? = null
-  var xs: MutableList<i32> = []
+  var xs: List<i32> = []
   val m = ["a": 1, "b": 2]
   val empty = [:]
   val pair: (i32, string) = (1, "x")

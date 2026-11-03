@@ -7,14 +7,14 @@ use io
 fun checksum(data: List<i64>, every: i64): i64 {
   var sum = 0
   loop (i in 0..<data.len()) {
-    sum = (sum * 31 + data.at(i)) % 1000003
+    sum = (sum * 31 + data.get(i)) % 1000003
     if (i % every == every - 1) cede
   }
   sum
 }
 
 fun main() {
-  val data = MutableList<i64>.make(100, i => i * i)
+  val data = List<i64>.make(100, i => i * i)
   io.println("${checksum(data, 16)}")
   cede
   io.println("resumed")

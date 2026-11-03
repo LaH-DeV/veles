@@ -21,7 +21,7 @@ val duration = /(\d+)ms/
 val email = /[\w.+-]+@[\w-]+(\.[\w-]+)+/
 
 fun main() {
-  val errors = MutableMap<string, i64>()
+  val errors = Map<string, i64>()
   var slowest = 0
   var slowestLine = ""
   var skipped = 0

@@ -91,10 +91,10 @@ fun printable(s: string): string {
       b == '\n' => out.append("\\n")
       b == '\r' => out.append("\\r")
       b == '\t' => out.append("\\t")
-      b < 32 || b == 127 => appendEscape(out, b.toI64())
+      b < 32 || b == 127 => appendEscape(&out, b.toI64())
       b == 0xC2 && i + 1 < s.len() && s.byteAt(i + 1) >= 0x80 && s.byteAt(i + 1) <= 0x9F => {
         i += 1
-        appendEscape(out, s.byteAt(i).toI64())
+        appendEscape(&out, s.byteAt(i).toI64())
       }
       else => out.appendByte(b)
     }
@@ -114,7 +114,7 @@ fun hasControl(s: string): bool {
 
 const HEX: string = "0123456789abcdef"
 
-fun appendEscape(out: StringBuilder, c: i64) {
+fun appendEscape(out: *StringBuilder, c: i64) {
   out.append("\\u{")
   if (c >= 16) out.appendByte(HEX.byteAt(c >> 4))
   out.appendByte(HEX.byteAt(c & 15))
@@ -184,7 +184,7 @@ public fun error(lazy msg: fun(): string, fields: Field...) {
 /// A request handler binds its request id this way, once, and every line of
 /// that request carries it.
 public fun withFields<R, E>(fields: List<Field>, f: fun(): R suspends throws E): R throws E {
-  var all: MutableList<Field> = []
+  var all: List<Field> = []
   loop (x in ambient.get()) all.push(x)
   loop (x in fields) all.push(x)
   return try ambient.withValue(all, f)
@@ -192,7 +192,7 @@ public fun withFields<R, E>(fields: List<Field>, f: fun(): R suspends throws E):
 
 fun emit(level: Level, msg: fun(): string, fields: List<Field>) {
   if (!enabled(level)) return
-  var all: MutableList<Field> = []
+  var all: List<Field> = []
   loop (x in ambient.get()) all.push(x)
   loop (x in fields) all.push(x)
   val text = msg()
@@ -201,7 +201,7 @@ fun emit(level: Level, msg: fun(): string, fields: List<Field>) {
   // started it is also exported as a log record with the same ids
   val trace = otel.traceId()
   if (trace != null) all.push(Field(key: "trace_id", json: quote(trace), text: trace))
-  val line = all.toList()
+  val line = all
   if (otel.active()) otel.logRecord(severity(level), level.toString().toUpper(), text, line.map(f => attrOf(f)))
   eprintln(if (terminal) textLine(now, level, text, line) else jsonLine(now, level, text, line))
 }

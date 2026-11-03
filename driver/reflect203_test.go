@@ -68,7 +68,7 @@ fun filled(): Options => Options.build(f => when {
 })
 
 const fun memberNames<T>(): List<string> {
-  val out: MutableList<string> = []
+  val out: List<string> = []
   loop (m in T.members) out.push("${m.index}:${m.name}:${m.doc}")
   out
 }
@@ -78,7 +78,7 @@ const COMMANDS: List<string> = memberNames<Command>()
 
 // annotations on members, read from a MemberInfo in a const fun
 const fun aliased<T>(): List<string> {
-  val out: MutableList<string> = []
+  val out: List<string> = []
   loop (m in T.members) {
     if (val a = m.attr<Alias>()) out.push("${m.name}=${a.name}") else if (!m.has<Alias>()) out.push(m.name)
   }

@@ -93,7 +93,7 @@ public struct Regex {
   /// Every match, left to right and not overlapping; an empty match right
   /// after the previous match is skipped.
   public fun findAll(text: string): List<Match> {
-    val out: MutableList<Match> = []
+    val out: List<Match> = []
     val machine = Machine.of(this.program)
     var from = 0
     var lastEnd = -1
@@ -148,7 +148,7 @@ public struct Regex {
   /// pieces; a negative limit returns all pieces.
   public fun split(text: string, limit: i64 = -1): List<string> {
     if (limit == 0) return []
-    val out: MutableList<string> = []
+    val out: List<string> = []
     var copied = 0
     loop (m in this.findAll(text)) {
       if (limit >= 0 && out.len() + 1 >= limit) break
@@ -172,10 +172,10 @@ public struct Match {
   public fun value(): string => this.groupAt(0) ?: ""
 
   /// Byte offset of the first character of the match.
-  public fun start(): i64 => this.slots.at(0) ?: 0
+  public fun start(): i64 => this.slots.get(0) ?: 0
 
   /// Byte offset just past the match.
-  public fun end(): i64 => this.slots.at(1) ?: 0
+  public fun end(): i64 => this.slots.get(1) ?: 0
 
   /// How many groups the pattern has, not counting the whole match.
   public fun groupCount(): i64 => this.slots.len() / 2 - 1
@@ -184,8 +184,8 @@ public struct Match {
   /// did not take part in the match.
   public fun groupAt(index: i64): string? {
     if (index < 0 || index >= this.slots.len() / 2) return null
-    val from = this.slots.at(2 * index) ?: -1
-    val to = this.slots.at(2 * index + 1) ?: -1
+    val from = this.slots.get(2 * index) ?: -1
+    val to = this.slots.get(2 * index + 1) ?: -1
     if (from < 0 || to < 0) return null
     this.text.substring(from, to)
   }
@@ -200,8 +200,8 @@ public struct Match {
   /// Where group `index` starts and ends, as byte offsets, or null.
   public fun span(index: i64): (i64, i64)? {
     if (index < 0 || index >= this.slots.len() / 2) return null
-    val from = this.slots.at(2 * index) ?: -1
-    val to = this.slots.at(2 * index + 1) ?: -1
+    val from = this.slots.get(2 * index) ?: -1
+    val to = this.slots.get(2 * index + 1) ?: -1
     if (from < 0 || to < 0) return null
     (from, to)
   }
@@ -284,7 +284,7 @@ const fun flagsOf(flags: string): Flags =>
 /// Literals already compiled, by flags and pattern: `/…/` in a loop compiles
 /// once, not on every pass.
 struct Literals {
-  entries: MutableMap<string, Regex> = [:]
+  entries: Map<string, Regex> = [:]
 }
 
 val literals = Mutex(value: Literals())

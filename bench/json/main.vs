@@ -12,9 +12,9 @@ struct Record {
 }
 
 fun main() throws EncodeError | DecodeError {
-  var records: MutableList<Record> = []
+  val records: List<Record> = []
   loop (i in 0..<2000) records.push(Record(id: i, name: "record number $i", score: (i.toF64()) * 0.5, tags: ["a", "bb", "ccc"]))
-  val input = records.toList()
+  val input = records
   val (check, elapsed) = try time.measure(() => {
     var check: i64 = 0
     loop (_ in 0..<20) {

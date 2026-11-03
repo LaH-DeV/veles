@@ -53,9 +53,9 @@ fun main() {
   io.println("${NAMES.get("ten")} ${NAMES.get("eleven")} $fromConst")
   io.println("${(1, 2) in PAIRS} ${(2, 1) in PAIRS} ${NESTED.get("a")}")
   io.println("${POINTS.get(P(x: 2, y: "b"))} ${POINTS.get(P(x: 2, y: "a"))}")
-  var m: MutableMap<i64, i64> = [:]
+  var m: Map<i64, i64> = [:]
   loop (i in 0..<200000) m.set(i * 1048576, i)
-  var s: MutableSet<string> = []
+  var s: Set<string> = []
   loop (i in 0..<5000) s.add("k$i")
   io.println("${m.len()} ${m.get(7 * 1048576)} ${s.len()} ${"k4999" in s} ${"k5000" in s}")
 }

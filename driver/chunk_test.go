@@ -55,7 +55,7 @@ fun sumSquares(n: i64): i64 {
 fun firstOver(xs: List<i64>, limit: i64): i64 {
   var found: i64 = -1
   loop (i in 0..<xs.len()) {
-    if (xs.at(i) > limit) {
+    if (xs.get(i) > limit) {
       found = i
       break
     }
@@ -74,7 +74,7 @@ fun evensBelow(n: i64): i64 {
 
 fun indexOf(xs: List<i64>, v: i64): i64 {
   loop (i in 0..<xs.len()) {
-    if (xs.at(i) == v) return i
+    if (xs.get(i) == v) return i
   }
   -1
 }
@@ -85,14 +85,14 @@ fun listSum(xs: List<i64>): i64 {
   s
 }
 
-fun mutableSum(xs: MutableList<i64>): i64 {
+fun mutableSum(xs: List<i64>): i64 {
   var s: i64 = 0
   loop (x in xs) s += x
   s
 }
 
 fun triples(n: i64): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (i in 0..<n) out.push(i * 3)
   out
 }
@@ -131,7 +131,7 @@ fun outcome<T>(r: Result<T, Timeout>): string => when (r) {
 
 fun allocator(stop: Atomic<bool>, made: Atomic<i64>) {
   loop (!stop.load()) {
-    val xs: MutableList<string> = []
+    val xs: List<string> = []
     loop (k in 0..<100) xs.push("item $k")
     made.add(xs.len())
     cede
@@ -147,7 +147,7 @@ fun main() {
   io.println("  to the top: ${countInclusive(top - 2500, top)} ${countInclusive(top, top)}")
   io.println("  ${sumSquares(3000)} ${sumSquares(1)}")
   val xs = triples(5000)
-  val ms = MutableList<i64>.make(3000, i => i)
+  val ms = List<i64>.make(3000, i => i)
   io.println("  break: ${firstOver(xs, 3000)} ${firstOver(xs, 1000000)}, return: ${indexOf(xs, 4500)} ${indexOf(xs, 7)}")
   io.println("  continue: ${evensBelow(4097)}, a list: ${listSum(xs)} ${mutableSum(ms)}, labels: ${pairs(3000)}")
 

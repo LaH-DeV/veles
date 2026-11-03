@@ -442,12 +442,12 @@ func TestSemicolonAfterDoubleGt(t *testing.T) {
 	src := `
 struct G {
   n:   i64
-  adj: MutableList<MutableList<i64>>
+  adj: List<List<i64>>
 
   static fun mk(n: i64): G => G(n: n, adj: [])
 }
 fun f() {
-  var t: MutableList<MutableList<i64>>
+  var t: List<List<i64>>
   t = []
 }
 `
@@ -462,7 +462,7 @@ fun f() {
 func TestLambdaDiscardParam(t *testing.T) {
 	src := `
 fun f() {
-  val a = MutableList<i64>.make(3, _ => 0)
+  val a = List<i64>.make(3, _ => 0)
   val b = xs.map((_, x) => x)
   val c = ys.fold(0, (_: i64, x) => x)
 }
@@ -849,7 +849,7 @@ struct S {
   b: Array<u8, 4 * 16>
   c: Array<u8, WIDTH>
   d: Array<u8, WIDTH * 2>
-  e: MutableMap<string, Array<u8, 200>>
+  e: Map<string, Array<u8, 200>>
   f: Array<Array<i64, 3>, 2>
   g: Buf<8>
   h: Array<u8, (1 << 4)>

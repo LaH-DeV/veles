@@ -70,7 +70,7 @@ the task's copy is at 1
 c is still at 0
 ```
 
-Everything passed or captured must be Sendable (D35) — a `MutableList`
+Everything passed or captured must be Sendable (D35) — a `List`
 is refused, a `List` is shared. To give a task state it changes and you
 read back, pass a `Mutex` or an `Atomic`, or have it return a value.
 
@@ -142,7 +142,7 @@ fun main() {
   val finished = Channel<i64>(capacity: 3)
   var sum: i64 = 0
   scope {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     tasks.push(async job(1, 60, finished))
     tasks.push(async job(2, 40, finished))
     tasks.push(async job(3, 20, finished))
@@ -368,12 +368,16 @@ waited for, and then the body's error leaves the scope:
 ```veles
 use io
 
-error Boom { n: i64 }
+error Boom {
+  n: i64
+}
 
 struct Res {
   name: string
   implement Closeable {
-    fun close() { io.println("closed ${this.name}") }
+    fun close() {
+      io.println("closed ${this.name}")
+    }
   }
 }
 
@@ -388,7 +392,7 @@ fun run(): i64 throws Boom {
   val opened = Channel<bool>(capacity: 1)
   scope {
     async child(opened)
-    val _ = await opened.recv()   // the child holds its resource now
+    await opened.recv()  // the child holds its resource now
     throw Boom(n: 9)
   }
 }
@@ -815,7 +819,7 @@ the exit code is 101.
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Starting a task that belongs to no scope           | compile error (D3)                                                                                                                                         |
 | Keeping a handle after its scope                   | compile error (D141)                                                                                                                                       |
-| Sharing a `MutableList` or a `var` with a task     | compile error (D35)                                                                                                                                        |
+| Sharing a `List` or a `var` with a task     | compile error (D35)                                                                                                                                        |
 | Waiting while holding a lock                       | compile error (D35, D107)                                                                                                                                  |
 | `try` on an `await` in a scope                     | compile error with a fix (D141)                                                                                                                            |
 | Ignoring a task's failure                          | impossible: it fails the scope                                                                                                                             |

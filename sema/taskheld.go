@@ -179,7 +179,7 @@ func (f *fnCtx) preHeld(e *ast.CallExpr) {
 
 // bareTask: a `Task` or `Task?` itself. No function returns a handle
 // (D141), so a call giving one hands back a task started already — taken
-// from the list a scope keeps its handles in (`tasks.at(0)`) — and makes
+// from the list a scope keeps its handles in (`tasks.get(0)`) — and makes
 // nothing to receive.
 func bareTask(t types.Type) bool {
 	if n, ok := t.(*types.Nullable); ok {

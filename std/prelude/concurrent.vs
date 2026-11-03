@@ -13,7 +13,7 @@ struct Indexed<R> {
 /// A pool worker: takes indexes until the channel closes, applies `f`, reports.
 fun poolWorker<T, R, E>(items: List<T>, f: sendable fun(T): R suspends throws E, jobs: Channel<i64>, results: Channel<Indexed<R>>) throws E {
   loop (val i = await jobs.recv()) {
-    val item = items.at(i) ?: panic("mapConcurrent: feedIndexes sends only 0..<items.len()")
+    val item = items.get(i) ?: panic("mapConcurrent: feedIndexes sends only 0..<items.len()")
     val value = try f(item)
     results.send(Indexed(index: i, value))
   }
@@ -37,7 +37,7 @@ extend<T: Sendable> List<T> {
   public fun mapConcurrent<R: Sendable, E>(f: sendable fun(T): R suspends throws E, workers: i64 = 4): List<R> throws E {
     if (workers < 1) panic("mapConcurrent: workers must be at least 1, got $workers")
     val n = this.len()
-    val slots: MutableList<R?> = MutableList<R?>.make(n, _ => null)
+    val slots: List<R?> = List<R?>.make(n, _ => null)
     if (n == 0) return []
     val jobs = Channel<i64>(capacity: workers)
     val results = Channel<Indexed<R>>(capacity: workers)
@@ -67,17 +67,7 @@ extend<T: Sendable> List<T> {
 
 /// `awaitAll(tasks)` (D156): every task's value, in the list's order.
 fun awaitEach<T>(tasks: List<Task<T>>): List<T> {
-  val out: MutableList<T> = []
-  out.reserve(tasks.len())
-  loop (t in tasks) {
-    out.push(await t)
-  }
-  out
-}
-
-/// `awaitAll(tasks)` over the `MutableList` a scope collected them in.
-fun awaitEachMut<T>(tasks: MutableList<Task<T>>): List<T> {
-  val out: MutableList<T> = []
+  val out: List<T> = []
   out.reserve(tasks.len())
   loop (t in tasks) {
     out.push(await t)
@@ -227,10 +217,10 @@ extend<T> Channel<T> {
 
   /// Every value until the channel is closed and drained, in order.
   public fun toList(): List<T> {
-    val out = MutableList<T>()
+    val out = List<T>()
     loop (val v = await this.recv()) {
       out.push(v)
     }
-    out.toList()
+    out
   }
 }

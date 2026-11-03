@@ -25,7 +25,7 @@ extern "C" {
 }
 
 fun main() {
-  val keep: MutableList<string> = []
+  val keep: List<string> = []
   loop (i in 0..<40000) keep.push("kept line number $i of the live set")
   var total = 0
   loop (i in 0..<1200000) {

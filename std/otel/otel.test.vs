@@ -12,7 +12,7 @@ struct Sent {
 
 // an exporter that keeps what it is given, and can be made to fail first
 struct Recorder {
-  seen: Mutex<MutableList<Sent>> = newQueue<Sent>()
+  seen: Mutex<List<Sent>> = newQueue<Sent>()
   // how many exports to refuse before one works; -1 refuses for ever
   failures:  Atomic<i64> = Atomic(value: 0)
   retryable: bool = true
@@ -40,7 +40,7 @@ struct Recorder {
 
 // every span of every trace export, as its fields, oldest first
 test fun spansOf(rec: Recorder): List<List<Fld>> {
-  val out: MutableList<List<Fld>> = []
+  val out: List<List<Fld>> = []
   loop (body in rec.bodies(Signal.Traces)) {
     val scopeSpans = child(child(fields(body), 1), 2)
     loop (s in all(scopeSpans, 2)) {
@@ -52,7 +52,7 @@ test fun spansOf(rec: Recorder): List<List<Fld>> {
 
 // every metric of every metrics export
 test fun metricsOf(rec: Recorder): List<List<Fld>> {
-  val out: MutableList<List<Fld>> = []
+  val out: List<List<Fld>> = []
   loop (body in rec.bodies(Signal.Metrics)) {
     loop (scopeMetrics in all(child(fields(body), 1), 2)) {
       loop (m in all(fields(scopeMetrics.data), 2)) {
@@ -67,7 +67,7 @@ test fun metricNamed(rec: Recorder, name: string): List<Fld>? =>
   metricsOf(rec).filter(m => text(m, 1) == name).last()
 
 test fun logsOf(rec: Recorder): List<List<Fld>> {
-  val out: MutableList<List<Fld>> = []
+  val out: List<List<Fld>> = []
   loop (body in rec.bodies(Signal.Logs)) {
     val scopeLogs = child(child(fields(body), 1), 2)
     loop (r in all(scopeLogs, 2)) {
@@ -80,10 +80,10 @@ test fun logsOf(rec: Recorder): List<List<Fld>> {
 test fun spanNamed(rec: Recorder, name: string): List<Fld> {
   val found = spansOf(rec).filter(s => text(s, 5) == name)
   expect(found.len() == 1)
-  found.at(0) ?: []
+  found.get(0) ?: []
 }
 
-test fun bytesOf(fs: List<Fld>, num: i64): List<u8> => (all(fs, num).at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data
+test fun bytesOf(fs: List<Fld>, num: i64): List<u8> => (all(fs, num).get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data
 
 // the registry is the process's: a test that made thousands of series drops them
 // so that the tests after it do not carry them in every export
@@ -130,8 +130,8 @@ test "spans nest under the current span and are exported when they end" {
   expect(tel.flush())
   val outer = spanNamed(rec, "outer")
   val inner = spanNamed(rec, "inner")
-  expect(bytesOf(outer, 2) == (ids.at(0) ?: []))
-  expect(bytesOf(inner, 2) == (ids.at(1) ?: []))
+  expect(bytesOf(outer, 2) == (ids.get(0) ?: []))
+  expect(bytesOf(inner, 2) == (ids.get(1) ?: []))
   // one trace, the inner span's parent is the outer one, the outer has none
   expect(bytesOf(outer, 1) == bytesOf(inner, 1))
   expect(bytesOf(inner, 4) == bytesOf(outer, 2))
@@ -156,14 +156,14 @@ test "the resource says which service this is" {
   with tel = try start(service: "notes", exporter: rec, interval: quiet(), resource: [attr("deployment.environment", "test")])
   expect(nested().len() == 4)
   expect(tel.flush())
-  val resource = child(child(fields(rec.bodies(Signal.Traces).at(0) ?: []), 1), 1)
+  val resource = child(child(fields(rec.bodies(Signal.Traces).get(0) ?: []), 1), 1)
   val names = all(resource, 1).map(kv => text(fields(kv.data), 1))
   expect(names.contains("service.name"))
   expect(names.contains("service.instance.id"))
   expect(names.contains("telemetry.sdk.language"))
   expect(names.contains("deployment.environment"))
   val service = all(resource, 1).filter(kv => text(fields(kv.data), 1) == "service.name")
-  expect(text(child(fields((service.at(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data), 2), 1) == "notes")
+  expect(text(child(fields((service.get(0) ?: Fld(num: 0, wire: 0, value: 0, data: [])).data), 2), 1) == "notes")
 }
 
 test fun ended(): Span {
@@ -203,7 +203,7 @@ test fun childTask(): List<List<u8>> {
   val child = async whoIsCurrent()
   expect(parent.context().spanId.len() == 8)  // the parent goes on while the child runs
   val got = await child
-  [parent.context().spanId, got.at(0) ?: [], parent.context().traceId, got.at(1) ?: []]
+  [parent.context().spanId, got.get(0) ?: [], parent.context().traceId, got.get(1) ?: []]
 }
 
 test fun whoIsCurrent(): List<List<u8>> {
@@ -217,8 +217,8 @@ test "a task started inside a span sees it as the current one" {
   val rec = Recorder()
   with tel = try start(service: "t", exporter: rec, interval: quiet())
   val ids = childTask()
-  expect(ids.at(0) == ids.at(1))
-  expect(ids.at(2) == ids.at(3))
+  expect(ids.get(0) == ids.get(1))
+  expect(ids.get(2) == ids.get(3))
   expect(current() == null)
 }
 
@@ -374,9 +374,9 @@ test "a histogram counts values into buckets and keeps sum, least and greatest" 
   // bounds 1 and 2: [0.5, 1.0] in the first, [1.5] in the second, [5, 3] past them
   val buckets = bytesOf(p, 6)
   expect(buckets.len() == 24)
-  expect(buckets.at(0) == 2)
-  expect(buckets.at(8) == 1)
-  expect(buckets.at(16) == 2)
+  expect(buckets.get(0) == 2)
+  expect(buckets.get(8) == 1)
+  expect(buckets.get(16) == 2)
   expect(bytesOf(p, 7).len() == 16)
 }
 
@@ -423,8 +423,8 @@ test "a log record carries the trace of the span it was written in" {
   expect(tel.flush())
   val records = logsOf(rec)
   expect(records.len() == 2)
-  val inside = records.at(0) ?: []
-  val outside = records.at(1) ?: []
+  val inside = records.get(0) ?: []
+  val outside = records.get(1) ?: []
   expect(text(child(inside, 5), 1) == "went wrong")
   expect(number(inside, 2) == 17)
   expect(bytesOf(inside, 9).len() == 16)

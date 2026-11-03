@@ -2,7 +2,9 @@
 // expression, available once every child has finished.
 use io
 
-error Boom { n: i64 }
+error Boom {
+  n: i64
+}
 
 fun work(n: i64): i64 throws Boom {
   await sleep(Duration.millis(1))
@@ -27,7 +29,7 @@ fun total(): i64 throws Boom {
 
 fun pool(xs: List<i64>): i64 throws Boom {
   scope(workers: 2) {
-    val tasks: MutableList<Task<i64>> = []
+    val tasks: List<Task<i64>> = []
     loop (x in xs) tasks.push(async work(x))
     awaitAll(tasks).sum()
   }
@@ -57,7 +59,7 @@ fun returns(c: bool): i64 throws Boom {
 }
 
 fun noValue(): i64 throws Boom {
-  val n: i64 = scope { // error: a 'scope' used as a value ends in an expression
+  val n: i64 = scope {  // error: a 'scope' used as a value ends in an expression
     async work(1)
     loop (i in 0..<3) io.println("$i")
   }
@@ -66,7 +68,7 @@ fun noValue(): i64 throws Boom {
 
 fun handle(): i64 throws Boom {
   val _ = scope {
-    async work(1) // error: this task cannot be the value of its block
+    async work(1)  // error: this task cannot be the value of its block
   }
   0
 }

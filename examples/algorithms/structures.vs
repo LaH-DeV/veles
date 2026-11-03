@@ -1,21 +1,20 @@
 // Classic data structures. The prelude already has the containers a
-// program reaches for first — MutableList is a stack, Deque a queue, and
+// program reaches for first — List is a stack, Deque a queue, and
 // PriorityQueue a heap — so this file shows them in use and builds the two
 // that are worth writing out: a binary search tree over GC pointers and a
 // binary heap, the structure behind PriorityQueue.
 
-/// Balanced brackets — the textbook stack use, with a MutableList as the
+/// Balanced brackets — the textbook stack use, with a List as the
 /// stack: `push`, `pop` and `last` are all it needs.
 fun balanced(s: string): bool {
   val opener: Map<u8, u8> = [')': '(', ']': '[', '}': '{']
-  val stack: MutableList<u8> = []
+  val stack: List<u8> = []
   loop (byte in s.bytes()) {
     when (byte) {
       '(', '[', '{' => stack.push(byte)
       ')', ']', '}' => {
         if (stack.pop() != opener.get(byte)) return false
       }
-      else          => { }
     }
   }
   stack.isEmpty()
@@ -25,18 +24,18 @@ fun balanced(s: string): bool {
 /// deque holds indices whose values decrease front to back, so the front
 /// is always the current window's maximum: O(n) overall.
 fun slidingMax(xs: List<i64>, k: i64): List<i64> {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   val window = Deque<i64>()
   loop ((i, x) in xs.iter().enumerate()) {
     // drop smaller elements from the back: they can never be a maximum again
     loop (val back = window.last()) {
-      if ((xs.at(back) ?: panic("slidingMax: the window holds indexes of xs")) > x) break
+      if ((xs.get(back) ?: panic("slidingMax: the window holds indexes of xs")) > x) break
       window.removeLast()
     }
     window.addLast(i)
     // drop the front once it has left the window
     if (window.first() == i - k) window.removeFirst()
-    if (i >= k - 1) out.push(xs.at(window.first() ?: i) ?: panic("slidingMax: the window holds indexes of xs"))
+    if (i >= k - 1) out.push(xs.get(window.first() ?: i) ?: panic("slidingMax: the window holds indexes of xs"))
   }
   out
 }
@@ -69,9 +68,9 @@ struct Bst {
 
   /// In-order walk yields the values sorted.
   fun inOrder(): List<i64> {
-    val out: MutableList<i64> = []
-    walk(this.root, out)
-    out.toList()
+    val out: List<i64> = []
+    walk(this.root, &out)
+    out
   }
 
   fun height(): i64 => heightOf(this.root)
@@ -96,7 +95,7 @@ fun insertInto(node: (*TreeNode)?, v: i64): *TreeNode {
   node
 }
 
-fun walk(node: (*TreeNode)?, out: MutableList<i64>) {
+fun walk(node: (*TreeNode)?, out: *List<i64>) {
   if (node == null) return
   walk(node.left, out)
   out.push(node.value)
@@ -110,11 +109,11 @@ fun heightOf(node: (*TreeNode)?): i64 =>
 /// children are `2i + 1` and `2i + 2`. The prelude's `PriorityQueue` is
 /// this structure made generic and comparator-driven.
 struct MinHeap {
-  items: MutableList<i64> = []
+  items: List<i64> = []
 
   /// The element at heap position `i`; the sifts read only positions below
   /// the size.
-  fun item(i: i64): i64 => this.items.at(i) ?: panic("MinHeap: a sift reads only positions below the size")
+  fun item(i: i64): i64 => this.items.get(i) ?: panic("MinHeap: a sift reads only positions below the size")
 
   /// Appends, then sifts the new element up while it beats its parent.
   fun push(x: i64) {
@@ -157,7 +156,7 @@ struct MinHeap {
 fun heapSort(xs: List<i64>): List<i64> {
   val heap = MinHeap()
   loop (x in xs) heap.push(x)
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (val v = heap.pop()) {
     out.push(v)
   }

@@ -33,7 +33,7 @@ func (f *fnCtx) awaitAllCall(e *ast.CallExpr) Expr {
 		x := f.awaitedOperand(e.Args[0].Value)
 		if l, isList := x.Type().(*types.List); isList {
 			if _, ofTasks := l.Elem.(*types.Task); ofTasks {
-				return f.awaitList(x, l.Mutable, e.Pos)
+				return f.awaitList(x, e.Pos)
 			}
 		}
 		if tt, isTask := x.Type().(*types.Task); isTask {
@@ -117,13 +117,9 @@ func (f *fnCtx) awaitedOperand(e ast.Expr) Expr {
 }
 
 // awaitList is `awaitAll(tasks)`: the prelude's loop over the handles.
-func (f *fnCtx) awaitList(x Expr, mutable bool, at source.Span) Expr {
+func (f *fnCtx) awaitList(x Expr, at source.Span) Expr {
 	v, decl := f.hidden("tasks", x, false)
-	name := "awaitEach"
-	if mutable {
-		name = "awaitEachMut"
-	}
-	call := &ast.CallExpr{Fun: &ast.PreludeName{Name: name, Pos: at}, Args: []ast.Arg{{Value: nameOf(v, at)}}, Pos: at}
+	call := &ast.CallExpr{Fun: &ast.PreludeName{Name: "awaitEach", Pos: at}, Args: []ast.Arg{{Value: nameOf(v, at)}}, Pos: at}
 	r := f.checkExpr(call, nil)
 	return &BlockExpr{exprBase{r.Type()}, &Block{Stmts: []Stmt{decl}, Value: r, Type: r.Type()}}
 }

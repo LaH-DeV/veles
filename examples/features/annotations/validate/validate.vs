@@ -22,7 +22,7 @@ trait Validate {
   /// `inline loop` is unrolled once per field, so each copy reads its field
   /// with its own type: `<` on a number, `len()` on text.
   fun problems(): List<Problem> {
-    val out: MutableList<Problem> = []
+    val out: List<Problem> = []
     inline loop (f in This.fields) {
       if (!f.has<Skip>()) {
         if (val min = f.attr<Min>()) {
@@ -39,7 +39,7 @@ trait Validate {
   /// The rules of the type as text, built by the compiler from the
   /// annotations and the doc comments: nothing is computed at run time.
   static const fun rules(): List<string> {
-    val out: MutableList<string> = []
+    val out: List<string> = []
     loop (f in This.fields) {
       if (f.has<Skip>()) continue
       var rule = f.name + ": " + f.typeName

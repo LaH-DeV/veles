@@ -60,7 +60,7 @@ extern "C" {
 
 fun format(f: string, call: fun(*raw u8, *raw u8): i32): string throws ffi.NulByte {
   with fmt = try ffi.CString.of(f)
-  val buf: MutableList<u8> = MutableList.repeat(0, 128)
+  val buf: List<u8> = List.repeat(0, 128)
   buf.withRaw(p => call(p, fmt.ptr()))
   // SAFETY: snprintf wrote a NUL-terminated string into the 128 bytes
   return buf.withRaw(p => unsafe { ffi.readString(p) })

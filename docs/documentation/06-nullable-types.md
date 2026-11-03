@@ -301,7 +301,7 @@ A narrowed value is not a copy: after the null test you can write to its
 `var` fields and call methods on it, and the change lands in the variable or
 field it came from. `?.` does the same in one step — on a call, and on an
 assignment, which happens only when the left side is present and is
-skipped otherwise. A nullable *pointer* is the common receiver: `m.ref(k)`
+skipped otherwise. A nullable *pointer* is the common receiver: `m.at(k)`
 is `(*V)?`, a pointer to the value stored in the map or null, so `?.`
 through it updates the map entry itself:
 
@@ -324,10 +324,10 @@ fun main() {
   }
   maybe?.n += 1
 
-  val tally: MutableMap<string, Counter> = ["hits": Counter()]
-  tally.ref("hits")?.bump()
-  tally.ref("hits")?.n += 10
-  tally.ref("misses")?.bump()     // no entry: nothing happens
+  val tally: Map<string, Counter> = ["hits": Counter()]
+  tally.at("hits")?.bump()
+  tally.at("hits")?.n += 10
+  tally.at("misses")?.bump()     // no entry: nothing happens
   io.println("$maybe $tally")
 }
 ```
@@ -339,13 +339,13 @@ Counter(n: 7) {hits: Counter(n: 11)}
 
 This is why get-and-update code rarely needs `get(k) ?: panic(…)`: `?.`
 *is* the presence test. What stays closed to it is anything that is a copy — the
-value `get(k)` or `at(i)` returns: `tally.get("hits")?.n += 10`
+value `get(k)` or `get(i)` returns: `tally.get("hits")?.n += 10`
 is an error, because the change could never be observed ([chapter 4](04-collections.md#updating-elements-in-place)
 has the reading/writing rule).
 
 ## Where `T?` shows up
 
-- `map.get(key)`, `list.at(i)`, `list.first()`, `list.pop()`,
+- `map.get(key)`, `list.get(i)`, `list.first()`, `list.pop()`,
   `text.toInt()`, `text.substring(a, b)` — every operation that can come
   up empty returns `T?` rather than a sentinel or a panic.
 - Struct fields: `next: (*Node)?` for the end of a linked list.
@@ -362,7 +362,7 @@ fun main() {
     val n = w.toInt() ?: continue
     total += n
   }
-  io.println("$total ${words.at(5) ?: "none"} ${words.first()?.len() ?: 0}")
+  io.println("$total ${words.get(5) ?: "none"} ${words.first()?.len() ?: 0}")
 }
 ```
 

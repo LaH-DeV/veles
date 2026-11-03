@@ -10,20 +10,20 @@ fun tomlDump(text: string): string {
   }
   val out = StringBuilder()
   out.appendLine("root @${root.line} ${origin(root)}")
-  dumpTable(out, root, "  ")
+  dumpTable(&out, root, "  ")
   out.toString()
 }
 
 fun origin(table: *Table): string => if (table.defined()) "defined" else "implied"
 
-fun dumpTable(out: StringBuilder, table: *Table, indent: string) {
+fun dumpTable(out: *StringBuilder, table: *Table, indent: string) {
   loop (key in table.keys()) {
     val value = table.get(key) ?: continue
     dumpValue(out, "$indent${quote(key)}", value, indent)
   }
 }
 
-fun dumpValue(out: StringBuilder, label: string, value: Value, indent: string) {
+fun dumpValue(out: *StringBuilder, label: string, value: Value, indent: string) {
   val at = "@${value.line}"
   when (value.data) {
     is Text(text)      => out.appendLine("$label: str $at ${quote(text)}")

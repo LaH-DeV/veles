@@ -6,7 +6,10 @@
 "%s is not a constant expression (D113); compute it at run time with 'val'"  # a HIR node the evaluator has no case for; each kind the checker produces is handled
 "%s takes %d arguments"  # std-internal intrinsic: only std calls it, and std calls it right
 "%s takes 1 argument"  # std-internal intrinsic: only std calls it, and std calls it right
+"%s takes a List<u8>"  # std-internal intrinsics (StringBuilder's text edits, D207): only std calls them, and std calls them right
+"%s takes a list"  # std-internal intrinsic (listRawData, listReadData): only std calls it, and std calls it right
 "%s takes a pointer"  # std-internal intrinsic: only std calls it, and std calls it right
+"%s takes one of its keys as a literal; %s is not one"  # compilerTarget/compilerProgram are std-only (std/build), and std/build passes only the keys there are
 "'%s' cannot be an error without the bound '%s: Error' (D4)"  # bodies are checked per instantiation, so a thrown type parameter is always substituted by then
 "'%s' cannot be used as a value"  # no syntax reaches it: guards an AST node kind the checker does not handle
 "'%s' does not implement '%s', required by '%s'"  # defensive: the argument's coercion to the trait refuses a type missing any of it first ('so it cannot be used as a ... value')
@@ -22,14 +25,17 @@
 "'%s' is not a struct"  # only derived (synthesized) code constructs through a resolved type
 "'%s' is not a value"  # no syntax reaches it: guards an AST node kind the checker does not handle
 "'%s' is not available to the compiler (D113)"  # std-internal: only std calls a runtime entry point, and constExterns lists the ones it may
+"'%s()' on a %s was removed (D231): the value is the copy"  # a self-copy called other than as a method (a function value), which the checker does not produce
 "'%s.%s' is ambiguous: declared by traits '%s' and '%s'"  # a concrete type's associated type is only reached through a type parameter, whose ambiguity is refused first (D84)
 "'..' only stands inside a list pattern: '[first, ..rest]'"  # the parser refuses the form first
 "'@caller_location' applies to plain functions and inherent methods, not to trait implementations or extern functions (D88)"  # std-only: user code is refused first (reserved for the standard library), and std marks neither
 "'[...] =' is not index assignment; brackets are for collection literals only (D25)"  # only when the source text is missing, i.e. synthesized code, which never writes brackets
 "'[...]' after a value is not indexing; brackets are for collection literals only (D25)"  # only when the source text is missing, i.e. synthesized code, which never writes brackets
+"'as' no longer converts (D86; it only renames): numeric conversions are methods ('.toI64()', '.wrapU8()') and a raw pointer uses '.cast<*raw T>()'"  # a cast whose source text is missing (compiler-written code); a written one gets a fix
 "'ioWait' takes two arguments: the descriptor and whether to wait for writing"  # std-internal intrinsic: only std calls it, and std calls it right
 "'ioWait()' always suspends and must be awaited: 'await ioWait(fd, write)' (D16)"  # std-internal intrinsic: only std calls it, and std calls it right
 "'next()' must return 'Item?', found '%s'"  # an Iterator implementation is checked against the trait first
+"'toMutable' was removed (D231): every copy of a collection can be changed"  # as above, for toMutable
 "a 'lazy' parameter must be a plain 'fun(): T' — no arguments, effects, default or '...' (D90)"  # std-only, after the reserved check: user code is refused first, and std writes only well-formed ones
 "a 'test fun' is a top-level helper, not a method"  # the parser refuses `test fun` in a type body; guards ASTs built another way
 "a lint rule was shown %s, which std/lint cannot show yet"  # needs a syntax node std/lint has no type for; checker-only nodes reach a rule as Bad nodes
@@ -43,12 +49,11 @@
 "field '%s' of '%s' is private (M5)"  # needs two modules; conformance cases are one file each
 "index %s is out of range for a constant list of length %d (D113)"  # defensive (D113): every indexed read of a constant table the checker lowers is either 'at', answered at compile time, or guarded by its own length test
 "invalid float literal"  # the parser refuses the form first
-"listAppendText takes a MutableList<u8> and a string"  # std-internal intrinsic: only std calls it, and std calls it right
-"%s takes a MutableList<u8>"  # std-internal intrinsics (StringBuilder's text edits, D207): only std calls them, and std calls them right
+"listAppendText takes a List<u8> and a string"  # std-internal intrinsic: only std calls it, and std calls it right
 "listDecodeUtf8Range takes a List<u8> and two positions"  # std-internal intrinsic: only std calls it, and std calls it right
-"listRawData takes a list"  # std-internal intrinsic: only std calls it, and std calls it right
-"listMove takes a MutableList"  # std-internal intrinsic: only std calls it, and std calls it right
-"listTouched takes a MutableList"  # std-internal intrinsic: only std calls it, and std calls it right
+"slotPayload takes a pointer to a nullable slot"  # std-internal intrinsic (Deque.at): only std calls it, and std calls it right
+"listMove takes a List"  # std-internal intrinsic: only std calls it, and std calls it right
+"listTouched takes a List"  # std-internal intrinsic: only std calls it, and std calls it right
 "method '%s' is a compiler built-in on '%s' and cannot be redeclared"  # only std may extend a built-in type, and std does not redeclare
 "methods cannot be used as values; wrap the call in a lambda"  # defensive: every way to name a method as a value is answered earlier ('is a method of', 'is a method: call it')
 "module-level '%s' needs an initializer"  # the parser refuses the form first
@@ -75,4 +80,3 @@
 "variants of '%s' disagree on the type of '%s'"  # a sealed trait's method has one signature, which every variant's implement must match
 "variants of sealed trait '%s' must be declared in the same module as the trait (D12)"  # needs two modules; conformance cases are one file each
 "write the whole type to fill an array: 'Array<i64, 8>.make(0)' (D121)"  # bodies are checked per instantiation, so the array type is whole by then
-"%s takes one of its keys as a literal; %s is not one"  # compilerTarget/compilerProgram are std-only (std/build), and std/build passes only the keys there are

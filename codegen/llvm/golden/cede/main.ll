@@ -318,7 +318,7 @@ entry:
   %t3 = extractvalue %str { ptr @.str.8, i64 18 }, 0
   %t4 = extractvalue %str { ptr @.str.8, i64 18 }, 1
   call void @veles_call_push(ptr %t3)
-  %t5 = call ptr @v_std.prelude.extend.MutableList_T.make_T_i64_(i64 100, { ptr, ptr } %t2)
+  %t5 = call ptr @v_std.prelude.extend.List_T.make_T_i64_(i64 100, { ptr, ptr } %t2)
   call void @veles_call_pop()
   store ptr %t5, ptr %a6
   %t7 = load ptr, ptr %a6
@@ -463,5 +463,5 @@ entry:
 @.str.10 = private unnamed_addr constant [21 x i8] c"main.vs:18:3\00println\00"
 @.str.11 = private unnamed_addr constant [21 x i8] c"main.vs:20:3\00println\00"
 @.str.12 = private unnamed_addr constant [8 x i8] c"resumed\00"
-@.str.13 = private unnamed_addr constant [14 x i8] c"main.vs:17:46\00"
+@.str.13 = private unnamed_addr constant [14 x i8] c"main.vs:17:39\00"
 @.str.14 = private unnamed_addr constant [6 x i8] c"\00main\00"

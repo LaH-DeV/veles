@@ -21,7 +21,7 @@ extern "C" {
 
 /// The command-line arguments, without the program name.
 public fun args(): List<string> {
-  var out: MutableList<string> = []
+  var out: List<string> = []
   // SAFETY: reads the count the runtime saved at start-up
   val n = unsafe {
     veles_os_argc()

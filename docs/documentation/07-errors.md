@@ -87,7 +87,7 @@ use io
 error ParseError { text: string }
 
 fun parseAll(items: List<string>): List<i64> throws ParseError {
-  val out: MutableList<i64> = []
+  val out: List<i64> = []
   loop (it in items) {
     val n = it.toInt() ?: throw ParseError(text: it)
     out.push(n)

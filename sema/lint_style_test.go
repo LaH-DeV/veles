@@ -27,7 +27,7 @@ func TestRedundantDiscardLint(t *testing.T) {
 	const marker = "discards a value"
 	if got := lintMessages(t, prelude+`
 fun main() {
-  val seen: MutableSet<i64> = MutableSet<i64>()
+  val seen: Set<i64> = Set<i64>()
   val _ = seen.add(1)
   io.println("${seen.len()}")
 }`, marker); len(got) != 1 {

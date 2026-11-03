@@ -20,9 +20,9 @@ struct Renamed {
 }
 
 test fun cols(names: List<string>, oids: List<i64>): List<Column> {
-  val out: MutableList<Column> = []
+  val out: List<Column> = []
   loop ((i, n) in names.enumerate()) {
-    out.push(Column(name: n, oid: oids.at(i) ?: 25))
+    out.push(Column(name: n, oid: oids.get(i) ?: 25))
   }
   out
 }
@@ -33,7 +33,7 @@ test "a row fills a struct: snake_case columns, text parsed by the field's type"
   val columns = cols(["id", "full_name", "active", "score", "nickname", "created_at", "tags"], [20, 25, 16, 701, 25, 1184, 1009])
   val rows = one(columns, ["7", "Ada Lovelace", "t", "1.5", null, "2026-10-05 12:34:56.789+02", "{a,\"b c\",d}"])
   val users = try decodeRows<User>(rows)
-  val u = users.at(0) ?: fail("one user")
+  val u = users.get(0) ?: fail("one user")
   expect(u.id == 7)
   expect(u.fullName == "Ada Lovelace")
   expect(u.active)
@@ -47,7 +47,7 @@ test "a row fills a struct: snake_case columns, text parsed by the field's type"
 test "@key(db:) names the column outright" {
   val rows = one(cols(["user_id"], [23]), ["42"])
   val r = try decodeRows<Renamed>(rows)
-  expect(r.at(0)?.id == 42)
+  expect(r.get(0)?.id == 42)
 }
 
 test "a scalar target reads the first column" {
@@ -82,7 +82,7 @@ struct Blob {
 
 test "bytea and arrays of numbers" {
   val rows = one(cols(["data", "nums"], [17, 1016]), ["\\x00ff10", "{1,2,3}"])
-  val b = (try decodeRows<Blob>(rows)).at(0) ?: fail("one row")
+  val b = (try decodeRows<Blob>(rows)).get(0) ?: fail("one row")
   expect(b.data == [0, 255, 16])
   expect(b.nums == [1, 2, 3])
 }
@@ -114,7 +114,7 @@ struct Tagged {
 test "a uuid column reads as a Uuid, and a bad one is a problem" {
   val id = crypto.uuidV4()
   val rows = one(cols(["id"], [2950]), ["$id"])
-  expect((try decodeRows<Tagged>(rows)).at(0)?.id == id)
+  expect((try decodeRows<Tagged>(rows)).get(0)?.id == id)
   val bad = one(cols(["id"], [2950]), ["not-a-uuid"])
   expect(decodeRows<Tagged>(bad) is Err)
 }

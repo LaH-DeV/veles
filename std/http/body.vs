@@ -121,7 +121,7 @@ public struct Body {
 
   /// The rest of the body, at most as much as this handle's ceiling allows.
   public fun readAll(): List<u8> suspends throws Fail | IoError {
-    val out: MutableList<u8> = []
+    val out: List<u8> = []
     loop {
       val chunk = try this.read(byteUnits.KiB * 64)
       if (chunk.isEmpty()) break

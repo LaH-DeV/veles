@@ -6,7 +6,7 @@ use io
 
 // the CRC-32 lookup table, from the polynomial
 const fun crc32Table(): List<u32> {
-  val table: MutableList<u32> = []
+  val table: List<u32> = []
   loop (n in 0..<256) {
     var c = n.wrapU32()
     loop (_ in 0..<8) {
@@ -23,14 +23,14 @@ fun crc32(text: string): u32 {
   var c: u32 = 0xFFFFFFFF
   loop (b in text.bytes()) {
     val index = ((c ^ b.toU32()) & 0xFF).toI64()
-    c = (CRC.at(index) ?: 0) ^ (c >> 8)
+    c = (CRC.get(index) ?: 0) ^ (c >> 8)
   }
   c ^ 0xFFFFFFFF
 }
 
 // a lookup table from a list of names: the position is the value
 const fun positions(names: List<string>): Map<string, i64> {
-  val out: MutableMap<string, i64> = [:]
+  val out: Map<string, i64> = [:]
   loop ((i, name) in names.enumerate()) out.set(name, i)
   out
 }
@@ -39,10 +39,10 @@ const MONTHS: Map<string, i64> = positions(["jan", "feb", "mar", "apr", "may", "
 
 // the primes below n, by the sieve of Eratosthenes
 const fun primesBelow(n: i64): List<i64> {
-  val composite = MutableList<bool>.repeat(false, n)
-  val primes: MutableList<i64> = []
+  val composite = List<bool>.repeat(false, n)
+  val primes: List<i64> = []
   loop (i in 2..<n) {
-    if (composite.at(i) ?: true) continue
+    if (composite.get(i) ?: true) continue
     primes.push(i)
     var j = i * i
     loop (j < n) {
@@ -88,7 +88,7 @@ const NEXT: Version = Version(major: 1, minor: 9).bumped().bumped()
 fun main() {
   io.println(BANNER)
   io.println("crc32(\"veles\") = ${crc32("veles")}, crc32(\"\") = ${crc32("")}")
-  io.println("table entry 255 = ${CRC.at(255)}")
+  io.println("table entry 255 = ${CRC.get(255)}")
   io.println("mar is month ${(MONTHS.get("mar") ?: -1) + 1} of ${MONTHS.len()}")
   io.println("primes below 50: ${PRIMES}")
   io.println("next version: ${NEXT.text()}")

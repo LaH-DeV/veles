@@ -169,7 +169,7 @@ public struct Broadcast<T> {
   /// Panics when `capacity` is less than 1.
   init(capacity: i64) {
     if (capacity < 1) panic("Broadcast: capacity must be at least 1, got $capacity")
-    this.state = Mutex(value: BroadcastState(kept: MutableList<T>(), capacity, next: 0, closed: false, signal: newSignal()))
+    this.state = Mutex(value: BroadcastState(kept: List<T>(), capacity, next: 0, closed: false, signal: newSignal()))
   }
 
   /// Sends `value` to every subscriber; never waits. Panics after `close()`.
@@ -206,7 +206,7 @@ public struct Broadcast<T> {
 struct BroadcastState<T> {
   // the last `capacity` values: the value numbered n (from 0, in the
   // order sent) is in slot n % capacity while it is kept
-  kept:       MutableList<T>
+  kept:       List<T>
   capacity:   i64
   var next:   i64  // the number of the next value sent
   var closed: bool
@@ -252,7 +252,7 @@ public struct Subscription<T> {
       throw Lagged(missed)
     }
     if (this.cursor.at < s.next) {
-      val v = s.kept.at(this.cursor.at % s.capacity) ?: panic("Broadcast: a kept value is missing")
+      val v = s.kept.get(this.cursor.at % s.capacity) ?: panic("Broadcast: a kept value is missing")
       this.cursor.at += 1
       return v
     }

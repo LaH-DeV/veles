@@ -98,7 +98,7 @@ extend string {
   /// The lines of the text, split on `\n`; a trailing `\r` on each line and
   /// a final empty line are dropped.
   public const fun lines(): List<string> {
-    var out: MutableList<string> = []
+    var out: List<string> = []
     loop (line in this.split("\n")) {
       if (line.endsWith("\r")) {
         out.push(line.substring(0, line.len() - 1) ?: line)
@@ -119,7 +119,7 @@ extend string {
 
   /// The text repeated `n` times (empty for `n <= 0`).
   public const fun repeat(n: i64): string {
-    var out: MutableList<u8> = []
+    var out: List<u8> = []
     loop (_ in 0..<n) {
       listAppendText(out, this)
     }
@@ -140,7 +140,7 @@ extend string {
     val first = this.byteAt(0)
     if (first < 97 || first > 122) return this
     val rest = this.substring(1, this.len()) ?: ""
-    val out: MutableList<u8> = [first - 32]
+    val out: List<u8> = [first - 32]
     listAppendText(out, rest)
     out.decodeUtf8() ?: this
   }

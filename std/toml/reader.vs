@@ -46,12 +46,12 @@ struct Reader {
 
   /// `a`, `a.b`, `"a b".c`: the keys of a header, blanks allowed around the dots.
   fun keyPath(): List<string> throws ParseError {
-    val path: MutableList<string> = []
+    val path: List<string> = []
     loop {
       this.cursor.skipSpace(false)
       path.push(try this.cursor.key())
       this.cursor.skipSpace(false)
-      if (!this.cursor.eat('.')) return path.toList()
+      if (!this.cursor.eat('.')) return path
     }
   }
 
@@ -142,7 +142,7 @@ struct Reader {
   fun list(line: i64): Value throws ParseError {
     val cursor = this.cursor
     cursor.pos += 1
-    val items: MutableList<Value> = []
+    val items: List<Value> = []
     loop {
       cursor.skipSpace(true)
       if (cursor.eat(']')) break

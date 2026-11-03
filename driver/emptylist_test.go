@@ -41,14 +41,14 @@ struct Libs {
 fun main() {
   val n = 20000
   val s0 = live()
-  val libs = MutableList<Libs>.make(n, _ => Libs())
+  val libs = List<Libs>.make(n, _ => Libs())
   val perLibs = (live() - s0) / n
-  val l0 = libs.at(0)?.libs ?: panic("none")
+  val l0 = libs.get(0)?.libs ?: panic("none")
   var inside = 0
   loop (x in l0) inside += x.len() + 1
-  io.println("shared empties: ${perLibs < 80} ${l0.len()} ${inside} ${libs.at(7)?.names?.contains("x")} ${libs.at(9)?.index?.get("x")} ${l0 == (libs.at(5)?.paths ?: l0)}")
+  io.println("shared empties: ${perLibs < 80} ${l0.len()} ${inside} ${libs.get(7)?.names?.contains("x")} ${libs.get(9)?.index?.get("x")} ${l0 == (libs.get(5)?.paths ?: l0)}")
   val before = live()
-  val lists = MutableList<MutableList<i64>>.make(n, _ => [])
+  val lists = List<List<i64>>.make(n, _ => [])
   val per = (live() - before) / n
   io.println("small: ${per < 80}")
   loop (i in 0..<n) {
@@ -61,48 +61,48 @@ fun main() {
     total += l.len()
   }
   io.println("pushed: $total")
-  val a: MutableList<i64> = []
+  val a: List<i64> = []
   a.reserve(10)
   a.push(7)
-  val b: MutableList<i64> = []
+  val b: List<i64> = []
   val none: List<i64> = []
-  b.addAll(a.toList())
+  b.addAll(a)
   b.addAll(none)
-  val c = b.toList()
-  val e: MutableList<i64> = []
-  io.println("grown: ${a.len()} ${b.len()} ${c.len()} ${e.toList().len()} ${e.pop()}")
-  val s: MutableList<u8> = []
-  io.println("bytes: ${s.toList().len()} ${"".bytes().len()}")
+  val c = b
+  val e: List<i64> = []
+  io.println("grown: ${a.len()} ${b.len()} ${c.len()} ${e.len()} ${e.pop()}")
+  val s: List<u8> = []
+  io.println("bytes: ${s.len()} ${"".bytes().len()}")
 
   val m0 = live()
-  val maps = MutableList<MutableMap<string, i64>>.make(n, _ => [:])
-  val sets = MutableList<MutableSet<i64>>.make(n, _ => MutableSet<i64>())
+  val maps = List<Map<string, i64>>.make(n, _ => [:])
+  val sets = List<Set<i64>>.make(n, _ => Set<i64>())
   val perMap = (live() - m0) / n
   io.println("small maps and sets: ${perMap < 300}")
-  val mm: MutableMap<string, i64> = [:]
-  io.println("empty map: ${mm.len()} ${mm.get("a")} ${mm.containsKey("a")} ${mm.remove("a")} ${mm.toMap().len()}")
+  val mm: Map<string, i64> = [:]
+  io.println("empty map: ${mm.len()} ${mm.get("a")} ${mm.containsKey("a")} ${mm.remove("a")} ${mm.len()}")
   mm.clear()
   mm.set("a", 1)
   mm.set("b", 2)
   mm.remove("a")
   loop (i in 0..<100) mm.set("k$i", i)
-  val cp = mm.toMap()
+  val cp = mm
   mm.clear()
   mm.set("z", 26)
   io.println("map grown: ${cp.len()} ${cp.get("k99")} ${mm.len()} ${mm.get("z")} ${mm.get("b")}")
-  val rm: MutableMap<i64, i64> = [:]
+  val rm: Map<i64, i64> = [:]
   rm.reserve(100)
   loop (i in 0..<100) rm.set(i, i * i)
   io.println("reserved: ${rm.len()} ${rm.get(99)}")
-  val ss: MutableSet<i64> = MutableSet<i64>()
+  val ss: Set<i64> = Set<i64>()
   io.println("empty set: ${ss.len()} ${ss.contains(1)} ${ss.toList().len()}")
   loop (i in 0..<50) ss.add(i % 10)
   io.println("set grown: ${ss.len()} ${ss.contains(9)} ${ss.contains(10)}")
   // maps and sets of every size around the point where the hash index starts
   var bad = 0
   loop (size in 0..<40) {
-    val q: MutableMap<i64, i64> = [:]
-    val qs: MutableSet<i64> = MutableSet<i64>()
+    val q: Map<i64, i64> = [:]
+    val qs: Set<i64> = Set<i64>()
     loop (k in 0..<size) {
       q.set(k * 7, k)
       qs.add(k * 7)
@@ -129,7 +129,7 @@ fun main() {
       total += (q.get(k * 7) ?: q.get(k * 7 + 1) ?: -1000000) - k
     }
     if (total != 0) bad += 1
-    val copy = q.toMap()
+    val copy = q
     q.clear()
     q.set(1, 1)
     if (copy.len() != size || q.len() != 1 || q.get(1) != 1) bad += 1
@@ -143,10 +143,10 @@ fun main() {
   io.println("builder text: ${sb.len()} ${sb.toString().replace("\n", "|")}")
   val e1 = ""
   val w = "word"
-  val z: MutableList<i64> = []
-  val frozen = z.toList()
+  val z: List<i64> = []
+  val frozen = z
   z.push(1)
-  val frozen2 = z.toList()
+  val frozen2 = z
   z.clear()
   io.println("toList: ${frozen.len()} ${frozen2.len()} ${z.len()} ${frozen == frozen2}")
   var joined = 0

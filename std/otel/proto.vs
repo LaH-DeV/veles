@@ -12,7 +12,7 @@ const wireBytes: i64 = 2
 // One message being written. `u64` throughout: a protobuf varint is unsigned
 // on the wire, and a negative `int64` is its two's complement, ten bytes long.
 struct Pb {
-  out: MutableList<u8> = []
+  out: List<u8> = []
 
   fun varint(n: u64) {
     var rest = n
@@ -105,7 +105,7 @@ struct Pb {
     this.message(field, run.done())
   }
 
-  fun done(): List<u8> => this.out.toList()
+  fun done(): List<u8> => this.out
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ fun keyValue(a: Attr): List<u8> {
 }
 
 // `field` repeated once per attribute
-fun attributes(pb: Pb, field: i64, attrs: List<Attr>) {
+fun attributes(pb: *Pb, field: i64, attrs: List<Attr>) {
   loop (a in attrs) {
     pb.message(field, keyValue(a))
   }
@@ -153,7 +153,7 @@ fun attributes(pb: Pb, field: i64, attrs: List<Attr>) {
 
 fun resource(attrs: List<Attr>): List<u8> {
   val pb = Pb()
-  attributes(pb, 1, attrs)
+  attributes(&pb, 1, attrs)
   pb.done()
 }
 
@@ -176,12 +176,12 @@ fun spanBytes(s: SpanData): List<u8> {
   pb.int(6, s.kind.value)
   pb.fixed64(7, s.startNanos)
   pb.fixed64(8, s.endNanos)
-  attributes(pb, 9, s.attrs)
+  attributes(&pb, 9, s.attrs)
   loop (e in s.events) {
     val ev = Pb()
     ev.fixed64(1, e.timeNanos)
     ev.string(2, e.name)
-    attributes(ev, 3, e.attrs)
+    attributes(&ev, 3, e.attrs)
     pb.message(11, ev.done())
   }
   if (s.status != SpanStatus.Unset) {
@@ -216,7 +216,7 @@ const cumulative: i64 = 2
 
 fun numberPoint(p: PointData, startNanos: i64, nowNanos: i64, asInt: bool): List<u8> {
   val pb = Pb()
-  attributes(pb, 7, p.attrs)
+  attributes(&pb, 7, p.attrs)
   pb.fixed64(2, startNanos)
   pb.fixed64(3, nowNanos)
   if (asInt) pb.fixed64(6, p.intValue) else pb.double(4, p.realValue)
@@ -225,7 +225,7 @@ fun numberPoint(p: PointData, startNanos: i64, nowNanos: i64, asInt: bool): List
 
 fun histogramPoint(p: PointData, bounds: List<f64>, startNanos: i64, nowNanos: i64): List<u8> {
   val pb = Pb()
-  attributes(pb, 9, p.attrs)
+  attributes(&pb, 9, p.attrs)
   pb.fixed64(2, startNanos)
   pb.fixed64(3, nowNanos)
   pb.fixed64(4, p.count)
@@ -278,7 +278,7 @@ fun metricBytes(m: MetricData, startNanos: i64, nowNanos: i64): List<u8> {
 fun metricsRequest(res: List<Attr>, metrics: List<MetricData>, nowNanos: i64): List<u8> {
   val resourceMetrics = Pb()
   resourceMetrics.message(1, resource(res))
-  val scopes: MutableList<string> = []
+  val scopes: List<string> = []
   loop (m in metrics) {
     if (!scopes.contains(m.meter)) scopes.push(m.meter)
   }
@@ -304,7 +304,7 @@ fun logBytes(r: LogData): List<u8> {
   pb.int(2, r.severity)
   pb.string(3, r.severityText)
   pb.message(5, anyValue(StringValue(value: r.body)))
-  attributes(pb, 6, r.attrs)
+  attributes(&pb, 6, r.attrs)
   pb.bytes(9, r.traceId)
   pb.bytes(10, r.spanId)
   pb.fixed64(11, r.timeNanos)
