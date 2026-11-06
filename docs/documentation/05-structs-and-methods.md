@@ -402,7 +402,7 @@ for a class, so the differences are the things to unlearn:
 | | class (Kotlin / TS / Java) | Veles struct |
 |---|---|---|
 | Assignment | copies a *reference*; two names, one object | copies the *value*; two names, two structs (D7) |
-| Sharing one instance | the default | explicit: a pointer `*T` (`&x`, [Sharing with pointers](#sharing-with-pointers) below), or a reference type such as `List` |
+| Sharing one instance | the default | explicit: a pointer `*T` (`&x`, [Sharing with pointers](#sharing-with-pointers) below), — a `List`, `Map` or `Set` is a value like a struct (D231) |
 | Inheritance | `class Dog : Animal` | none. Shared behaviour is a trait (chapter 8); a closed family is a `sealed trait` with variant structs (chapter 9) |
 | Constructor | written by hand | implicit, by field name: `Point(x: 1, y: 2)`, or positional when it takes one parameter: `Meters(5)`; `static fun` for anything with logic |
 | Copy with changes | `data class` `copy(...)` (Kotlin), spread (TS) | generated: `p.copy(x: 5)` |

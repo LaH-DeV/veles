@@ -63,12 +63,6 @@ func walkStmt(s Stmt, visit func(node any)) {
 	}
 }
 
-func walkExprs(es []Expr, visit func(node any)) {
-	for _, e := range es {
-		walkExpr(e, visit)
-	}
-}
-
 func walkExpr(e Expr, visit func(node any)) {
 	walker{visit}.expr(e)
 }

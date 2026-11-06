@@ -559,7 +559,7 @@ name = source => body` to name what the source gave. A source is a
 use io
 
 fun slow(): string {
-  await sleep(Duration.millis(30))
+  await sleep(Duration.millis(300))
   io.println("the slow task finished anyway")
   "slow"
 }
@@ -597,6 +597,10 @@ scope done
 - `return v` ends the block with `v`; `break`/`continue` to an outer loop
   are errors. `try`/`throw` fail the task as a throwing `async f()` does.
 - Captures follow D35: `val`s of Sendable types without `var` fields.
+  The collections it reads are copied when its task starts (D237).
+- `async job()` on a function value: the lambda may not capture a
+  collection the starting function changes while the task may run (an
+  error; copy it in with a capture list, D235/D237).
 
 ## Channels
 

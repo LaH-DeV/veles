@@ -1018,7 +1018,8 @@ type TupleExpr struct {
 	Pos    source.Span
 }
 
-// ListLit is `[a, b]`; `mut [a, b]` asks for a MutableList (D25 sugar).
+// ListLit is `[a, b]`; Mut marks the removed `mut [a, b]` (D231), parsed so
+// the checker can refuse it with a fix.
 type ListLit struct {
 	Elems []Expr
 	Mut   bool
@@ -1029,7 +1030,7 @@ type MapEntry struct {
 	Key, Value Expr
 }
 
-// MapLit is `["k": v]` or `[:]`; `mut [...]` asks for a MutableMap.
+// MapLit is `["k": v]` or `[:]`; Mut marks the removed `mut [...]` (D231).
 type MapLit struct {
 	Entries []MapEntry
 	Mut     bool

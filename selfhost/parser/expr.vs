@@ -408,7 +408,7 @@ extend Parser {
         // `[1, 2]`, `["k": v]`, `[:]`
         this.next()
         if (!this.at(Kind.LBracket)) {
-          this.errorAt(this.span(), "'mut' in an expression must be followed by a collection literal, e.g. 'mut [1, 2]' or 'mut [:]'")
+          this.errorAt(this.span(), "'mut' is not an expression keyword: a collection is a value that can be changed as it is, so write the literal alone, e.g. '[1, 2]' or '[:]' (D231)")
           return ast.BadExpr(pos: this.spanFrom(start))
         }
         val lit = this.parseCollectionLit()

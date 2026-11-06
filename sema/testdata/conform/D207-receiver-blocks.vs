@@ -45,7 +45,10 @@ fun main() {
   }
   later { io.println("${server.port} $name") }
   val fixed = Server()
-  fixed.apply { port = 1 } // error: 'apply' changes 'fixed' in place, and 'fixed' is a 'val'; 'edit' gives a changed copy: 'val changed = fixed.edit { … }' (D207)
+  fixed.apply { port = 1 } // a val changes in place, as its methods may change it (D231, Q81)
+  val label = "x"
+  label.apply { trim() } // error: 'apply' puts a new string in 'label', and 'label' is a 'val'; 'edit' gives a changed copy
+  defaults.apply { port = 2 } // error: 'apply' changes 'defaults' in place, and 'defaults' is a global 'val', a constant every task shares
   val loose = { // error: a block '{ … }' alone is a function where one is expected — a 'fun on T()' (a receiver block) or a 'fun()'; here nothing says which: give it a type, 'val f: fun() = { … }' (D207)
     io.println("y")
   }

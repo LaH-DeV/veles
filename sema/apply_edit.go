@@ -15,10 +15,9 @@ import (
 // the caller's, so nothing is allocated but the one copy `edit` makes:
 //
 //   - edit: a working copy of the value — a string's bytes in a
-//     StringBuilder, a List's elements in a MutableList (likewise Map, Set),
-//     a struct or any other value as it is — the block run on it, and the
-//     copy given back: the builder's bytes shared as the string, the
-//     MutableList frozen into the List (no second copy).
+//     StringBuilder, a collection or a struct as a copy of the value (D231:
+//     O(1), its elements copied at its first change) — the block run on it,
+//     and the copy given back: the builder's bytes shared as the string.
 //   - apply: the block run on the caller's own place — a `var`, a `var`
 //     field, what a pointer points at, a temporary — and the place's new
 //     value given back; on a `val` it is refused with a fix to `edit`. A
@@ -82,9 +81,22 @@ func (f *fnCtx) applyEdit(recv Expr, callee *ast.MemberExpr, e *ast.CallExpr) Ex
 		}
 		return f.editCopy(recv, rt, work, block, e.Pos) // a temporary's own copy
 	}
-	if ok, why := placeAssignable(recv); !ok {
+	// in place (a struct, a list, a map, a set), apply is a block of the
+	// changes a method may make, and a method may change a `val` or a
+	// field in place (D231 choice 1): the same places are allowed, all but
+	// a global `val`. A string's apply puts a new value in the place
+	// instead, which a `val` may not take (D207 addendum, Q81).
+	ok, why := placeAssignable(recv)
+	if inPlace {
+		ok, why = placeChangeable(recv)
+	}
+	if !ok {
 		fix := &source.Fix{Title: "Use 'edit', which gives a changed copy", Edits: []source.TextEdit{{Span: callee.Name.Pos, NewText: "edit"}}}
-		f.c.errorFix(callee.Name.Pos, fix, "'apply' changes '%s' in place, and %s; 'edit' gives a changed copy: 'val changed = %s.edit { … }' (D207)", srcText(callee.X), why, srcText(callee.X))
+		does := "changes '" + srcText(callee.X) + "' in place"
+		if !inPlace {
+			does = "puts a new " + rt.String() + " in '" + srcText(callee.X) + "'" // a string cannot change in place
+		}
+		f.c.errorFix(callee.Name.Pos, fix, "'apply' %s, and %s; 'edit' gives a changed copy: 'val changed = %s.edit { … }' (D207)", does, why, srcText(callee.X))
 		return bad()
 	}
 	root := rootVar(recv)
@@ -205,6 +217,17 @@ func (f *fnCtx) runOn(x Expr, rt types.Type, block *blockRunner, place bool, roo
 // placeAssignable reports whether the checked place x may be changed by
 // the caller: a `var`, a `var` field of a place, what a pointer points at
 // (`this` among them); why says what it is when it may not.
+// placeChangeable: x is a place a method may change in place — any local
+// or field (D231 choice 1: `val` stops rebinding only), but not a global
+// `val`, a constant every task shares.
+func placeChangeable(x Expr) (bool, string) {
+	root := rootVar(x)
+	if root != nil && root.IsGlobal && !root.Mutable {
+		return false, "'" + root.Name + "' is a global 'val', a constant every task shares"
+	}
+	return true, ""
+}
+
 func placeAssignable(x Expr) (bool, string) {
 	switch x := x.(type) {
 	case *VarRef:

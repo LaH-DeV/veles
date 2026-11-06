@@ -28,7 +28,7 @@ public struct Deque<T> {
   /// Appends `x` at the back.
   public fun addLast(x: T) {
     this.grow()
-    this.buf.set((this.head + this.size) % this.buf.len(), x)
+    this.buf.set(this.pos(this.size), x)
     this.size += 1
   }
 
@@ -36,7 +36,7 @@ public struct Deque<T> {
   public fun addFirst(x: T) {
     this.grow()
     val cap = this.buf.len()
-    this.head = (this.head + cap - 1) % cap
+    this.head = if (this.head == 0) cap - 1 else this.head - 1
     this.buf.set(this.head, x)
     this.size += 1
   }
@@ -46,7 +46,7 @@ public struct Deque<T> {
     if (this.size == 0) return null
     val x = this.slot(0)
     this.buf.set(this.head, null)
-    this.head = (this.head + 1) % this.buf.len()
+    this.head = this.pos(1)
     this.size -= 1
     x
   }
@@ -56,7 +56,7 @@ public struct Deque<T> {
     if (this.size == 0) return null
     this.size -= 1
     val x = this.slot(this.size)
-    this.buf.set((this.head + this.size) % this.buf.len(), null)
+    this.buf.set(this.pos(this.size), null)
     x
   }
 
@@ -81,15 +81,22 @@ public struct Deque<T> {
   public fun at(i: i64): (*T)? {
     val k = if (i < 0) i + this.size else i
     if (k < 0 || k >= this.size) return null
-    val slot = this.buf.at((this.head + k) % this.buf.len()) ?: panic("deque: a position taken mod the capacity is inside the buffer")
+    val slot = this.buf.at(this.pos(k)) ?: panic("deque: a position below the capacity is inside the buffer")
     slotPayload(slot)
   }
 
-  /// The slot `k` places from the front. Every position is taken mod the
-  /// capacity, so it is inside the buffer whatever `k` is; it holds an
-  /// element when `k` is in `0..<size`.
+  /// The slot `k` places from the front, for `k` in `0..<capacity`; it
+  /// holds an element when `k` is in `0..<size`.
   fun slot(k: i64): T? {
-    this.buf.get((this.head + k) % this.buf.len()) ?: panic("deque: a position taken mod the capacity is inside the buffer")
+    this.buf.get(this.pos(k)) ?: panic("deque: a position below the capacity is inside the buffer")
+  }
+
+  /// The buffer index `k` places from the front, for `k` in
+  /// `0..<capacity`: `head + k` wrapped once — a compare, where `%` is a
+  /// division on every access.
+  fun pos(k: i64): i64 {
+    val i = this.head + k
+    if (i >= this.buf.len()) i - this.buf.len() else i
   }
 
   /// Removes every element.
@@ -155,7 +162,8 @@ public struct DequeIter<T> {
     type Item = T
     fun next(): T? {
       if (this.index >= this.size) return null
-      val slot = this.buf.get((this.head + this.index) % this.buf.len()) ?: panic("deque: a position taken mod the capacity is inside the buffer")
+      val at = this.head + this.index
+      val slot = this.buf.get(if (at >= this.buf.len()) at - this.buf.len() else at) ?: panic("deque: a position below the capacity is inside the buffer")
       this.index += 1
       slot ?: panic("deque: a live slot is empty")
     }

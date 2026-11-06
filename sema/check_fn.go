@@ -95,6 +95,9 @@ type fnCtx struct {
 	captureList []*Var        // outer variables in environment order
 	paramInit   []Stmt        // lambda: statements destructuring tuple-pattern parameters
 	isLambda    bool
+	// blockCopies: this is an `async { … }` block's body (D237); non-nil,
+	// it collects the snapshots made in the maker as captures are found
+	blockCopies *[]Stmt
 	onBlock     bool              // a lambda that runs on a receiver: `this` is its first parameter (D207)
 	recvStack   []*Var            // the `this` of each receiver block being checked in place, innermost last (D207)
 	blockLoops  []int             // len(loops) where each of those blocks began: a jump may not leave one

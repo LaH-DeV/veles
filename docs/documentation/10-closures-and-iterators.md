@@ -529,15 +529,20 @@ Output:
 
 Two functions on every type take a receiver block:
 
-- **`apply`** runs it on the value where it is held — a `var`, a `var`
-  field, what a pointer points at, a temporary (the builder style above),
-  a collection — and gives the value back. On a `val` it is an
-  error whose fix writes `edit`: nothing is copied by surprise.
+- **`apply`** runs it on the value where it is held and gives the value
+  back. It changes what a method that changes the value could change:
+  a local `val` or `var`, a field, what a pointer points at, a temporary
+  (the builder style above) — `val srv = Server(); srv.apply { port =
+  8080 }` changes `srv`, as `srv.port = 8080` would, since a `val` stops
+  rebinding only (chapter 4). Two places are refused, each with the fix
+  `edit`: a module-level `val` (a constant every task shares), and a
+  `val` string — a string never changes in place, so its `apply` puts a
+  new string in the variable, which a `val` cannot take.
 - **`edit`** gives a changed copy and leaves the value alone, with one copy
   at most. The block runs on a `StringBuilder` for a string (with in-place
-  `trim`, `toLower`, `toUpper`, `replace`, `insert`, `append`), on the
-  mutable form of a `List`, `Map` or `Set` (frozen back into the immutable
-  one without a second copy), or on a copy of any other value.
+  `trim`, `toLower`, `toUpper`, `replace`, `insert`, `append`), and on a
+  copy of any other value — a list, map or set is copied in O(1), its
+  elements only at the block's first change (D231).
 
 A block written after `apply` or `edit` is compiled in place, as part of
 the function it is written in: no closure is made, and `server.apply { port

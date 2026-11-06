@@ -347,7 +347,7 @@ func (f *fnCtx) hasMutableBounds() bool {
 	return false
 }
 
-// afterExpr ends the MutableList facts when the checked expression x can
+// afterExpr ends the list-length facts when the checked expression x can
 // run code that might shrink one: any call, or a pop or clear.
 func (f *fnCtx) afterExpr(x Expr) {
 	if x == nil {
@@ -439,7 +439,7 @@ var pureListMethods = map[string]bool{
 	"byteAt": true, "getUnchecked": true, "setUnchecked": true, "byteAtUnchecked": true,
 }
 
-// astMayShrink reports whether running node could shrink a MutableList:
+// astMayShrink reports whether running node could shrink a list:
 // it contains a call other than a pure list method. Used before the code
 // is checked — a loop body runs again after its last statement, so a call
 // anywhere in it ends the facts everywhere in it.

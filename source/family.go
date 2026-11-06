@@ -70,7 +70,7 @@ var families = []family{
 		`is declared '%s' but`, `^a throwing function cannot be passed`, `^'%s' needs a set of`,
 		`\(D217\)`),
 	fam("results-and-errors", `\(D157\)`),
-	fam("tasks", `holds a running task`, `\basync\b`, `\bawait\b`, `suspend`, `Sendable`, `task boundary`, `^'scope'`, `'gather'`,
+	fam("tasks", `holds a running task`, `\(D237\)`, `\basync\b`, `\bawait\b`, `suspend`, `Sendable`, `task boundary`, `^'scope'`, `'gather'`,
 		`'race'`, `race arm`, `'recv\(\)'`, `^'sleep'`, `'sleep\(\)'`, `ioWait`, `^Channel`, `the channel`,
 		`^Task takes`, `^'cancel'`, `shared by every task`, `cannot cross`, `\(D35\)`, `\(D143\)`, `\(D144\)`, `\(D150\)`, `is state, not a function`,
 		`D156\)`, `'awaitAll'`, `'awaitFirst'`, `D168\)`, `D169\)`, `'select'`, `select arm`, `'async \{ \}'`),

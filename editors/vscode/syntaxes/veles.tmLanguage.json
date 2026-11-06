@@ -534,7 +534,7 @@
         },
         {
           "name": "support.type.collection.veles",
-          "match": "\\b(List|MutableList|Array|Map|MutableMap|Set|MutableSet|Channel|Range|Option|Result|Task|Iterator|Iterable|Closeable|Mutex|Atomic|Panic|Sendable)\\b"
+          "match": "\\b(List|Array|Map|Set|Deque|PriorityQueue|Channel|Range|Option|Result|Task|Iterator|Iterable|Closeable|Mutex|Atomic|Panic|Sendable)\\b"
         },
         {
           "name": "support.function.prelude.veles",

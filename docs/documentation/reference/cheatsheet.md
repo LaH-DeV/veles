@@ -111,7 +111,7 @@ val g = () => { var n = 0; n }                      // block body
 val h = (a: i64) => (b: i64) => a + b               // curried
 fun build(body: fun on StringBuilder()): string     // a receiver function: `this` is a StringBuilder (D207)
 server.apply { port = 8080 }                        // a receiver block, trailing: changes server in place
-val slug = name.edit { trim(); toLower() }          // a changed copy (one copy); `val` + apply is an error
+val slug = name.edit { trim(); toLower() }          / a changed copy (one copy); apply on a val works where a method could change it (not a val string)
 measure { work() }                                  // a block where a plain fun() goes
 ```
 
@@ -266,7 +266,7 @@ val name = race { async mirror("eu"); async mirror("us") }   // the tasks race; 
 val page = race { async fetch(primary); async { await sleep(d); fetch(backup) } }   // a hedged request; race { loop (m in mirrors) async fetch(m) } is the first of a list
 val winner = select { val m = ch.recv() => ...; sleep(Duration.millis(100)) => "timeout"; val v = t => ...; val p = async fetch(u) => p }   // arms; no await in arms; an async arm is the select's, cancelled if it loses (D169)
 select { queue.send(line) => { }; sleep(d) => dropped += 1 }   // a send arm: sent only if it wins (D108); arms tried in order, first ready wins
-val t = async { val a = load(x); a.sum() }   // a task from a block: await t gives its value; `return v` ends it with v; captures follow D35 (D169)
+val t = async { val a = load(x); a.sum() }   // a task from a block: await t gives its value; `return v` ends it with v; captures follow D35; the collections it reads are copied as the task starts (D169, D237)
 val ch = Channel<i64>(capacity: 8); ch.send(1); await ch.recv(); ch.close(); ch.closeAfter(n)  // closes itself after n sends
 ch.trySend(1); ch.tryRecv()      // never wait: false when full, null when nothing is buffered
 xs.mapConcurrent(f, workers: 4); xs.forEachConcurrent(f, workers: 4)   // the worker pool, results in order; f may suspend/throw

@@ -113,3 +113,181 @@ func (f *fnCtx) withSnapshots(clo Expr, decls []Stmt, copies []*Var, spans []sou
 	}
 	return &BlockExpr{exprBase{clo.Type()}, &Block{Stmts: decls, Value: clo, Type: clo.Type()}}
 }
+
+// blockSnapshot holds D237 for an `async { … }` block: the block is made
+// as its task starts, so a `val` holding a collection that it captures is
+// copied into a snapshot `val` of the maker at that moment and captured
+// instead (Rust's `async move`); the maker's own variable is not captured,
+// so it keeps its place in the frame. A block that changes what it
+// captures is refused already (D35, D231), so the copy is only read. The
+// receiver is copied too when it holds a collection: the block reads
+// `this` through a pointer to the copy. It returns what the block
+// captures: the snapshot, or outer itself.
+func (f *fnCtx) blockSnapshot(outer *Var) *Var {
+	if outer.IsGlobal || outer.CapCopy || outer.SelfCopy {
+		return outer
+	}
+	parent := f.parent
+	if outer.IsSelf { // the receiver: a pointer variable, whatever its binding
+		pt, ok := outer.Type.(*types.Pointer)
+		if !ok || !holdsCollection(pt.Elem, map[types.Type]bool{}) {
+			return outer
+		}
+		val := parent.newVar("this", pt.Elem, false, source.Span{})
+		val.Span = outer.Span
+		val.CapCopy = true
+		val.heapPromote() // its address is captured
+		ptr := parent.newVar("this", pt, false, source.Span{})
+		ptr.Span = outer.Span
+		ptr.SelfCopy = true
+		*f.blockCopies = append(*f.blockCopies,
+			&VarDecl{Var: val, Init: &Deref{exprBase{pt.Elem}, &VarRef{exprBase{pt}, outer}}},
+			&VarDecl{Var: ptr, Init: &AddrOf{exprBase{pt}, &VarRef{exprBase{pt.Elem}, val}}})
+		markUsed(outer)
+		return ptr
+	}
+	if outer.Mutable || !holdsCollection(outer.Type, map[types.Type]bool{}) {
+		return outer // a `var` is refused in a task (D35)
+	}
+	snap := parent.newVar(outer.Name, outer.Type, false, source.Span{})
+	snap.Span = outer.Span
+	snap.CapCopy = true
+	*f.blockCopies = append(*f.blockCopies, &VarDecl{Var: snap, Init: &VarRef{exprBase{outer.Type}, outer}})
+	markUsed(outer)
+	return snap
+}
+
+// launchedValue is `async job()` on a function value (D103), checked once
+// the receiver pass knows which methods change their receiver.
+type launchedValue struct {
+	maker *Func
+	value Expr  // the function value, as the launch reads it
+	call  *Call // the trampoline call the launch makes
+	name  string
+}
+
+// checkLaunchedValues holds D237's other half: a function value started
+// with `async` may not capture a collection its maker changes while the
+// task may run — after the `async`, or anywhere in a loop around it. Only
+// a closure bound to a local of the maker is followed; one made elsewhere
+// (a parameter) is out of sight (checklist §11).
+func (c *Checker) checkLaunchedValues() {
+	for _, lv := range c.launchedValues {
+		clo := closureOf(lv.maker, lv.value)
+		if clo == nil || lv.maker.Body == nil {
+			continue
+		}
+		at := lv.call.Span
+		// the loops the launch sits in: a change anywhere in one of them
+		// may run while an earlier round's task does
+		var around []*Loop
+		walkBlock(lv.maker.Body, func(n any) {
+			if l, ok := n.(*Loop); ok && containsNode(l.Body, lv.call) {
+				around = append(around, l)
+			}
+		})
+		inLoop := func(sp source.Span) bool {
+			for _, l := range around {
+				found := false
+				walkBlock(l.Body, func(n any) {
+					if s, ok := nodeSpan(n); ok && s == sp {
+						found = true
+					}
+				})
+				if found {
+					return true
+				}
+			}
+			return false
+		}
+		for _, v := range clo.Captures {
+			if v.Mutable || v.IsSelf || v.IsGlobal || v.CapCopy || !holdsCollection(v.Type, map[types.Type]bool{}) {
+				continue
+			}
+			var hit source.Span
+			changes := func(e Expr, sp source.Span) {
+				if hit.IsValid() || !sp.IsValid() || collRoot(e) != v {
+					return
+				}
+				if (sp.File == at.File && sp.Start > at.Start) || inLoop(sp) {
+					hit = sp
+				}
+			}
+			walkBlock(lv.maker.Body, func(n any) {
+				switch n := n.(type) {
+				case *Builtin:
+					if collectionWrites[n.Op] && len(n.Args) > 0 {
+						changes(n.Args[0], n.Span)
+					}
+				case *Assign:
+					changes(n.Target, n.Pos)
+				case *Call:
+					if n.Fn != nil && n.Fn.Receiver != nil && n.Fn.WritesSelf && len(n.Args) > 0 {
+						changes(n.Args[0], n.Span)
+					}
+					for _, a := range n.Args {
+						if ad, ok := a.(*AddrOf); ok {
+							changes(ad.X, n.Span)
+						}
+					}
+				}
+			})
+			if hit.IsValid() {
+				line, _ := hit.File.Position(hit.Start)
+				c.errorf(at, "'%s' captures '%s', which %s changes at line %d while the task may run; copy it in with a capture list: '[%s] (…) => …' (D237)", lv.name, v.Name, lv.maker.Display, line, v.Name)
+			}
+		}
+	}
+	c.launchedValues = nil
+}
+
+// closureOf is the closure a launched function value holds: the value
+// itself, or the closure a local of fn was bound to (through the block a
+// capture list lowers to).
+func closureOf(fn *Func, value Expr) *Closure {
+	unwrap := func(e Expr) *Closure {
+		if b, ok := e.(*BlockExpr); ok && b.Block != nil {
+			e = b.Block.Value
+		}
+		cl, _ := e.(*Closure)
+		return cl
+	}
+	if cl := unwrap(value); cl != nil {
+		return cl
+	}
+	r, ok := value.(*VarRef)
+	if !ok || fn.Body == nil {
+		return nil
+	}
+	var found *Closure
+	walkBlock(fn.Body, func(n any) {
+		if d, ok := n.(*VarDecl); ok && d.Var == r.Var && d.Init != nil {
+			found = unwrap(d.Init)
+		}
+	})
+	return found
+}
+
+// containsNode: target is somewhere in b.
+func containsNode(b *Block, target Expr) bool {
+	found := false
+	walkBlock(b, func(n any) {
+		if e, ok := n.(Expr); ok && e == target {
+			found = true
+		}
+	})
+	return found
+}
+
+// nodeSpan is the span a change node records.
+func nodeSpan(n any) (source.Span, bool) {
+	switch n := n.(type) {
+	case *Builtin:
+		return n.Span, true
+	case *Assign:
+		return n.Pos, true
+	case *Call:
+		return n.Span, true
+	}
+	return source.Span{}, false
+}

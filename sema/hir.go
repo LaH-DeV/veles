@@ -193,6 +193,9 @@ type Var struct {
 	// CapCopy: a capture-list entry — the snapshot made with the lambda, or
 	// a call's own copy of it (D235)
 	CapCopy bool
+	// SelfCopy: the pointer to a copy of the receiver an `async { … }`
+	// block reads `this` through (D237) — judged by the receiver's type
+	SelfCopy bool
 
 	InitText string // a local binding's initializer as written, for the hover
 	ErrPoly  bool   // a parameter declared `fun(..) throws E` with E a type parameter of the enclosing function
@@ -832,7 +835,7 @@ type ConstTable struct {
 	Name  string   // the constant's own name, when the use names one: names the storage
 }
 
-// MapLit constructs a Map/MutableMap from key/value pairs.
+// MapLit constructs a Map from key/value pairs.
 type MapLit struct {
 	exprBase
 	Entries [][2]Expr

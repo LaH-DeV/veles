@@ -893,6 +893,79 @@ on Linux).
 
 ## Progress log
 
+### 2026-11-06 — Quality pass: late checks, D237 finished, dead code, deque wrap
+
+- The receiver pass's three checks (D232 boxes, D233 lent callback
+  pointers, D237 launched values) ran only on a program with no other
+  errors, so fixing one round of errors revealed the next. On a program
+  with errors the pass now settles its facts and makes those checks (in a
+  recover: the program has failed already), then stops — no lints, so
+  nothing else changes (`receiverPass(prog, checksOnly)`);
+  `TestLateChecksBesideOtherErrors`.
+- D237: the snapshot of a block's capture is made where the capture is
+  found (`blockSnapshot`, from `localVar`), so the maker's own variable is
+  never captured — it keeps its frame slot and the copy-on-write fast
+  paths. `this` is snapshotted too: a block reads the receiver through a
+  pointer to a copy (`Var.SelfCopy`, judged by the receiver's type for
+  Sendable). The driver test has the receiver case.
+- Dead code from D63's move (retired by D231) removed: `sema/escape.go`
+  (the parameter summary, `movableField`, `freshCollection` — which still
+  compared names with `MutableList`) and `sema/move_method.go`, with the
+  two `Checker` fields only they used, and `walkExprs`. `staticcheck
+  -checks U1000 ./...` (v0.8.2, Go 1.27.1) now lists only `gcpauseSink`
+  (written on purpose) and `warnFix` (the lint API the skill names).
+- `Deque` wraps `head + k` once instead of taking `%` per access: a
+  deque workload 99 → 83 ms with `DequeIter` (5 runs each);
+  `bench/queues` −2% against HEAD.
+- Internal comments that still described `MutableList` or the frozen
+  list updated (ast, codegen, apply/edit, escape_hir, bounds, race,
+  reflect, check_call, check_expr).
+- Q81 decided as D238 (user: "allow it if that is consistent … this must be
+  understandable") and built: an in-place `apply` checks `placeChangeable`
+  (any local or field, not a global `val`), a string's rebinding `apply`
+  keeps `placeAssignable`, and its message now says "puts a new string in"
+  instead of "changes … in place". Conformance `D207-receiver-blocks.vs`
+  pins both sides; chapter 10, errors.md and the cheat sheet say the one
+  rule.
+
+### 2026-11-06 — Consistency pass and bug hunt after V2
+
+- Consistency (user-facing text D231 left behind): the editor offered
+  `MutableList`/`MutableMap`/`MutableSet` (and the dead `mut` keyword) in
+  completion and the grammar coloured them; the parse error for `mut x`
+  suggested the removed `mut [1, 2]` (both front ends now point at the
+  plain literal; `TestMutBeforeAnExpression`); chapter 5 called `List` a
+  reference type; chapter 2 listed `getOrPut`. Internal code comments
+  that still say `MutableList` were left (no reader of the docs sees
+  them).
+- Bug (predating D231, on `spec-driven` too): `async { … }` and `async
+  job()` on a plain function value in one program shared a launch
+  trampoline — `types.Key` leaves out suspension — so one was called the
+  other's way: "deadlock: every task is blocked", or a segfault. The
+  trampoline key now includes `suspends` (`launchTrampoline`);
+  `TestAsyncBlockAndFunctionValueLaunch` (fails on `spec-driven`).
+- Probed without finding more: receiver blocks (`apply`, `edit`) over
+  collections, module-level and `lazy val` lists, list-pattern rests,
+  `enumerate` while pushing, struct map keys and set members holding
+  lists, codec round trips, channels of lists, a comparator reading the
+  list it sorts, `gather` arguments, `Mutex` copies, generic boxes, D232
+  boxes over `&x` in fields and lists, D233 lent pointers.
+- Found and decided (D237, user, recommended of 3): a task that captured
+  a `val` collection the maker changed afterwards saw the change and raced
+  with it. Built: `async { }` copies the collections it reads when the
+  task starts (`blockSnapshots`, sema/capturelist.go); `async job()` on a
+  local closure whose captured collection the maker changes after the
+  launch, or in a loop around it, is an error with the capture-list fix
+  (`checkLaunchedValues`, after the receiver pass). Tests: conformance
+  `D237-task-captures.vs`, the driver test's `tasks:` line; docs:
+  chapter 12, the concurrency reference, the cheat sheet, errors.md
+  (whose tasks example still called `List<i64>` not Sendable). Left in
+  §11: `this` in a block, closures made in another function.
+- Flaky docs example: reference/concurrency.md's `select` over a task
+  and a 1 ms timer gave its lines in the other order once under the full
+  Linux suite (the 30 ms task finished first); the task now sleeps 300 ms
+  (10/10 alone before, `go test ./docs` green on both after).
+
 ### 2026-11-06 — V1/V2 follow-ups: lent aliases as a class, copy hint, queues, `-against`
 
 - Lent aliases: `OwnedCollections` (sema/owned.go) skipped the

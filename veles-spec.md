@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.137** — decisions D1–D236. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.139** — decisions D1–D238. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -8408,8 +8408,10 @@ fun buildString(body: fun on StringBuilder()): string { … }
 - **No trailing blocks**: the block is an argument, `x.apply({ … })`; a `{`
   after a call stays what it is today.
 - **`apply`** on a value the caller owns — a `var`, a field it may assign, a
-  pointer — runs the block on it in place and gives it back. On a `val` it
-  is an error whose fix writes `edit`; nothing copies by surprise.
+  pointer — runs the block on it in place and gives it back. ~~On a `val` it
+  is an error whose fix writes `edit`; nothing copies by surprise.~~
+  _(v0.139, D238: on a `val` it changes the value in place, as a method
+  may, since D231; a `val` string stays refused.)_
 - **`edit`** gives an edited copy of an immutable value, with one copy at
   most: `string` (on a mutable text — the `StringBuilder` with in-place
   `trim`, `toLower`, `toUpper`, `replace`, `insert`, …), `List`, `Map` and
@@ -9716,6 +9718,71 @@ collection is the pointer, `&xs` / `*List<T>` (D10), and `Mutex`/`RwLock`
 across tasks; chapter 4 gets a "copy or share" section that names the
 three. Rejected: a `Shared<T>` std type (the pointer under another name);
 leaving it open.
+
+### D237 — A task does not watch its maker change what it captured (v0.138; amends D35, D169)
+
+2026-11-06, the user (recommended of 3), on a race found probing D231:
+
+```veles
+val xs: List<i64> = [1, 2, 3]
+with t = async { sum(xs) }     // copies xs when the task starts: it sees [1, 2, 3]
+xs.push(100)
+
+val job = () => ys.len()
+with u = async job()           // error: 'job' captures 'ys', which main changes at line 7
+ys.push(1)                     //   while the task may run; copy it in: [ys] () => ys.len()
+```
+
+D35 let a sendable closure capture `val`s by reference because a `val`
+could not change under the task; D231 made a `val` collection changeable
+in place, so the maker could rewrite the variable while the task read it
+(the task above saw 106).
+
+- **`async { … }` copies what it reads.** A block is made as its task
+  starts: each `val` holding a collection that it captures is copied
+  then, and the task reads the copy (Rust's `async move`). A block that
+  changes what it captures was refused already (D35, D231), so the copies
+  are only read. O(1) per collection (D231).
+- **A function value started with `async`** (D103) may not capture a
+  collection the maker changes while the task may run — after the
+  `async`, or in a loop around it. The error names the capture and the
+  line, with the fix of a capture list (D235) that copies it.
+- Not covered: a function value made in another function (a parameter)
+  and started here; its maker is out of sight (checklist §11).
+- Rejected: refusing the block too (a copy is the only race-free meaning
+  of a block made at its launch); every sendable closure holding copies
+  (a local `() => "$routes"` would stop seeing later pushes, against
+  D37).
+
+### D238 — `apply` changes a `val` in place, as its methods may (v0.139; amends D207)
+
+2026-11-06, Q81, the user: "allow it if that is consistent with our idea,
+docs and rest of the code. this must be understandable". D207 refused
+`apply` on a `val` because a `val` could not change then, so the block
+would have to copy by surprise. D231 made a `val` change in place —
+`val srv = Server(); srv.port = 1`, `srv.open()`, `xs.push(1)` all compile —
+which left `apply` the one way of changing a `val` that was refused.
+
+```veles
+val srv = Server()
+srv.apply { port = 8080; routes.push("/a") }   // changes srv, as srv.port = 8080 does
+val xs: List<i64> = []
+xs.apply { push(1); push(2) }
+val label = " Hi "
+label.apply { trim() }        // error: 'apply' puts a new string in 'label', and 'label' is a 'val'
+val slug = label.edit { trim(); toLower() }   // the changed copy
+```
+
+- **The rule:** `apply` changes what a method that changes the value
+  could change — a local `val` or `var`, a field (`var` or not), what a
+  pointer points at, a temporary. One sentence to remember: it is a block
+  of such changes.
+- **Refused, with the fix `edit`:** a module-level `val` (a constant every
+  task shares, D231) and a `val` string — a string never changes in
+  place, so its `apply` puts a new string in the variable, a rebinding,
+  which a `val` may not take.
+- Rejected: keeping the refusal (two rules for the same change, the block
+  the only one refused).
 
 ### I1 — generators: investigated, not decided
 

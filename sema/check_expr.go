@@ -284,7 +284,7 @@ func numericHint(want types.Type) types.Type {
 // checkExpr checks an expression. want is a hint (may be nil); the caller
 // performs the final coercion.
 // checkExpr checks e; afterwards a call in it ends what is known about the
-// lengths of MutableLists (D62).
+// lengths of lists (D62).
 func (f *fnCtx) checkExpr(e ast.Expr, want types.Type) Expr {
 	x := f.checkExprInner(e, want)
 	f.afterExpr(x)
@@ -1588,8 +1588,8 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 				r = f.coerce(r, l.Type(), e.R.Span())
 			}
 		} else {
-			// comparing reads both sides and keeps neither: a MutableList is
-			// compared as it is, not converted (D63)
+			// comparing reads both sides and keeps neither (D231: a lent
+			// read, nothing marked)
 			r = f.immutableView(f.checkExpr(e.R, nil))
 			if !types.Identical(r.Type(), l.Type()) {
 				r = f.coerce(r, l.Type(), e.R.Span())
@@ -1614,9 +1614,9 @@ func (f *fnCtx) equality(e *ast.BinaryExpr, op BinOp) Expr {
 	return &Binary{exprBase{types.TBool}, op, l, r, e.Pos}
 }
 
-// immutableView coerces a mutable collection to its read-only view, so
-// that `==` compares a MutableList with a List (they share one layout and
-// one element-wise equality).
+// immutableView coerces a value to the first other view of its type
+// (receiverViews), so `==` compares the two as one type — a no-op since
+// D231 left every collection one type.
 func (f *fnCtx) immutableView(x Expr) Expr {
 	views := receiverViews(x.Type())
 	if len(views) == 1 {

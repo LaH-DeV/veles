@@ -1230,6 +1230,34 @@ the rule of every task (D35): `val`s of Sendable types. A `var` it would
 change is refused — share it through an `Atomic` or a `Mutex`, or return
 the result and assign it after `await`.
 
+A list, map or set the block reads is **copied when its task starts**
+(D237): the block sees the value as it was then, whatever the function
+that started it does next, so the two never race over it. The copy is
+O(1); the elements are copied only if the starting function changes its
+own afterwards (D231).
+
+```veles
+use io
+
+fun main() {
+  val jobs: List<string> = ["a", "b"]
+  val count = async { jobs.len() }   // reads jobs as it is now
+  jobs.push("c")
+  io.println("${await count} ${jobs.len()}")
+}
+```
+
+Output:
+
+```text
+2 3
+```
+
+A lambda made earlier and started later, `async job()`, has no such
+moment — it was made before the task — so a collection it captured and
+the starting function changes while the task may run is an error; copy it
+in with a capture list, `[jobs] () => jobs.len()` (D235).
+
 ## Cancellation
 
 A task is cancelled in four situations: a sibling in a fail-fast `scope`

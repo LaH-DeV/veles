@@ -475,7 +475,11 @@ func (f *fnCtx) launchCall(e *ast.CallExpr, want types.Type) Expr {
 			f.errorf(e.Fun.Span(), "'%s' is not a sendable function, so it cannot cross into a task; declare its type 'sendable fun(...)' (D35/D103)", srcText(e.Fun))
 			return bad()
 		}
-		x = &Call{exprBase: exprBase{ci.Type()}, Fn: f.c.launchTrampoline(ft), Args: append([]Expr{ci.Fn}, ci.Args...), Span: e.Pos}
+		lc := &Call{exprBase: exprBase{ci.Type()}, Fn: f.c.launchTrampoline(ft), Args: append([]Expr{ci.Fn}, ci.Args...), Span: e.Pos}
+		if f.fn != nil {
+			f.c.launchedValues = append(f.c.launchedValues, launchedValue{maker: f.fn, value: ci.Fn, call: lc, name: srcText(e.Fun)})
+		}
+		x = lc
 	}
 	call, ok := x.(*Call)
 	if !ok {
@@ -1118,6 +1122,13 @@ func (c *Checker) panicType() types.Type {
 // suspension is inferred from the call, its error is the type's.
 func (c *Checker) launchTrampoline(ft *types.Func) *Func {
 	key := types.Key(ft)
+	// a type's key leaves out whether it suspends, which decides how the
+	// value is called: `async { … }` (a suspending `fun(): T`) and `async
+	// job()` with a plain `fun(): T` shared one trampoline, and one of them
+	// was called the other's way — a deadlock or a crash (2026-11-06)
+	if ft.Effects.Suspends {
+		key += " suspends"
+	}
 	if fn, ok := c.trampolines[key]; ok {
 		return fn
 	}

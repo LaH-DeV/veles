@@ -38,6 +38,20 @@ fun drain(q: *Deque<i64>): i64 {
 
 fun count(c: Job): i64 => c.n
 
+struct Ledger {
+  entries: List<i64>
+
+  // D237: a block reading this reads a copy of the receiver
+  fun countLater(): i64 suspends {
+    with t = async {
+      await sleep(Duration.millis(3))
+      this.entries.len()
+    }
+    this.entries.push(9)
+    await t
+  }
+}
+
 fun main() suspends {
   // D234: deques
   val d = Deque<i64>()
@@ -126,6 +140,36 @@ fun main() suspends {
   val plain = src.iter()
   src.push(4)
   io.println("iter: ${it.toList()} ${plain.toList()} $src")
+
+  // D237: an async block reads the collections it captured as they were
+  // when its task started, whatever the maker does meanwhile
+  val shared: List<i64> = [1, 2, 3]
+  with sum = async {
+    await sleep(Duration.millis(5))
+    var s = 0
+    loop (x in shared) s += x
+    s
+  }
+  shared.push(100)
+  shared.clear()
+  val rounds: List<i64> = []
+  val seen: List<i64> = []
+  val lock = Mutex(value: seen)
+  scope {
+    loop (i in 0..<3) {
+      rounds.push(i)
+      async {
+        await sleep(Duration.millis(2))
+        val n = rounds.len()
+        lock.withLock(s => s.push(n))
+      }
+    }
+    rounds.clear()
+  }
+  val got = lock.withLock(s => s.sorted())
+  var ledger = Ledger(entries: [1, 2])
+  val counted = ledger.countLater()
+  io.println("tasks: ${await sum} $got $shared $rounds $counted ${ledger.entries}")
 }
 `
 	want := "deque: [2] [0, 1, 2]\n" +
@@ -137,7 +181,8 @@ fun main() suspends {
 		"capture: [/a, /b] [/a]\n" +
 		"list: 3 x! 9 7\n" +
 		"fresh: 1 1 0 [x, y, p] [x, y, q] [x, y]\n" +
-		"iter: [10, 20, 30] [1, 2, 3] [1, 2, 3, 4]\n"
+		"iter: [10, 20, 30] [1, 2, 3] [1, 2, 3, 4]\n" +
+		"tasks: 6 [1, 2, 3] [] [] 2 [1, 2, 9]\n"
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)

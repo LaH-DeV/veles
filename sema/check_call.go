@@ -138,7 +138,7 @@ func (f *fnCtx) callExpr(e *ast.CallExpr, want types.Type) Expr {
 			return &Builtin{exprBase{types.TUnit}, "list.move", args, e.Pos}
 		}
 		if callee.Name == "listAppendText" && f.module.Std && f.lookup(callee.Name) == nil && len(e.Args) == 2 {
-			// std-only: a string's bytes onto a MutableList<u8> in one copy
+			// std-only: a string's bytes onto a List<u8> in one copy
 			// (StringBuilder.append), not a list of them pushed one by one
 			xs := f.checkExpr(e.Args[0].Value, nil)
 			s := f.checkExprTo(e.Args[1].Value, types.TString)
@@ -718,8 +718,7 @@ func (f *fnCtx) callTemplateRecv(t *FuncTemplate, ownerSubst map[*types.TypePara
 				if n, isN := pt.(*types.Nullable); isN && unify(n.Elem, x.Type(), m) {
 					continue
 				}
-				// D25: a mutable collection is its immutable form too, so
-				// `MutableList<string>` binds `List<T>` with T = string
+				// another view of the receiver's type (none since D231)
 				if views := receiverViews(x.Type()); len(views) > 1 && unify(pt, views[1], m) {
 					continue
 				}
@@ -1515,9 +1514,8 @@ func (f *fnCtx) dispatchMethod(recv Expr, callee *ast.MemberExpr, typeArgs []typ
 		}
 	}
 	// extend blocks: inherent too; the first block whose target matches wins
-	// (checkCoherence rejects overlapping ones). A mutable collection also
-	// has its immutable form's methods (D25: MutableList<T> is a List<T>),
-	// looked up after any block naming the mutable type itself.
+	// (checkCoherence rejects overlapping ones), on every view of the
+	// receiver's type (receiverViews).
 	views := receiverViews(rt)
 	if at, isArray := rt.(*types.Array); isArray {
 		// the read-only List methods run on a copy of the elements (D121)
@@ -1697,7 +1695,9 @@ func isReferenceType(t types.Type) bool {
 	return ok
 }
 
-// receiverViews lists the types an extend target may match for a receiver.
+/// receiverViews lists the types an extend target may match for a receiver:
+// the type itself. (A mutable collection matched its immutable form too
+// until D231 made one List, Map and Set; the callers keep the loop.)
 func receiverViews(rt types.Type) []types.Type {
 	return []types.Type{rt}
 }
@@ -1780,7 +1780,7 @@ func (f *fnCtx) callMethod(t *FuncTemplate, ownerSubst map[*types.TypeParam]type
 	return f.callTemplateRecv(t, ownerSubst, typeArgs, recvArg, e.Args, e.Pos, want)
 }
 
-// builtinMethod resolves methods on string, List and MutableList.
+/// builtinMethod resolves the compiler's methods on strings and collections.
 func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.CallExpr) Expr {
 	f.checkStoreEscape(rt, e)
 	nargs := func(n int) bool {

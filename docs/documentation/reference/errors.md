@@ -830,12 +830,16 @@ A block never has parameters. A function that takes some is written
 `(a) => { … }` — also where a `fun on T(A)` is expected, with `this` still
 the T.
 
-#### `'apply' changes 'x' in place, and 'x' is a 'val' (D207)`
+#### `'apply' puts a new string in 's', and 's' is a 'val' (D207)`
 
-`apply` runs its block on the value where it is held, so the place must be
-the caller's to change: a `var`, a `var` field, what a pointer points at, or
-a temporary. On a `val` use `edit`, which gives a changed copy:
-`val changed = x.edit { … }`. The fix rewrites the call.
+`apply` runs its block on the value where it is held. A struct, a list, a
+map or a set changes in place, so `apply` works wherever a method that
+changes it would — a `val` included (D231). A string never changes in
+place: its `apply` puts a new string in the variable, which a `val` cannot
+take. Use `edit`, which gives a changed copy, `val changed = s.edit { … }`
+(the fix rewrites the call), or declare the variable `var`. The same error
+names a module-level `val`, a constant every task shares, which nothing
+may change in place.
 
 #### `'x' is a global 'val' … a function on it may change it (D207)`
 
@@ -981,9 +985,21 @@ The `val`/`var`, loop, destructuring or pattern binding is never read
 ### tasks
 
 **Tasks, suspension and what may cross between them.** `argument of type
-'List<i64>' is not Sendable and cannot cross a task boundary`,
+'*List<i64>' is not Sendable and cannot cross a task boundary`,
 `'async' must be lexically inside a 'scope' or 'gather' block, or be the
 value of a 'with'`.
+
+#### `'job' captures 'ys', which main changes at line 7 while the task may run`
+
+A function value started as a task, `async job()`, reads what its lambda
+captured while the function that made it goes on — and a captured `val`
+list can be changed in place (D231), so the task would see the change
+and race with it (D237). Copy what the task reads into the lambda with a
+capture list, `val job = [ys] () => ys.len()`, or change `ys` only after
+awaiting the task. A change before the `async` is fine; one in a loop
+around it counts, since a later round runs beside an earlier task. An
+`async { … }` block needs none of this: it copies the collections it reads
+when its task starts.
 
 #### `'async' must be lexically inside a 'scope' or 'gather' block, or be the whole value of a 'val' or 'with'`
 

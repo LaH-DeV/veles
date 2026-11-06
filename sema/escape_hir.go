@@ -3,8 +3,8 @@ package sema
 import "github.com/LaH-DeV/veles/types"
 
 // D187/D188: collections that never leave their function. The header of a
-// MutableList / MutableMap / MutableSet is a heap object only because it has
-// an identity others may share; one that is created in a function and only
+// list, map or set is a heap object only because other values may hold it
+// (D231 marks it shared then); one that is created in a function and only
 // ever used there — read, pushed to, looped over — can live in the frame, and
 // costs no allocation at all. Codegen asks StackCollections for the
 // initializers it may build in a stack slot.

@@ -48,12 +48,12 @@ var keywordCompletions = []string{
 	"fun", "val", "var", "const", "if", "else", "loop", "break", "continue", "cede", "return", "throw",
 	"struct", "enum", "error", "trait", "implement", "extend", "sealed", "public", "private", "internal", "protected", "use", "when", "is", "as", "in",
 	"throws", "suspends", "try", "do", "catch", "async", "await", "scope", "gather", "race", "with",
-	"unsafe", "extern", "mut", "override", "true", "false", "null", "this", "This", "type",
+	"unsafe", "extern", "override", "true", "false", "null", "this", "This", "type",
 }
 
 var builtinTypeCompletions = []string{
 	"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "bool", "string",
-	"List", "MutableList", "Map", "MutableMap", "Set", "MutableSet", "Channel", "Range", "Option", "Result",
+	"List", "Map", "Set", "Channel", "Range", "Option", "Result",
 }
 
 type adder func(label string, kind int, detail string)

@@ -15,20 +15,19 @@ import (
 )
 
 type Checker struct {
-	paramState    map[paramKey]int8             // which parameters a function keeps (escape.go, D188)
-	receiverFacts map[*ast.FunDecl]*methodFacts // what a method does with `this` (move_method.go, D201)
-	testRunnable  map[*Func]bool                // which tests and helpers the compiler can run (compile_tests.go, D208)
-	ladderSeen    map[*ast.IfExpr]bool          // the links of an else-if chain whose head was looked at (lint_style.go)
-	namedImports  []namedImport                 // every bound name of a braced import (D85)
-	rounds        int                           // inference rounds run so far (D45), for the effects dump
-	arrayUses     []arrayUse                    // inline arrays to size-check (D121)
-	pkg           *Package
-	bareDone      map[*ast.FunDecl]bool    // the methods whose bare member names are resolved (D158)
-	blockDone     map[*ast.LambdaExpr]bool // the receiver blocks whose bare member names are resolved (D207)
-	onCalls       []onCall                 // variables given to a function on a receiver: heap or stack, settled by the receiver pass (D207)
-	funcValues    []funcValueUse           // named functions used as values: none may keep a pointer parameter (D233)
-	boxedPlaces   []boxedPlace             // copies of named places boxed as trait objects: refused when a method changes them (D232)
-	diags         *source.Diagnostics
+	testRunnable   map[*Func]bool       // which tests and helpers the compiler can run (compile_tests.go, D208)
+	ladderSeen     map[*ast.IfExpr]bool // the links of an else-if chain whose head was looked at (lint_style.go)
+	namedImports   []namedImport        // every bound name of a braced import (D85)
+	rounds         int                  // inference rounds run so far (D45), for the effects dump
+	arrayUses      []arrayUse           // inline arrays to size-check (D121)
+	pkg            *Package
+	bareDone       map[*ast.FunDecl]bool    // the methods whose bare member names are resolved (D158)
+	blockDone      map[*ast.LambdaExpr]bool // the receiver blocks whose bare member names are resolved (D207)
+	onCalls        []onCall                 // variables given to a function on a receiver: heap or stack, settled by the receiver pass (D207)
+	funcValues     []funcValueUse           // named functions used as values: none may keep a pointer parameter (D233)
+	boxedPlaces    []boxedPlace             // copies of named places boxed as trait objects: refused when a method changes them (D232)
+	launchedValues []launchedValue          // function values started with async: refused when the maker changes what they captured meanwhile (D237)
+	diags          *source.Diagnostics
 	// roundDiags collects diagnostics of the current inference round; only
 	// the final round's are kept (D45 fixpoint).
 	roundDiags *source.Diagnostics
@@ -266,9 +265,19 @@ func checkCollectObserved(pkg *Package, diags *source.Diagnostics, release bool,
 			break
 		}
 	}
+	if prog != nil && c.roundDiags.HasErrors() {
+		// the checks the receiver pass makes (D232, D233, D237) are reported
+		// with the other errors, not only once those are fixed; the program
+		// has failed already, so a pass that trips over a broken node
+		// reports nothing more instead of crashing
+		func() {
+			defer func() { _ = recover() }()
+			c.receiverPass(prog, true)
+		}()
+	}
 	if prog != nil && !c.roundDiags.HasErrors() {
 		c.orderGlobals(prog)
-		c.receiverPass(prog)
+		c.receiverPass(prog, false)
 		c.sharePass(prog) // D231: after ReadOnly, captures and address-taken are settled
 		c.lintCollectionParamCopies(prog)
 		c.lintChangedCopies(prog)

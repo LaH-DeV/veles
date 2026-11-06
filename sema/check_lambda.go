@@ -29,6 +29,9 @@ func (f *fnCtx) localVar(v *Var) *Var {
 		return inner
 	}
 	outer := f.parent.localVar(v)
+	if f.blockCopies != nil {
+		outer = f.blockSnapshot(outer) // D237: the task reads a copy
+	}
 	outer.heapPromote()
 	// no span while it is made: the index would record a bare entry at the
 	// outer declaration, which then hovered without its initializer
@@ -148,6 +151,10 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	l.scope = NewScope(f.scope)
 	l.unsafe = f.unsafe
 	l.isLambda = true
+	var blockCopies []Stmt
+	if f.asyncBlock == ast.Expr(e) {
+		l.blockCopies = &blockCopies
+	}
 	// an executor's code goes on in a lambda that cannot leave it; one
 	// that may run on any thread is not its code — except the one handed
 	// straight to the executor's own `run` (D150)
@@ -359,7 +366,7 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 		// what matters is the receiver's type, and it is never a `var`
 		ct := v.Type
 		isVar := v.Mutable
-		if v.IsSelf {
+		if v.IsSelf || v.SelfCopy {
 			ct = ct.(*types.Pointer).Elem
 			isVar = false
 		}
@@ -391,6 +398,9 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	fn.checked = true
 	f.c.funcs = append(f.c.funcs, fn)
 	clo := f.c.noteAlloc(&Closure{exprBase{fn.Sig}, fn, l.captureList}, e.Pos)
+	if len(blockCopies) > 0 {
+		return &BlockExpr{exprBase{clo.Type()}, &Block{Stmts: blockCopies, Value: clo, Type: clo.Type()}}
+	}
 	if len(e.Captures) > 0 {
 		return f.withSnapshots(clo, capDecls, capCopies, capSpans)
 	}

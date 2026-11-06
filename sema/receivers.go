@@ -26,7 +26,10 @@ import (
 // every call site. Trait objects are heap-boxed already (D9) and a task
 // receives a copy of its receiver (check_task.go), so neither needs this.
 
-func (c *Checker) receiverPass(prog *Program) {
+// checksOnly: the program has errors already — settle the facts and make
+// the three checks that read them (D232, D233, D237), so they are
+// reported with the rest, and stop there: no lints, nothing applied.
+func (c *Checker) receiverPass(prog *Program, checksOnly bool) {
 	changed := true
 	for changed {
 		changed = false
@@ -65,6 +68,10 @@ func (c *Checker) receiverPass(prog *Program) {
 	c.settleOnCalls()
 	c.checkLentParams(prog)
 	c.checkBoxedPlaces()
+	c.checkLaunchedValues()
+	if checksOnly {
+		return
+	}
 	for _, fn := range prog.Funcs {
 		if fn.Body == nil {
 			continue

@@ -417,7 +417,7 @@ func (f *fnCtx) handleMember(h *fieldHandle, e *ast.MemberExpr) Expr {
 }
 
 // handleFlag is `f.isOptional` (the field is a `T?`) or `f.isList` (a
-// `List<T>` or `MutableList<T>`), D203.
+// `List<T>`), D203.
 func handleFlag(h *fieldHandle, name string) bool {
 	if h.fld == nil {
 		return false

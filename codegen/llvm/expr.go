@@ -1049,7 +1049,7 @@ func (g *gen) cast(e *sema.Cast) string {
 		return x // *T to *raw T
 	}
 	if _, ok := from.(*types.List); ok {
-		return x // MutableList to List: same representation
+		return x // one list to another of its type: the same handle
 	}
 	return g.convertValue(x, from, to)
 }
@@ -1872,8 +1872,9 @@ func (g *gen) builtin(e *sema.Builtin) string {
 		x := g.expr(e.Args[1])
 		et := g.llType(e.Args[1].Type())
 		xt := e.Args[1].Type()
-		// inline while there is room; the runtime grows the storage. A
-		// MutableList never crosses a task (D35), so no other thread sees it.
+		// inline while there is room; the runtime grows the storage. The
+		// header was made unique first (growableColl): nothing else holds
+		// it, so no other thread sees it (D231).
 		lenP, capP := g.newTmp(), g.newTmp()
 		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 1", lenP, listHeader, l)
 		g.emit("%s = getelementptr inbounds %s, ptr %s, i32 0, i32 2", capP, listHeader, l)

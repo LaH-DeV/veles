@@ -13,7 +13,7 @@ import (
 //
 //	var won: T
 //	scope(cancel) {
-//	  val tasks: MutableList<Task<T>> = []
+//	  val tasks: List<Task<T>> = []
 //	  body, each contestant's handle pushed onto tasks as it starts
 //	  if (tasks.len() == 0) panic(…)        // only when a loop could start none
 //	  won = await tasks.get(raceFirst(tasks))

@@ -476,12 +476,13 @@ func (p *Parser) parsePrimary() ast.Expr {
 			return &ast.LambdaExpr{Body: &ast.BlockExpr{Block: body}, Bare: true, Pos: p.spanFrom(start)}
 		}
 	case lexer.KwMut:
-		// `mut [1, 2]` / `mut ["k": v]` / `mut [:]`: a mutable collection
-		// literal without spelling the MutableList/MutableMap annotation.
+		// `mut [1, 2]`: the removed mutable literal (D231), parsed so that the
+		// checker can refuse it with a fix; `mut` before anything else is
+		// not Veles
 		start := p.span()
 		p.next()
 		if !p.at(lexer.LBracket) {
-			p.errorf(p.span(), "'mut' in an expression must be followed by a collection literal, e.g. 'mut [1, 2]' or 'mut [:]'")
+			p.errorf(p.span(), "'mut' is not an expression keyword: a collection is a value that can be changed as it is, so write the literal alone, e.g. '[1, 2]' or '[:]' (D231)")
 			return &ast.BadExpr{Pos: p.spanFrom(start)}
 		}
 		lit := p.parseCollectionLit()

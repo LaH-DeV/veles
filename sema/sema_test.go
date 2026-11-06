@@ -3852,6 +3852,29 @@ func TestSameNamedTypesAreQualified(t *testing.T) {
 	expectError(t, src, "expected 'hex.Invalid', found 'base64.Invalid'")
 }
 
+/// The checks made after the receiver pass (D232, D233, D237) are reported
+// with the program's other errors, not only once those are fixed.
+func TestLateChecksBesideOtherErrors(t *testing.T) {
+	src := prelude + `
+fun main() suspends {
+  val wrong: i64 = "text"
+  val ys: List<i64> = [10]
+  val job = () => ys.len()
+  with u = async job()
+  ys.push(1)
+  io.println("${await u} $wrong")
+}
+`
+	expectError(t, src, "type mismatch")
+	expectError(t, src, "'job' captures 'ys', which main changes")
+}
+
+// `mut` before anything but a list literal (the removed `mut [...]`, which
+// has its own error with a fix) points at the plain literal (D231).
+func TestMutBeforeAnExpression(t *testing.T) {
+	expectError(t, "fun main() { val n = mut 5 }", "'mut' is not an expression keyword: a collection is a value that can be changed as it is, so write the literal alone")
+}
+
 // Factory functions that stood in for a constructor are gone; calling one
 // names the constructor, with a fix when the arguments carry over.
 func TestRemovedFactories(t *testing.T) {
