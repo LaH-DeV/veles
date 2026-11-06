@@ -12,7 +12,7 @@ import (
 // keeps what it held when the original changes, a pointer shares, a loop
 // walks the deque as it was); copy() on every collection is a copy that
 // stays apart; a capture list copies when the lambda is made while a plain
-/// capture shares, each call starts from the snapshot (a change lasts for
+// capture shares, each call starts from the snapshot (a change lasts for
 // the call), and a copied pointer still writes through.
 func TestValueQueuesCopiesAndCaptureLists(t *testing.T) {
 	t.Parallel()
@@ -118,6 +118,14 @@ fun main() suspends {
     "$names"
   }
   io.println("fresh: ${bumps()} ${bumps()} ${counter.n} ${grow("p")} ${grow("q")} $names")
+
+  // an iterator holds the list as it was when it was made (2026-11-06:
+  // xs.iter() lent its receiver, and saw a later push)
+  val src: List<i64> = [1, 2, 3]
+  val it = src.iter().map(x => x * 10)
+  val plain = src.iter()
+  src.push(4)
+  io.println("iter: ${it.toList()} ${plain.toList()} $src")
 }
 `
 	want := "deque: [2] [0, 1, 2]\n" +
@@ -128,7 +136,8 @@ fun main() suspends {
 		"copy: [1, 2] [1] {a: 1, b: 2} {a: 1} 2 1 [1, 2] [9, 2] [] [2, 20] 3 2\n" +
 		"capture: [/a, /b] [/a]\n" +
 		"list: 3 x! 9 7\n" +
-		"fresh: 1 1 0 [x, y, p] [x, y, q] [x, y]\n"
+		"fresh: 1 1 0 [x, y, p] [x, y, q] [x, y]\n" +
+		"iter: [10, 20, 30] [1, 2, 3] [1, 2, 3, 4]\n"
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)

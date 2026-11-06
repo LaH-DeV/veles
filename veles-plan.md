@@ -893,6 +893,30 @@ on Linux).
 
 ## Progress log
 
+### 2026-11-06 — V1/V2 merge review: one more lent receiver, benchmarks
+
+- Reviewed the branch against `spec-driven` (a fast-forward, no
+  conflicts). Bug found probing iterator shapes: `xs.iter()` is lowered by
+  `listAdapter`, which binds the receiver to a lent temporary because an
+  adapter reads its list only while the statement runs — but the iterator
+  `iter()` returns keeps the list, so the copy went unmarked and the
+  owner's next `push` (made unique by `OwnedCollections`) wrote under the
+  iterator: `val it = src.iter(); src.push(4)` yielded the 4. The `iter`
+  case now binds a marked copy (`sema/lower_list.go`); the driver test has
+  an `iter:` line. The other adapters return new values or element copies.
+- Benchmarks (Windows, three alternating full runs each, then the
+  outliers alone, then the order reversed): no loss — `adapters` −23%,
+  `maps` −16%, `gunzip` −16%; the +7–42% of `random`, `sha256`,
+  `suscall`, `backedge` was the second run of each pair (reversed, the
+  base was the slow one; alone and interleaved all four equal the base).
+  The iterator fix: `awaitall`, `awaitscope`, `spawn`, `adapters`,
+  `lexer` within noise.
+- Stress (`cowstress`, scratch): eight readers and eight writers over a
+  shared list, a `Mutex<Bag>` and a channel of copies, 20 runs each at 1
+  and 8 threads, debug/release, with and without GC pressure
+  (`VELES_GC_MIN_HEAP=64k VELES_GC_POISON=1`); on Linux also
+  `--sanitize`: 320 runs, all correct, no ASan report.
+
 ### 2026-11-06 — V2 (D235 addendum): a capture-list copy is each call's own
 
 - Decided (user, recommended of 3): the body may change its copy; each

@@ -1533,6 +1533,20 @@ Every new public std API (http cookies/forms/client, `std/log`,
 
 ## 11. Known limitations to revisit
 
+- [ ] **No CI workflows in the repository (found 2026-11-06).** CLAUDE.md
+      describes `.github/workflows/ci.yml` (build, vet, every test on the
+      three platforms per push) and `nightly.yml` (fuzzing, sanitizer,
+      GC-pressure and thread-stress suites), but neither file is on
+      `lists-maps-and-sets-as-values`, `spec-driven` or `main`, and git has
+      no history of them: nothing runs the gate or the stress suites
+      automatically. Restore or write them, or correct CLAUDE.md.
+- [ ] **The benchmark runner favours whichever tree runs first
+      (2026-11-06).** Two `go run ./bench` back to back: the second is
+      slower on some rows (`random` 15 → 22 ms, `suscall`, `sha256`) on
+      Windows, whichever tree it is. A before/after comparison should run
+      each benchmark alone, interleaved (as the D231 merge review did), or
+      the runner should interleave itself.
+
 - [ ] **F45/F46 path verification and throughput (built 2026-10-30).** UNC share
       roots with/without their final separator now compare as the same path,
       preserving sibling and root-kind rejection. All six module cases pass
@@ -1955,8 +1969,10 @@ std/compress` exited 255, and `TestHashFlooding`,
       (19) done 2026-11-06 (D235, plan V2): the capture list, and D236's
       `copy()`; D231's capture sentence corrected. (20)–(21) gone
       2026-11-06 with the check they were gaps of: a capture-list copy is
-      each call's own and may be changed (D235 addendum); left: (22) V2
-      not run on macOS.
+      each call's own and may be changed (D235 addendum); (23) done
+      2026-11-06: `xs.iter()` lent its receiver and the iterator saw later
+      changes (`listAdapter`'s `iter` case binds a marked copy); left: (22)
+      V2 not run on macOS.
 - [ ] **Swift and Kotlin tabs not run (2026-10-31).** The code groups of
       chapters 2–10 and 12 (N7): the Kotlin tabs of every chapter and the
       Swift tabs of chapters 2, 3, 4, 5, 8 and 10 were written without a
