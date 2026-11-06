@@ -7,6 +7,10 @@ struct Saved {
   var items: *List<string>
 }
 
+struct MaybeSaved {
+  var items: (*List<string>)?
+}
+
 fun keep(xs: *List<string>): *List<string> => xs
 
 fun stash(xs: *List<string>) {
@@ -71,7 +75,12 @@ fun main() {
   }))
   var handlers = Handlers()
   notes.withLock(xs => register(&handlers, () => xs.push("e")))   // error: 'xs' is lent to this function only for the call (D233): the body captures it
-  io.println("${leaked.len()} ${later()} ${passed.len()} ${copy} ${size}")
+  var maybe = MaybeSaved(items: null)
+  notes.withLock(xs => {                                  // error: 'xs' is lent to this function only for the call (D233): the body stores it
+    maybe.items = xs
+  })
+  val pair = notes.withLock(xs => (1, xs))                // error: 'xs' is lent to this function only for the call (D233): the body returns it
+  io.println("${leaked.len()} ${later()} ${passed.len()} ${copy} ${size} ${pair}")
 }
 
 fun count2(xs: *List<string>) {

@@ -153,7 +153,7 @@ func (f *fnCtx) copyMutationHint(recv ast.Expr, span source.Span, what string) {
 			"%s: '%s' is a copy of the element, so the change would be lost; reach the element itself with '%s' (D25)", what, srcText(recv), repl)
 		return
 	}
-	f.errorf(span, "%s; bind it with 'var' to change a copy, or reach the element with 'ref' or 'loop (&x in xs)' (D25)", what)
+	f.errorf(span, "%s; bind it to a name to change a copy, or reach the element with 'at' or 'loop (&x in xs)' (D231)", what)
 }
 
 // hoistPlace binds every sub-expression that locating target evaluates —

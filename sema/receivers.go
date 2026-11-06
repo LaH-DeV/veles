@@ -252,9 +252,23 @@ func (c *Checker) checkBoxedPlaces() {
 
 // keptHow says how a body keeps the pointer parameter p, for the message.
 func keptHow(body *Block, p *Var) string {
-	is := func(e Expr) bool {
-		r, ok := e.(*VarRef)
-		return ok && r.Var == p
+	// p itself, or p wrapped into a nullable or a tuple (`k.kept = xs`
+	// with a `(*T)?` field, `(1, xs)`)
+	var is func(e Expr) bool
+	is = func(e Expr) bool {
+		switch x := e.(type) {
+		case *VarRef:
+			return x.Var == p
+		case *SomeWrap:
+			return is(x.X)
+		case *TupleLit:
+			for _, el := range x.Elems {
+				if is(el) {
+					return true
+				}
+			}
+		}
+		return false
 	}
 	how := ""
 	note := func(s string) {
@@ -697,7 +711,7 @@ func (c *Checker) lostCopy(call *Call, what string) {
 			return
 		}
 	}
-	c.errorf(call.RecvSpan, "%s; bind it with 'var' to change a copy, or reach the element with 'ref' or 'loop (&x in xs)' (D25)", what)
+	c.errorf(call.RecvSpan, "%s; bind it to a name to change a copy, or reach the element with 'at' or 'loop (&x in xs)' (D231)", what)
 }
 
 // fieldUsePass computes, for every method, which of the receiver's fields

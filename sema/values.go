@@ -284,12 +284,12 @@ func (c *Checker) lintChangedCopies(prog *Program) {
 				continue
 			}
 			if b, isElem := unwrapped(place).(*Builtin); isElem {
-				// an element read: `ref` reaches the element itself (D25)
+				// an element read: `at` reaches the element itself (D231)
 				text := spanText(b.Span)
 				if text == "" {
 					text = "the element"
 				}
-				c.warnLint("copy_changed", at, nil, "'%s' is a copy of the element '%s' (D231): this change does not reach the collection; reach the element with 'ref' ('%s') and change it through that",
+				c.warnLint("copy_changed", at, nil, "'%s' is a copy of the element '%s' (D231): this change does not reach the collection; reach the element with '%s' and change it through that",
 					v.Name, text, strings.Replace(text, ".get(", ".at(", 1))
 				continue
 			}

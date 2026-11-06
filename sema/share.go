@@ -562,13 +562,22 @@ func (s *sharer) scope(x *ScopeBlock, u use) {
 // else can reach it during the call.
 func (s *sharer) call(x *Call) {
 	params, args := x.Fn.Params, x.Args
+	// The receiver is a pointer to its place: an argument held in the same
+	// variable (`s.peek(s.items)`) is reached by the method through `this`,
+	// which may change it under the parameter, so it is not lent.
+	var recv *Var
 	if x.Fn.Receiver != nil && len(args) > 0 {
+		r := args[0]
+		if a, ok := r.(*AddrOf); ok {
+			r = a.X
+		}
+		recv = heldIn(r)
 		args[0] = s.expr(args[0], useLook)
 		args = args[1:]
 	}
 	for i, a := range args {
 		u := useKeep
-		if i < len(params) && params[i].ReadOnly && lendable(a) {
+		if i < len(params) && params[i].ReadOnly && lendable(a) && (recv == nil || heldIn(a) != recv) {
 			u = useLook
 		}
 		args[i] = s.expr(a, u)

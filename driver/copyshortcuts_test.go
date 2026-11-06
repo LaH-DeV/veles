@@ -391,6 +391,23 @@ fun uniqueThenCall(bag: *Bag): string {
   "$kept ${bag.items}"
 }
 
+// 8. a field of a local handed to a method of that local, which changes
+// the field through this (2026-11-06: the field was lent, so the
+// method's own parameter changed with it)
+struct Shelf {
+  var items: List<i64>
+
+  fun peek(xs: List<i64>): string {
+    val before = xs.len()
+    this.items.push(5)
+    "$before ${xs.len()}"
+  }
+}
+
+struct Room {
+  var shelf: Shelf
+}
+
 fun main() {
   val p = &Box(items: [1, 2])
   reach.withLock(r => { *r = p })
@@ -406,6 +423,10 @@ val bag = &Bag(items: [1, 2])
   reachBag.withLock(r => { *r = bag })
   io.println("alias: ${bag.aliasThenCall()}")
   io.println("unique: ${uniqueThenCall(bag)}")
+  val shelf = Shelf(items: [1])
+  io.println("own field: ${shelf.peek(shelf.items)} ${shelf.items.len()}")
+  var room = Room(shelf: Shelf(items: [1, 2]))
+  io.println("nested field: ${room.shelf.peek(room.shelf.items)} ${room.shelf.items.len()}")
 }
 `
 	want := "global: 2 2\n" +
@@ -414,7 +435,9 @@ val bag = &Bag(items: [1, 2])
 		"receiver: 4 4\n" +
 		"self: 1 1\n" +
 		"alias: 2 2\n" +
-		"unique: [1, 2, 99, 1] [1, 2, 99, 1, 2]\n"
+		"unique: [1, 2, 99, 1] [1, 2, 99, 1, 2]\n" +
+		"own field: 1 1 2\n" +
+		"nested field: 2 2 3\n"
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "main.vs"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)

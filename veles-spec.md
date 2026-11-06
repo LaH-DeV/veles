@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.136** — decisions D1–D233. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.137** — decisions D1–D236. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -9581,6 +9581,103 @@ val copy = notes.withLock(xs => *xs)     // the value, read under the lock
   callbacks could still keep their pointer), refusing a pointer only in the
   result type (misses `saved = xs`), a `Sendable` bound on the result (it
   would demand `T: Sendable` of `Mutex<T>.get()`).
+
+### D234 — `Deque` and `PriorityQueue` are values (v0.137; amends D25's v0.25 amendment)
+
+2026-11-06, the user (recommended of 2), on checklist §11 D231 item 18:
+"deque and priorityqueue, they should be like values (but so much they make
+sense)".
+
+```veles
+val queue = Deque<Job>()
+queue.addLast(build)
+val pending = queue            // a copy, O(1)
+queue.removeFirst()            // the first change copies; 'pending' still holds 'build'
+```
+
+- **The rule.** `Deque<T>` and `PriorityQueue<T>` are values as `List` is
+  (D231): assignment, passing, returning, storing and sending copy, and the
+  copy is made at the first change. Their state (the ring and its head and
+  size; the heap) lives in the struct, not behind a pointer, so the
+  storage is a `List` and copies on write with it.
+- **"As much as they make sense":** a `PriorityQueue`'s comparator is a
+  function value and is shared by its copies — a function cannot be
+  changed, so nothing about it is lost.
+- A loop over a `Deque` walks it as it was when the loop began, as a list
+  loop does (D231 addendum 1, item 2); D102's guard goes for `Deque`.
+- `Sendable` when `T` is. `const struct` still refuses them (D212): they
+  are state to change. Sharing one is a pointer, `&queue` (D10).
+- Rejected: keeping them shared, documented as the shared kind (two rules
+  for the collections).
+
+### D235 — A capture list copies chosen captures into a lambda (v0.137)
+
+2026-11-06, the user (recommended of 3), on checklist §11 D231 item 19:
+"lambdas should capture and share BUT: i think we need a mechanism for
+copying into lambda (so we COULD make a decision about what copy what
+share)".
+
+```veles
+val routes: List<string> = ["/a"]
+app.get("/all", req => http.Response.text("$routes"))         // shares: sees later pushes
+app.get("/boot", [routes] req => http.Response.text("$routes")) // the list as it is now
+val fresh = [limit, seen = counter.get()] () => seen < limit   // a name, or name = expr
+routes.push("/b")
+```
+
+- **The rule.** A lambda keeps sharing what it captures (by reference, as
+  before). A capture list `[a, b = expr]` written before its parameters
+  copies each listed name when the lambda is made — a name copies that
+  variable, `name = expr` binds a new name to the value of `expr`. Copying
+  a collection is O(1) (D231).
+- **A copied name is fixed:** the body cannot reassign it or change it
+  (an error naming the capture list) — it is a snapshot, not state kept
+  between calls; per-call state is a shared `var` or a pointer.
+- To share something explicitly beside copies, capture a pointer: `[n]
+  () => p.add(n)` with `val p = &total`.
+- A lambda whose captures are all copies of Sendable values is sendable
+  (D35) without marking anything shared.
+- A listed name the body does not use is a warning; a listed name that is
+  not a variable in scope is an error. Listing a name twice is an error.
+- **Parsing.** `[...]` followed by a lambda head (`(params) =>` or `ident
+  =>`). A list literal followed by `(` or by `ident =>` is not a valid
+  program today, so nothing changes meaning. Both front ends parse it
+  (the self-hosted parser byte for byte, veles-selfhost-frontend-plan.md).
+- Tooling: the formatter keeps the list on the lambda's line; hover on a
+  copied name says it was copied when the lambda was made.
+- Swift's `[x] in`, C++'s `[x, &y]`; Rust copies all with `move` and
+  shares through a reference.
+- Rejected: a `copy` prefix that copies every capture (all or nothing,
+  and `copy(x) => …` reads as a `when` arm); leaving it to a binding made
+  before the lambda (works, but is invisible at the lambda).
+
+### D236 — `copy()` on lists, maps, sets, deques, queues and arrays (v0.137; reverses D231 addendum 1's rejection of `copy()`)
+
+2026-11-06, the user (recommended of 2): "we should probably have an
+explicit copy for the lists and others".
+
+```veles
+val before = rows.copy()      // the same as `val before = rows`, said on purpose
+draft.copy()                  // D232's fix for a box over a copy now works for collections too
+```
+
+- `List`, `Map`, `Set`, `Deque`, `PriorityQueue` and `Array` have
+  `copy()`, the name a struct's generated `copy` has (D164), so every value
+  type has one. O(1): it marks the value shared; the copy is made at the
+  first change.
+- Inside a lambda, `() => xs.copy()` copies when it is called; a copy taken
+  when the lambda is made is D235's capture list.
+- What is new against addendum 1 (which rejected renaming `toList()` to
+  `copy()` because binding is the copy): the user's request, one name
+  across structs and collections, and D232's error already offering
+  `x.copy()`.
+- Rejected: no method (binding as the only copy).
+
+_Sharing (same day, the user, recommended of 3):_ no new feature. Sharing a
+collection is the pointer, `&xs` / `*List<T>` (D10), and `Mutex`/`RwLock`
+across tasks; chapter 4 gets a "copy or share" section that names the
+three. Rejected: a `Shared<T>` std type (the pointer under another name);
+leaving it open.
 
 ### I1 — generators: investigated, not decided
 

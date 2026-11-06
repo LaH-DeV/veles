@@ -131,6 +131,28 @@ else is decision-free.
    the trait-object-holds-a-copy hazard (std codecs moved state behind
    pointers).
 
+0. [ ] **V2 — D234–D236: the rest of the value story** (decided
+   2026-11-06; checklist §11 D231 items 18–19).
+   - (a) D234: `Deque`/`PriorityQueue` state inline in the struct (no
+     `*State`); `Deque` loops walk a snapshot, D102's guard dropped for
+     them; Sendable when `T` is; the header comment and D25's amendment
+     struck through.
+   - (b) D236: `copy()` on `List`, `Map`, `Set`, `Deque`,
+     `PriorityQueue`, `Array` (O(1), marks shared); D232's fix text
+     works for them.
+   - (c) D235: the capture list `[a, b = expr]` in both front ends
+     (selfhost byte-identical), checker (copied at creation, fixed in the
+     body, unused warning, unknown/duplicate errors, sendable when all
+     copies are), codegen, formatter, hover, tree-sitter/editor grammar.
+   - (d) Docs: chapter 4 "copy or share" (value, `&x`, `Mutex`, capture
+     list), chapter on lambdas, cheat sheet, stdlib reference; D231's
+     "capturing … copy" sentence corrected (lambdas share, D235 copies).
+   Acceptance: a driver test per rule, both profiles (a copied `Deque`
+   and queue unchanged by the original's changes; a capture list
+   snapshot vs a shared capture; `copy()` on each type); conformance
+   cases for the capture-list errors; full gate on Windows and Linux;
+   `bench/` queue users unchanged past noise.
+
 1. [ ] **N1 — Every platform green, and kept so.** Everything built on macOS
    since 2026-10-21 is unverified on Windows and Linux (checklist §11: F8,
    F9/F39, F10/F11/F13, F31, F35, F40–F44, D229/D230, the test tooling).
@@ -869,6 +891,24 @@ on Linux).
 ---
 
 ## Progress log
+
+### 2026-11-06 — V1 (D231): pre-PR check, one more lent-argument hole
+
+- Probed the branch with runtime programs (copies on assignment, on
+  passing, into tasks, nested lists and maps, `atOrPut`, loops that change
+  their list, by-reference loops, pointers into elements, `Deque.at`) and
+  the D232/D233 escapes: all as specified but one. `s.peek(s.items)`, a
+  method of a local handed a field of that same local, lent the field, so
+  the method's change through `this` showed in its own parameter. `call`
+  (sema/share.go) no longer lends an argument held in the receiver's
+  variable; `TestPointerReachedValuesStayValues` has the case (a field and
+  a nested field).
+- Messages: the copy errors and the `copy_changed` warning still named the
+  removed `ref` (and "bind it with 'var'", which D231 made needless); they
+  name `at` now. D233's error says "stores it" / "returns it" for a
+  pointer wrapped into a nullable or a tuple (`D233-lent-params.vs`).
+- Found, not changed (checklist §11): `Deque`/`PriorityQueue` are still
+  shared on copy; D231's "capturing … copy" reads against D37.
 
 ### 2026-11-03 — V1 (D231): the last open items closed
 
