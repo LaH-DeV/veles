@@ -53,11 +53,12 @@ type CopySite struct {
 type CopyWhy int
 
 const (
-	WhyShared CopyWhy = iota // copied into another holder
-	WhyLoop                  // a loop walks the value as it was (D231 addendum)
-	WhyParam                 // a parameter: the caller may keep its value
-	WhyElsewhere             // a field another function shared (By)
-	WhyCaller                // a pointer parameter or receiver a caller (By) handed a shared value
+	WhyShared    CopyWhy = iota // copied into another holder
+	WhyLoop                     // a loop walks the value as it was (D231 addendum)
+	WhyParam                    // a parameter: the caller may keep its value
+	WhyElsewhere                // a field another function shared (By)
+	WhyCaller                   // a pointer parameter or receiver a caller (By) handed a shared value
+	WhyCapture                  // a call's copy of a capture-list snapshot: every call starts from it (D235)
 )
 
 // CopySites finds the copy sites of every function of prog, each once
@@ -545,6 +546,19 @@ func (f *copyFlow) stmt1(s Stmt) {
 	case *VarDecl:
 		f.at(s.Pos)
 		v := s.Var
+		init := s.Init
+		if sh, ok := init.(*Share); ok {
+			init = sh.X // the share pass marked the read
+		}
+		if r, ok := init.(*VarRef); ok && v.CapCopy && r.Var.Captured {
+			// a lambda's per-call copy of its capture list's snapshot (D235):
+			// shared with the snapshot from the start of every call, as a
+			// parameter is with the caller's value
+			if holdsCollection(v.Type, map[types.Type]bool{}) {
+				f.st.share(f.key(copyPlace{root: v}), copyMark{at: v.Span, why: WhyCapture})
+			}
+			return
+		}
 		if v.Lent && v.LentFor == nil && s.Init != nil {
 			if p, ok := f.place(s.Init); ok {
 				f.alias[v] = p // reads the place it stands for

@@ -31,10 +31,30 @@ func OwnedCollections(fn *Func) (map[*Var]bool, map[Expr]bool) {
 	if len(init) == 0 {
 		return nil, nil
 	}
+	// A lent variable (a compiler temporary, a lent alias) is its source's
+	// value under another name, read without a mark: whatever lets it be
+	// held by something else lets the source be held too. So dropping one
+	// drops what it was read from, all the way down (`$tmp1 = c` then
+	// `iterator(&$tmp1)`, which keeps the list: c's next push wrote under
+	// the iterator, 2026-11-06).
+	lentFrom := map[*Var]*Var{}
+	walkBlock(fn.Body, func(n any) {
+		if d, ok := n.(*VarDecl); ok && d.Var.Lent && d.Init != nil {
+			if src := collRoot(d.Init); src != nil && src != d.Var {
+				lentFrom[d.Var] = src
+			}
+		}
+	})
+	kill := func(v *Var) {
+		for seen := 0; v != nil && seen <= len(lentFrom); seen++ {
+			delete(init, v)
+			v = lentFrom[v]
+		}
+	}
 	drop := func(e Expr) {
 		walkExpr(e, func(n any) {
 			if r, ok := n.(*VarRef); ok {
-				delete(init, r.Var)
+				kill(r.Var)
 			}
 		})
 	}
@@ -42,7 +62,7 @@ func OwnedCollections(fn *Func) (map[*Var]bool, map[Expr]bool) {
 	dropArgs := func(args []Expr) {
 		for _, a := range args {
 			if r, ok := a.(*VarRef); ok {
-				delete(init, r.Var)
+				kill(r.Var)
 			}
 		}
 	}
@@ -54,7 +74,7 @@ func OwnedCollections(fn *Func) (map[*Var]bool, map[Expr]bool) {
 			drop(n.X)
 		case *Assign:
 			if r, ok := n.Target.(*VarRef); ok {
-				delete(init, r.Var)
+				kill(r.Var)
 			}
 		case *Builtin:
 			if (n.Op == "list.slice" || n.Op == "list.takeText") && len(n.Args) > 0 {

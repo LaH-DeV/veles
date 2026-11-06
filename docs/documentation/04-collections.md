@@ -273,7 +273,9 @@ loop (x in list) {
 
 A loop over a list its body changes says so on its first line
 (`xs copied at its first change, line …`); the first change to a list
-parameter says `copies xs (a parameter)`; a `clear()` of a shared list says
+parameter says `copies xs (a parameter)`, and the first change in a lambda
+to a capture-list copy says `copies xs (each call)` — every call starts from
+the snapshot (chapter 10); a `clear()` of a shared list says
 `copied as empty`. Making a changed copy this way costs one copy of the
 elements, and the copy is made with room to grow, so the pushes that follow
 do not copy them again. A share in another function is followed too: a
@@ -317,11 +319,11 @@ the change was meant for the element, which `at` reaches.
 
 Two places copy where it is easy to miss:
 
-- a **trait object** holds its own copy of the value boxed into it (D9) —
-  a struct passed where an `Encoder` is expected writes into that copy, so
-  a type that is meant to be handed around that way keeps what it
-  accumulates behind a pointer (std's `JsonEncoder` keeps its output in a
-  `*EncodeState`);
+- a **trait object** holds its own copy of the value boxed into it (D9).
+  When the type's methods change `this`, boxing a variable, a parameter or
+  a field is an error, since the changes would land in the copy: pass `&x`
+  to box the variable itself, so its methods change `x`, or `x.copy()` for
+  a copy on purpose (D232, chapter 8);
 - an **element read** (`xs.get(i)`, `m.get(k)`, the variable of
   `loop (x in xs)`) is a copy of the element — for a list of lists, of the
   inner list; `at` and `loop (&x in xs)` reach the element itself (see

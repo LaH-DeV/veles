@@ -339,12 +339,6 @@ func (f *fnCtx) listAdapter(recv Expr, lt *types.List, name string, e *ast.CallE
 		if !need(0) {
 			return bad()
 		}
-		// the iterator keeps the list: unlike the other adapters, which
-		// read it only while the statement runs, its temporary is a copy
-		// the share pass marks, so a later change of the receiver copies
-		// rather than writing under the iterator (D231; it saw a push
-		// made after `xs.iter()`, 2026-11-06)
-		list.Lent = false
 		call := &ast.CallExpr{Fun: &ast.MemberExpr{X: nameOf(list, span), Name: ast.Ident{Name: "iterator", Pos: span}, Pos: span}, Pos: span}
 		f.scope.Insert(&Symbol{Name: list.Name, Kind: SymLocal, Var: list})
 		return finish(nil, f.checkExpr(call, nil))

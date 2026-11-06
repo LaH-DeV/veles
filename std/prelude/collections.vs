@@ -132,12 +132,33 @@ public struct Deque<T> {
   }
 
   implement Iterable {
-    type Iter = ListIter<T>
-    fun iterator(): ListIter<T> => ListIter(list: this.toList())
+    type Iter = DequeIter<T>
+    fun iterator(): DequeIter<T> => DequeIter(buf: this.buf, head: this.head, size: this.size)
   }
 
   implement Display {
     fun toString(): string => "[${this.toList().join(", ")}]"
+  }
+}
+
+/// The elements of a deque front to back, as they were when the iterator
+/// was made: it holds a copy of the ring — O(1), the buffer copied only if
+/// the deque changes meanwhile (D231, D234) — and walks it in place, with
+/// no list built first.
+public struct DequeIter<T> {
+  buf:       List<T?>
+  head:      i64
+  size:      i64
+  var index: i64 = 0
+
+  implement Iterator {
+    type Item = T
+    fun next(): T? {
+      if (this.index >= this.size) return null
+      val slot = this.buf.get((this.head + this.index) % this.buf.len()) ?: panic("deque: a position taken mod the capacity is inside the buffer")
+      this.index += 1
+      slot ?: panic("deque: a live slot is empty")
+    }
   }
 }
 
@@ -211,29 +232,45 @@ public struct PriorityQueue<T> {
   /// below the heap's size.
   fun item(i: i64): T => this.items.get(i) ?: panic("heap: a sift reads only positions below the size")
 
+  // The sifts move a hole, not the element: the element at `from` is held,
+  // each element it passes moves one level into the hole, and it is stored
+  // once where it stops — one write per level instead of a swap's two.
+
   fun siftUp(from: i64) {
+    val x = this.item(from)
     var i = from
     loop (i > 0) {
       val parent = (i - 1) / 2
-      if (this.compare(this.item(i), this.item(parent)) >= 0) break
-      this.items.swap(i, parent)
+      val p = this.item(parent)
+      if (this.compare(x, p) >= 0) break
+      this.items.set(i, p)
       i = parent
     }
+    this.items.set(i, x)
   }
 
   fun siftDown(from: i64) {
     val n = this.items.len()
+    val x = this.item(from)
     var i = from
     loop {
       val left = 2 * i + 1
+      if (left >= n) break
+      var child = left
+      var c = this.item(left)
       val right = left + 1
-      var smallest = i
-      if (left < n && this.compare(this.item(left), this.item(smallest)) < 0) smallest = left
-      if (right < n && this.compare(this.item(right), this.item(smallest)) < 0) smallest = right
-      if (smallest == i) break
-      this.items.swap(i, smallest)
-      i = smallest
+      if (right < n) {
+        val r = this.item(right)
+        if (this.compare(r, c) < 0) {
+          child = right
+          c = r
+        }
+      }
+      if (this.compare(c, x) >= 0) break
+      this.items.set(i, c)
+      i = child
     }
+    this.items.set(i, x)
   }
 
   implement Display {

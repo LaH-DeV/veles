@@ -67,7 +67,9 @@ func (f *fnCtx) captureSnapshots(e *ast.LambdaExpr) ([]Stmt, []*Var, []source.Sp
 		} else {
 			v.InitText = srcText(c.Value) // for the hover
 		}
-		decls = append(decls, &VarDecl{Var: v, Init: init})
+		// at the entry, so the copy hint of a later change of the original
+		// names the capture list as what shared it
+		decls = append(decls, &VarDecl{Var: v, Init: init, Pos: c.Pos})
 		snaps = append(snaps, v)
 		spans = append(spans, c.Name.Pos)
 	}

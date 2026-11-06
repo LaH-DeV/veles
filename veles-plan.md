@@ -893,6 +893,43 @@ on Linux).
 
 ## Progress log
 
+### 2026-11-06 — V1/V2 follow-ups: lent aliases as a class, copy hint, queues, `-against`
+
+- Lent aliases: `OwnedCollections` (sema/owned.go) skipped the
+  copy-on-write test for a local nothing else could hold, judging by its
+  name only; a lent temporary or alias of it (`$tmp1 = c`) handed to a
+  callee that keeps it escaped unseen (the `iter()` bug). Now whatever lets
+  a lent variable be held lets its source be held, down the chain; the
+  `iter`-only fix in `listAdapter` is gone and the `iter:` driver line
+  tests the rule. Counted with a temporary probe: no benchmark program
+  (std included) loses an owned local. `UniquePointers` was already safe
+  (any call given a pointer to a collection drops every candidate).
+- Copy hint (D231 choice 3) for D235: `WhyCapture`; the first change of a
+  call's copy says `copies xs (each call)`, and the snapshot's
+  declaration carries the capture entry's position, so a later change of
+  the original says `names copied at its first change, line N` on the
+  lambda's line. Tests: `TestCopySites` (`captures`),
+  `TestCaptureListCopyHints`; chapter 4.
+- `bench/queues` (new, Go reference by hand): `DequeIter` walks an O(1)
+  copy of the ring instead of `toList()` per loop; `PriorityQueue`'s
+  sifts move a hole (one `set` per level, no `swap`). Against HEAD, 5
+  interleaved rounds: 166.9 → 122.2 ms (−27%); Go 72 ms. The rest is the
+  comparator called through a function value (checklist §11).
+- `go run ./bench -against <rev> [-rounds n]` (bench/against.go): both
+  compilers on this tree's programs, alternating which goes first each
+  round, checksums compared; documented in results.md and veles-bench.
+- The whole suite against `spec-driven` with `-against` (each side its
+  own programs, 3 rounds): no loss beyond noise (largest: `idle` and
+  `tofixed` +7%, ranges overlapping); `adapters` −22%, `maps`, `gunzip`,
+  `parallel` −17%, `intern`, `strings` −15% (bench/results.md). The
+  first version of `-against` built this tree's programs with both
+  compilers, which D231's rewrites made impossible for most; each side
+  now builds its own, and a checksum that differs (`parse` reads std) is
+  flagged, not failed.
+- Chapter 4's trait-object paragraph now gives D232's rule (an error
+  with the `&x` fix) instead of the old silent copy. Item 2 (the stress
+  program as a test, and CI) parked by the user (checklist §11).
+
 ### 2026-11-06 — V1/V2 merge review: one more lent receiver, benchmarks
 
 - Reviewed the branch against `spec-driven` (a fast-forward, no

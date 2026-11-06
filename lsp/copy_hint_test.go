@@ -111,6 +111,38 @@ func TestCopyHints(t *testing.T) {
 	}
 }
 
+// A capture list's copy (D235) is copied on its first change in every
+// call: the change says so in full, as a parameter's does; the original
+// changed after the lambda was made points at the capture list.
+func TestCaptureListCopyHints(t *testing.T) {
+	src := "use io\n\nfun main() {\n  val names: List<string> = [\"x\"]\n  val grow = [names] (s: string) => {\n    names.push(s)\n    names.len()\n  }\n  io.println(\"${grow(\"a\")}\")\n  names.push(\"y\")\n  io.println(\"$names\")\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	res, _ := c.call("textDocument/inlayHint", map[string]any{"textDocument": map[string]any{"uri": uri},
+		"range": map[string]any{"start": map[string]any{"line": 0, "character": 0}, "end": map[string]any{"line": 100, "character": 0}}})
+	var hints []inlayHint
+	if err := json.Unmarshal(res, &hints); err != nil {
+		t.Fatalf("inlayHint: %s", res)
+	}
+	got := applyHints(src, hints)
+	for _, want := range []string{
+		"names.push(s)« copies names (each call)»",
+		"[names] (s: string) => {« names copied at its first change, line 10»",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
+	}
+}
+
 const crossCopySrc = `use io
 
 struct Shelf {

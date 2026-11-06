@@ -5,6 +5,9 @@
 //	go run ./bench                 run every benchmark, print the table
 //	go run ./bench -run json       only the ones whose name contains "json"
 //	go run ./bench -record         also append the table to bench/results.md
+//	go run ./bench -against spec-driven [-rounds 5]
+//	                               this tree's compiler against the one at a
+//	                               git revision, interleaved (bench/against.go)
 //
 // Every benchmark is a directory bench/<name>/main.vs that times its own
 // workload and prints `BENCH <name> <ops> <nanoseconds> <checksum>`. The Go
@@ -68,6 +71,8 @@ func main() {
 	}
 	filter := flag.String("run", "", "only benchmarks whose name contains this")
 	record := flag.Bool("record", false, "append the results to bench/results.md")
+	against := flag.String("against", "", "compare with the compiler at this git revision instead of with Go")
+	rounds := flag.Int("rounds", 5, "with -against: runs of each benchmark per side")
 	flag.Parse()
 
 	root := moduleRoot()
@@ -76,6 +81,10 @@ func main() {
 	defer os.RemoveAll(tmp)
 	veles := filepath.Join(tmp, "veles"+exe())
 	run(root, "go", "build", "-o", veles, ".")
+	if *against != "" {
+		compareAgainst(root, tmp, veles, *against, *filter, max(*rounds, 1))
+		return
+	}
 
 	dirs, err := filepath.Glob(filepath.Join(root, "bench", "*", "main.vs"))
 	must(err)
@@ -427,6 +436,79 @@ var references = map[string]func() string{
 			last = sha256.Sum256(data)
 		}
 		return hex.EncodeToString(last[:])[:16]
+	},
+	"queues": func() string {
+		// the prelude's algorithms written out: a ring that doubles from 4
+		// slots, and a binary heap with the same sifts
+		var sum int64
+		for r := 0; r < 50; r++ {
+			buf := make([]int64, 0)
+			head, size := 0, 0
+			for i := int64(0); i < 20000; i++ {
+				if size == len(buf) {
+					n := 4
+					if len(buf) > 0 {
+						n = len(buf) * 2
+					}
+					fresh := make([]int64, n)
+					for k := 0; k < size; k++ {
+						fresh[k] = buf[(head+k)%len(buf)]
+					}
+					buf, head = fresh, 0
+				}
+				buf[(head+size)%len(buf)] = i * 7919 % 1000
+				size++
+				if size > 64 {
+					sum += buf[head]
+					head = (head + 1) % len(buf)
+					size--
+				}
+				if i%100 == 0 {
+					for k := 0; k < size; k++ {
+						sum += buf[(head+k)%len(buf)]
+					}
+				}
+			}
+			var heap []int64
+			for i := int64(0); i < 20000; i++ {
+				heap = append(heap, i*104729%100003)
+				for c := len(heap) - 1; c > 0; {
+					p := (c - 1) / 2
+					if heap[c] >= heap[p] {
+						break
+					}
+					heap[c], heap[p] = heap[p], heap[c]
+					c = p
+				}
+			}
+			last := int64(-1)
+			for len(heap) > 0 {
+				top := heap[0]
+				n := len(heap) - 1
+				heap[0] = heap[n]
+				heap = heap[:n]
+				for i := 0; ; {
+					l, rr, s := 2*i+1, 2*i+2, i
+					if l < n && heap[l] < heap[s] {
+						s = l
+					}
+					if rr < n && heap[rr] < heap[s] {
+						s = rr
+					}
+					if s == i {
+						break
+					}
+					heap[i], heap[s] = heap[s], heap[i]
+					i = s
+				}
+				if top < last {
+					panic("out of order")
+				}
+				last = top
+				sum += top
+			}
+		}
+		return strconv.FormatInt(sum, 10)
 	},
 	"maps": func() string {
 		var sum int64

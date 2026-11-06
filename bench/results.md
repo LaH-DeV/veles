@@ -47,7 +47,17 @@ bench/preempt -- all` prints every case F21 measured. `backedge` is four
   tight loops: Go has neither a back-edge poll nor a vectorizer, so the
   ratio is not the poll's price; that one, against C, is in the 2026-10-27
   section.
-- One machine, one run; differences under ~10% are noise.
+- One machine, one run; differences under ~10% are noise. Two runs back
+  to back are not alike either (on Windows the second of a pair ran
+  `random` 15 → 22 ms whichever tree it was): to measure a change, use
+  `go run ./bench -against <rev>`, which builds both compilers and runs
+  each benchmark interleaved, alternating which goes first.
+- `queues` (2026-11-06, D234): a `Deque` as a 64-wide sliding window,
+  walked with `loop` every 100 steps, and a `PriorityQueue` of 20k
+  elements filled and drained, 50 rounds; Go's reference writes the same
+  ring (doubling from 4 slots) and binary heap out by hand. The queue is
+  most of the time: `PriorityQueue<T>.natural()` calls its comparator
+  through a function value on every comparison (checklist §11).
 - `random`: five million local `Rng.range` draws with changing small signed
   bounds. Go uses the same splitmix64 seeding and xoshiro256\*\* transition,
   not `math/rand`; matching checksums pin the sequence and range mapping.
@@ -1305,3 +1315,48 @@ Windows: `emit` back to 45 MB peak (was 78 MB after the lent-address
 pass: a stale list header in the unwritten tail of an interpolation
 buffer, now written whole), time equal with the pass on or off; gunzip
 −2% from `exitCalls`.
+
+## 2026-11-06 — D231–D236 (branch lists-maps-and-sets-as-values, HEAD 1fa2088 plus the working tree) against spec-driven, go1.27.1, windows/amd64
+
+`go run ./bench -against spec-driven -rounds 3`: each side builds its own tree's version of each program, three rounds, alternating which goes first. `parse` reads std, which differs between the trees; `queues` is new (against HEAD: 166.9 → 122.2 ms).
+
+| benchmark | spec-driven | this tree | change |
+|---|---:|---:|---:|
+| adapters | 45.25ms (42.67ms–45.66ms) | 35.35ms (35.12ms–36.33ms) | -22% |
+| ast | 38.18ms (37.54ms–46.08ms) | 39.77ms (36.4ms–44.52ms) | +4% |
+| awaitall | 39.95ms (39.66ms–41.04ms) | 39.41ms (39.4ms–41.79ms) | -1% |
+| awaitscope | 41.3ms (41.21ms–42.56ms) | 39.03ms (38.78ms–40.04ms) | -5% |
+| backedge | 117.86ms (117.14ms–118.73ms) | 118.22ms (117.17ms–119.93ms) | +0% |
+| bigargs | 31.39ms (29.94ms–33.62ms) | 32.36ms (31.16ms–35.46ms) | +3% |
+| channels | 4.82ms (4.6ms–4.95ms) | 4.95ms (4.54ms–5.12ms) | +3% |
+| emit | 69ms (68.4ms–71.76ms) | 65.23ms (63.95ms–67.84ms) | -5% |
+| emptycoll | 19.02ms (17.18ms–19.36ms) | 17.59ms (17.55ms–18.61ms) | -8% |
+| fslist | 90.49ms (87.51ms–91.59ms) | 90.28ms (85.9ms–91.44ms) | -0% |
+| gcpause | 460.73ms (460.04ms–468.94ms) | 434.71ms (427.12ms–438.91ms) | -6% |
+| gunzip | 74.42ms (73.22ms–74.76ms) | 61.92ms (60.73ms–62.8ms) | -17% |
+| gzip | 127.29ms (127.25ms–128.17ms) | 127.64ms (125.67ms–129.08ms) | +0% |
+| httphello | 203.12ms (199.45ms–205.86ms) | 204.85ms (196.27ms–215.11ms) | +1% |
+| idle | 89.69ms (82.01ms–97.13ms) | 96.38ms (90.21ms–96.82ms) | +7% |
+| intern | 32.31ms (29.52ms–32.85ms) | 27.48ms (27.11ms–28.71ms) | -15% |
+| json | 55.27ms (54ms–58.62ms) | 50.11ms (48.55ms–50.66ms) | -9% |
+| lazyval | 68.56ms (68.23ms–92.14ms) | 65.07ms (61.59ms–66.66ms) | -5% |
+| lexer | 56.08ms (55.97ms–57.13ms) | 52.21ms (50.64ms–52.67ms) | -7% |
+| maps | 74.72ms (74.26ms–75.87ms) | 61.78ms (61.74ms–65.59ms) | -17% |
+| osrun | 363.85ms (330.36ms–395.72ms) | 345.12ms (342.77ms–378.05ms) | -5% |
+| parallel | 6.45ms (5.66ms–6.6ms) | 5.35ms (5.02ms–6.5ms) | -17% |
+| parse | 59.9ms (58.36ms–60.84ms) | 59.04ms (57.77ms–59.56ms) | -1% (checksums differ: std differs) |
+| pathwithin | 27.64ms (26.87ms–28.17ms) | 27.74ms (27.21ms–28.65ms) | +0% |
+| pipes | 24.75ms (24.23ms–25.28ms) | 25.06ms (22.75ms–25.64ms) | +1% |
+| preempt | 720.34ms (689.22ms–750.49ms) | 749.17ms (641.42ms–784.18ms) | +4% |
+| random | 16.67ms (15.5ms–17.09ms) | 15.87ms (15.09ms–19.64ms) | -5% |
+| regex | 12.92ms (12.53ms–15.3ms) | 12.59ms (12.06ms–12.67ms) | -2% |
+| regexcompile | 6.56ms (6.53ms–6.9ms) | 6.53ms (6.5ms–6.68ms) | -0% |
+| sha256 | 66.88ms (60.29ms–67.74ms) | 62.42ms (59.99ms–68.58ms) | -7% |
+| sort | 34.97ms (34.43ms–35.27ms) | 36.24ms (34.18ms–36.36ms) | +4% |
+| spawn | 34.51ms (33.98ms–38.81ms) | 34.64ms (34.18ms–35.47ms) | +0% |
+| strings | 51.51ms (51.17ms–54.04ms) | 43.99ms (43.1ms–45.03ms) | -15% |
+| suscall | 131.21ms (119.4ms–134.23ms) | 127.78ms (123.8ms–133.12ms) | -3% |
+| tofixed | 33.62ms (33.6ms–41.87ms) | 36.02ms (35.24ms–39.5ms) | +7% |
+| trees | 147.91ms (145.83ms–157.51ms) | 151.71ms (149.76ms–159.39ms) | +3% |
+
+3 rounds each, alternating which goes first; times are the Veles program's own measure.

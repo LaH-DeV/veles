@@ -414,7 +414,8 @@ public struct Deque<T> {                           // Deque<i64>() starts an emp
   public fun isEmpty(): bool
   public fun reserve(n: i64)         // room for n elements in all (D105)
   public fun clear()
-  public fun toList(): List<T>       // front to back; also Iterable and Display
+  public fun toList(): List<T>       // front to back; also Display
+  public fun iterator(): DequeIter<T>  // Iterable: walks the ring as it was, no list built
   public fun copy(): Deque<T>        // a copy, O(1) (D164, D236)
 }
 

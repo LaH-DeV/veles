@@ -183,7 +183,7 @@ func copyHints(f *source.File, sites []sema.CopySite) []inlayHint {
 	shareLines := map[int][]*copied{}
 	var shareOrder []int
 	for _, s := range sites {
-		if s.At.File != f || s.Why == sema.WhyParam || s.Why == sema.WhyElsewhere || s.Why == sema.WhyCaller || !s.SharedAt.IsValid() || s.SharedAt.File != f {
+		if s.At.File != f || s.Why == sema.WhyParam || s.Why == sema.WhyCapture || s.Why == sema.WhyElsewhere || s.Why == sema.WhyCaller || !s.SharedAt.IsValid() || s.SharedAt.File != f {
 			continue
 		}
 		at, line := lineOf(s.SharedAt), lineOf(s.At)
@@ -246,6 +246,9 @@ func copyHints(f *source.File, sites []sema.CopySite) []inlayHint {
 		}
 		var tip string
 		switch {
+		case s.Why == sema.WhyCapture:
+			label += " (each call)"
+			tip = fmt.Sprintf("`%s` is this call's copy of the value the capture list took when the lambda was made. Every call starts from that value, so the first change in each call copies it into storage of its own — once per call (D235).", s.Name)
 		case s.Why == sema.WhyParam:
 			label += " (a parameter)"
 			tip = fmt.Sprintf("`%s` is a parameter: the function's own copy of the caller's value, which the caller may still hold. Its first change copies it into storage of its own, so the caller keeps what it had (D231).", s.Name)

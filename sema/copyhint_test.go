@@ -121,6 +121,20 @@ fun handOver() {
   stock(&nums)
   io.println("$other")
 }
+
+fun captures() {
+  val names: List<string> = ["x"]
+  val grow = [names] (s: string) => {
+    names.push(s) // copies names capture
+    names.push(s)
+    loop (i in 0..<2) {
+      names.push(s)
+    }
+    names.len()
+  }
+  names.push("y") // copies names 113
+  io.println("${grow("a")} $names")
+}
 `
 	prog := checkProgram(t, src)
 	lines := strings.Split(src, "\n")
@@ -148,6 +162,8 @@ fun handOver() {
 			why = "elsewhere " + s.By
 		case WhyCaller:
 			why = "caller " + s.By
+		case WhyCapture:
+			why = "capture"
 		}
 		if s.Once {
 			why = "once " + why

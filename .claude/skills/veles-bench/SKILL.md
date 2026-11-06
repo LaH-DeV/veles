@@ -16,11 +16,15 @@ explains the caveats of each workload — read it before interpreting.
 go run ./bench                # all, printed
 go run ./bench -run spawn     # names containing "spawn"
 go run ./bench -record        # also append a dated table to bench/results.md
+go run ./bench -against spec-driven -rounds 5   # this tree's compiler vs a revision's, interleaved
 ```
 
 Veles is built `--release`. One machine, one run: differences under ~10%
 are noise — rerun two or three times before claiming a change, and report
-the spread when it matters.
+the spread when it matters. A before/after comparison is `-against <rev>`:
+two full runs back to back are not alike (the second of a pair is slower on
+some rows whichever tree it is), and `-against` alternates which side goes
+first, round by round.
 
 ## When
 

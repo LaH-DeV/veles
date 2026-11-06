@@ -1539,13 +1539,27 @@ Every new public std API (http cookies/forms/client, `std/log`,
       GC-pressure and thread-stress suites), but neither file is on
       `lists-maps-and-sets-as-values`, `spec-driven` or `main`, and git has
       no history of them: nothing runs the gate or the stress suites
-      automatically. Restore or write them, or correct CLAUDE.md.
-- [ ] **The benchmark runner favours whichever tree runs first
-      (2026-11-06).** Two `go run ./bench` back to back: the second is
-      slower on some rows (`random` 15 → 22 ms, `suscall`, `sha256`) on
-      Windows, whichever tree it is. A before/after comparison should run
-      each benchmark alone, interleaved (as the D231 merge review did), or
-      the runner should interleave itself.
+      automatically. Restore or write them, or correct CLAUDE.md. With
+      them, make the D231 copy-on-write stress program a driver test (eight
+      readers and eight writers over a shared list, a `Mutex<Bag>`, a
+      channel of copies; 1 and 8 threads, debug/release, GC pressure, ASan
+      on Linux; it passed 320 runs on 2026-11-06 as a scratch program).
+      Parked by the user 2026-11-06.
+- [ ] **The second of two benchmark runs is slower (2026-11-06).** Two
+      `go run ./bench` back to back: the second is slower on some rows
+      (`random` 15 → 22 ms, `suscall`, `sha256`) on Windows, whichever tree
+      it is. Done: `go run ./bench -against <rev>` compares two compilers
+      interleaved, alternating which goes first (`bench/against.go`). Open:
+      why the second run is slower (thermal, the collector's arena reuse in
+      the OS, Defender scanning fresh binaries?) — a single-tree run is
+      still affected.
+- [ ] **`PriorityQueue.natural()` calls its comparator through a function
+      value (2026-11-06).** `bench/queues`: the queue half is ~118 ms where
+      Go's hand-written heap with direct compares takes ~35 ms; each
+      comparison is an indirect call to `(a, b) => a.compareTo(b)`. A
+      `Comparable`-bounded queue (or devirtualising a comparator that is a
+      known lambda) would compare directly — a public API question if it
+      is a second type.
 
 - [ ] **F45/F46 path verification and throughput (built 2026-10-30).** UNC share
       roots with/without their final separator now compare as the same path,
@@ -1971,8 +1985,17 @@ std/compress` exited 255, and `TestHashFlooding`,
       2026-11-06 with the check they were gaps of: a capture-list copy is
       each call's own and may be changed (D235 addendum); (23) done
       2026-11-06: `xs.iter()` lent its receiver and the iterator saw later
-      changes (`listAdapter`'s `iter` case binds a marked copy); left: (22)
-      V2 not run on macOS.
+      changes — closed as a class (24): `OwnedCollections` treats anything
+      that lets a lent variable be held as letting its source be held, down
+      the chain of lent aliases, so the case-by-case fix in `listAdapter`
+      went (no benchmark program loses an owned local); (25) done
+      2026-11-06: a capture-list copy changed in a lambda gets the hint
+      `copies xs (each call)`, and the maker's later change of the original
+      points at the capture list (`WhyCapture`, `TestCopySites`,
+      `TestCaptureListCopyHints`); (26) done 2026-11-06: `Deque` iterates
+      through `DequeIter` (an O(1) copy of the ring, no list built) and
+      `PriorityQueue` sifts move a hole instead of swapping (`bench/queues`
+      −27% against HEAD); left: (22) V2 not run on macOS.
 - [ ] **Swift and Kotlin tabs not run (2026-10-31).** The code groups of
       chapters 2–10 and 12 (N7): the Kotlin tabs of every chapter and the
       Swift tabs of chapters 2, 3, 4, 5, 8 and 10 were written without a
