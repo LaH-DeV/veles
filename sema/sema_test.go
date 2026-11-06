@@ -1723,7 +1723,7 @@ fun main() {
   typed.addLast("x")
   loop (x in q) io.println("$x")
   io.println("$q ${q.first()} ${q.last()} ${q.get(-1)} ${q.len()} ${drain(&q)} ${q.isEmpty()} $typed")
-  val jobs = PriorityQueue<Job>.natural()
+  val jobs = Heap<Job>()
   jobs.push(Job(cost: 3))
   val words = PriorityQueue<string>(compare: (a, b) => b.compareTo(a))
   words.push("a")
@@ -3882,6 +3882,7 @@ func TestRemovedFactories(t *testing.T) {
 	expectError(t, "use http\nfun main() { val _ = http.router() }", "'http.router' was removed: construct it — 'http.Router(…)'")
 	expectError(t, "use recursion\nfun main() { val _ = recursion.Depth.of(3) }", "'Depth.of' was removed: write 'Depth(limit: n)'")
 	expectError(t, "fun main() { val _ = deque<i64>() }", "'deque' was removed: construct it — 'Deque(…)'")
+	expectError(t, "fun main() { val _ = PriorityQueue<i64>.natural() }", "'PriorityQueue.natural()' was removed: the elements' own order is 'Heap<i64>()', a heap that compares them directly (D239)")
 	expectClean(t, "use http\nuse json\nuse recursion\nfun main() { val _ = StringBuilder(); val _ = http.Router(); val _ = recursion.Depth(limit: 3); val _ = json.JsonEncoder(); val _ = Deque<i64>() }")
 }
 
@@ -3924,7 +3925,7 @@ fun main() { }`, "its 'init' takes 'seed', which the input cannot supply")
 	expectClean(t, prelude+`val hits = Atomic(value: 0)
 fun main() {
   val m = Mutex(value: 1)
-  val q = PriorityQueue<i64>.natural()
+  val q = Heap<i64>()
   val big = PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))
   val tl = TaskLocal(fallback: "-")
   q.push(2)
@@ -3932,7 +3933,7 @@ fun main() {
   io.println("${m.get()} ${hits.load()} ${q.pop()} ${big.pop()} ${tl.get()}")
 }`)
 	expectError(t, prelude+"fun main() { val _ = mutex(0) }", "'mutex' was removed: construct it — 'Mutex(value: …)'")
-	expectError(t, prelude+"fun main() { val _ = priorityQueue<i64>() }", "'priorityQueue' was removed: write 'PriorityQueue<T>.natural()'")
+	expectError(t, prelude+"fun main() { val _ = priorityQueue<i64>() }", "'priorityQueue' was removed: write 'Heap<T>()'")
 }
 
 // A generic struct's bounds hold wherever it is instantiated: in a type,

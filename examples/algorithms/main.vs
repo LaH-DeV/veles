@@ -100,7 +100,7 @@ fun main() {
   val heap = MinHeap()
   loop (x in [7, 3, 9, 1, 4]) heap.push(x)
   println("heap peek ${heap.peek()} pop ${heap.pop()} ${heap.pop()} len ${heap.len()}")
-  val words = PriorityQueue<string>.natural()
+  val words = Heap<string>()
   loop (w in ["pear", "apple", "fig"]) words.push(w)
   println("priority ${words.pop()} ${words.pop()} ${words.pop()} ${words.pop()}")
 

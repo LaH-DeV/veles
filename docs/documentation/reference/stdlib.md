@@ -397,7 +397,7 @@ Builds text in linear time where repeated `+` would copy the whole string
 each time. Every method is a `const fun`: a constant's function may build text
 with one (D113).
 
-### Deque and PriorityQueue
+### Deque, Heap and PriorityQueue
 
 ```veles
 // fragment
@@ -419,9 +419,20 @@ public struct Deque<T> {                           // Deque<i64>() starts an emp
   public fun copy(): Deque<T>        // a copy, O(1) (D164, D236)
 }
 
+public struct Heap<T: Comparable> {               // Heap<i64>() starts an empty one; the smallest first
+  public fun push(x: T)
+  public fun pop(): T?               // the smallest
+  public fun peek(): T?
+  public fun len(): i64
+  public fun isEmpty(): bool
+  public fun clear()
+  public fun reserve(n: i64)         // room for n elements in all (D105)
+  public fun toList(): List<T>       // heap order: only the first is the smallest
+  public fun copy(): Heap<T>         // a copy, O(1) (D164, D236)
+}
+
 public struct PriorityQueue<T> {
-  init(compare: sendable fun(T, T): Ordering)  // PriorityQueue<Job>(compare: (a, b) => ...)
-  public static fun natural(): PriorityQueue<T>   // T: Comparable; smallest first
+  init(compare: sendable fun(T, T): Ordering)  // PriorityQueue<Job>(compare: (a, b) => ...); the own order is Heap<T>
   public fun push(x: T)
   public fun pop(): T?               // the first element in the queue's order
   public fun peek(): T?
@@ -440,9 +451,13 @@ shared by its copies and is a `sendable fun`, so a queue is Sendable when
 its elements are. A loop over a `Deque` walks it as it was when the loop
 began. `Deque` is a ring buffer —
 O(1) at both ends, amortised O(1) growth — and serves as a FIFO queue
-(`addLast` / `removeFirst`), a stack, or a sliding window. `PriorityQueue`
-is a binary heap: `push` and `pop` are O(log n). For the largest first,
-`PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))`.
+(`addLast` / `removeFirst`), a stack, or a sliding window. `Heap<T>` (for
+`T: Comparable`) and `PriorityQueue<T>` are binary heaps: `push` and `pop`
+are O(log n), `peek` O(1). A `Heap` compares with `compareTo` directly, so
+the comparisons are inlined; a `PriorityQueue` calls its comparator for
+each one — use it for another order: the largest first,
+`PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))`, or by a field
+(D239).
 
 ### Result and Option
 

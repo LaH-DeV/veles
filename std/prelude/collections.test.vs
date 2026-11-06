@@ -40,6 +40,49 @@ test "deque at reaches a stored null" {
   expect(maybe.toList() == [9])
 }
 
+test "heap pops in the elements' own order, a copy apart (D239)" {
+  val h = Heap<i64>()
+  loop (x in [5, 1, 4, 1, 9, 2, 6]) h.push(x)
+  expect(h.peek() == 1)
+  val saved = h
+  val out: List<i64> = []
+  loop {
+    val x = h.pop() ?: break
+    out.push(x)
+  }
+  expect(out == [1, 1, 2, 4, 5, 6, 9])
+  expect(h.isEmpty())
+  expect(saved.len() == 7)
+  expect(saved.pop() == 1)
+  val words = Heap<string>()
+  words.reserve(3)
+  words.push("pear")
+  words.push("apple")
+  words.push("fig")
+  expect(words.pop() == "apple")
+  expect(words.toList().len() == 2)
+  words.clear()
+  expect(words.pop() == null)
+}
+
+test "deque iterates a snapshot across the ring's wrap" {
+  val d = Deque<i64>()
+  d.reserve(4)
+  d.addLast(1)
+  d.addLast(2)
+  d.removeFirst()
+  d.addLast(3)
+  d.addLast(4)
+  d.addLast(5)
+  val seen: List<i64> = []
+  loop (x in d) {
+    seen.push(x)
+    d.addFirst(0)
+  }
+  expect(seen == [2, 3, 4, 5])
+  expect(d.len() == 8)
+}
+
 error AdapterStop { }
 
 test "atOrPut creates a missing value once and keeps existing values" {

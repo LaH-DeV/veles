@@ -1,8 +1,9 @@
 // Classic data structures. The prelude already has the containers a
-// program reaches for first — List is a stack, Deque a queue, and
-// PriorityQueue a heap — so this file shows them in use and builds the two
-// that are worth writing out: a binary search tree over GC pointers and a
-// binary heap, the structure behind PriorityQueue.
+// program reaches for first — List is a stack, Deque a queue, and Heap
+// (or PriorityQueue, for an order of your own) a heap — so this file shows
+// them in use and builds the two that are worth writing out: a binary
+// search tree over GC pointers and a binary heap, the structure behind
+// Heap.
 
 /// Balanced brackets — the textbook stack use, with a List as the
 /// stack: `push`, `pop` and `last` are all it needs.
@@ -106,8 +107,9 @@ fun heightOf(node: (*TreeNode)?): i64 =>
   if (node == null) 0 else 1 + heightOf(node.left).max(heightOf(node.right))
 
 /// Binary min-heap in a list: the parent of `i` is `(i - 1) / 2`, its
-/// children are `2i + 1` and `2i + 2`. The prelude's `PriorityQueue` is
-/// this structure made generic and comparator-driven.
+/// children are `2i + 1` and `2i + 2`. The prelude's `Heap` is this
+/// structure made generic over a `Comparable` element; `PriorityQueue` takes
+/// a comparator instead.
 struct MinHeap {
   items: List<i64> = []
 

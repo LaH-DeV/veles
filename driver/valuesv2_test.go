@@ -71,7 +71,7 @@ fun main() suspends {
   io.println("at: ${jobs.get(0)?.n} ${jobs2.get(0)?.n}")
 
   // D234: priority queues, Sendable when the elements are
-  val pq = PriorityQueue<i64>.natural()
+  val pq = Heap<i64>()
   pq.push(3)
   pq.push(1)
   val pq2 = pq

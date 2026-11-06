@@ -477,7 +477,7 @@ func (f *fnCtx) launchCall(e *ast.CallExpr, want types.Type) Expr {
 		}
 		lc := &Call{exprBase: exprBase{ci.Type()}, Fn: f.c.launchTrampoline(ft), Args: append([]Expr{ci.Fn}, ci.Args...), Span: e.Pos}
 		if f.fn != nil {
-			f.c.launchedValues = append(f.c.launchedValues, launchedValue{maker: f.fn, value: ci.Fn, call: lc, name: srcText(e.Fun)})
+			f.c.launchedValues = append(f.c.launchedValues, launchedValue{maker: f.fn, value: ci.Fn, call: lc, name: srcText(e.Fun), outlives: held && how == heldReturn})
 		}
 		x = lc
 	}

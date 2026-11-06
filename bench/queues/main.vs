@@ -15,7 +15,7 @@ fun main() {
           loop (x in window) sum += x
         }
       }
-      val pq = PriorityQueue<i64>.natural()
+      val pq = Heap<i64>()
       loop (i in 0..<20000) pq.push(i * 104729 % 100003)
       var last: i64 = -1
       loop {

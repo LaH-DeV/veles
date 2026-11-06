@@ -3,7 +3,7 @@
 // node's own list with `ref` and pushes into it, and a `val` graph can still
 // grow that way, since `val` only stops rebinding.
 // The queues are the prelude's Deque; the priority queue in Dijkstra is
-// the prelude's PriorityQueue.
+// the prelude's Heap (Hop orders itself by distance).
 
 struct Graph {
   n:   i64
@@ -142,7 +142,7 @@ fun dijkstra(n: i64, edges: List<(i64, i64, i64)>, start: i64): List<i64?> {
   }
   val dist = List<i64?>.repeat(null, n)
   dist.set(start, 0)
-  val pending = PriorityQueue<Hop>.natural()
+  val pending = Heap<Hop>()
   pending.push(Hop(dist: 0, node: start))
   loop (val hop = pending.pop()) {
     val best = slot(dist, hop.node) ?: hop.dist

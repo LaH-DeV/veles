@@ -332,7 +332,7 @@ Two places copy where it is easy to miss:
 ### Copy or share
 
 Every collection — `List`, `Map`, `Set`, `Array`, `Deque`,
-`PriorityQueue` — is a value, so there are three ways to hand one on, and
+`Heap`, `PriorityQueue` — is a value, so there are three ways to hand one on, and
 the code says which:
 
 | You want | Write | What happens |
@@ -1009,12 +1009,14 @@ Output:
 
 A `List` is already a stack (`push`, `pop`, `last`). For a queue,
 the prelude has `Deque<T>`, a ring buffer with O(1) work at both ends; for
-"smallest first", `PriorityQueue<T>`, a binary heap. Both are values like
-`List` (D234): a `val` binding can grow them, a copy is O(1) and made at
-its first change, and a function that should change the caller's queue
-takes `*Deque<T>`. A priority queue's comparator is shared by its copies —
-a function cannot change — and is a `sendable fun`, so a queue crosses
-into a task when its elements can.
+"smallest first", `Heap<T>`, a binary heap over the elements' own order
+(`Comparable`), which compares them directly; and for an order of your
+own, `PriorityQueue<T>(compare:)`, the same heap calling your comparator
+(D239). All three are values like `List` (D234): a `val` binding can grow
+them, a copy is O(1) and made at its first change, and a function that
+should change the caller's queue takes `*Deque<T>`. A priority queue's
+comparator is shared by its copies — a function cannot change — and is a
+`sendable fun`, so a queue crosses into a task when its elements can.
 
 ```veles
 use io
@@ -1035,7 +1037,7 @@ fun main() {
   queue.addFirst("a")
   io.println("$queue ${queue.removeFirst()} ${queue.last()} ${queue.len()}")
 
-  val jobs = PriorityQueue<Job>.natural()
+  val jobs = Heap<Job>()               // Job's own order: by cost
   jobs.push(Job(name: "deploy", cost: 5))
   jobs.push(Job(name: "lint", cost: 1))
   jobs.push(Job(name: "test", cost: 3))
@@ -1102,7 +1104,8 @@ Output:
 | lookup by key, ordered | `Map<K, V>` |
 | membership tests, no duplicates | `Set<T>` |
 | a queue at both ends, a sliding window | `Deque<T>` |
-| the smallest (or largest) element next | `PriorityQueue<T>` |
+| the smallest element next, by its own order | `Heap<T>` |
+| the next element by an order of your own (the largest, by a field) | `PriorityQueue<T>(compare:)` |
 | a few values together for a moment (several results, an entry) | a tuple, labelled: `(min: i64, max: i64)` |
 
 Next: [Structs and methods](05-structs-and-methods.md).

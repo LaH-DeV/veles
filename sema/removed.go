@@ -99,7 +99,7 @@ var removedFactories = map[string]struct {
 	"atomic":          {"Atomic", "value", ""},
 	"taskLocal":       {"TaskLocal", "fallback", ""},
 	"priorityQueueBy": {"PriorityQueue", "compare", ""},
-	"priorityQueue":   {"PriorityQueue", "", "PriorityQueue<T>.natural()"},
+	"priorityQueue":   {"PriorityQueue", "", "Heap<T>()"},
 	"http.reasonOf":   {"http.Status", "", "http.Status(code: n).reason()"},
 }
 

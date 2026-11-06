@@ -209,6 +209,10 @@ func (f *fnCtx) staticCall(rt types.Type, callee *ast.MemberExpr, typeArgs []typ
 			} else {
 				f.errorf(callee.Name.Pos, "enum '%s' has no function '%s'; an enum has 'values()', 'fromValue(n)', 'parse(s)' and 'decode(from)' (D57)", en.Name, name)
 			}
+		} else if st, isStruct := rt.(*types.Struct); isStruct && st.Module == "std.prelude" && st.Name == "PriorityQueue" && name == "natural" {
+			// D239: the natural order is Heap<T>, which compares directly
+			heap := strings.Replace(rt.String(), "PriorityQueue", "Heap", 1) + "()"
+			f.c.errorFix(e.Pos, fixReplace("Replace with '"+heap+"'", e.Pos, heap), "'PriorityQueue.natural()' was removed: the elements' own order is '%s', a heap that compares them directly (D239)", heap)
 		} else if !f.removedFactory(typeHead(rt)+"."+name, e) {
 			f.errorf(callee.Name.Pos, "no static function '%s' on type '%s'%s", name, rt, f.staticHint(rt, name))
 		}

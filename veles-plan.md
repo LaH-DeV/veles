@@ -893,6 +893,28 @@ on Linux).
 
 ## Progress log
 
+### 2026-11-06 — Closing: D237 through held tasks, D239 `Heap`
+
+- D237: a function value started from a parameter in a task handed back
+  in a value (D111) — `fun starting(work): Running => Running(job: async
+  work())` — now refuses, at each call, a lambda whose capture the
+  caller changes while the task may run, through functions passing the
+  parameter on (fixpoint over calls); a function that waits for its own
+  task is fine. `checkLaunchedValues` rewritten around
+  `refuseChangedCaptures`; conformance `D237-task-captures.vs` (`held`).
+  A lambda in a field of a local struct built with it is followed too
+  (`async h.run()`, conformance `inField`). Left (§11): one taken out of
+  a collection, or out of a struct from elsewhere.
+- D239 (user, recommended of 3): `Heap<T: Comparable>` with direct
+  `compareTo`; `PriorityQueue<T>.natural()` removed with a fix that keeps
+  the type arguments (`Heap<i64>()`, check_static.go); `priorityQueue`'s
+  old fix text points at `Heap<T>()`. Migrated: examples/algorithms
+  (Dijkstra, the priority demo, comments), `bench/queues`, the driver
+  and sema tests, chapter 4, the stdlib reference, the cheat sheet. Tests:
+  std's `heap pops …` and `deque iterates a snapshot across the ring's
+  wrap`, `TestRemovedFactories`. `bench/queues` against HEAD: 120.6 →
+  61.5 ms (−49%), now 0.8× Go.
+
 ### 2026-11-06 — Quality pass: late checks, D237 finished, dead code, deque wrap
 
 - The receiver pass's three checks (D232 boxes, D233 lent callback

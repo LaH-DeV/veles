@@ -173,10 +173,12 @@ public struct DequeIter<T> {
 // ---------------------------------------------------------------------------
 // PriorityQueue
 
-/// A priority queue over a binary heap: `push` and `pop` are O(log n),
-/// `peek` O(1). Elements that compare equal come out in no particular order.
+/// A priority queue over a binary heap, in an order of your own: `push` and
+/// `pop` are O(log n), `peek` O(1). Elements that compare equal come out in
+/// no particular order. For the elements' own order use `Heap<T>`, which
+/// compares them directly (D239); this queue calls `compare` for each
+/// comparison.
 ///
-/// `PriorityQueue<i64>.natural()` pops the smallest first;
 /// `PriorityQueue<Job>(compare: (a, b) => a.due.compareTo(b.due))` orders
 /// by `compare`, which returns `Ordering.Less` when its first argument
 /// should come out first — for the largest first,
@@ -286,8 +288,106 @@ public struct PriorityQueue<T> {
   }
 }
 
-extend<T: Comparable> PriorityQueue<T> {
-  /// An empty queue over the elements' natural order: `pop()` yields the
-  /// smallest first.
-  public static fun natural(): PriorityQueue<T> => PriorityQueue<T>(compare: (a, b) => a.compareTo(b))
+// ---------------------------------------------------------------------------
+// Heap
+
+/// A binary heap over the elements' own order (`Comparable`): `pop()` gives
+/// the smallest first. `push` and `pop` are O(log n), `peek` O(1); elements
+/// that compare equal come out in no particular order. It compares with
+/// `compareTo` directly, so the comparisons are inlined — for any other
+/// order, `PriorityQueue<T>(compare:)` (D239). The largest first is a heap of
+/// a `Comparable` that orders the other way. `Heap<i64>()` makes an empty
+/// one; a value like `List` (D234).
+public struct Heap<T: Comparable> {
+  /// The smallest element is at index 0; the children of `i` are at
+  /// `2i + 1` and `2i + 2`.
+  private var items: List<T> = []
+
+  /// Number of elements.
+  public fun len(): i64 => this.items.len()
+
+  /// True when there are no elements.
+  public fun isEmpty(): bool => this.items.len() == 0
+
+  /// The smallest element, which `pop` would return, or `null` when empty.
+  public fun peek(): T? => this.items.first()
+
+  /// Adds `x`.
+  public fun push(x: T) {
+    this.items.push(x)
+    this.siftUp(this.items.len() - 1)
+  }
+
+  /// Removes and returns the smallest element, or `null` when empty.
+  public fun pop(): T? {
+    val top = this.items.first() ?: return null
+    val last = this.items.pop() ?: return null
+    if (this.items.len() > 0) {
+      this.items.set(0, last)
+      this.siftDown(0)
+    }
+    top
+  }
+
+  /// Removes every element.
+  public fun clear() {
+    this.items.clear()
+  }
+
+  /// Makes room for `n` elements in all, so pushing up to `n` does not grow
+  /// the storage (D105).
+  public fun reserve(n: i64) {
+    this.items.reserve(n)
+  }
+
+  /// The elements in heap order — the first is the smallest, the rest are
+  /// not sorted.
+  public fun toList(): List<T> => this.items
+
+  /// The element at heap position `i`; the sifts only ask for positions
+  /// below the heap's size.
+  fun item(i: i64): T => this.items.get(i) ?: panic("heap: a sift reads only positions below the size")
+
+  // The sifts move a hole, as PriorityQueue's do.
+
+  fun siftUp(from: i64) {
+    val x = this.item(from)
+    var i = from
+    loop (i > 0) {
+      val parent = (i - 1) / 2
+      val p = this.item(parent)
+      if (x.compareTo(p) >= 0) break
+      this.items.set(i, p)
+      i = parent
+    }
+    this.items.set(i, x)
+  }
+
+  fun siftDown(from: i64) {
+    val n = this.items.len()
+    val x = this.item(from)
+    var i = from
+    loop {
+      val left = 2 * i + 1
+      if (left >= n) break
+      var child = left
+      var c = this.item(left)
+      val right = left + 1
+      if (right < n) {
+        val r = this.item(right)
+        if (r.compareTo(c) < 0) {
+          child = right
+          c = r
+        }
+      }
+      if (c.compareTo(x) >= 0) break
+      this.items.set(i, c)
+      i = child
+    }
+    this.items.set(i, x)
+  }
+
+  implement Display {
+    fun toString(): string => "[${this.items.join(", ")}]"
+  }
 }

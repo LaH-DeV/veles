@@ -1528,6 +1528,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-11-03 | A lock's pointer escaping `withLock` (§11 D231 item 9) | **A pointer parameter of a function value is lent for the call — returning, storing, capturing it or passing it where it is kept is an error — language-wide, no annotation**, D233 (user: "lent callback param but I'd say we do not use annotation if we can?", then the language-wide rule, recommended of 3, after measuring 128 such parameters in the tree with no escape). Rejected: `@lent` on the std methods only, refusing a pointer in the result type, a `Sendable` bound. |
 | 2026-11-06 | `Deque`/`PriorityQueue` still shared (§11 D231 item 18) | **Values like `List`: state in the struct, copy on first change; a queue's comparator shared; `Deque` loops walk a snapshot**, D234 (user: "they should be like values (but so much they make sense)", recommended of 2). Rejected: keeping them shared, documented. |
 | 2026-11-06 | Copying into a lambda (§11 D231 item 19) | **A capture list `[a, b = expr]` before the parameters copies the listed captures when the lambda is made; they are fixed in the body; the rest is shared as before**, D235 (user: "a mechanism for copying into lambda (so we COULD make a decision about what copy what share)", recommended of 3). Rejected: a `copy` prefix copying all, binding before the lambda only. |
+| 2026-11-06 | `PriorityQueue.natural()` calling its comparator indirectly (bench/queues) | **`Heap<T: Comparable>` compares directly; `PriorityQueue<T>(compare:)` keeps a comparator; `natural()` removed with a fix to `Heap<T>()`**, D239 (user, recommended of 3). Rejected: `PriorityQueue<T: Comparable>` only with wrapper orders, leaving it. |
 | 2026-11-06 | `apply` on a `val` (Q81, found in the consistency pass) | **`apply` changes what a method that changes the value could change — a `val` included; a module-level `val` and a `val` string stay refused with the fix `edit`**, D238 (user: "allow it if that is consistent with our idea, docs and rest of the code. this must be understandable"). Rejected: keeping D207's refusal. |
 | 2026-11-06 | A task racing with its maker over a captured collection (found probing D231) | **`async { }` copies the collections it reads when the task starts; a function value started with `async` may not capture a collection the maker changes while the task may run (error, fix: a capture list)**, D237 (user, recommended of 3). Rejected: refusing blocks too, snapshots in every sendable closure. |
 | 2026-11-06 | Changing a capture-list copy (the user, on the "fixed" error) | **Each call starts from its own copy of the snapshot, which the body may change in place for that call; rebinding stays an error; the "fixed" check removed**, D235 addendum (user: "what if we wanted to copy something and change it on the copy … we don't want that to error no?", recommended of 3). Rejected: one copy kept by the lambda across calls (not sendable, shared by `val g = f`); keeping the error. |
@@ -1544,10 +1545,12 @@ Every new public std API (http cookies/forms/client, `std/log`,
       `D237-task-captures.vs`, the driver test's `tasks:` line, chapter 12.
       Since 2026-11-06 also: a block reading `this` reads a copy of the
       receiver; the error is reported beside the program's other errors.
-      Left: a function value made in another function and started here is
-      not followed — harmless while tasks cannot outlive their block (the
-      maker waits in the call), except a value handed back holding a
-      running task (D111). The original report: `val xs = [1, 2, 3]; with t = async {
+      And a function value started from a parameter in a task handed back
+      to the caller (D111) is followed to each call site, through
+      functions passing it on (conformance `held`). A lambda in a field of a
+      local struct built with it is followed too. Left: one taken out of a
+      collection, or out of a struct that came from elsewhere. The
+      original report: `val xs = [1, 2, 3]; with t = async {
       … loop (x in xs) … }; xs.push(100)` — the block captures the
       variable `xs` (D37), and since D231 a `val` list changes in place:
       the maker rewrites the variable while the task reads it (the task
@@ -1578,8 +1581,9 @@ Every new public std API (http cookies/forms/client, `std/log`,
       why the second run is slower (thermal, the collector's arena reuse in
       the OS, Defender scanning fresh binaries?) — a single-tree run is
       still affected.
-- [ ] **`PriorityQueue.natural()` calls its comparator through a function
-      value (2026-11-06).** `bench/queues`: the queue half is ~118 ms where
+- [x] **`PriorityQueue.natural()` calls its comparator through a function
+      value (2026-11-06; closed by D239: `Heap<T>`, `bench/queues` 120.6 →
+      61.5 ms).** `bench/queues`: the queue half is ~118 ms where
       Go's hand-written heap with direct compares takes ~35 ms; each
       comparison is an indirect call to `(a, b) => a.compareTo(b)`. A
       `Comparable`-bounded queue (or devirtualising a comparator that is a

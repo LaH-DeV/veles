@@ -234,7 +234,7 @@ sorted.lowerBound(x); sorted.upperBound(x); sorted.partitionPoint(e => e < x)   
 xs.push(x); xs.pop(); xs.set(i, x); xs.insert(i, x); xs.removeAt(i); xs.addAll(ys); xs.sort(); xs.clear()   // change xs where it lives; fill(&xs) with fill(into: *List<T>) changes the caller's
 xs.swap(i, j); xs.fill(x); xs.incrementAt(i) /* List<i64> */; xs.updateAt(i, f) /* List<T>; transforms and returns the new value */; List.repeat(false, n) /* List<bool>: a generic static infers its type, D137 */; List<List<i64>>.make(n, _ => [])
 val q = Deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.get(-1); q.at(0)?.n += 1; q.len()
-val pq = PriorityQueue<i64>.natural(); pq.push(x); pq.pop(); pq.peek(); PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))   // Deque and PriorityQueue are values like List (D234)
+val h = Heap<i64>(); h.push(x); h.pop(); h.peek(); PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))   // Heap: own order, direct compares; PriorityQueue: your order (D239)   // Deque and PriorityQueue are values like List (D234)
 val before = xs.copy(); m.copy(); s.copy(); a.copy(); q.copy()   // a copy said on purpose, O(1); the same as `val before = xs` (D236); share with &xs
 m.get(k) ?: d; m.get(k) ?: panic("why"); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); m.set(k, v); m.remove(k)
 m.at(k)?.bump(); m.at(k)?.n += 1; groups.atOrPut(k, () => []).push(x)   // a pointer to the stored value; get returns a copy

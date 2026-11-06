@@ -55,9 +55,10 @@ bench/preempt -- all` prints every case F21 measured. `backedge` is four
 - `queues` (2026-11-06, D234): a `Deque` as a 64-wide sliding window,
   walked with `loop` every 100 steps, and a `PriorityQueue` of 20k
   elements filled and drained, 50 rounds; Go's reference writes the same
-  ring (doubling from 4 slots) and binary heap out by hand. The queue is
-  most of the time: `PriorityQueue<T>.natural()` calls its comparator
-  through a function value on every comparison (checklist §11).
+  ring (doubling from 4 slots) and binary heap out by hand. Since D239
+  the heap is a `Heap<i64>`, which compares directly (it was
+  `PriorityQueue<i64>.natural()`, a call through a function value per
+  comparison: 120.6 → 61.5 ms).
 - `random`: five million local `Rng.range` draws with changing small signed
   bounds. Go uses the same splitmix64 seeding and xoshiro256\*\* transition,
   not `math/rand`; matching checksums pin the sequence and range mapping.

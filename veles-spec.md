@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.139** — decisions D1–D238. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.140** — decisions D1–D239. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -9747,8 +9747,14 @@ in place, so the maker could rewrite the variable while the task read it
   collection the maker changes while the task may run — after the
   `async`, or in a loop around it. The error names the capture and the
   line, with the fix of a capture list (D235) that copies it.
-- Not covered: a function value made in another function (a parameter)
-  and started here; its maker is out of sight (checklist §11).
+- A function value that is a **parameter** runs in a task that ends
+  before the function returns (its block waits), so the caller cannot run
+  beside it — unless the task is handed back in a value (D111). Then each
+  call that passes a lambda is checked with the call as the launch,
+  through functions that pass the parameter on; and a lambda in a field
+  of a local struct built with it (`async h.run()`). Not followed: one
+  taken out of a collection, or out of a struct from elsewhere (checklist
+  §11).
 - Rejected: refusing the block too (a copy is the only race-free meaning
   of a block made at its launch); every sendable closure holding copies
   (a local `() => "$routes"` would stop seeing later pushes, against
@@ -9783,6 +9789,32 @@ val slug = label.edit { trim(); toLower() }   // the changed copy
   which a `val` may not take.
 - Rejected: keeping the refusal (two rules for the same change, the block
   the only one refused).
+
+### D239 — `Heap<T: Comparable>` compares directly; `PriorityQueue` keeps a comparator (v0.140; amends the v0.25 amendment of D25, D73)
+
+2026-11-06, the user (recommended of 3), on `bench/queues`: a queue built
+by `PriorityQueue<T>.natural()` called `(a, b) => a.compareTo(b)` through a
+function value on every comparison — about 118 ms where Go's heap took 35.
+
+```veles
+val pending = Heap<Hop>()                      // the elements' own order, compared directly
+pending.push(hop); pending.pop(); pending.peek()
+val biggest = PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))   // an order of your own
+PriorityQueue<i64>.natural()   // error: 'PriorityQueue.natural()' was removed: the elements' own order is 'Heap<i64>()'
+```
+
+- **`Heap<T: Comparable>`**: a binary heap, the smallest first, with
+  `push`, `pop`, `peek`, `len`, `isEmpty`, `clear`, `reserve`, `toList`,
+  `copy` (D164) and `Display`; a value like `List` (D234). It calls
+  `compareTo` directly, so the comparisons are inlined.
+- **`PriorityQueue<T>(compare:)`** stays for any other order (the largest
+  first, by a field).
+- **`PriorityQueue<T>.natural()` is removed**, an error with the fix to
+  `Heap<T>()`.
+- Measured: `bench/queues` 120.6 → 61.5 ms (Go 72.7).
+- Rejected: `PriorityQueue<T: Comparable>` only, with other orders through
+  wrapper types (Rust's shape; an ad-hoc order needs a struct); leaving
+  the indirect call.
 
 ### I1 — generators: investigated, not decided
 
