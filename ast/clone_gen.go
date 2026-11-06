@@ -1731,6 +1731,28 @@ func (c *cloner) fixLambdaExpr(n *LambdaExpr) {
 	}
 	n.Ret = c.cloneType(n.Ret)
 	n.Body = c.cloneExpr(n.Body)
+	if n.Captures != nil {
+		s1 := make([]Capture, len(n.Captures))
+		copy(s1, n.Captures)
+		for i1 := range s1 {
+			c.fixCapture(&s1[i1])
+		}
+		n.Captures = s1
+	}
+}
+
+func (c *cloner) cloneCapture(x *Capture) *Capture {
+	if x == nil {
+		return nil
+	}
+	n := new(Capture)
+	*n = *x
+	c.fixCapture(n)
+	return n
+}
+
+func (c *cloner) fixCapture(n *Capture) {
+	n.Value = c.cloneExpr(n.Value)
 }
 
 func (c *cloner) cloneTupleExpr(x *TupleExpr) *TupleExpr {

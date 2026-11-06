@@ -2220,7 +2220,26 @@ func (p *printer) lambda(e *ast.LambdaExpr) {
 		p.block(e.Body.(*ast.BlockExpr).Block)
 		return
 	}
-	single := len(e.Params) == 1 && e.Params[0].Type == nil && e.Ret == nil && p.src[e.Pos.Start] != '('
+	head := e.Pos.Start
+	if len(e.Captures) > 0 {
+		p.w("[")
+		for i, c := range e.Captures {
+			if i > 0 {
+				p.w(", ")
+			}
+			p.w(c.Name.Name)
+			if c.Value != nil {
+				p.w(" = ")
+				p.expr(c.Value, 0)
+			}
+		}
+		p.w("] ")
+		head = e.CapturesPos.End
+		for head < len(p.src) && (p.src[head] == ' ' || p.src[head] == '\t') {
+			head++
+		}
+	}
+	single := len(e.Params) == 1 && e.Params[0].Type == nil && e.Ret == nil && p.src[head] != '('
 	if single {
 		p.w(e.Params[0].Name.Name)
 	} else {

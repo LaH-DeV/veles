@@ -190,6 +190,10 @@ type Var struct {
 	AddrLent   bool
 	addrForced bool
 
+	// CapCopy: a capture-list entry — the snapshot made with the lambda, or
+	// a call's own copy of it (D235)
+	CapCopy bool
+
 	InitText string // a local binding's initializer as written, for the hover
 	ErrPoly  bool   // a parameter declared `fun(..) throws E` with E a type parameter of the enclosing function
 	CapIndex int

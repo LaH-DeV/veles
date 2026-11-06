@@ -1252,7 +1252,12 @@ func (f *fnCtx) checkLValue(e ast.Expr, mutate bool) (Expr, *Var) {
 		case SymLocal:
 			v := f.localVar(sym.Var)
 			if mutate && !v.Mutable {
-				f.errorf(e.Pos, "cannot assign to '%s': it is a 'val'; declare it with 'var' (D11)", e.Name)
+				if sym.Var.CapCopy {
+					markUsed(v) // the capture list is in use, wrongly
+					f.errorf(e.Pos, "cannot assign to '%s': a capture-list copy is a 'val' of each call, which the body may change in place but not rebind; copy it into a 'var' to rebind it (D235)", e.Name)
+				} else {
+					f.errorf(e.Pos, "cannot assign to '%s': it is a 'val'; declare it with 'var' (D11)", e.Name)
+				}
 			}
 			if !mutate {
 				// a field write or address-of reads the binding; a plain

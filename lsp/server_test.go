@@ -1075,6 +1075,45 @@ func TestHoverLocals(t *testing.T) {
 	}
 }
 
+// A name a capture list copies says so in its hover, in the list and in
+// the body (D235).
+func TestHoverCaptureListCopies(t *testing.T) {
+	src := "use io\n\nfun main() {\n  val routes: List<string> = [\"/a\"]\n  val boot = [routes, n = routes.len()] () => \"$routes $n\"\n  io.println(boot())\n}\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.vs")
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uri := pathToURI(path)
+	c, stop := newClient(t)
+	defer stop()
+	c.call("initialize", map[string]any{})
+	c.notify("initialized", map[string]any{})
+	c.notify("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "veles", "version": 1, "text": src}})
+	hover := func(line, ch int) string {
+		res, _ := c.call("textDocument/hover", map[string]any{"textDocument": map[string]any{"uri": uri}, "position": map[string]any{"line": line, "character": ch}})
+		var h struct {
+			Contents struct {
+				Value string `json:"value"`
+			} `json:"contents"`
+		}
+		json.Unmarshal(res, &h)
+		return h.Contents.Value
+	}
+	for _, tc := range []struct {
+		line, ch int
+		want     string
+	}{
+		{4, 48, "val routes: List<string>  (copied when the lambda was made; each call starts from that copy, D235)"},
+		{4, 22, "val n: i64 = routes.len()  (copied when the lambda was made; each call starts from that copy, D235)"},
+		{4, 56, "val n: i64 = routes.len()  (copied when the lambda was made; each call starts from that copy, D235)"},
+	} {
+		if h := hover(tc.line, tc.ch); !strings.Contains(h, tc.want) {
+			t.Errorf("hover at %d:%d: %q\nwant %q", tc.line, tc.ch, h, tc.want)
+		}
+	}
+}
+
 // `init` is shown in the struct's hover and never offered by completion.
 func TestInitBlockInTooling(t *testing.T) {
 	src := "use io\n\nstruct P {\n  a: i64\n  b: string\n  init {\n    this.b = \"$a\"\n  }\n  fun f(): i64 => this.a\n}\n\nfun main() {\n  val p = P(a: 1)\n  //X\n  io.println(\"${p.b} ${p.f()}\")\n}\n"

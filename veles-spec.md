@@ -470,7 +470,7 @@ _Amended (v0.37, D62)._ `atOrPanic`, `getOrPanic` and `refOrPanic` are removed. 
 
 A bare `[1, 2, 3]` with no expected type is a `List`. A growable collection therefore needs an annotation — `var xs: MutableList<i32> = []`, not `var xs = []` — or the `mut` prefix on the literal: `var xs = mut [1, 2, 3]` is a `MutableList<i32>` and `var m = mut ["k": 1]` a `MutableMap<string, i32>`. The empty forms `mut []` and `mut [:]` still need an annotation for the element types.
 
-_Amended (v0.25) — Deque and PriorityQueue._ The prelude adds `Deque<T>` (a ring buffer: O(1) at both ends, the FIFO queue and the sliding window) and `PriorityQueue<T>` (a binary heap over `Comparable` or a comparator), constructed by `deque<T>()`, `priorityQueue<T>()` and `priorityQueueBy(compare)`. Both are plain Veles (`std/prelude/collections.vs`) and have the reference semantics of this section, obtained by holding their state behind a GC pointer (D31): a `val` binding can grow them and a callee shares the caller's. `MutableList` serves as the stack. `MutableList<T>.fill(n, x)` and `.make(n, make)` build a list of known size; `swap(i, j)` exchanges two elements.
+_Amended (v0.25) — Deque and PriorityQueue._ The prelude adds `Deque<T>` (a ring buffer: O(1) at both ends, the FIFO queue and the sliding window) and `PriorityQueue<T>` (a binary heap over `Comparable` or a comparator), constructed by `deque<T>()`, `priorityQueue<T>()` and `priorityQueueBy(compare)`. Both are plain Veles (`std/prelude/collections.vs`) ~~and have the reference semantics of this section, obtained by holding their state behind a GC pointer (D31): a `val` binding can grow them and a callee shares the caller's~~ _(v0.137, D234: they are values like `List`)_. `MutableList` serves as the stack. `MutableList<T>.fill(n, x)` and `.make(n, make)` build a list of known size; `swap(i, j)` exchanges two elements.
 
 _Amended (v0.26) — collections compare by content._ `==` on `List`, `Map` and `Set` (and their mutable views, which compare with each other) is element-wise: two lists are equal when they have the same elements in the same order, two maps when they hold the same keys with equal values, two sets when they hold the same elements — insertion order is not part of a map or set. It is defined whenever the elements are (structurally or through `Equatable`), so a struct with a `List` field keeps its structural equality. Hashing follows: an immutable `List`, `Map` or `Set` of hashable elements can be a map key or set element and is found by content; the mutable views cannot be keys, since they can change after they are stored. Handles are still references (assigning shares, `==` compares) — the split between identity and equality that Kotlin and Python make.
 
@@ -9318,7 +9318,9 @@ fun main() {
 ```
 
 **The rule.** `List<T>`, `Map<K, V>` and `Set<T>` are values, as a struct is
-(D7): assignment, passing, returning, storing, capturing and sending copy.
+(D7): assignment, passing, returning, storing~~, capturing~~ and sending copy.
+_(v0.137: a lambda shares what it captures, D37; D235's capture list
+copies.)_
 `MutableList`, `MutableMap`, `MutableSet` and the `mut [...]` literal are
 removed (an error with a fix to `List`/`Map`/`Set` and the plain literal);
 `toMutable()` and `freeze()` are removed with fixes; `toList()`/`toMap()`/
@@ -9630,9 +9632,11 @@ routes.push("/b")
   copies each listed name when the lambda is made — a name copies that
   variable, `name = expr` binds a new name to the value of `expr`. Copying
   a collection is O(1) (D231).
-- **A copied name is fixed:** the body cannot reassign it or change it
+- ~~**A copied name is fixed:** the body cannot reassign it or change it
   (an error naming the capture list) — it is a snapshot, not state kept
-  between calls; per-call state is a shared `var` or a pointer.
+  between calls; per-call state is a shared `var` or a pointer.~~
+  _(Addendum below: each call starts from its own copy, which it may
+  change.)_
 - To share something explicitly beside copies, capture a pointer: `[n]
   () => p.add(n)` with `val p = &total`.
 - A lambda whose captures are all copies of Sendable values is sendable
@@ -9650,6 +9654,40 @@ routes.push("/b")
 - Rejected: a `copy` prefix that copies every capture (all or nothing,
   and `copy(x) => …` reads as a `when` arm); leaving it to a binding made
   before the lambda (works, but is invisible at the lambda).
+
+_Addendum (2026-11-06, v0.137) — each call starts from its own copy;
+supersedes "a copied name is fixed"._ The user, shown the error on
+`[c] () => { c.bump(); … }`: "what if we wanted to copy something and
+change it on the copy (and use the copy down in the lambda?) … we don't
+want that to error no? but I get it that it may be confusing... need
+documentation". Chose, of three (recommended):
+
+```veles
+val c = Counter(n: 0)
+val bumps = [c] () => { c.bump(); io.println("${c.n}") }
+bumps()            // 1
+bumps()            // 1: the next call starts from the snapshot again
+io.println(c.n)    // 0: the original is never touched
+```
+
+- The list takes one snapshot when the lambda is made; each call begins
+  with `val name = <the snapshot>`, its own copy, which the body may change
+  in place (`push`, a method that changes it, a pointer into it, handing
+  `&name` on) as a parameter may (D231 choice 2). The change lasts for the
+  call. Like a parameter it is a `val`: rebinding it is an error, with
+  the fix to copy it into a `var`.
+- The cost is a copy per call: O(1), the elements copied only on a call's
+  first change (D231). A lambda whose captures are all snapshots of
+  Sendable values stays sendable — tasks calling it at once each change
+  their own copy.
+- State carried from one call to the next is a captured `var` (shared,
+  D37), as before.
+- Rejected: one copy kept by the lambda across calls (C++ `mutable`,
+  Rust `FnMut`: private state, but such a lambda could not be sendable and
+  `val g = f` would share it — function values are references); keeping
+  the error (the "fixed" check also could not see every pointer into a
+  copy, checklist §11 D231 item 20, and ran only on otherwise error-free
+  programs, item 21).
 
 ### D236 — `copy()` on lists, maps, sets, deques, queues and arrays (v0.137; reverses D231 addendum 1's rejection of `copy()`)
 

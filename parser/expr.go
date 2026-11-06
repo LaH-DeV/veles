@@ -464,6 +464,9 @@ func (p *Parser) parsePrimary() ast.Expr {
 		}
 		return p.parseParenOrTuple()
 	case lexer.LBracket:
+		if p.noLambda == 0 && p.captureListAhead() {
+			return p.parseLambda() // `[a, b = e] (x) => …` (D235)
+		}
 		return p.parseCollectionLit()
 	case lexer.LBrace:
 		// `x.apply({ port = 8080 })`: a block where a `fun on T()` goes, its
@@ -558,9 +561,37 @@ func (p *Parser) stringLit(t lexer.Token) ast.Expr {
 
 // looksLikeLambda scans from `(` to its matching `)` and reports whether a
 // `=>` (or `: Type =>`) follows — the TypeScript disambiguation (D37).
-func (p *Parser) looksLikeLambda() bool {
+func (p *Parser) looksLikeLambda() bool { return p.looksLikeLambdaAt(0) }
+
+// captureListAhead: the `[` here closes on a `]` followed by a lambda's
+// head — `(params) =>` or `name =>` — so it is a capture list (D235). A list
+// literal is never followed by either: calling a list is not a program.
+func (p *Parser) captureListAhead() bool {
 	depth := 0
-	i := 0
+	for i := 0; ; i++ {
+		switch p.peek(i).Kind {
+		case lexer.LParen, lexer.LBracket, lexer.LBrace:
+			depth++
+		case lexer.RParen, lexer.RBracket, lexer.RBrace:
+			depth--
+			if depth == 0 {
+				switch p.peek(i + 1).Kind {
+				case lexer.Ident, lexer.Under:
+					return p.peek(i+2).Kind == lexer.FatArrow
+				case lexer.LParen:
+					return p.looksLikeLambdaAt(i + 1)
+				}
+				return false
+			}
+		case lexer.EOF:
+			return false
+		}
+	}
+}
+
+// looksLikeLambdaAt is looksLikeLambda for the `(` at peek(i).
+func (p *Parser) looksLikeLambdaAt(i int) bool {
+	depth := 0
 	for {
 		t := p.peek(i)
 		switch t.Kind {
@@ -639,6 +670,9 @@ func (p *Parser) returnTypeThenArrow(i int) bool {
 func (p *Parser) parseLambda() ast.Expr {
 	start := p.span()
 	l := &ast.LambdaExpr{}
+	if p.at(lexer.LBracket) {
+		p.parseCaptures(l)
+	}
 	if p.at(lexer.Ident, lexer.Under) {
 		t := p.next()
 		l.Params = []ast.Param{{Name: p.paramName(t), Pos: t.Span}}
@@ -684,6 +718,33 @@ func (p *Parser) parseLambda() ast.Expr {
 	l.Body = p.parseArmBody()
 	l.Pos = p.spanFrom(start)
 	return l
+}
+
+/// parseCaptures parses a lambda's capture list, `[a, b = expr]` (D235).
+func (p *Parser) parseCaptures(l *ast.LambdaExpr) {
+	start := p.span()
+	p.next() // [
+	for !p.at(lexer.RBracket, lexer.EOF) {
+		cs := p.span()
+		name, ok := p.expectIdent()
+		if !ok {
+			break
+		}
+		c := ast.Capture{Name: name}
+		if p.accept(lexer.Assign) {
+			c.Value = p.parseExpr()
+		}
+		c.Pos = p.spanFrom(cs)
+		l.Captures = append(l.Captures, c)
+		if !p.accept(lexer.Comma) {
+			break
+		}
+	}
+	p.expect(lexer.RBracket)
+	l.CapturesPos = p.spanFrom(start)
+	if len(l.Captures) == 0 {
+		p.errorf(l.CapturesPos, "an empty capture list copies nothing; remove '[]' (D235)")
+	}
 }
 
 // parseArmBody parses the right side of `=>` (a lambda, a `when` or `race`

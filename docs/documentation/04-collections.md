@@ -327,6 +327,40 @@ Two places copy where it is easy to miss:
   inner list; `at` and `loop (&x in xs)` reach the element itself (see
   [Updating elements in place](#updating-elements-in-place)).
 
+### Copy or share
+
+Every collection — `List`, `Map`, `Set`, `Array`, `Deque`,
+`PriorityQueue` — is a value, so there are three ways to hand one on, and
+the code says which:
+
+| You want | Write | What happens |
+|---|---|---|
+| a copy | `val b = a`, or `a.copy()` to say so | O(1) now; the first change of either copies (D231, D236) |
+| the same collection, changed by someone else | `&a`, a `*List<T>` parameter or field | one collection; changes are seen through the pointer (D10) |
+| the same collection, across tasks | `Mutex(value: a)`, `withLock` | one collection behind a lock (D35) |
+
+`copy()` is the same as binding — it exists so a copy made on purpose reads
+as one, under the name a struct's copy has (D164). A lambda shares what
+it captures; a capture list, `[a] () => …`, copies instead (see
+[Closures](10-closures-and-iterators.md#copying-into-a-lambda)).
+
+```veles
+use io
+
+fun main() {
+  val draft: List<string> = ["intro"]
+  val published = draft.copy()       // a copy, said so
+  val editing = &draft               // the same list
+  editing.push("body")
+  io.println("$draft $published")
+}
+```
+
+Output:
+```text
+[intro, body] [intro]
+```
+
 ### When the index is known to be in range
 
 The compiler tracks what your code has already checked, as it does for
@@ -973,9 +1007,12 @@ Output:
 
 A `List` is already a stack (`push`, `pop`, `last`). For a queue,
 the prelude has `Deque<T>`, a ring buffer with O(1) work at both ends; for
-"smallest first", `PriorityQueue<T>`, a binary heap. Both are reference
-types like `List`: a `val` binding can grow them, and a function
-that receives one shares it with the caller.
+"smallest first", `PriorityQueue<T>`, a binary heap. Both are values like
+`List` (D234): a `val` binding can grow them, a copy is O(1) and made at
+its first change, and a function that should change the caller's queue
+takes `*Deque<T>`. A priority queue's comparator is shared by its copies —
+a function cannot change — and is a `sendable fun`, so a queue crosses
+into a task when its elements can.
 
 ```veles
 use io
@@ -1062,7 +1099,7 @@ Output:
 | a function that fills the caller's list | a `*List<T>` parameter, `&xs` at the call |
 | lookup by key, ordered | `Map<K, V>` |
 | membership tests, no duplicates | `Set<T>` |
-| a queue, a sliding window, a stack shared by reference | `Deque<T>` |
+| a queue at both ends, a sliding window | `Deque<T>` |
 | the smallest (or largest) element next | `PriorityQueue<T>` |
 | a few values together for a moment (several results, an entry) | a tuple, labelled: `(min: i64, max: i64)` |
 

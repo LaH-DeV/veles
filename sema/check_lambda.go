@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/LaH-DeV/veles/ast"
+	"github.com/LaH-DeV/veles/source"
 	"github.com/LaH-DeV/veles/types"
 )
 
@@ -29,7 +30,10 @@ func (f *fnCtx) localVar(v *Var) *Var {
 	}
 	outer := f.parent.localVar(v)
 	outer.heapPromote()
-	inner := f.newVar(outer.Name, outer.Type, outer.Mutable, outer.Span)
+	// no span while it is made: the index would record a bare entry at the
+	// outer declaration, which then hovered without its initializer
+	inner := f.newVar(outer.Name, outer.Type, outer.Mutable, source.Span{})
+	inner.Span = outer.Span
 	inner.Captured = true
 	inner.ErrPoly = outer.ErrPoly
 	inner.CapIndex = len(f.fn.CapVars)
@@ -120,6 +124,14 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	if expected != nil && !tupleAdapt && len(expected.Params) != len(e.Params) {
 		f.errorf(e.Pos, "lambda takes %d %s but a function of %d is expected here", len(e.Params), plural(len(e.Params), "parameter"), len(expected.Params))
 		return bad()
+	}
+
+	// D235: the capture list is checked in the maker, before the body
+	var capDecls []Stmt
+	var capSnaps []*Var
+	var capSpans []source.Span
+	if len(e.Captures) > 0 {
+		capDecls, capSnaps, capSpans = f.captureSnapshots(e)
 	}
 
 	f.c.nextLambda++
@@ -235,6 +247,15 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 		l.resolveBlockMembers(e, onPtr)
 	}
 
+	// D235: each call's own copies of the capture list's snapshots, made
+	// before anything else the body runs
+	var capCopies []*Var
+	if len(capSnaps) > 0 {
+		var capInit []Stmt
+		capCopies, capInit = l.callCopies(capSnaps, capSpans)
+		l.paramInit = append(capInit, l.paramInit...)
+	}
+
 	// return type and effects
 	if e.Ret != nil {
 		l.retType = f.resolve(e.Ret)
@@ -342,8 +363,11 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 			ct = ct.(*types.Pointer).Elem
 			isVar = false
 		}
-		changed := changesCaptured(fn, v)
-		if isVar || !sendable(ct) || hasVarFields(ct) || changed {
+		// a capture-list snapshot is the lambda's alone and never changed —
+		// each call changes its own copy of it (D235): its var fields are
+		// nobody else's to see change
+		changed := !v.CapCopy && changesCaptured(fn, v)
+		if isVar || !sendable(ct) || (!v.CapCopy && hasVarFields(ct)) || changed {
 			fn.Sig.Sendable = false
 			if expected != nil && expected.Sendable {
 				why := "a 'var'"
@@ -366,7 +390,11 @@ func (f *fnCtx) lambdaExpr(e *ast.LambdaExpr, want types.Type) Expr {
 	}
 	fn.checked = true
 	f.c.funcs = append(f.c.funcs, fn)
-	return f.c.noteAlloc(&Closure{exprBase{fn.Sig}, fn, l.captureList}, e.Pos)
+	clo := f.c.noteAlloc(&Closure{exprBase{fn.Sig}, fn, l.captureList}, e.Pos)
+	if len(e.Captures) > 0 {
+		return f.withSnapshots(clo, capDecls, capCopies, capSpans)
+	}
+	return clo
 }
 
 // wantOn shows a receiver function type with its receiver put back.

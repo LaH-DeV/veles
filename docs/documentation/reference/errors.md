@@ -746,6 +746,19 @@ that is needed, `xs => xs.len()`. A named function that keeps its pointer
 parameter is refused as a function value with the same reason; call it
 from a lambda instead.
 
+#### `cannot assign to 'k': a capture-list copy is a 'val' of each call, which the body may change in place but not rebind`
+
+A name in a lambda's capture list, `[k] () => …`, is copied when the
+lambda is made, and each call starts from its own copy of it (D235). The
+body may change that copy in place — `push`, a method that changes it, a
+pointer into it — and the change lasts for the call; it is a `val`, so it
+cannot be rebound: copy it into a `var` of the body (`var mine = k`) to
+rebind it. To change the original, or to keep state from one call to the
+next, capture it without the capture list (it is then shared, D37). The
+list itself must name variables in scope, each once (`'xs' is listed
+twice`); a value that is not a variable is copied as `name = expr`. A
+listed name the body never reads is a warning.
+
 ### calls
 
 **The arguments do not fit the function.** `'at' takes 1 argument:

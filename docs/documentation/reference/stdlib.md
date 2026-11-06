@@ -415,10 +415,11 @@ public struct Deque<T> {                           // Deque<i64>() starts an emp
   public fun reserve(n: i64)         // room for n elements in all (D105)
   public fun clear()
   public fun toList(): List<T>       // front to back; also Iterable and Display
+  public fun copy(): Deque<T>        // a copy, O(1) (D164, D236)
 }
 
 public struct PriorityQueue<T> {
-  init(compare: fun(T, T): Ordering)  // PriorityQueue<Job>(compare: (a, b) => ...)
+  init(compare: sendable fun(T, T): Ordering)  // PriorityQueue<Job>(compare: (a, b) => ...)
   public static fun natural(): PriorityQueue<T>   // T: Comparable; smallest first
   public fun push(x: T)
   public fun pop(): T?               // the first element in the queue's order
@@ -427,11 +428,16 @@ public struct PriorityQueue<T> {
   public fun isEmpty(): bool
   public fun clear()
   public fun toList(): List<T>       // heap order: only the first is the smallest
+  public fun copy(): PriorityQueue<T>  // a copy, O(1) (D236)
 }
 ```
 
-Both are reference types like `List` (D25): a `val` binding can
-grow them and a callee shares the caller's. `Deque` is a ring buffer —
+Both are values like `List` (D234): a `val` binding can grow them, a copy
+is O(1) and made at its first change, and a callee changes the caller's
+through a pointer (`q: *Deque<T>`, `&queue`). A queue's comparator is
+shared by its copies and is a `sendable fun`, so a queue is Sendable when
+its elements are. A loop over a `Deque` walks it as it was when the loop
+began. `Deque` is a ring buffer —
 O(1) at both ends, amortised O(1) growth — and serves as a FIFO queue
 (`addLast` / `removeFirst`), a stack, or a sliding window. `PriorityQueue`
 is a binary heap: `push` and `pop` are O(log n). For the largest first,
@@ -558,6 +564,7 @@ out.pushU32Be(x: u32); out.pushI16Le(x: i16)           // List<u8>; the same twe
 | `getUnchecked(i)`, `setUnchecked(i, v)`                                                     | `T`, `()`; only in `unsafe`, `0 <= i < len`, checked in a debug build only (D114)                                                                                                                                                                                                                                  |
 | `at(i)` | `(*T)?`: a pointer to the element itself, or `*T` where the index is known. `xs.at(i)?.bump()`, `xs.at(i)?.n = 0` change the element; `loop (&x in xs)` visits every element this way (D231) |
 | `indices()`                                                                                | `0..<len()`; in `loop (i in xs.indices())` each `xs.get(i)` is a `T`                                                                                                                                                                                                                                                                         |
+| `copy()`                                                                                   | `List<T>`: a copy, O(1) — the same as binding the list, said on purpose (D236) |
 | `getOrDefault(i, d)`                                                                        | `T`; `get(i) ?: d`                                                                                                                                                                                                                                                                                                                           |
 | `len()`, `isEmpty()`, `lastIndex()`                                                        | `lastIndex` is `len() - 1`: −1 when empty                                                                                                                                                                                                                                                                                                   |
 | `contains(x)`, `indexOf(x)`, `count(p)`                                                    | `bool`, `i64?` (null if absent, D165), `i64`                                                                                                                                                                                                                                                                                                |
@@ -609,6 +616,7 @@ one the compiler can run.
 | `get(k)`                                                                 | `V?`                                                                                                                                                      |
 | `getOrDefault(k, d)`                                                     | `V`: `get(k) ?: d`. A copy of the value. Where a key must be there, say why: `m.get(k) ?: panic("…")`                                                     |
 | `at(k)` | `(*V)?`: a pointer to the stored value: `m.at(k)?.bump()`, `m.at(k)?.n += 1`; `loop ((k, &v) in m)` visits every value by reference (D231) |
+| `copy()`                                                                 | `Map<K, V>`: a copy, O(1) (D236)            |
 | `containsKey(k)`, `len()`, `isEmpty()`                                   |                                                                                                                                                           |
 | `keys()`, `values()`, `entries()`                                        | `List<K>`, `List<V>`, `List<(key: K, value: V)>` in insertion order                                                                                       |
 | `set(k, v)`, `remove(k): bool`, `clear()`, `reserve(n)`                  | after `reserve(n)` inserting up to `n` entries never grows or rehashes (D105)                                                          |
@@ -623,7 +631,7 @@ fields.
 `N` elements stored inline, a value: `val b = a` copies it. `len()` (the constant `N`),
 `isEmpty()`, `get(i)` (`T?`; a `T` for a constant index in range or one the bounds facts prove), `at(i)` (`(*T)?`, on a `var`),
 `first()`, `last()`, `indices()` (`0..<N`), `set(i, x)` on a `var`, `getUnchecked(i)` and
-`setUnchecked(i, x)` (`unsafe`), `toList()`; `loop (x in a)` over a copy and
+`setUnchecked(i, x)` (`unsafe`), `toList()`, `copy()` (D236); `loop (x in a)` over a copy and
 `loop (&x in a)` in place. `map`, `filter`, `forEach`, `fold`, `any`, `all` and `find` read the
 array where it lies; every other read-only `List` method runs on a copy. Created from a literal
 where an array type is expected, `Array<T, N>.make(x)` (`N` copies), `xs.toArray<N>()`
@@ -634,7 +642,7 @@ text are a list's; it is `Codable` (a list of exactly `N`), `Sendable` when `T` 
 
 ### `Set<T>`
 
-`contains(x)`, `len()`, `isEmpty()`, `toList()` (the members),
+`contains(x)`, `len()`, `isEmpty()`, `toList()` (the members), `copy()` (D236),
 `union(s)`, `intersect(s)`, `difference(s)`, `isSubsetOf(s)`,
 `add(x): bool`, `remove(x): bool`, `clear()`, `reserve(n)` (D105). Construct with `Set<T>()` /
 `Set<T>()`, or with a list literal where a set type is expected:

@@ -272,6 +272,82 @@ A lambda that calls a `throws` function infers `throws` itself, and one
 that suspends infers `suspends` — the same inference as for named
 functions (chapters 7 and 12).
 
+### Copying into a lambda
+
+Sharing is the default; when a lambda should keep a value as it was when
+the lambda was made, list it in a **capture list** before the parameters
+(D235). A name copies that variable; `name = expr` copies the value of an
+expression under a new name. Everything not listed is shared as before:
+
+```veles
+use io
+
+fun main() {
+  val routes: List<string> = ["/a"]
+  val live = () => "$routes"              // shared: sees later pushes
+  val boot = [routes] () => "$routes"     // copied now
+  var hits = 3
+  val report = [seen = hits] (label: string) => "$label: $seen"
+  routes.push("/b")
+  hits = 10
+  io.println("${live()} ${boot()} ${report("hits")}")
+}
+```
+
+Output:
+
+```text
+[/a, /b] [/a] hits: 3
+```
+
+**Each call starts from the copy.** The list takes one snapshot when the
+lambda is made; every call gets its own copy of that snapshot, which the
+body may change like any value of its own — `push` to it, call a method
+that changes it, take a pointer into it. The change lasts for that call
+only: the next call starts from the snapshot again, and the original is
+never touched:
+
+```veles
+use io
+
+struct Counter {
+  var n: i64
+
+  fun bump() { this.n += 1 }
+}
+
+fun main() {
+  val c = Counter(n: 0)
+  val bumps = [c] () => {
+    c.bump()            // the call's own copy
+    io.println("${c.n}")
+  }
+  bumps()
+  bumps()
+  io.println("${c.n}")  // the original
+}
+```
+
+Output:
+
+```text
+1
+1
+0
+```
+
+So a capture-list lambda gives the same answer every time it is called
+with the same arguments. State that should carry from one call to the
+next is a captured `var` — shared with the maker, as in `counter()` above
+— not a capture-list entry. A copy is a `val` of the call: changed in
+place, not rebound (`[k] () => { k = 5 }` is an error; copy it into a
+`var` to rebind it). A copied pointer is still a pointer: `[p] (x: i64) =>
+p.add(x)` writes through it. Copying is O(1) — a collection's elements are
+copied only on a call's first change (chapter 4). A lambda whose captures
+are all copies of Sendable values is a `sendable fun`: tasks may call it at
+once, each on its own copies, while its maker goes on changing the
+originals.
+
 ## What a function type says
 
 The full shape of a function type is

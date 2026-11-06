@@ -115,8 +115,10 @@ val slug = name.edit { trim(); toLower() }          // a changed copy (one copy)
 measure { work() }                                  // a block where a plain fun() goes
 ```
 
-Lambdas capture by reference (D37). Last expression of a block is its
-value.
+Lambdas capture by reference (D37); a capture list copies instead:
+`[routes, n = hits] (x) => …` copies `routes` and `hits` when the lambda is
+made; each call starts from that copy and may change it for the call
+(D235). Last expression of a block is its value.
 
 ## Structs, traits, sealed types, enums
 
@@ -232,7 +234,8 @@ sorted.lowerBound(x); sorted.upperBound(x); sorted.partitionPoint(e => e < x)   
 xs.push(x); xs.pop(); xs.set(i, x); xs.insert(i, x); xs.removeAt(i); xs.addAll(ys); xs.sort(); xs.clear()   // change xs where it lives; fill(&xs) with fill(into: *List<T>) changes the caller's
 xs.swap(i, j); xs.fill(x); xs.incrementAt(i) /* List<i64> */; xs.updateAt(i, f) /* List<T>; transforms and returns the new value */; List.repeat(false, n) /* List<bool>: a generic static infers its type, D137 */; List<List<i64>>.make(n, _ => [])
 val q = Deque<i64>(); q.addLast(x); q.addFirst(x); q.removeFirst(); q.removeLast(); q.first(); q.last(); q.get(-1); q.at(0)?.n += 1; q.len()
-val pq = PriorityQueue<i64>.natural(); pq.push(x); pq.pop(); pq.peek(); PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))
+val pq = PriorityQueue<i64>.natural(); pq.push(x); pq.pop(); pq.peek(); PriorityQueue<i64>(compare: (a, b) => b.compareTo(a))   // Deque and PriorityQueue are values like List (D234)
+val before = xs.copy(); m.copy(); s.copy(); a.copy(); q.copy()   // a copy said on purpose, O(1); the same as `val before = xs` (D236); share with &xs
 m.get(k) ?: d; m.get(k) ?: panic("why"); m.getOrDefault(k, d); m.containsKey(k); m.keys(); m.values(); m.entries(); m.set(k, v); m.remove(k)
 m.at(k)?.bump(); m.at(k)?.n += 1; groups.atOrPut(k, () => []).push(x)   // a pointer to the stored value; get returns a copy
 s.add(x); s.contains(x); s.remove(x); s.toList() /* the members */; loop (x in xs) xs.push(-x) /* the loop walks xs as it began */

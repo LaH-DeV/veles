@@ -392,7 +392,11 @@ extend Parser {
         if (this.noLambda == 0 && this.looksLikeLambda()) return this.parseLambda()
         return this.parseParenOrTuple()
       }
-      Kind.LBracket => return this.parseCollectionLit()
+      Kind.LBracket => {
+        // `[a, b = e] (x) => …`: a lambda's capture list (D235)
+        if (this.noLambda == 0 && this.captureListAhead()) return this.parseLambda()
+        return this.parseCollectionLit()
+      }
       Kind.LBrace => {
         // `{ … }` alone: a receiver block, or a plain `fun()` (D207)
         if (this.noLambda == 0) {
@@ -490,9 +494,38 @@ extend Parser {
   }
 
   // from `(` to its `)`: whether `=>` (or `: Type =>`) follows (D37)
-  fun looksLikeLambda(): bool {
+  fun looksLikeLambda(): bool => this.looksLikeLambdaAt(0)
+
+  // the `[` here closes on a `]` followed by a lambda's head — `(params)
+  // =>` or `name =>` — so it is a capture list (D235); a list literal is
+  // never followed by either: calling a list is not a program
+  fun captureListAhead(): bool {
     var depth: i64 = 0
     var i: i64 = 0
+    loop {
+      when (this.peek(i).kind) {
+        Kind.LParen, Kind.LBracket, Kind.LBrace => depth += 1
+        Kind.RParen, Kind.RBracket, Kind.RBrace => {
+          depth -= 1
+          if (depth == 0) {
+            return when (this.peek(i + 1).kind) {
+              Kind.Ident, Kind.Under => this.peek(i + 2).kind == Kind.FatArrow
+              Kind.LParen            => this.looksLikeLambdaAt(i + 1)
+              else                   => false
+            }
+          }
+        }
+        Kind.EOF => return false
+        else => { }
+      }
+      i += 1
+    }
+  }
+
+  // looksLikeLambda for the `(` at peek(from)
+  fun looksLikeLambdaAt(from: i64): bool {
+    var depth: i64 = 0
+    var i = from
     loop {
       when (this.peek(i).kind) {
         Kind.LParen, Kind.LBracket, Kind.LBrace => depth += 1
@@ -555,6 +588,9 @@ extend Parser {
     val start = this.span()
     val params: List<ast.Param> = []
     var ret: (*ast.Type)? = null
+    val captures: List<ast.Capture> = []
+    var capturesPos = Span.none()
+    if (this.at(Kind.LBracket)) capturesPos = this.parseCaptures(&captures)
     if (this.atAny(Kind.Ident, Kind.Under)) {
       val t = this.next()
       params.push(ast.Param(name: paramName(t), pos: t.span))
@@ -585,7 +621,26 @@ extend Parser {
     }
     this.expect(Kind.FatArrow)
     val body = this.parseArmBody()
-    ast.LambdaExpr(params, ret, body: &body, pos: this.spanFrom(start))
+    ast.LambdaExpr(params, ret, body: &body, captures, capturesPos, pos: this.spanFrom(start))
+  }
+
+  // a lambda's capture list, `[a, b = expr]` (D235); its span
+  fun parseCaptures(into: *List<ast.Capture>): Span {
+    val start = this.span()
+    this.next()  // [
+    loop (!this.atAny(Kind.RBracket, Kind.EOF)) {
+      val captureStart = this.span()
+      val name = this.expectIdent() ?: break
+      var c = ast.Capture(name)
+      if (this.accept(Kind.Assign)) c.value = &this.parseExpr()
+      c.pos = this.spanFrom(captureStart)
+      into.push(c)
+      if (!this.accept(Kind.Comma)) break
+    }
+    this.expect(Kind.RBracket)
+    val pos = this.spanFrom(start)
+    if (into.isEmpty()) this.errorAt(pos, "an empty capture list copies nothing; remove '[]' (D235)")
+    pos
   }
 
   // the right side of `=>`: a block, an expression, or an assignment —

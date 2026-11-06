@@ -340,6 +340,14 @@ struct Param {
   var pos:          Span = Span.none()
 }
 
+/// One entry of a lambda's capture list (D235): `name` copies the variable
+/// of that name, `name = expr` binds `name` to the value of `expr`.
+struct Capture {
+  var name:  Ident = Ident()
+  var value: (*Expr)? = null  // null for a plain `name`
+  var pos:   Span = Span.none()
+}
+
 /// A function: free, a method, a trait's (no body), or an extern.
 struct FunDecl {
   var attrs:      List<Attribute> = []
@@ -663,8 +671,12 @@ sealed trait Expr {
     var ret:    (*Type)? = null
     var body:   *Expr  // a BlockExpr for `{ … }`
     // written `{ … }` alone: a receiver block, or a plain `fun()` (D207)
-    var bare: bool = false
-    var pos:  Span = Span.none()
+    var bare:        bool = false
+    // the capture list `[a, b = e]` before the parameters, copied when the
+    // lambda is made (D235); capturesPos spans the brackets
+    var captures:    List<Capture> = []
+    var capturesPos: Span = Span.none()
+    var pos:         Span = Span.none()
   }
   /// `(a, b)`; `(key: k, value: v)` labels every element (D166), `labels`
   /// empty when none is labelled.

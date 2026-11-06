@@ -267,7 +267,7 @@ func (f *fnCtx) execHop(info *execInfo, sym *Symbol, callee *ast.MemberExpr, e *
 			continue
 		}
 		if !sendable(x.Type()) {
-			f.errorf(a.Value.Span(), "argument of type '%s' is not Sendable, and this call runs '%s' on executor '%s', another thread; pass immutable data (a List, not a MutableList: '.toList()') or share state behind a 'Mutex' (D35, D150)", x.Type(), t.Name, exec)
+			f.errorf(a.Value.Span(), "argument of type '%s' is not Sendable, and this call runs '%s' on executor '%s', another thread; pass a value that holds no pointer or plain closure or share state behind a 'Mutex' (D35, D150)", x.Type(), t.Name, exec)
 			continue
 		}
 		v, decl := f.hidden("arg", x, false)

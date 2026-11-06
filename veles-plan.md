@@ -131,8 +131,9 @@ else is decision-free.
    the trait-object-holds-a-copy hazard (std codecs moved state behind
    pointers).
 
-0. [ ] **V2 — D234–D236: the rest of the value story** (decided
-   2026-11-06; checklist §11 D231 items 18–19).
+0. [x] **V2 — D234–D236: the rest of the value story** (decided
+   2026-11-06; checklist §11 D231 items 18–19; built 2026-11-06, see the
+   progress log).
    - (a) D234: `Deque`/`PriorityQueue` state inline in the struct (no
      `*State`); `Deque` loops walk a snapshot, D102's guard dropped for
      them; Sendable when `T` is; the header comment and D25's amendment
@@ -891,6 +892,64 @@ on Linux).
 ---
 
 ## Progress log
+
+### 2026-11-06 — V2 (D235 addendum): a capture-list copy is each call's own
+
+- Decided (user, recommended of 3): the body may change its copy; each
+  call starts from the snapshot. `captureSnapshots` takes the snapshot in
+  the maker as before; `callCopies` opens the body with `val name =
+  <captured snapshot>` under the listed name, so a change copies on write
+  into the call's own value and the next call starts clean. A parameter of
+  the same name hides the copy. Rebinding is an error with the `var` fix.
+- `checkCaptureCopies` and its helpers removed — and with them checklist
+  §11 D231 items 20–21 (pointers it could not follow; reporting only on
+  error-free programs).
+- Tests: `D235-capture-fixed.vs` removed (nothing there is an error now);
+  `D235-capture-list.vs` changes its copies; the driver test has a
+  `fresh:` line (two calls of a bumping lambda give 1, 1, the original 0;
+  a pushing lambda starts from the snapshot each time); the hover text.
+  Docs: chapter 10 "Each call starts from the copy" with the user's
+  example, cheat sheet, errors.md.
+
+### 2026-11-06 — V2: D234–D236 built
+
+- D234: `Deque`/`PriorityQueue` hold their state in the struct (no
+  `*DequeState`/`*PriorityQueueState`); a copy is a value through the
+  `List` inside. A value loop over a deque walks a copy (its iterator
+  already took one), so D102's compile-time refusal for deques and the
+  `deque` call table are gone (`sema/loopchange.go`). The comparator is a
+  `sendable fun` (a public signature change of `init(compare:)`), so a
+  queue is Sendable when `T` is; the Sendable errors no longer advise
+  `.toList()` on a `MutableList`.
+- D236: `copy()` on `List`, `Map`, `Set`, `Array` (prelude `const fun`s
+  returning `this`, so constants may use them) and a hand-written one on
+  `PriorityQueue` (its `init` takes parameters, so D164 generates none;
+  `Deque` has the generated one).
+- D235: `ast.Capture` and `LambdaExpr.Captures`/`CapturesPos` in both
+  front ends (the self-hosted parser, printer and span walker; `std/lint`'s
+  mirror regenerated); the formatter prints the list. The checker lowers
+  `[a, b = e] (x) => …` to `{ val a = a; val b = e; <closure> }` with the
+  copies in a scope only the body sees (`sema/capturelist.go`); after the
+  receiver pass `checkCaptureCopies` refuses an assignment, a changing
+  built-in, a method that writes `this`, a pointer into the copy bound to
+  a name or handed to a call — through nested lambdas and the compiler's
+  temporaries; a copied pointer still writes through. Copies count as
+  sendable captures even with `var` fields. Hover says "copied when the
+  lambda was made"; a plain `[routes]` copy points at `routes`'
+  declaration, so a rename follows.
+- Found on the way: every captured variable recorded a bare index entry
+  at its declaration, so hovering the declaration of a variable a lambda
+  captures lost its `= initializer` (fixed in `localVar`).
+- Tests: `TestValueQueuesCopiesAndCaptureLists` (driver, both profiles),
+  conformance `D235-capture-list.vs` and `D235-capture-fixed.vs`, D102's
+  deque case now a walk over a copy, `TestHoverCaptureListCopies`, std's
+  const-function list. Docs: chapter 4 (queues as values, "Copy or
+  share"), chapter 10 ("Copying into a lambda"), the cheat sheet, the
+  stdlib reference, errors.md (references); spec D231's capture sentence
+  and D25's queue amendment struck through.
+- Measured (Windows, release, 5 interleaved runs of a deque and a
+  priority-queue workload — no `bench/` program uses them): deque 145 →
+  144 ms, priority queue 370 → 361 ms median; unchanged.
 
 ### 2026-11-06 — V1 (D231): pre-PR check, one more lent-argument hole
 

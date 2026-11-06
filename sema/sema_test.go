@@ -1696,8 +1696,9 @@ implement Sendable for N { }
 fun main() { io.println("x") }`, "cannot be implemented by hand")
 }
 
-// Deque and PriorityQueue (prelude/collections.vs) are reference types: a
-// `val` binding can grow them and a callee shares the caller's one.
+// Deque and PriorityQueue (prelude/collections.vs) are values (D234): a
+// `val` binding can grow them, and a callee changes the caller's one
+// through a pointer.
 func TestPreludeCollections(t *testing.T) {
 	expectClean(t, prelude+`
 struct Job {
@@ -1706,7 +1707,7 @@ struct Job {
     fun compareTo(other: Job): Ordering => this.cost.compareTo(other.cost)
   }
 }
-fun drain(q: Deque<i64>): i64 {
+fun drain(q: *Deque<i64>): i64 {
   var n = 0
   loop {
     q.removeFirst() ?: break
@@ -1721,7 +1722,7 @@ fun main() {
   val typed = Deque<string>()
   typed.addLast("x")
   loop (x in q) io.println("$x")
-  io.println("$q ${q.first()} ${q.last()} ${q.get(-1)} ${q.len()} ${drain(q)} ${q.isEmpty()} $typed")
+  io.println("$q ${q.first()} ${q.last()} ${q.get(-1)} ${q.len()} ${drain(&q)} ${q.isEmpty()} $typed")
   val jobs = PriorityQueue<Job>.natural()
   jobs.push(Job(cost: 3))
   val words = PriorityQueue<string>(compare: (a, b) => b.compareTo(a))

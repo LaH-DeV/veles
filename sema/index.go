@@ -592,6 +592,9 @@ func (c *Checker) refVarAs(span source.Span, v *Var, as types.Type) {
 	if v.IsParam {
 		detail += "  (parameter)"
 	}
+	if v.CapCopy {
+		detail += "  (copied when the lambda was made; each call starts from that copy, D235)"
+	}
 	c.index.Refs = append(c.index.Refs, Ref{Span: span, Def: v.Span, Kind: kind, Name: v.Name, Type: t, Detail: detail, Shape: c.shapeFrom(t, c.viewFrom(span))})
 }
 

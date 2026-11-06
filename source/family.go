@@ -98,7 +98,7 @@ var families = []family{
 		`interpolat`, `U\+`),
 	fam("references", `copy of the element`, `reach the element`, `the address of`, `^'&' `, `^a map key cannot`,
 		`'loop \(&x in xs\)' needs`, `'loop \(\(k, &v\) in m\)' needs`, `a pointer into an immutable`,
-		`copy of the caller's`, `while 'loop`, `move or reorder`, `is a pointer to a`, `\(D233\)`, `\(D232\)`),
+		`copy of the caller's`, `while 'loop`, `move or reorder`, `is a pointer to a`, `\(D233\)`, `\(D232\)`, `\(D235\)`),
 	fam("mutability", `^cannot assign`, `while the loop at line`, `not assignable`, `immutable List|immutable Map|immutable Set`,
 		`\bMutable(List|Map|Set)\b`, `'mut'`, `^compound assignment`, `global 'val' is a constant`,
 		`never changes: copy it`, `'getOrPut'`, `' changes the %s; use %s \(D25\)`,

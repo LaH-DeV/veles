@@ -98,6 +98,10 @@ prelude/list.vs: public const fun binarySearchWith(compare: fun(T): Ordering): i
 prelude/list.vs: public const fun chunked(n: i64): List<List<T>>
 prelude/list.vs: public const fun concat(other: List<T>): List<T>
 prelude/list.vs: public const fun contains(x: T): bool
+prelude/list.vs: public const fun copy(): Array<T, N>
+prelude/list.vs: public const fun copy(): List<T>
+prelude/list.vs: public const fun copy(): Map<K, V>
+prelude/list.vs: public const fun copy(): Set<T>
 prelude/list.vs: public const fun count<E>(pred: fun(T): bool suspends throws E): i64 throws E
 prelude/list.vs: public const fun distinct(): List<T>
 prelude/list.vs: public const fun distinctBy<K>(key: fun(T): K): List<T>

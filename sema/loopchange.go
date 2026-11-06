@@ -8,8 +8,8 @@ import (
 // D102: a collection cannot change under a loop that walks it in place. A
 // value loop over a list, map or set walks it as it was (D231, D102
 // addendum): the header is lent for the loop (list.lend), so any change
-// made meanwhile copies it first. A by-reference loop and a Deque loop walk
-// the collection itself: what the compiler sees — a call on the loop's own
+// made meanwhile copies it first; a Deque loop walks a copy (D234). A
+// by-reference loop walks the collection itself: what the compiler sees — a call on the loop's own
 // collection that changes its length or order — is refused
 // (refuseLoopChanges); a change through another path is caught when the
 // loop next steps, by the modification count the runtime keeps (modsGuard).
@@ -30,13 +30,12 @@ func (f *fnCtx) modsGuard(coll *Var, isMap bool, s *ast.LoopStmt) (decl, check S
 }
 
 // mutableColl: a collection D102 guards — one whose length or order a
-// call can change: every list, map and set (D231).
+// call can change: every list, map and set (D231). A Deque is a value
+// whose loop walks a copy (D234).
 func mutableColl(t types.Type) bool {
-	switch t := t.(type) {
+	switch t.(type) {
 	case *types.List, *types.Map, *types.Set:
 		return true
-	case *types.Struct:
-		return t.Module == "std.prelude" && t.Name == "Deque"
 	}
 	return false
 }
@@ -44,10 +43,9 @@ func mutableColl(t types.Type) bool {
 // structuralCalls are, per kind of collection, the built-in and prelude
 // methods that change its length or order.
 var structuralCalls = map[string]map[string]bool{
-	"list":  {"push": true, "pop": true, "clear": true, "insert": true, "removeAt": true, "addAll": true, "sort": true, "sortWith": true, "swap": true},
-	"map":   {"remove": true, "clear": true, "atOrPut": true, "set": true},
-	"set":   {"add": true, "remove": true, "clear": true},
-	"deque": {"addFirst": true, "addLast": true, "removeFirst": true, "removeLast": true, "clear": true},
+	"list": {"push": true, "pop": true, "clear": true, "insert": true, "removeAt": true, "addAll": true, "sort": true, "sortWith": true, "swap": true},
+	"map":  {"remove": true, "clear": true, "atOrPut": true, "set": true},
+	"set":  {"add": true, "remove": true, "clear": true},
 }
 
 // refuseLoopChanges reports a call in the body of `loop (… in c)` that
@@ -55,9 +53,10 @@ var structuralCalls = map[string]map[string]bool{
 // `this.f` path. A lambda in the body counts when it is called there — as
 // an argument it is.
 func (f *fnCtx) refuseLoopChanges(s *ast.LoopStmt, t types.Type) {
-	if _, isStruct := t.(*types.Struct); !isStruct && (s.Var == nil || !hasRefBinding(s.Var)) {
-		// a list, map or set is a value: the loop walks it as it was when
-		// it began, so a change in the body is allowed (D231 addendum).
+	if s.Var == nil || !hasRefBinding(s.Var) {
+		// a list, map, set or deque is a value: the loop walks it as it
+		// was when it began, so a change in the body is allowed (D231
+		// addendum; a deque's iterator walks a copy of it, D234).
 		// `loop (&x in xs)` walks the list itself, so its length and order
 		// must hold still.
 		return
@@ -65,14 +64,12 @@ func (f *fnCtx) refuseLoopChanges(s *ast.LoopStmt, t types.Type) {
 	if !mutableColl(t) || !isPlacePath(s.Iter) {
 		return
 	}
-	kind, copyCall := "list", ".toList()" // a deque's copy; a list is a value already
+	kind := "list"
 	switch t.(type) {
 	case *types.Map:
 		kind = "map"
 	case *types.Set:
 		kind = "set"
-	case *types.Struct:
-		kind = "deque"
 	}
 	coll := srcText(s.Iter)
 	loopKey := ""
@@ -115,13 +112,8 @@ func (f *fnCtx) refuseLoopChanges(s *ast.LoopStmt, t types.Type) {
 					return true // replaces the value of the key being visited
 				}
 			}
-			if kind != "deque" {
-				// by reference: a copy would take the writes elsewhere
-				f.c.errorf(n.Pos, "'%s.%s' changes '%s' while the loop at line %d walks it by reference; collect the changes and apply them after the loop (D102)", coll, name, coll, line)
-				return true
-			}
-			fix := fixReplace("Loop over a copy", s.Iter.Span(), coll+copyCall)
-			f.c.errorFix(n.Pos, fix, "'%s.%s' changes '%s' while the loop at line %d walks it; loop over a copy ('%s%s'), or collect the changes and apply them after the loop (D102)", coll, name, coll, line, coll, copyCall)
+			// by reference: a copy would take the writes elsewhere
+			f.c.errorf(n.Pos, "'%s.%s' changes '%s' while the loop at line %d walks it by reference; collect the changes and apply them after the loop (D102)", coll, name, coll, line)
 		}
 		return true
 	})
@@ -139,4 +131,3 @@ func isPlacePath(e ast.Expr) bool {
 	}
 	return false
 }
-

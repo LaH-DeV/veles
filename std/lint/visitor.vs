@@ -24,6 +24,7 @@ public struct Visitor {
   public onBoolLit:          (fun(BoolLit, Context))? = null
   public onBreakStmt:        (fun(BreakStmt, Context))? = null
   public onCallExpr:         (fun(CallExpr, Context))? = null
+  public onCapture:          (fun(Capture, Context))? = null
   public onCastExpr:         (fun(CastExpr, Context))? = null
   public onCatchExpr:        (fun(CatchExpr, Context))? = null
   public onCedeStmt:         (fun(CedeStmt, Context))? = null

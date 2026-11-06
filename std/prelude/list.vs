@@ -4,6 +4,36 @@
 // The compiler provides the primitives (`len`, `at`, `set`, `push`, `pop`,
 // `sorted`, the eager `map`/`filter`/`fold`, ...); the rest is Veles.
 
+// ---------------------------------------------------------------------------
+// copy() — the explicit copy (D236). Binding a value copies it already;
+// `copy()` says so on purpose, under the name a struct's copy has (D164).
+// O(1): the value is marked shared, and the first change of either holder
+// copies the storage (D231).
+
+extend<T> List<T> {
+  /// A copy of this list: `val before = rows.copy()`. O(1); the storage is
+  /// copied at the first change of either list.
+  public const fun copy(): List<T> => this
+}
+
+extend<K, V> Map<K, V> {
+  /// A copy of this map. O(1); the entries are copied at the first change
+  /// of either map.
+  public const fun copy(): Map<K, V> => this
+}
+
+extend<T> Set<T> {
+  /// A copy of this set. O(1); the members are copied at the first change
+  /// of either set.
+  public const fun copy(): Set<T> => this
+}
+
+extend<T, const N: i64> Array<T, N> {
+  /// A copy of this array (its elements copied, as any assignment of an
+  /// array does; collections inside it are marked shared).
+  public const fun copy(): Array<T, N> => this
+}
+
 extend<T> List<T> {
   /// A copy of the element at `i`, or `d` when `i` is out of range;
   /// `this.get(i) ?: d`.

@@ -994,7 +994,20 @@ type LambdaExpr struct {
 	// Bare: written `{ ... }` alone, with no parameters and no `=>` — a
 	// block that runs on a receiver, where a `fun on T()` goes (D207)
 	Bare bool
-	Pos  source.Span
+	// Captures is the capture list `[a, b = expr]` written before the
+	// parameters (D235): each entry is copied when the lambda is made;
+	// CapturesPos spans the brackets (zero when there is no list).
+	Captures    []Capture
+	CapturesPos source.Span
+	Pos         source.Span
+}
+
+// Capture is one entry of a lambda's capture list (D235): `name` copies
+// the variable of that name, `name = expr` binds name to expr's value.
+type Capture struct {
+	Name  Ident
+	Value Expr // nil for a plain `name`
+	Pos   source.Span
 }
 
 // TupleExpr is `(a, b)`; `(key: k, value: v)` labels every element (D166),

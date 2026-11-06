@@ -462,6 +462,12 @@ fun spansOfParam(node: Param, out: *List<string>) {
   out.push("Param.pos ${node.pos.start} ${node.pos.end}")
 }
 
+fun spansOfCapture(node: Capture, out: *List<string>) {
+  spansOfIdent(node.name, out)
+  if (val x2 = node.value) spansOfExpr(*x2, out)
+  out.push("Capture.pos ${node.pos.start} ${node.pos.end}")
+}
+
 fun spansOfFunDecl(node: FunDecl, out: *List<string>) {
   loop (x1 in node.attrs) {
     spansOfAttribute(x1, out)
@@ -768,6 +774,10 @@ fun spansOfLambdaExpr(node: LambdaExpr, out: *List<string>) {
   }
   if (val x3 = node.ret) spansOfType(*x3, out)
   spansOfExpr(*node.body, out)
+  loop (x6 in node.captures) {
+    spansOfCapture(x6, out)
+  }
+  out.push("LambdaExpr.capturesPos ${node.capturesPos.start} ${node.capturesPos.end}")
   out.push("LambdaExpr.pos ${node.pos.start} ${node.pos.end}")
 }
 

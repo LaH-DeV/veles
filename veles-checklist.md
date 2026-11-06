@@ -1528,6 +1528,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-11-03 | A lock's pointer escaping `withLock` (§11 D231 item 9) | **A pointer parameter of a function value is lent for the call — returning, storing, capturing it or passing it where it is kept is an error — language-wide, no annotation**, D233 (user: "lent callback param but I'd say we do not use annotation if we can?", then the language-wide rule, recommended of 3, after measuring 128 such parameters in the tree with no escape). Rejected: `@lent` on the std methods only, refusing a pointer in the result type, a `Sendable` bound. |
 | 2026-11-06 | `Deque`/`PriorityQueue` still shared (§11 D231 item 18) | **Values like `List`: state in the struct, copy on first change; a queue's comparator shared; `Deque` loops walk a snapshot**, D234 (user: "they should be like values (but so much they make sense)", recommended of 2). Rejected: keeping them shared, documented. |
 | 2026-11-06 | Copying into a lambda (§11 D231 item 19) | **A capture list `[a, b = expr]` before the parameters copies the listed captures when the lambda is made; they are fixed in the body; the rest is shared as before**, D235 (user: "a mechanism for copying into lambda (so we COULD make a decision about what copy what share)", recommended of 3). Rejected: a `copy` prefix copying all, binding before the lambda only. |
+| 2026-11-06 | Changing a capture-list copy (the user, on the "fixed" error) | **Each call starts from its own copy of the snapshot, which the body may change in place for that call; rebinding stays an error; the "fixed" check removed**, D235 addendum (user: "what if we wanted to copy something and change it on the copy … we don't want that to error no?", recommended of 3). Rejected: one copy kept by the lambda across calls (not sendable, shared by `val g = f`); keeping the error. |
 | 2026-11-06 | An explicit copy for collections (user's idea) | **`copy()` on `List`, `Map`, `Set`, `Deque`, `PriorityQueue`, `Array`, O(1)**, D236 (user, recommended of 2); reverses D231 addendum 1's rejection of `copy()`. Sharing: the pointer and `Mutex`, a "copy or share" docs section, nothing new (user, recommended of 3). Rejected: no method; a `Shared<T>` type; leaving sharing open. |
 
 ## 11. Known limitations to revisit
@@ -1949,12 +1950,13 @@ std/compress` exited 255, and `TestHashFlooding`,
       (`s.peek(s.items)`) no longer lends it — the method's change through
       `this` showed in its parameter (`TestPointerReachedValuesStayValues`,
       cases "own field", "nested field"); the copy messages name `at`, not
-      the removed `ref`. Open: (18) decided 2026-11-06 as D234 —
-      `Deque` and `PriorityQueue` become values (plan V2), not built; (19)
-      decided 2026-11-06: a lambda keeps sharing its captures, and D235's
-      capture list copies chosen ones (plan V2), not built; D231's "The
-      rule" sentence ("capturing … copy") to be corrected with it; D236's
-      `copy()` on collections, not built.
+      the removed `ref`; (18) done 2026-11-06 (D234, plan V2): `Deque` and
+      `PriorityQueue` are values, a queue's comparator a `sendable fun`;
+      (19) done 2026-11-06 (D235, plan V2): the capture list, and D236's
+      `copy()`; D231's capture sentence corrected. (20)–(21) gone
+      2026-11-06 with the check they were gaps of: a capture-list copy is
+      each call's own and may be changed (D235 addendum); left: (22) V2
+      not run on macOS.
 - [ ] **Swift and Kotlin tabs not run (2026-10-31).** The code groups of
       chapters 2–10 and 12 (N7): the Kotlin tabs of every chapter and the
       Swift tabs of chapters 2, 3, 4, 5, 8 and 10 were written without a

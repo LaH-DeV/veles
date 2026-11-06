@@ -136,7 +136,20 @@ extend Printer {
           this.write(")")
           return
         }
-        this.write("(lambda (")
+        this.write("(lambda ")
+        if (!e.captures.isEmpty()) {
+          this.write("[")
+          loop ((i, c) in e.captures.enumerate()) {
+            if (i > 0) this.write(", ")
+            this.write(c.name.name)
+            if (val value = c.value) {
+              this.write(" = ")
+              this.expr(*value)
+            }
+          }
+          this.write("] ")
+        }
+        this.write("(")
         loop ((i, param) in e.params.enumerate()) {
           if (i > 0) this.write(", ")
           if (val pattern = param.pattern) {

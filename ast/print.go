@@ -922,7 +922,22 @@ func (p *printer) expr(e Expr) {
 			p.w(")")
 			break
 		}
-		p.w("(lambda (")
+		p.w("(lambda ")
+		if len(e.Captures) > 0 {
+			p.w("[")
+			for i, c := range e.Captures {
+				if i > 0 {
+					p.w(", ")
+				}
+				p.w(c.Name.Name)
+				if c.Value != nil {
+					p.w(" = ")
+					p.expr(c.Value)
+				}
+			}
+			p.w("] ")
+		}
+		p.w("(")
 		for i, prm := range e.Params {
 			if i > 0 {
 				p.w(", ")
