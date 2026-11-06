@@ -1528,6 +1528,7 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-11-03 | A lock's pointer escaping `withLock` (§11 D231 item 9) | **A pointer parameter of a function value is lent for the call — returning, storing, capturing it or passing it where it is kept is an error — language-wide, no annotation**, D233 (user: "lent callback param but I'd say we do not use annotation if we can?", then the language-wide rule, recommended of 3, after measuring 128 such parameters in the tree with no escape). Rejected: `@lent` on the std methods only, refusing a pointer in the result type, a `Sendable` bound. |
 | 2026-11-06 | `Deque`/`PriorityQueue` still shared (§11 D231 item 18) | **Values like `List`: state in the struct, copy on first change; a queue's comparator shared; `Deque` loops walk a snapshot**, D234 (user: "they should be like values (but so much they make sense)", recommended of 2). Rejected: keeping them shared, documented. |
 | 2026-11-06 | Copying into a lambda (§11 D231 item 19) | **A capture list `[a, b = expr]` before the parameters copies the listed captures when the lambda is made; they are fixed in the body; the rest is shared as before**, D235 (user: "a mechanism for copying into lambda (so we COULD make a decision about what copy what share)", recommended of 3). Rejected: a `copy` prefix copying all, binding before the lambda only. |
+| 2026-11-06 | How `toFixed` rounds an exact tie (Q82, platform-dependent) | **To even on every platform, for every fixed-decimal output (`toFixed`, `.precision` specs, std/fmt); `round()` keeps halves away from zero and `roundEven()` is added**, D240 (user: "to even (needs to be documented and done consistently throughout the language)"; for `round`, recommended of 2). Rejected: away from zero everywhere; `round()` to even too. |
 | 2026-11-06 | `PriorityQueue.natural()` calling its comparator indirectly (bench/queues) | **`Heap<T: Comparable>` compares directly; `PriorityQueue<T>(compare:)` keeps a comparator; `natural()` removed with a fix to `Heap<T>()`**, D239 (user, recommended of 3). Rejected: `PriorityQueue<T: Comparable>` only with wrapper orders, leaving it. |
 | 2026-11-06 | `apply` on a `val` (Q81, found in the consistency pass) | **`apply` changes what a method that changes the value could change — a `val` included; a module-level `val` and a `val` string stay refused with the fix `edit`**, D238 (user: "allow it if that is consistent with our idea, docs and rest of the code. this must be understandable"). Rejected: keeping D207's refusal. |
 | 2026-11-06 | A task racing with its maker over a captured collection (found probing D231) | **`async { }` copies the collections it reads when the task starts; a function value started with `async` may not capture a collection the maker changes while the task may run (error, fix: a capture list)**, D237 (user, recommended of 3). Rejected: refusing blocks too, snapshots in every sendable closure. |
@@ -1535,6 +1536,15 @@ Every new public std API (http cookies/forms/client, `std/log`,
 | 2026-11-06 | An explicit copy for collections (user's idea) | **`copy()` on `List`, `Map`, `Set`, `Deque`, `PriorityQueue`, `Array`, O(1)**, D236 (user, recommended of 2); reverses D231 addendum 1's rejection of `copy()`. Sharing: the pointer and `Mutex`, a "copy or share" docs section, nothing new (user, recommended of 3). Rejected: no method; a `Shared<T>` type; leaving sharing open. |
 
 ## 11. Known limitations to revisit
+
+- [ ] **gzip is 6.8× Go 1.27 at level 6 (2026-11-06).** 75% of the time is
+      `Deflater.longest`'s chain walk (zlib's level-6 settings: chain 128,
+      nice 128), stalled on the `prev` ring (`i64`, 256 KiB) and the window.
+      Go 1.23's encoder took ~130 ms on `bench/gzip` like Veles; Go 1.27's
+      takes ~20 — a different matcher. Options to weigh: `i32` positions
+      (half the cache footprint, same output), a faster level-6 strategy
+      (different output and ratio — a decision), skipping long-chain work on
+      repetitive input.
 
 - [ ] **A task races with its maker over a captured collection (found
       2026-11-06; D237 built 2026-11-06; what is left is below).** Built:

@@ -52,6 +52,10 @@ bench/preempt -- all` prints every case F21 measured. `backedge` is four
   `random` 15 → 22 ms whichever tree it was): to measure a change, use
   `go run ./bench -against <rev>`, which builds both compilers and runs
   each benchmark interleaved, alternating which goes first.
+- `tofixed`: its values are multiples of 0.25, which take the runtime's
+  integer path (2026-11-06; a fraction of at most 19 binary digits, with
+  the digits covering it); a value like 0.1 keeps the exact snprintf path,
+  which is several times slower.
 - `queues` (2026-11-06, D234): a `Deque` as a 64-wide sliding window,
   walked with `loop` every 100 steps, and a `PriorityQueue` of 20k
   elements filled and drained, 50 rounds; Go's reference writes the same

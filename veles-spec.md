@@ -1,6 +1,6 @@
 # Veles — Language Specification
 
-**Working draft v0.140** — decisions D1–D239. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
+**Working draft v0.141** — decisions D1–D240. Open design questions are tracked in `veles-checklist.md` §9; the order of building them is the "Build order" list in `veles-plan.md`.
 
 Decided 2026-09-30/10-01 with the user, from the review in `archive/veles-spec-prep.md` (each entry is written to be built without further questions):
 
@@ -9815,6 +9815,43 @@ PriorityQueue<i64>.natural()   // error: 'PriorityQueue.natural()' was removed: 
 - Rejected: `PriorityQueue<T: Comparable>` only, with other orders through
   wrapper types (Rust's shape; an ad-hoc order needs a struct); leaving
   the indirect call.
+
+### D240 — Decimal output rounds a tie to even, on every platform; `roundEven()` (v0.141; amends D219)
+
+2026-11-06, Q82, the user: "to even (needs to be documented and done
+consistently throughout the language)"; then, on `round()`: keep it, add
+`roundEven()` (recommended of 2). `toFixed` left a tie to the C library,
+which differs — `12.25.toFixed(1)` was `12.3` on Windows (UCRT rounds half
+away from zero) and `12.2` on Linux and macOS.
+
+```veles
+12.25.toFixed(1)      // "12.2"   a tie: to the even neighbour, everywhere
+12.75.toFixed(1)      // "12.8"
+"${0.125:.2}"         // "0.12"   a precision spec rounds as toFixed does
+2.675.toFixed(2)      // "2.67"   not a tie: 2.675 is stored as 2.67499999…
+2.5.round()           // 3.0      to a whole number, halves away from zero (C, Go, Rust)
+2.5.roundEven()       // 2.0      halves to even (Go's RoundToEven, Rust's round_ties_even)
+```
+
+- **The rule.** Every decimal a float is written with a fixed number of
+  places — `toFixed`, a `.precision` format spec (D171), what `std/fmt`
+  builds on them — is the exact value rounded to the nearest, a tie to
+  the even neighbour, on every platform. A shortest-digits text
+  (`toString`, JSON) never meets a tie: a value with a 5 just past the
+  last digit it needs is too fine-grained for either neighbour to read
+  back as it.
+- **How it is kept.** A double is m/2^k: its expansion has exactly k
+  decimals, the last a 5, so rounding it to `digits` places is a tie
+  exactly when k = digits + 1. The runtime rounds those itself (the exact
+  expansion, which every C library prints alike, then the even
+  neighbour); every other case is exact or not a tie, where every correct
+  `printf` agrees.
+- **`roundEven()`** on `f64` and `f32` beside `round()`, which keeps
+  halves away from zero: a `const fun`, one instruction (`nearbyint` in the
+  default rounding mode, which a program never leaves).
+- Rejected: halves away from zero everywhere (JavaScript's `toFixed`; it
+  would change Linux and macOS output); `round()` to even too (Python 3;
+  it would change what existing code computes).
 
 ### I1 — generators: investigated, not decided
 

@@ -893,6 +893,44 @@ on Linux).
 
 ## Progress log
 
+### 2026-11-06 — Performance and consistency: string search, path, toFixed
+
+- Measured the suite against Go (Windows) and profiled the worst rows on
+  Linux (perf). The runtime's string searches — `contains`, `replace` (both
+  passes), multi-byte `split`, `find`/`indexOf` and the byte-list replace
+  behind `StringBuilder.replace` — called `memcmp` at every byte position;
+  they now share `find_bytes` (memchr to each occurrence of the first
+  byte, memcmp the rest there) and the replaces copy whole runs.
+  `path.cleanBody` checks for a backslash in its one pass and `within`
+  tests the separator without building `r + "/"`. `bench/pathwithin`
+  28.8 → 10.7 ms (−63%, Go 11.4).
+- `toFixed`: values whose binary fraction has at most 19 bits, with the
+  digits covering their whole expansion, are written with integer
+  arithmetic (`fixed_short`) — the same bytes as `"%.*f"`: 12.8 million
+  cases compared with snprintf on UCRT and glibc, no mismatch.
+  `bench/tofixed` 35.1 → 7.2 ms (its values are quarters; others, like
+  0.1, keep the exact slow path).
+- Found: `toFixed` rounded an exact tie differently by platform (UCRT
+  away from zero, glibc and macOS to even). Decided as D240 (to even
+  everywhere; `round()` kept, `roundEven()` added) and built: the runtime
+  rounds the ties itself (`fixed_tie`: a tie is exactly k = digits + 1
+  fraction bits) — 1.96 million random ties equal glibc's output, and
+  Windows prints the same bytes (one hash); `roundEven` through checker,
+  catalogue, evaluator (`math.RoundToEven`) and codegen (`llvm.nearbyint`:
+  `llvm.roundeven` calls a libm function UCRT lacks). Tests: std's tie
+  test, the const/run comparison in `driver/constfun_test.go`. Docs:
+  chapter 2 (how a decimal is rounded; format specs), the stdlib
+  reference, the cheat sheet, std's doc comment.
+- `gzip` (6.8× Go): 75% is the level-6 chain walk in `Deflater.longest`,
+  memory-bound (the `prev` ring and the window); an 8-byte compare gave
+  nothing and was reverted. Go 1.27's encoder is ~6× faster than Go
+  1.23's on this data, so the gap is a different matcher (§11).
+- Consistency: chapter 4 still called a `Deque` a shared reference and
+  errors.md documented the retired deque-loop error (removed; the
+  by-reference section says every value loop walks a snapshot); a global
+  collection's Sendable error advised `.toList()` (now: hold values, not
+  pointers or closures, or a lock).
+
 ### 2026-11-06 — Closing: D237 through held tasks, D239 `Heap`
 
 - D237: a function value started from a parameter in a task handed back

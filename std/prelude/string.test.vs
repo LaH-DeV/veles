@@ -38,6 +38,26 @@ test "case mapping changes ASCII letters only" {
   expect("".toUpper() == "")
 }
 
+test "the searches find what they should at the edges" {
+  expect("aaa".replace("aa", "b") == "ba")
+  expect("abcabc".replace("bc", "") == "aa")
+  expect("aXbXc".replace("X", "--") == "a--b--c")
+  expect("".replace("a", "b") == "")
+  expect("a--b----c--".split("--") == ["a", "b", "", "c", ""])
+  expect("abc".split("abc") == ["", ""])
+  expect("ab".split("abc") == ["ab"])
+  expect("ababac".contains("abac"))
+  expect(!"hello".contains("hello!"))
+  expect("abc".contains(""))
+  expect("ababac".indexOf("abac") == 2)
+  expect("abcabc".indexOf("c", from: 3) == 5)
+  expect("abc".indexOf("c", from: 9) == null)
+  val b = StringBuilder()
+  b.append("aXXbXXcXX")
+  b.replace("XX", "-")
+  expect(b.toString() == "a-b-c-")
+}
+
 test "replace takes every occurrence, left to right" {
   expect("a b c".replace(" ", "-") == "a-b-c")
   expect("aXa".replace("a", "bb") == "bbXbb")

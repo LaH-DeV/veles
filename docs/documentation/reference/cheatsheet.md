@@ -145,6 +145,7 @@ val p = Point(x: 1)             // named construction (Point(x, y) puns variable
 val s = Shared(1)               // one constructor parameter: positional too (D163); throw UsageError("bad flag")
 val q = p.copy(x: 5)            // generated copy: named fields change, the rest kept, init runs again (D164)
 val n = i64.parse("42")         // i64?; Parsable — T.parse(s) in generic code
+12.25.toFixed(1); "${x:.2}"; 2.5.round(); 2.5.roundEven()   // "12.2" (a half to even, every platform, D240); x to 2 decimals; 3.0 (half away from zero); 2.0
 val z = T.default()             // Default (D119): 0, false, "", empty, null; a struct: `implement Default` (fields' defaults, else their types')
 
 trait Shape {

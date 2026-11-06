@@ -413,6 +413,7 @@ const fun floatOps(): List<string> {
   out.push("${x.mod(2.0)} ${(5.5).mod(-2.0)} ${x.clamp(-1.0, 1.0)} ${x.copySign(1.0)} ${x.isSignNegative()} ${x.isNaN()} ${x.isFinite()}")
   val y: f32 = 2.5
   out.push("${y.round()} ${(0.5).round()} ${(-0.5).round()} ${(1.0 / 3.0).sqrt()} ${y.sqrt()} ${(-y).abs()} ${y.mod(0.7)}")
+  out.push("${x.roundEven()} ${y.roundEven()} ${(0.5).roundEven()} ${(1.5).roundEven()} ${(-0.5).roundEven()} ${(2.6).roundEven()} ${(-3.5).roundEven()}")
   val nan = 0.0 / 0.0
   val inf = 1.0 / 0.0
   out.push("${nan.isNaN()} ${nan.min(1.0)} ${nan.max(1.0)} ${nan.sign()} ${inf.isInfinite()} ${inf.isFinite()} ${(-inf).clamp(-5.0, 5.0)} ${(-0.0).isSignNegative()} ${(-0.0).sign()}")

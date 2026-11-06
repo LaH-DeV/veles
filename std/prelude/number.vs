@@ -45,7 +45,9 @@ extend u64 {
 }
 
 extend f64 {
-  /// The number with exactly `digits` decimals, rounded: `(2.0 / 3.0).toFixed(2)` is `"0.67"`.
+  /// The number with exactly `digits` decimals, rounded to the nearest, an
+  /// exact half to the even neighbour on every platform (D240):
+  /// `(2.0 / 3.0).toFixed(2)` is `"0.67"`, `12.25.toFixed(1)` is `"12.2"`.
   /// Any nonnegative precision is accepted; a negative precision or result too large for a string panics.
   public fun toFixed(digits: i64): string {
     var out = ""

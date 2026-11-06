@@ -1429,14 +1429,20 @@ func (g *gen) listLit(e *sema.ListLit) string {
 
 func (g *gen) builtin(e *sema.Builtin) string {
 	switch e.Op {
-	case "float.sqrt", "float.abs", "float.floor", "float.ceil", "float.round", "float.trunc",
+	case "float.sqrt", "float.abs", "float.floor", "float.ceil", "float.round", "float.roundEven", "float.trunc",
 		"float.log", "float.log2", "float.log10", "float.exp", "float.sin", "float.cos":
 		// a single LLVM intrinsic: no runtime call, no unsafe
 		x := g.expr(e.Args[0])
 		ty := g.llType(e.Type())
 		intr := strings.TrimPrefix(e.Op, "float.")
-		if intr == "abs" {
+		switch intr {
+		case "abs":
 			intr = "fabs"
+		case "roundEven":
+			// halves to even: nearbyint in the default rounding mode, which a
+			// Veles program never leaves; llvm.roundeven would call a libm
+			// roundeven the Windows CRT does not have
+			intr = "nearbyint"
 		}
 		v := g.newTmp()
 		g.emit("%s = call %s @llvm.%s.%s(%s %s)", v, ty, intr, llFloatSuffix(ty), ty, x)

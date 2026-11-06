@@ -671,16 +671,6 @@ an element read with `get` — and is lost with it. Bind it with `val`
 to change a copy of your own, or reach the place itself: `xs.at(i)`,
 `m.at(k)`, `m.atOrPut(k, make)`, or a pointer (D231).
 
-#### `'xs.addFirst' changes 'xs' while the loop at line 12 walks it`
-
-A loop over a `Deque` walks the queue itself, so a call in its body that
-changes its length — `addFirst`, `addLast`, `removeFirst`, `removeLast`,
-`clear` — would make it visit elements twice or skip them (D102). Collect
-the changes and apply them after the loop. A loop over a `List`, `Map` or
-`Set` is not affected: it walks the collection as it was when it began,
-whatever changes it meanwhile, in the body or through a pointer a called
-function holds (D231, D102 addendum).
-
 #### `'xs.removeAt' changes 'xs' while the loop at line 12 walks it by reference`
 
 `loop (&x in xs)` walks the list itself, not a snapshot, so that `x` can
@@ -690,7 +680,10 @@ would move the elements under the loop (D102). Replacing an element
 (`xs.set(i, v)`) is fine. Collect the changes and apply them after the
 loop, or loop by value. A change to the length made where the compiler
 cannot see it — through a pointer a called function holds — panics when
-the loop next steps: `'xs' changed while a loop walked it`.
+the loop next steps: `'xs' changed while a loop walked it`. A value loop,
+`loop (x in xs)`, over a list, map, set or deque is not affected: it
+walks the collection as it was when it began, whatever changes it
+meanwhile (D231, D102 addendum, D234).
 
 #### `'items' is a 'StringBuilder'; a const struct holds only immutable data: use 'string'`, `push would change a collection inside 'T', a const struct`
 

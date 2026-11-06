@@ -24,7 +24,7 @@ func init() {
 		"int.checkedAdd", "int.checkedSub", "int.checkedMul",
 		"int.countOnes", "int.leadingZeros", "int.trailingZeros", "int.swapBytes", "int.reverseBits",
 		"int.rotateLeft", "int.rotateRight",
-		"float.sqrt", "float.abs", "float.floor", "float.ceil", "float.round", "float.trunc",
+		"float.sqrt", "float.abs", "float.floor", "float.ceil", "float.round", "float.roundEven", "float.trunc",
 		"float.sign", "float.min", "float.max", "float.mod", "float.clamp", "float.copySign",
 		"float.isSignNegative", "float.isNaN", "float.isFinite", "float.isInfinite",
 	} {
@@ -242,6 +242,8 @@ func (ev *constEval) floatBuiltin(e *Builtin) (ConstVal, bool) {
 		return f(math.Ceil(ev.floatVal(e, 0))), true
 	case "float.round":
 		return f(math.Round(ev.floatVal(e, 0))), true // half away from zero, as llvm.round
+	case "float.roundEven":
+		return f(math.RoundToEven(ev.floatVal(e, 0))), true // halves to even, as llvm.nearbyint in the default mode
 	case "float.trunc":
 		return f(math.Trunc(ev.floatVal(e, 0))), true
 	case "float.sign":

@@ -540,7 +540,9 @@ func (c *Checker) checkGlobal(g *Global) {
 		fix := fmt.Sprintf("keep it behind a lock ('%s = Mutex(value: ...)') or in an executor's state (D150)", decl)
 		switch t := declared.(type) {
 		case *types.List, *types.Map, *types.Set:
-			fix = "make it immutable (a 'List', 'Map' or 'Set': '.toList()', '.toMap()', '.toSet()'), " + fix
+			// a collection is Sendable when its elements are (D231): what it
+			// holds is the problem
+			fix = "hold values in it rather than pointers or closures, or " + fix
 		case *types.Trait:
 			fix = fmt.Sprintf("require it of every implementor ('trait %s : Sendable'), or %s", t.Name, fix)
 		}

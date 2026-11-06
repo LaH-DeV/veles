@@ -16,6 +16,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <float.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1427,6 +1428,113 @@ int64_t veles_time_local_offset_minutes(int64_t secs) {
 
 /* ---- number formatting ------------------------------------------------- */
 
+/* fixed_short is veles_f64_to_fixed's fast path, for a value whose binary
+ * fraction has at most 19 bits and whose integer part fits in 63 — whole
+ * numbers, halves, quarters, … — when `digits` covers all of its decimal
+ * expansion: the fraction f/2^k is exactly (f*5^k)/10^k, k decimal digits,
+ * so nothing is rounded and the text is what "%.*f" gives, made with
+ * integer arithmetic instead of snprintf's arbitrary-precision path. False
+ * for anything else (the caller formats it the exact slow way). */
+static bool fixed_short(double v, int64_t digits, veles_string *out) {
+    if (!(v == v) || v >= 9.2e18 || v <= -9.2e18 || digits > 1074) return false;
+    bool neg = signbit(v);
+    double a = neg ? -v : v;
+    double whole = floor(a);
+    double frac = a - whole; /* exact: both are within a factor of two of a */
+    uint64_t f = 0;
+    int k = 0;
+    while (frac != 0) {
+        if (k == 19) return false;
+        frac *= 2; /* exact: a power of two */
+        double bit = frac >= 1 ? 1 : 0;
+        f = f * 2 + (uint64_t)bit;
+        frac -= bit;
+        k++;
+    }
+    if (digits < k) return false; /* it would round: the slow path does that */
+    uint64_t dec = f; /* f * 5^k < 10^k <= 10^19 fits */
+    for (int i = 0; i < k; i++) dec *= 5;
+    char ibuf[24];
+    int il = 0;
+    uint64_t w = (uint64_t)whole;
+    do {
+        ibuf[il++] = (char)('0' + w % 10);
+        w /= 10;
+    } while (w);
+    int64_t len = (neg ? 1 : 0) + il + (digits > 0 ? 1 + digits : 0);
+    char *buf = veles_alloc(len + 1);
+    int64_t at = 0;
+    if (neg) buf[at++] = '-';
+    while (il > 0) buf[at++] = ibuf[--il];
+    if (digits > 0) {
+        buf[at++] = '.';
+        for (int i = k - 1; i >= 0; i--) { /* the k digits of dec, zero-padded */
+            buf[at + i] = (char)('0' + dec % 10);
+            dec /= 10;
+        }
+        at += k;
+        memset(buf + at, '0', (size_t)(digits - k));
+        at += digits - k;
+    }
+    buf[at] = 0;
+    out->data = buf;
+    out->len = len;
+    return true;
+}
+
+/* fraction_bits: how many binary digits v has after the point — the k of
+ * v = m / 2^k with m an integer — so its decimal expansion has exactly k
+ * digits after the point, the last of them a 5. 0 for whole numbers and
+ * for what is not finite. */
+static int fraction_bits(double v) {
+    if (v == 0 || !(v == v) || v - v != 0) return 0;
+    int e;
+    double m = frexp(v < 0 ? -v : v, &e); /* |v| = m * 2^e, m in [0.5, 1) */
+    uint64_t bits = (uint64_t)ldexp(m, 53); /* exact: m has at most 53 bits */
+    int k = 53 - e - __builtin_ctzll(bits);
+    return k > 0 ? k : 0;
+}
+
+/* fixed_tie: rounding v to `digits` decimals is an exact tie exactly when
+ * its expansion has digits + 1 decimals (the dropped part is the final 5
+ * alone). D240: a tie goes to the even neighbour on every platform — the C
+ * libraries disagree (UCRT rounds it away from zero; glibc and macOS to
+ * even) — so the runtime decides it: the exact expansion, which every C
+ * library prints the same, without its last digit, plus one in the last
+ * place kept when that digit is odd. */
+static bool fixed_tie(double v, int64_t digits, veles_string *out) {
+    if (v != v || v - v != 0) return false;
+    int k = fraction_bits(v);
+    if (k == 0 || (int64_t)k != digits + 1) return false;
+    char exact[1400];
+    int n = snprintf(exact, sizeof exact, "%.*f", k, v);
+    if (n < 2 || n >= (int)sizeof exact) return false;
+    n--; /* the final 5 */
+    if (digits == 0) n--; /* and the point before it */
+    char *buf = veles_alloc(n + 2); /* room for a carry out of the top digit */
+    memcpy(buf + 1, exact, (size_t)n);
+    char *s = buf + 1;
+    if ((s[n - 1] - '0') % 2 != 0) { /* odd: the even neighbour is one up */
+        int i = n - 1;
+        for (; i >= 0; i--) {
+            if (s[i] == '.') continue;
+            if (s[i] == '-') { i = -1; break; }
+            if (s[i] != '9') { s[i]++; break; }
+            s[i] = '0';
+        }
+        if (i < 0) { /* 9.5 -> 10: a new top digit, after any sign */
+            int at = s[0] == '-' ? 1 : 0;
+            memmove(s + at + 1, s + at, (size_t)(n - at));
+            s[at] = '1';
+            n++;
+        }
+    }
+    s[n] = 0;
+    out->data = s;
+    out->len = n;
+    return true;
+}
+
 /* veles_f64_to_fixed renders v with exactly `digits` decimals. */
 void veles_f64_to_fixed(double v, int64_t digits, veles_string *out) {
     enum { EXACT_DECIMAL_PLACES = 1074, FIXED_BUFFER_SIZE = 1400 };
@@ -1435,6 +1543,8 @@ void veles_f64_to_fixed(double v, int64_t digits, veles_string *out) {
                     (int64_t)sizeof("toFixed: digits must be nonnegative") - 1);
         return;
     }
+    if (fixed_short(v, digits, out)) return;
+    if (fixed_tie(v, digits, out)) return;
     char exact[FIXED_BUFFER_SIZE];
     int precision = digits < EXACT_DECIMAL_PLACES ? (int)digits : EXACT_DECIMAL_PLACES;
     int n = snprintf(exact, sizeof exact, "%.*f", precision, v);

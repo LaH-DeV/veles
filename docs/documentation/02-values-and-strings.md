@@ -301,6 +301,18 @@ text as a value, ask the number: `n.toString(radix: 16)` for hex and
 `x.toFixed(2)` for two decimals. Any nonnegative precision is accepted;
 negative precision or a result too large for a string panics.
 
+**How a decimal is rounded.** `toFixed` and a precision spec (`${x:.2}`)
+round the exact value of the float to the nearest number with that many
+decimals; when it lies exactly halfway, they take the **even** neighbour —
+`12.25.toFixed(1)` is `"12.2"`, `12.75.toFixed(1)` is `"12.8"`,
+`2.5.toFixed(0)` is `"2"` — the same on every platform (D240). Most values
+are never exactly halfway: `0.125` is, but `2.675` is stored as
+2.67499999…, so `2.675.toFixed(2)` is `"2.67"`. Rounding to a whole number
+is a method of its own: `round()` takes halves away from zero
+(`2.5.round()` is `3.0`, as in C, Go and Rust), and `roundEven()` takes
+them to the even one (`2.5.roundEven()` is `2.0`), the rule the decimals
+above follow.
+
 ```veles
 use io
 
@@ -460,9 +472,10 @@ ${value:[[fill]align][sign][#][0][width][,][.precision][type]}
 - `sign` is `+` (show it for positive numbers too) or a space; `#` adds the
   `0x`/`0b`/`0o` prefix; `0` pads a number with zeros after the sign; `,`
   groups the digits in threes.
-- `.precision` is the digits after the point of a float; the `type` is `d`,
-  `x`, `X`, `b` or `o` for an integer, `f` or `%` for a float (`%` scales by
-  100), and `s` or nothing for text.
+- `.precision` is the digits after the point of a float, rounded as
+  `toFixed` rounds — an exact half to the even neighbour (D240); the `type`
+  is `d`, `x`, `X`, `b` or `o` for an integer, `f` or `%` for a float (`%`
+  scales by 100), and `s` or nothing for text.
 - Anything that prints — a `bool`, an enum, a struct with `toString` — takes a
   fill, an alignment and a width, applied to what it prints.
 

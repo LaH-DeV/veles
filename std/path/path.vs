@@ -94,12 +94,21 @@ public fun clean(p: string): string {
   }
 }
 
+// cleanBody: p is clean already from byte `from` on — no backslash anywhere
+// in it (the root included: `C:\x` is written `C:/x` once cleaned), and no
+// empty, `.` or `..` component after the root. One pass over the bytes.
 fun cleanBody(p: string, from: i64): bool {
-  if (p.contains("\\")) return false
+  loop (i in 0..<from) {
+    if (p.byteAt(i) == '\\') return false
+  }
   if (from == p.len()) return true
   var start = from
   loop (end in from..p.len()) {
-    if (end < p.len() && p.byteAt(end) != '/') continue
+    if (end < p.len()) {
+      val b = p.byteAt(end)
+      if (b == '\\') return false
+      if (b != '/') continue
+    }
     val count = end - start
     if (count == 0) return false
     if (p.byteAt(start) == '.' && (count == 1 || (count == 2 && p.byteAt(start + 1) == '.'))) return false
@@ -128,8 +137,9 @@ public fun within(root: string, p: string): bool {
   if (r == ".") return !isAbsolute(q) && q != ".." && !q.startsWith("../")
   if (isAbsolute(r) != isAbsolute(q)) return false
   if (q == r) return true
-  if (r.endsWith("/") && r == q + "/") return true
-  q.startsWith(if (r.endsWith("/")) r else r + "/")
+  if (r.endsWith("/")) return q.startsWith(r) || r == q + "/"
+  // q starts with r and then a separator, without building r + "/"
+  q.len() > r.len() && q.startsWith(r) && q.byteAt(r.len()) == '/'
 }
 
 // rootOf is the part of p that `..` cannot climb above, written with `/`

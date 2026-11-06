@@ -15,6 +15,41 @@ test "toFixed preserves precision beyond the C formatting limit" {
   expect(single.endsWith("0"))
 }
 
+test "toFixed of a short binary fraction is exact, as the long way gives it" {
+  // values whose fraction has few binary digits take the runtime's integer
+  // path when the digits cover them; the rest round the exact long way
+  expect(5.0.toFixed(2) == "5.00")
+  expect(12.25.toFixed(2) == "12.25")
+  expect(12.25.toFixed(0) == "12")
+  expect((-0.5).toFixed(3) == "-0.500")
+  expect((-0.0).toFixed(1) == "-0.0")
+  expect(0.0.toFixed(0) == "0")
+  expect(1048576.0.toFixed(5) == "1048576.00000")
+  expect(0.0000019073486328125.toFixed(19) == "0.0000019073486328125")
+  expect(0.0000019073486328125.toFixed(22) == "0.0000019073486328125000")
+  expect(12.75.toFixed(1) == "12.8")
+}
+
+test "toFixed and a precision spec round a tie to the even neighbour, on every platform (D240)" {
+  expect(12.25.toFixed(1) == "12.2")
+  expect(12.75.toFixed(1) == "12.8")
+  expect(0.125.toFixed(2) == "0.12")
+  expect(0.375.toFixed(2) == "0.38")
+  expect(2.5.toFixed(0) == "2")
+  expect(3.5.toFixed(0) == "4")
+  expect((-2.5).toFixed(0) == "-2")
+  expect((-0.5).toFixed(0) == "-0")
+  expect(9.5.toFixed(0) == "10")
+  expect((-99.5).toFixed(0) == "-100")
+  expect(0.0000019073486328125.toFixed(18) == "0.000001907348632812")
+  val share = 0.125
+  expect("${share:.2}" == "0.12")
+  expect(2.5.roundEven() == 2.0)
+  expect(2.5.round() == 3.0)
+  expect(0.1.toFixed(3) == "0.100")
+  expect(2.675.toFixed(2) == "2.67")
+}
+
 test "toFixed refuses negative and unrepresentable precision" {
   expectPanics(() => {
     1.5.toFixed(-1)

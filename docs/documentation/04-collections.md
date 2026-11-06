@@ -667,8 +667,8 @@ Output:
 [3, 2, 1]
 ```
 
-A `Deque` is not a value — it is a queue shared by reference — so a loop
-over one still refuses a change to its length while it walks it (D102).
+A `Deque` is a value too (D234), and a loop over one walks it as it was
+when the loop began, so the body may add to it or take from it.
 
 ### Comparing collections
 

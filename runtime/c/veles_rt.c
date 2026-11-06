@@ -349,12 +349,58 @@ bool veles_string_ends_with(const char *a, int64_t alen, const char *b, int64_t 
     return blen <= alen && memcmp(a + (alen - blen), b, (size_t)blen) == 0;
 }
 
-bool veles_string_contains(const char *a, int64_t alen, const char *b, int64_t blen) {
-    if (blen == 0) return true;
-    for (int64_t i = 0; i + blen <= alen; i++) {
-        if (memcmp(a + i, b, (size_t)blen) == 0) return true;
+/* find_bytes: the first occurrence of needle in s[0, len), or NULL; s itself
+ * for an empty needle. memchr jumps to each place the needle's first byte
+ * occurs and memcmp checks the rest there — a call per candidate, not per
+ * byte (the search every string and byte-list operation below shares; there
+ * is no memmem on every platform). */
+static const char *find_bytes(const char *s, int64_t len, const char *needle, int64_t nlen) {
+    if (nlen == 0) return s;
+    if (nlen > len) return NULL;
+    const char *last = s + (len - nlen); /* the last place a match can start */
+    const char *p = s;
+    while (p <= last) {
+        p = memchr(p, (unsigned char)needle[0], (size_t)(last - p + 1));
+        if (!p) return NULL;
+        if (nlen == 1 || memcmp(p + 1, needle + 1, (size_t)(nlen - 1)) == 0) return p;
+        p++;
     }
-    return false;
+    return NULL;
+}
+
+/* how many times a non-empty needle occurs in s, without overlaps */
+static int64_t count_bytes(const char *s, int64_t len, const char *needle, int64_t nlen) {
+    if (nlen <= 0) return 0; /* callers pass a non-empty needle; never loop on an empty one */
+    int64_t count = 0;
+    const char *p = s, *end = s + len;
+    for (;;) {
+        const char *hit = find_bytes(p, end - p, needle, nlen);
+        if (!hit) return count;
+        count++;
+        p = hit + nlen;
+    }
+}
+
+/* writes s with every occurrence of a non-empty old as repl into out, a run
+ * of untouched bytes at a time; out may be s itself when rlen <= olen (each
+ * write lands at or before what it reads, so memmove keeps it right) */
+static void replace_bytes_into(char *out, const char *s, int64_t len, const char *old, int64_t olen, const char *repl, int64_t rlen) {
+    int64_t w = 0;
+    const char *p = s, *end = s + len;
+    for (;;) {
+        const char *hit = find_bytes(p, end - p, old, olen);
+        if (!hit) break;
+        memmove(out + w, p, (size_t)(hit - p));
+        w += hit - p;
+        memcpy(out + w, repl, (size_t)rlen);
+        w += rlen;
+        p = hit + olen;
+    }
+    memmove(out + w, p, (size_t)(end - p));
+}
+
+bool veles_string_contains(const char *a, int64_t alen, const char *b, int64_t blen) {
+    return find_bytes(a, alen, b, blen) != NULL;
 }
 
 static bool is_boundary(const char *s, int64_t len, int64_t i) {
@@ -402,23 +448,11 @@ void veles_string_ascii_case(veles_string *out, const char *s, int64_t len, bool
 /* veles_string_replace: s with every occurrence of a non-empty old as repl,
  * in one pass and one copy; s itself when old does not occur. */
 void veles_string_replace(veles_string *out, const char *s, int64_t len, const char *old, int64_t olen, const char *repl, int64_t rlen) {
-    int64_t count = 0;
-    for (int64_t i = 0; olen > 0 && i + olen <= len;) {
-        if (memcmp(s + i, old, (size_t)olen) == 0) { count++; i += olen; } else i++;
-    }
+    int64_t count = olen > 0 ? count_bytes(s, len, old, olen) : 0;
     if (count == 0) { out->data = s; out->len = len; return; }
     int64_t n = len + count * (rlen - olen);
     char *buf = veles_alloc(n + 1);
-    int64_t w = 0, i = 0;
-    while (i < len) {
-        if (i + olen <= len && memcmp(s + i, old, (size_t)olen) == 0) {
-            memcpy(buf + w, repl, (size_t)rlen);
-            w += rlen;
-            i += olen;
-        } else {
-            buf[w++] = s[i++];
-        }
-    }
+    replace_bytes_into(buf, s, len, old, olen, repl, rlen);
     out->data = buf;
     out->len = n;
 }
@@ -426,44 +460,20 @@ void veles_string_replace(veles_string *out, const char *s, int64_t len, const c
 /* veles_string_split: the parts of s between occurrences of a non-empty
  * sep, as strings that share s's bytes (D10: the collector follows an
  * interior pointer). Two passes — count, then fill a list of exactly that
- * size — and memchr to find a one-byte separator. */
+ * size, both with find_bytes. */
 veles_list *veles_string_split(veles_desc *desc, const char *s, int64_t len, const char *sep, int64_t slen) {
-    int64_t n = 1;
-    for (int64_t i = 0; i + slen <= len;) {
-        const char *hit = slen == 1 ? memchr(s + i, sep[0], (size_t)(len - i)) : NULL;
-        if (slen == 1) {
-            if (!hit) break;
-            n++;
-            i = (hit - s) + 1;
-            continue;
-        }
-        if (memcmp(s + i, sep, (size_t)slen) == 0) {
-            n++;
-            i += slen;
-        } else {
-            i++;
-        }
-    }
+    int64_t n = 1 + count_bytes(s, len, sep, slen);
     veles_list *l = veles_list_new(desc, n);
     veles_string part;
     int64_t start = 0;
-    for (int64_t i = 0; i + slen <= len;) {
-        int64_t at;
-        if (slen == 1) {
-            const char *hit = memchr(s + i, sep[0], (size_t)(len - i));
-            if (!hit) break;
-            at = hit - s;
-        } else if (memcmp(s + i, sep, (size_t)slen) == 0) {
-            at = i;
-        } else {
-            i++;
-            continue;
-        }
+    for (; slen > 0;) {
+        const char *hit = find_bytes(s + start, len - start, sep, slen);
+        if (!hit) break;
+        int64_t at = hit - s;
         part.data = s + start;
         part.len = at - start;
         veles_list_push(l, &part);
         start = at + slen;
-        i = start;
     }
     part.data = s + start;
     part.len = len - start;
@@ -891,10 +901,9 @@ bool veles_bytes_decode_utf8_range(veles_string *out, veles_list *bytes, int64_t
 int64_t veles_string_find(const char *s, int64_t len, const char *part, int64_t plen, int64_t from) {
     if (from < 0) from = 0;
     if (plen == 0) return from <= len ? from : -1;
-    for (int64_t i = from; i + plen <= len; i++) {
-        if (s[i] == part[0] && memcmp(s + i, part, (size_t)plen) == 0) return i;
-    }
-    return -1;
+    if (from >= len) return -1;
+    const char *hit = find_bytes(s + from, len - from, part, plen);
+    return hit ? hit - s : -1;
 }
 
 /* ---- lists (D25: reference types; element type erased to a size) -------- */
@@ -1061,10 +1070,8 @@ void veles_bytes_ascii_case(veles_list *l, bool upper) {
  * longer than old, else into one new buffer of the final size */
 void veles_bytes_replace(veles_list *l, const char *old, int64_t olen, const char *repl, int64_t rlen) {
     char *s = l->data;
-    int64_t len = l->len, count = 0;
-    for (int64_t i = 0; olen > 0 && i + olen <= len;) {
-        if (memcmp(s + i, old, (size_t)olen) == 0) { count++; i += olen; } else i++;
-    }
+    int64_t len = l->len;
+    int64_t count = olen > 0 ? count_bytes(s, len, old, olen) : 0;
     if (count == 0) return;
     int64_t n = len + count * (rlen - olen);
     char *out = s;
@@ -1073,16 +1080,7 @@ void veles_bytes_replace(veles_list *l, const char *old, int64_t olen, const cha
         out = veles_gc_alloc(l->desc, ncap);
         l->cap = ncap;
     }
-    int64_t w = 0, i = 0;
-    while (i < len) {
-        if (i + olen <= len && memcmp(s + i, old, (size_t)olen) == 0) {
-            memcpy(out + w, repl, (size_t)rlen);
-            w += rlen;
-            i += olen;
-        } else {
-            out[w++] = s[i++];
-        }
-    }
+    replace_bytes_into(out, s, len, old, olen, repl, rlen);
     l->data = out;
     l->len = n;
     if (n != len) l->mods++;

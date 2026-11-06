@@ -1881,7 +1881,7 @@ func (f *fnCtx) builtinMethod(recv Expr, rt types.Type, name string, e *ast.Call
 		// math on numbers: single LLVM instructions/intrinsics, no runtime call
 		if types.IsFloat(t) {
 			switch name {
-			case "sqrt", "abs", "floor", "ceil", "round", "trunc", "log", "log2", "log10", "exp", "sin", "cos", "tan":
+			case "sqrt", "abs", "floor", "ceil", "round", "roundEven", "trunc", "log", "log2", "log10", "exp", "sin", "cos", "tan":
 				if !nargs(0) {
 					return bad()
 				}
